@@ -34,6 +34,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The additive-schema rollback rehearsal imports the actual prior app.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -56,6 +58,7 @@ jobs:
           tests/native_tex_ci_fixtures.py tests/native_docx_ci_fixtures.py tests/test_native_tex_ci.py tests/test_native_tex.py
           tests/test_native_tex_r2.py tests/test_native_tex_application.py
           tests/test_analysis_runs.py tests/test_career_workspace.py tests/test_alembic_schema.py
+          tests/test_development_runner.py tests/test_development_runner_postgres.py tests/test_interview_quality_contract.py
           tests/test_usage_guardrails.py tests/test_feature_flags.py tests/test_operations_platform.py
           tests/test_prompt_evaluations.py tests/test_resume_source.py tests/test_resume_source_migrations.py
           tests/test_resume_layout.py tests/test_pdf_streams.py tests/test_docx_parsing.py tests/test_llm_client.py
@@ -97,16 +100,39 @@ jobs:
           tests/test_monetary_cutover_schema11_postgres.py
           tests/test_monetary_cutover_schema13_postgres.py
           app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
+          tests/test_unified_credit_finance.py tests/test_unified_credit_http.py tests/test_unified_credit_migrations.py
+          tests/test_unified_credit_migrations_postgres.py tests/test_unified_credit_payments.py
+          tests/test_unified_credits.py tests/test_unified_credits_postgres.py tests/test_unified_execution.py
+          tests/test_unified_analysis.py tests/test_unified_legacy_funding.py tests/test_free_core.py tests/test_free_core_postgres.py
+          tests/test_unified_synchronous.py tests/test_unified_synchronous_postgres.py tests/test_unified_shadow.py
+          tests/test_unified_discovery.py tests/test_unified_discovery_postgres.py
+          tests/test_unified_credit_privacy_postgres.py
+          tests/test_unified_quality_packet.py
+          tests/test_quality_materialization.py
+          tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
+          tests/test_unified_schema25_release.py tests/test_unified_schema25_step_postgres.py
+          tests/test_schema25_coordinator_pause.py tests/test_schema25_maintenance.py
+          tests/test_schema25_migration_metadata.py tests/test_schema25_migration_recovery.py
+          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
+          ../infra/gcp/schema25_migration_metadata.py ../infra/gcp/schema25_migration_recovery.py
           tests/test_expense_budget.py tests/test_expense_budget_postgres.py
           tests/test_migration_logging_postgres.py
           tests/test_fresh_user_no_ai_journey.py
-          tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
+          tests/fixtures/cold_browser_app.py tests/fixtures/cold_browser_credit_policy.py tests/test_cold_browser_runner.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py ../tests/test_release_preflight.py
           tests/test_monetary_release_entrypoint.py tests/test_monetary_schema_step_postgres.py
           tests/test_nologin_role_source_pin.py
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
           app/services/document_ingestion.py ../infra/document-processing
+          app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
+          tests/test_docx_font_resolution.py tests/test_docx_failure_guidance.py tests/test_document_font_bundle.py
+          tests/test_document_candidate_contract.py tests/test_document_full_source_build.py
+          tests/test_document_renderer_profiles.py tests/test_document_candidate_resume.py tests/test_document_resume_history.py
+          tests/test_document_refresh.py tests/test_document_refresh_probe.py tests/test_document_candidate_release.py
+          tests/test_document_owned_clamd.py tests/test_document_synchronous_do.py
+          ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           tests/test_document_ingestion.py tests/test_document_processor.py tests/test_document_definition_cache.py tests/test_monetary_release_transport.py
           app/routers/resume_uploads.py tests/test_resume_upload_quarantine.py tests/test_resume_source_access.py
           ../infra/gcp/document_worker.py tests/test_document_worker_deployment.py
@@ -116,7 +142,7 @@ jobs:
           tests/test_resume_upload_erasure.py
           ../infra/gcp/github_builder.py ../infra/gcp/rolling_release.py ../infra/gcp/rolling_native.py
           tests/test_cutover_safe_observability.py tests/test_fresh_cutover_writes.py
-          tests/test_fresh_worker_release.py tests/test_github_builder.py tests/test_rolling_release.py
+          tests/test_fresh_worker_release.py tests/test_github_builder.py tests/test_rolling_release.py tests/test_rolling_native_reads.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
           tests/test_database_transfer.py tests/test_database_transfer_postgres.py
@@ -138,13 +164,18 @@ jobs:
           app/services/generation_gate.py
           scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
           app/billing/cost_policy.py
+          app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           app/routers/password_reset.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
           app/services/document_ingestion.py scripts/document_test_image.py
+          app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
+          scripts/document_refresh.py ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py
+          ../infra/gcp/document_refresh_probe.py ../infra/gcp/document_refresh_resume.py
           ../infra/document-processing/processor.py ../infra/document-processing/service.py
+          ../infra/document-processing/docx_renderer.py ../infra/document-processing/courier_prime_fonts.py
           app/routers/resume_uploads.py
           ../infra/gcp/document_worker.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
@@ -152,6 +183,12 @@ jobs:
           scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
+          scripts/credit_shadow_report.py
+          scripts/unified_quality_packet.py
+          scripts/materialize_quality_sources.py
+          scripts/unified_credit_schema25_contract.py scripts/unified_credit_schema25_step.py
+          ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
+          ../infra/gcp/schema25_migration_metadata.py ../infra/gcp/schema25_migration_recovery.py
           ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
@@ -450,7 +487,7 @@ jobs:
   cold-browser-journey:
     # Independent of mocked responsive tests: production Next → real API → PG.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -488,20 +525,27 @@ jobs:
       - name: Check journey harness and manual review UI
         run: |
           cd backend
-          .venv/bin/ruff check scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py tests/test_cold_browser_runner.py
-          .venv/bin/mypy scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py
+          .venv/bin/ruff check scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py tests/fixtures/cold_browser_credit_policy.py tests/test_cold_browser_runner.py
+          .venv/bin/mypy scripts/run_cold_browser_journey.py tests/fixtures/cold_browser_app.py tests/fixtures/cold_browser_credit_policy.py
           .venv/bin/pytest -q tests/test_cold_browser_runner.py
           cd ../frontend
-          npx eslint components/EmployerApplicationPanel.tsx journey/cold-no-ai.spec.ts playwright.cold.config.ts
+          npx eslint components/EmployerApplicationPanel.tsx journey/cold-no-ai.spec.ts journey/cold-unified-discovery.spec.ts playwright.cold.config.ts
           npm run typecheck
       - name: Install Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: Verify complete cold no-AI browser journey
+      - name: Verify legacy order recovery browser journey
         working-directory: backend
         run: >-
           .venv/bin/python scripts/run_cold_browser_journey.py --allow-disposable-postgres
+          --scenario legacy
           --evidence "${{ runner.temp }}/hirewiz-cold-browser-evidence"
+      - name: Verify unified credit purchase and discovery browser journey
+        working-directory: backend
+        run: >-
+          .venv/bin/python scripts/run_cold_browser_journey.py --allow-disposable-postgres
+          --scenario unified
+          --evidence "${{ runner.temp }}/hirewiz-unified-browser-evidence"
       - name: Save sanitized workflow evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
@@ -511,3 +555,4 @@ jobs:
           path: |
             ${{ runner.temp }}/hirewiz-cold-browser-evidence/summary.json
             ${{ runner.temp }}/hirewiz-cold-browser-evidence/manual-handoff-*.png
+            ${{ runner.temp }}/hirewiz-unified-browser-evidence/summary.json

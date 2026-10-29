@@ -134,8 +134,9 @@ def _summary_boundary(cursor: str, owner_id: int) -> tuple[datetime, str]:
 
 
 def _metadata(row: Any) -> schemas.SearchSummary:
+    from ..credits.discovery import public_summary
     try:
-        metadata = schemas.SearchSummary.model_validate({key: row._mapping[key] for key in _METADATA_FIELDS})
+        metadata = schemas.SearchSummary.model_validate(public_summary({key: row._mapping[key] for key in _METADATA_FIELDS}))
     except ValidationError:
         raise _unavailable() from None
     body = metadata.model_dump()

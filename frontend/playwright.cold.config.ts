@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 // real BFF/API/SQL processes and environment. No server is reused implicitly.
 export default defineConfig({
   testDir: "./journey",
-  testMatch: "cold-no-ai.spec.ts",
+  testMatch: process.env.COLD_BROWSER_SCENARIO === "unified" ? "cold-unified-discovery.spec.ts" : "cold-no-ai.spec.ts",
   workers: 1,
   retries: 0,
   timeout: 120_000,

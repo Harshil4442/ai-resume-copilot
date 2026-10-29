@@ -865,22 +865,23 @@ def calculate_skill_roi(db: Session, user_id: int) -> schemas.SkillRoiResponse:
         )
         .all()
     )
+    # Fetch only the fields needed for scoring, once for the complete workspace.
+    # A foreign or missing match must still use this opportunity's own snapshot.
+    match_ids = {item.latest_match_id for item in opportunities if item.latest_match_id}
+    matched_skills = {
+        match.id: list(match.required_skills or [])
+        for match in (
+            db.query(models.JobMatch.id, models.JobMatch.required_skills)
+            .filter(models.JobMatch.user_id == user_id, models.JobMatch.id.in_(match_ids))
+            .all()
+            if match_ids else []
+        )
+    }
     demand: Counter[str] = Counter()
     positive_outcomes: Counter[str] = Counter()
     negative_outcomes: Counter[str] = Counter()
     for opportunity in opportunities:
-        skills: list[str] = []
-        if opportunity.latest_match_id:
-            match = (
-                db.query(models.JobMatch)
-                .filter(
-                    models.JobMatch.id == opportunity.latest_match_id,
-                    models.JobMatch.user_id == user_id,
-                )
-                .first()
-            )
-            if match:
-                skills = list(match.required_skills or [])
+        skills: list[str] = matched_skills.get(opportunity.latest_match_id, [])
         if not skills:
             skills = list((opportunity.job_snapshot or {}).get("required_skills") or [])
         normalized = {str(skill).strip().lower() for skill in skills if str(skill).strip()}

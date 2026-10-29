@@ -108,7 +108,7 @@ def revision(selected, service):
             NATIVE_TEX_ISOLATION_POLICY_SHA256=release.native_tex.POLICY_SHA256,
             DOCUMENT_WORKER_URL="https://hirewiz-document-inspector-mqff62d75a-uc.a.run.app/inspect",
             DOCUMENT_WORKER_IMAGE_DIGEST="us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:624597726ce2fefa2b3574fbf0a8ec4ccdc02a826380d76c5edc8ebbd59aa107",
-            DOCUMENT_WORKER_POLICY_SHA256=hashlib.sha256((ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest(),
+            DOCUMENT_WORKER_POLICY_SHA256=release.documents.POLICY_SHA256,
             DOCUMENT_WORKER_DOCX_RENDERER_VERSION="LibreOffice 25.2.3.2 520(Build:2)",
             DOCUMENT_WORKER_DOCX_FONT_MANIFEST_SHA256="abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60",
         )

@@ -26,6 +26,11 @@ def execute_search(search_id: str) -> str | EmployerSearchContinuation:
         state = db.query(models.EmployerSearch.status).filter_by(id=search_id).scalar()
         if state == "preparing":
             owner = db.query(models.EmployerSearch.user_id).filter_by(id=search_id).scalar()
+            from ..credits import discovery
+            protocol = db.query(models.EmployerSearch.scope["bounded_protocol"].as_string()).filter_by(id=search_id).scalar()
+            if protocol == discovery.PROTOCOL:
+                result = discovery.execute(db, user_id=owner, search_id=search_id)
+                return "pending" if result.status == "preparing" else result.status
             result = service.resume_bounded_search(db, owner, search_id)
             if result is None:
                 return "missing"
@@ -287,7 +292,13 @@ def fail_dispatched_work(topic: str, identity: str) -> None:
         if topic == "employer.search":
             from sqlalchemy import inspect
 
+            from ..credits import discovery
             from . import catalogue_search
+            unified = db.query(models.EmployerSearch.user_id).filter_by(id=identity).filter(
+                models.EmployerSearch.scope["bounded_protocol"].as_string() == discovery.PROTOCOL).scalar()
+            if unified is not None:
+                discovery.cancel(db, user_id=unified, search_id=identity, reason="dispatch_attempts_exhausted")
+                return
             bounded = db.query(models.EmployerSearch.id).filter_by(id=identity).filter(
                 models.EmployerSearch.scope["bounded_protocol"].as_string() == service.BOUNDED_SEARCH_PROTOCOL).first()
             if bounded is not None:

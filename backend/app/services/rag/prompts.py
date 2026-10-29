@@ -20,7 +20,7 @@ def build_ask_ai_messages(
         }
         for chunk in chunks
     ]
-    recent = [{**message, "content": redact_prompt_text(str(message.get("content", "")))} for message in recent_messages[-6:]]
+    recent = [{**message, "content": redact_prompt_text(str(message.get("content", "")))} for message in recent_messages]
 
     system = (
         "You are an AI career copilot answering questions about one resume-to-job match analysis.\n"

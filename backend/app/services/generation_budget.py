@@ -41,14 +41,16 @@ class GenerationBudget:
     run_id: str | None = None
     before: Callable[..., Any] | None = None
     after: Callable[..., None] | None = None
+    preflight: Callable[..., int] | None = None
     attempts: list[dict] = field(default_factory=list)
 
-    def admit(self, provider: str, model: str, messages: list[dict], *, api_base: str) -> dict:
+    def admit(self, provider: str, model: str, messages: list[dict], *, api_base: str,
+              counted_input_tokens: int | None = None) -> dict:
         if self.before is None or self.after is None:
             raise GenerationBudgetExhausted("Optional AI generation requires a persisted operation budget.")
         if self.used >= self.limit:
             raise GenerationBudgetExhausted("The operation's total model-attempt budget was reached.")
-        record = self.before(provider, model, messages, api_base)
+        record = self.before(provider, model, messages, api_base, counted_input_tokens)
         self.used = record["attempt_number"]
         self.attempts.append(record)
         return record
@@ -150,13 +152,35 @@ def persistent_run_budget(factory, run_id: str):
             raise RuntimeError("Analysis run was not found")
         budget = GenerationBudget(limit=run.generation_attempt_limit, used=run.generation_attempt_count, run_id=run_id)
         user_id = run.user_id
-        prompt_version = {"job_match": "match-mega-v2", "interview_questions": "interview-evidence-v4", "resume_tailor": "resume-source-v5"}.get(run.operation, "legacy-v1")
+        from .interview_contract import PROMPT_VERSION as INTERVIEW_PROMPT_VERSION
+        tailoring_version = (
+            "resume-source-v7"
+            if (run.model_cost_quote or {}).get("billing_currency") == "credits"
+            else "resume-source-v6"
+        )
+        prompt_version = {"job_match": "match-mega-v2", "interview_questions": INTERVIEW_PROMPT_VERSION, "resume_tailor": tailoring_version}.get(run.operation, "legacy-v1")
 
     # Only this trusted in-flight callback retains the deleted telemetry ID's
     # link to its detached liability. There is no post-erasure lookup API.
     bindings: dict[str, tuple[str, str, int]] = {}
 
-    def before(provider, model, messages, api_base):
+    def preflight(provider, model, messages, api_base):
+        """Authorize a count request without creating a provider liability."""
+        with factory() as db:
+            run = db.query(models.AnalysisRun).filter_by(id=run_id, user_id=user_id).one_or_none()
+            if (
+                run is None or db.get(models.User, user_id) is None
+                or run.cancel_requested or run.status not in {"queued", "running"}
+            ):
+                raise GenerationBudgetExhausted("The operation is no longer authorized for model requests.")
+            if run.generation_attempt_count >= run.generation_attempt_limit or run.model_cost_state == "overrun":
+                raise GenerationBudgetExhausted("The operation's model budget is exhausted.")
+            if run.model_cost_quote is None and db.query(models.ModelCallEvent.id).filter_by(analysis_run_id=run_id).first():
+                raise ModelCostUnavailable("This legacy operation has unquoted model history. Start a new reviewed operation.")
+            quote, _ = attempt_quote(run, provider, model, api_base)
+            return quote["max_input_tokens"]
+
+    def before(provider, model, messages, api_base, counted_input_tokens=None):
         with factory() as db:
             lock_application_set(db, user_id)
             run = db.query(models.AnalysisRun).filter_by(id=run_id, user_id=user_id).with_for_update().one_or_none()
@@ -171,7 +195,7 @@ def persistent_run_budget(factory, run_id: str):
             if run.model_cost_quote is None and db.query(models.ModelCallEvent.id).filter_by(analysis_run_id=run_id).first():
                 raise ModelCostUnavailable("This legacy operation has unquoted model history. Start a new reviewed operation.")
             quote, current_ceiling = attempt_quote(run, provider, model, api_base)
-            input_tokens = input_token_estimate(messages)
+            input_tokens = max(input_token_estimate(messages), counted_input_tokens or 0)
             if input_tokens > quote["max_input_tokens"]:
                 raise GenerationBudgetExhausted("The prompt exceeds the operation's authorized input estimate.")
             reservation = quoted_cost(quote, input_tokens, quote["max_output_tokens"])
@@ -214,7 +238,11 @@ def persistent_run_budget(factory, run_id: str):
                 input_tokens=input_tokens, output_tokens=0, tokens_estimated=True,
                 estimated_cost_micros=reservation, reserved_cost_micros=reservation,
                 pricing_quote=quote, cost_state="reserved",
-                token_estimate_provenance=quote["token_estimator"],
+                token_estimate_provenance=(
+                    "gemini-countTokens-utf8-max-v1"
+                    if provider == "google" and counted_input_tokens is not None
+                    else quote["token_estimator"]
+                ),
                 output_token_limit=quote["max_output_tokens"], status="attempted", created_at=utcnow(),
             ))
             # Only this short transaction holds the run lock. It ends before
@@ -292,6 +320,6 @@ def persistent_run_budget(factory, run_id: str):
                 event.cost_state = liability.cost_state
             db.commit()
 
-    budget.before, budget.after = before, after
+    budget.before, budget.after, budget.preflight = before, after, preflight
     with generation_budget(budget):
         yield budget

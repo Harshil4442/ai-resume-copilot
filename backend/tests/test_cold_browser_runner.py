@@ -14,6 +14,7 @@ from backend.scripts import run_cold_browser_journey as journey_runner
 from backend.scripts.run_cold_browser_journey import (
     _browser_failure_summary,
     _create_owned_tls,
+    _disposable_postgres,
     _owned_status,
     _run_bounded,
     _spawn_owned,
@@ -21,6 +22,26 @@ from backend.scripts.run_cold_browser_journey import (
     _wait,
     run_journey,
 )
+
+
+@pytest.mark.parametrize("port", [55433, 55434])
+def test_disposable_database_accepts_only_named_loopback_test_listeners(monkeypatch, port):
+    monkeypatch.setenv("HIREWIZ_TEST_POSTGRES_URL", f"postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:{port}/hirewiz_admission_test")
+    assert _disposable_postgres().port == port
+
+
+@pytest.mark.parametrize("url", [
+    "postgresql+psycopg://hirewiz:hirewiz@db.example:55434/hirewiz_admission_test",
+    "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:5432/hirewiz_admission_test",
+    "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55434/production",
+    "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55434/hirewiz_admission_test?host=remote.example",
+    "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55434/hirewiz_admission_test?options=-csearch_path=public",
+    "sqlite:///hirewiz_admission_test",
+])
+def test_disposable_database_rejects_other_targets_and_connection_overrides(monkeypatch, url):
+    monkeypatch.setenv("HIREWIZ_TEST_POSTGRES_URL", url)
+    with pytest.raises(AssertionError, match="dedicated loopback"):
+        _disposable_postgres()
 
 
 def test_timeout_stops_the_owned_parent_and_child_process_group(tmp_path):
@@ -307,3 +328,27 @@ def test_browser_failure_summary_is_bounded_and_handles_missing_invalid_reports(
     result = _browser_failure_summary(report)
     assert len(result["failures"]) == 8
     assert all(error["category"] == "browser_error" for error in result["failures"])
+
+
+def test_unified_cold_policy_is_test_only_and_shares_one_funding_authority(monkeypatch):
+    from backend.app.domains.credits import release, runtime
+    from backend.app.domains.free_core import policy
+    from backend.tests.fixtures.cold_browser_credit_policy import environment
+
+    monkeypatch.setenv("APP_ENV", "test")
+    for name, value in environment().items():
+        monkeypatch.setenv(name, value)
+    reviewed = release.current_review()
+    paid = runtime.current_runtime(2)
+    free = policy.current_policy()
+    assert paid.policy == reviewed.policy == free.financial_policy
+    assert paid.budgets == free.execution_budgets
+    assert paid.routes[0].mode == "native" and paid.routes[0].model_quotes == ()
+    assert paid.routes[0].supported_limits["maximum_results"] == 5
+    assert paid.routes[0].credits == 1 and free.operations["resume_parse"].per_account_30_days == 1
+    assert not runtime.enabled_for(1)
+    monkeypatch.setenv("APP_ENV", "production")
+    with pytest.raises(ValueError):
+        release.current_review()
+    with pytest.raises(ValueError):
+        policy.current_policy()

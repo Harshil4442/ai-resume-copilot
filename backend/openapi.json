@@ -25,6 +25,25 @@
         "title": "AnalysisQuoteAcceptance",
         "type": "object"
       },
+      "AnalysisReuseView": {
+        "properties": {
+          "reused_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reused_run"
+        ],
+        "title": "AnalysisReuseView",
+        "type": "object"
+      },
       "AnalysisRunCancelResponse": {
         "properties": {
           "cancel_requested": {
@@ -60,6 +79,19 @@
                 "type": "null"
               }
             ]
+          },
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
           },
           "idempotency_key": {
             "anyOf": [
@@ -130,6 +162,16 @@
           "attempt_count": {
             "title": "Attempt Count",
             "type": "integer"
+          },
+          "billing_currency": {
+            "default": "legacy_ai_units",
+            "enum": [
+              "legacy_ai_units",
+              "credits",
+              "none"
+            ],
+            "title": "Billing Currency",
+            "type": "string"
           },
           "cancel_requested": {
             "title": "Cancel Requested",
@@ -874,6 +916,63 @@
         "title": "Body_parse_resume_api_resume_parse_post",
         "type": "object"
       },
+      "CampaignView": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "reference_price_verified": {
+            "title": "Reference Price Verified",
+            "type": "boolean"
+          },
+          "standard_amount_minor": {
+            "exclusiveMinimum": 0.0,
+            "title": "Standard Amount Minor",
+            "type": "integer"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "active",
+              "ended"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "starts_at",
+          "ends_at",
+          "timezone",
+          "status",
+          "standard_amount_minor",
+          "reference_price_verified"
+        ],
+        "title": "CampaignView",
+        "type": "object"
+      },
       "CandidateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1366,6 +1465,49 @@
         "title": "ContactResponse",
         "type": "object"
       },
+      "CreateCreditOrder": {
+        "additionalProperties": false,
+        "properties": {
+          "billing_country": {
+            "const": "IN",
+            "title": "Billing Country",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 160,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "order_reference": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Reference"
+          },
+          "quote_id": {
+            "maxLength": 64,
+            "minLength": 5,
+            "title": "Quote Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quote_id",
+          "billing_country",
+          "idempotency_key"
+        ],
+        "title": "CreateCreditOrder",
+        "type": "object"
+      },
       "CreateOrderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1428,6 +1570,557 @@
         "title": "CreateOrderRequest",
         "type": "object"
       },
+      "CreditAvailabilityView": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_enabled": {
+            "title": "Catalog Enabled",
+            "type": "boolean"
+          },
+          "execution_enabled": {
+            "title": "Execution Enabled",
+            "type": "boolean"
+          },
+          "free_core_limits": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FreeCoreLimitView"
+            },
+            "title": "Free Core Limits",
+            "type": "object"
+          },
+          "free_core_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Free Core Operations",
+            "type": "array"
+          },
+          "supported_operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "catalog_enabled",
+          "execution_enabled",
+          "supported_operations"
+        ],
+        "title": "CreditAvailabilityView",
+        "type": "object"
+      },
+      "CreditCatalogView": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_version": {
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "checkout_enabled": {
+            "title": "Checkout Enabled",
+            "type": "boolean"
+          },
+          "currency": {
+            "const": "INR",
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "eligible_services": {
+            "items": {
+              "$ref": "#/components/schemas/CreditServiceOfferView"
+            },
+            "title": "Eligible Services",
+            "type": "array"
+          },
+          "market": {
+            "const": "IN",
+            "default": "IN",
+            "title": "Market",
+            "type": "string"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/CreditProductView"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_version",
+          "server_time",
+          "checkout_enabled",
+          "products"
+        ],
+        "title": "CreditCatalogView",
+        "type": "object"
+      },
+      "CreditCheckoutView": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_quote": {
+            "$ref": "#/components/schemas/PurchaseQuoteView"
+          },
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "INR",
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "key_id": {
+            "title": "Key Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "prefill": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Prefill",
+            "type": "object"
+          },
+          "provider": {
+            "const": "razorpay",
+            "default": "razorpay",
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_order_id": {
+            "title": "Provider Order Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "provider_order_id",
+          "key_id",
+          "amount_minor",
+          "name",
+          "description",
+          "accepted_quote",
+          "prefill"
+        ],
+        "title": "CreditCheckoutView",
+        "type": "object"
+      },
+      "CreditHistoryItem": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "integer"
+          },
+          "balance_after": {
+            "title": "Balance After",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "event_type",
+          "amount",
+          "balance_after",
+          "created_at",
+          "details"
+        ],
+        "title": "CreditHistoryItem",
+        "type": "object"
+      },
+      "CreditHistoryView": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditHistoryItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "CreditHistoryView",
+        "type": "object"
+      },
+      "CreditLotView": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "funding_kind": {
+            "title": "Funding Kind",
+            "type": "string"
+          },
+          "grant_id": {
+            "title": "Grant Id",
+            "type": "string"
+          },
+          "remaining_credits": {
+            "title": "Remaining Credits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "grant_id",
+          "remaining_credits",
+          "expires_at",
+          "funding_kind"
+        ],
+        "title": "CreditLotView",
+        "type": "object"
+      },
+      "CreditOrderStatusView": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_quote": {
+            "$ref": "#/components/schemas/PurchaseQuoteView"
+          },
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "checkout_available": {
+            "title": "Checkout Available",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "const": "INR",
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "fulfilled": {
+            "title": "Fulfilled",
+            "type": "boolean"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "pass_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pass Expires At"
+          },
+          "payment_status": {
+            "title": "Payment Status",
+            "type": "string"
+          },
+          "provider_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Order Id"
+          },
+          "refunded_amount_minor": {
+            "title": "Refunded Amount Minor",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "provider_order_id",
+          "status",
+          "payment_status",
+          "fulfilled",
+          "checkout_available",
+          "amount_minor",
+          "refunded_amount_minor",
+          "sku",
+          "created_at",
+          "paid_at",
+          "pass_expires_at",
+          "accepted_quote"
+        ],
+        "title": "CreditOrderStatusView",
+        "type": "object"
+      },
+      "CreditProductView": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "auto_renews": {
+            "const": false,
+            "default": false,
+            "title": "Auto Renews",
+            "type": "boolean"
+          },
+          "campaign": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CampaignView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credits": {
+            "exclusiveMinimum": 0.0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "duration_days": {
+            "const": 30,
+            "default": 30,
+            "title": "Duration Days",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "purchase_enabled": {
+            "title": "Purchase Enabled",
+            "type": "boolean"
+          },
+          "sku": {
+            "enum": [
+              "starter_pass",
+              "growth_pass",
+              "scale_pass"
+            ],
+            "title": "Sku",
+            "type": "string"
+          },
+          "terms_version": {
+            "title": "Terms Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "name",
+          "amount_minor",
+          "credits",
+          "purchase_enabled",
+          "terms_version"
+        ],
+        "title": "CreditProductView",
+        "type": "object"
+      },
+      "CreditServiceOfferView": {
+        "additionalProperties": false,
+        "properties": {
+          "credits": {
+            "exclusiveMinimum": 0.0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "deliverable": {
+            "title": "Deliverable",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "route_version": {
+            "title": "Route Version",
+            "type": "string"
+          },
+          "source_formats": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Source Formats",
+            "type": "array"
+          },
+          "supported_limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Supported Limits",
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation",
+          "credits",
+          "deliverable",
+          "supported_limits",
+          "source_formats",
+          "route_version"
+        ],
+        "title": "CreditServiceOfferView",
+        "type": "object"
+      },
+      "CreditWalletView": {
+        "additionalProperties": false,
+        "properties": {
+          "available_credits": {
+            "minimum": 0.0,
+            "title": "Available Credits",
+            "type": "integer"
+          },
+          "debt_credits": {
+            "minimum": 0.0,
+            "title": "Debt Credits",
+            "type": "integer"
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/CreditLotView"
+            },
+            "title": "Lots",
+            "type": "array"
+          },
+          "reserved_credits": {
+            "minimum": 0.0,
+            "title": "Reserved Credits",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_time",
+          "available_credits",
+          "debt_credits",
+          "reserved_credits",
+          "lots"
+        ],
+        "title": "CreditWalletView",
+        "type": "object"
+      },
       "DimensionScore": {
         "properties": {
           "feedback": {
@@ -1449,6 +2142,240 @@
           "feedback"
         ],
         "title": "DimensionScore",
+        "type": "object"
+      },
+      "DiscoveryBatchView": {
+        "properties": {
+          "billing_currency": {
+            "const": "credits",
+            "default": "credits",
+            "title": "Billing Currency",
+            "type": "string"
+          },
+          "charged_credits": {
+            "title": "Charged Credits",
+            "type": "integer"
+          },
+          "delivered_count": {
+            "title": "Delivered Count",
+            "type": "integer"
+          },
+          "desired_count": {
+            "title": "Desired Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "maximum_batch_size": {
+            "const": 5,
+            "default": 5,
+            "title": "Maximum Batch Size",
+            "type": "integer"
+          },
+          "partial_batch": {
+            "title": "Partial Batch",
+            "type": "boolean"
+          },
+          "refunded_credits": {
+            "title": "Refunded Credits",
+            "type": "integer"
+          },
+          "reserved_credits": {
+            "title": "Reserved Credits",
+            "type": "integer"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "title": "Scope",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "desired_count",
+          "delivered_count",
+          "charged_credits",
+          "reserved_credits",
+          "refunded_credits",
+          "partial_batch",
+          "scope",
+          "items"
+        ],
+        "title": "DiscoveryBatchView",
+        "type": "object"
+      },
+      "DiscoveryCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_service_quote_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Accepted Service Quote Id",
+            "type": "string"
+          },
+          "desired_count": {
+            "default": 5,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Desired Count",
+            "type": "integer"
+          },
+          "excluded_employers": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded Employers",
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 160,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_.:-]+$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Location",
+            "type": "string"
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPreferencesV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_within_days": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Within Days"
+          },
+          "remote_only": {
+            "default": false,
+            "title": "Remote Only",
+            "type": "boolean"
+          },
+          "resume_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "role": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_id",
+          "role",
+          "accepted_service_quote_id",
+          "idempotency_key"
+        ],
+        "title": "DiscoveryCreate",
+        "type": "object"
+      },
+      "DiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "desired_count": {
+            "default": 5,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Desired Count",
+            "type": "integer"
+          },
+          "excluded_employers": {
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Excluded Employers",
+            "type": "array"
+          },
+          "location": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Location",
+            "type": "string"
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchPreferencesV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_within_days": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Within Days"
+          },
+          "remote_only": {
+            "default": false,
+            "title": "Remote Only",
+            "type": "boolean"
+          },
+          "resume_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "role": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_id",
+          "role"
+        ],
+        "title": "DiscoveryRequest",
         "type": "object"
       },
       "EmployerAdmissionPolicy": {
@@ -1801,6 +2728,33 @@
           "package_digest"
         ],
         "title": "ExecuteCreate",
+        "type": "object"
+      },
+      "FreeCoreLimitView": {
+        "additionalProperties": false,
+        "properties": {
+          "max_input_bytes": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Input Bytes",
+            "type": "integer"
+          },
+          "max_source_records": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Source Records",
+            "type": "integer"
+          },
+          "per_account_30_days": {
+            "exclusiveMinimum": 0.0,
+            "title": "Per Account 30 Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "per_account_30_days",
+          "max_input_bytes",
+          "max_source_records"
+        ],
+        "title": "FreeCoreLimitView",
         "type": "object"
       },
       "GoogleEnrollment": {
@@ -2285,6 +3239,32 @@
       },
       "LearningStrategyRequest": {
         "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
           "match_id": {
             "title": "Match Id",
             "type": "integer"
@@ -2310,6 +3290,18 @@
           "company": {
             "title": "Company",
             "type": "string"
+          },
+          "credit_execution": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Execution"
           },
           "current_score": {
             "title": "Current Score",
@@ -4194,8 +5186,176 @@
         "title": "PurchaseQuoteAcceptance",
         "type": "object"
       },
+      "PurchaseQuoteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 160,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "sku": {
+            "enum": [
+              "starter_pass",
+              "growth_pass",
+              "scale_pass"
+            ],
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sku",
+          "idempotency_key"
+        ],
+        "title": "PurchaseQuoteRequest",
+        "type": "object"
+      },
+      "PurchaseQuoteView": {
+        "additionalProperties": false,
+        "properties": {
+          "amount_minor": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "auto_renews": {
+            "const": false,
+            "default": false,
+            "title": "Auto Renews",
+            "type": "boolean"
+          },
+          "campaign": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CampaignView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalog_version": {
+            "title": "Catalog Version",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credits": {
+            "exclusiveMinimum": 0.0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "INR",
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "duration_days": {
+            "const": 30,
+            "default": 30,
+            "title": "Duration Days",
+            "type": "integer"
+          },
+          "eligible_services": {
+            "items": {
+              "$ref": "#/components/schemas/CreditServiceOfferView"
+            },
+            "title": "Eligible Services",
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pass_expires_at": {
+            "format": "date-time",
+            "title": "Pass Expires At",
+            "type": "string"
+          },
+          "quote_id": {
+            "title": "Quote Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "unified-credits-v1",
+            "default": "unified-credits-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "sku": {
+            "enum": [
+              "starter_pass",
+              "growth_pass",
+              "scale_pass"
+            ],
+            "title": "Sku",
+            "type": "string"
+          },
+          "terms_version": {
+            "title": "Terms Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quote_id",
+          "sku",
+          "name",
+          "catalog_version",
+          "terms_version",
+          "amount_minor",
+          "credits",
+          "created_at",
+          "expires_at",
+          "pass_expires_at",
+          "server_time"
+        ],
+        "title": "PurchaseQuoteView",
+        "type": "object"
+      },
       "RagAskRequest": {
         "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
           "job_match_id": {
             "title": "Job Match Id",
             "type": "integer"
@@ -4256,6 +5416,18 @@
             ],
             "title": "Confidence",
             "type": "string"
+          },
+          "credit_execution": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Execution"
           },
           "mode": {
             "default": "direct",
@@ -4689,6 +5861,45 @@
         "title": "ResetRequested",
         "type": "object"
       },
+      "ResumeEnrichmentRequest": {
+        "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resume_id"
+        ],
+        "title": "ResumeEnrichmentRequest",
+        "type": "object"
+      },
       "ResumeListItem": {
         "properties": {
           "created_at": {
@@ -5061,6 +6272,32 @@
       },
       "RewriteBulletsRequest": {
         "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
           "job_description": {
             "title": "Job Description",
             "type": "string"
@@ -5084,6 +6321,26 @@
       },
       "RewriteBulletsResponse": {
         "properties": {
+          "credit_execution": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Execution"
+          },
+          "evidence_links": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence Links",
+            "type": "array"
+          },
           "rewritten_bullets": {
             "items": {
               "type": "string"
@@ -5497,6 +6754,18 @@
       "SearchSummary": {
         "description": "Saved search metadata, including the original query and complete quote.",
         "properties": {
+          "billing_currency": {
+            "anyOf": [
+              {
+                "const": "credits",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Currency"
+          },
           "charged_credits": {
             "title": "Charged Credits",
             "type": "integer"
@@ -5767,6 +7036,98 @@
           "settled_at"
         ],
         "title": "ServiceCreditOperation",
+        "type": "object"
+      },
+      "ServiceQuoteView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credits": {
+            "exclusiveMinimum": 0.0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "deliverable": {
+            "title": "Deliverable",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "input_fingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Input Fingerprint",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "enhanced",
+              "native"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "operation": {
+            "title": "Operation",
+            "type": "string"
+          },
+          "quote_id": {
+            "title": "Quote Id",
+            "type": "string"
+          },
+          "route_id": {
+            "title": "Route Id",
+            "type": "string"
+          },
+          "route_version": {
+            "title": "Route Version",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "unified-service-quote-v1",
+            "default": "unified-service-quote-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "server_time": {
+            "format": "date-time",
+            "title": "Server Time",
+            "type": "string"
+          },
+          "supported_limits": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Supported Limits",
+            "type": "object"
+          },
+          "tariff_version": {
+            "title": "Tariff Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quote_id",
+          "operation",
+          "input_fingerprint",
+          "route_id",
+          "route_version",
+          "mode",
+          "tariff_version",
+          "credits",
+          "deliverable",
+          "supported_limits",
+          "created_at",
+          "expires_at",
+          "server_time"
+        ],
+        "title": "ServiceQuoteView",
         "type": "object"
       },
       "SkillRoiItem": {
@@ -6045,6 +7406,63 @@
           "reason"
         ],
         "title": "SourceStateUpdate",
+        "type": "object"
+      },
+      "SynchronousReuseView": {
+        "properties": {
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "reused_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reused_run",
+          "result"
+        ],
+        "title": "SynchronousReuseView",
+        "type": "object"
+      },
+      "SynchronousServiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": true,
+            "title": "Input",
+            "type": "object"
+          },
+          "operation": {
+            "enum": [
+              "resume_enrichment",
+              "bullet_rewrite",
+              "enhanced_qa",
+              "learning_strategy"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "SynchronousServiceRequest",
         "type": "object"
       },
       "TailoringFailureGuidance": {
@@ -10466,6 +11884,27 @@
         ]
       }
     },
+    "/api/public/credits/catalog": {
+      "get": {
+        "operationId": "public_catalog_api_public_credits_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditCatalogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Public Catalog",
+        "tags": [
+          "public-credits"
+        ]
+      }
+    },
     "/api/public/optimize_bullet": {
       "post": {
         "description": "Check wording and quantity mentions; preserve every candidate claim.",
@@ -10959,6 +12398,61 @@
           }
         ],
         "summary": "Get Resume",
+        "tags": [
+          "resume"
+        ]
+      }
+    },
+    "/api/resume/{resume_id}/enrich": {
+      "post": {
+        "operationId": "enrich_saved_resume_api_resume__resume_id__enrich_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resume_id",
+            "required": true,
+            "schema": {
+              "title": "Resume Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeEnrichmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Enrich Saved Resume",
         "tags": [
           "resume"
         ]
@@ -12331,6 +13825,771 @@
         "summary": "Delete Contact",
         "tags": [
           "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/credits/analysis-reuse": {
+      "post": {
+        "description": "Quote preflight reuses only the current contract; legacy load is explicit.",
+        "operationId": "analysis_reuse_api_v1_credits_analysis_reuse_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_legacy",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Legacy",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisReuseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Analysis Reuse",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/availability": {
+      "get": {
+        "operationId": "availability_api_v1_credits_availability_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditAvailabilityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Availability",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/catalog": {
+      "get": {
+        "operationId": "catalog_api_v1_credits_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditCatalogView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Catalog",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/discovery-batches": {
+      "post": {
+        "operationId": "create_discovery_batch_api_v1_credits_discovery_batches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryBatchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Discovery Batch",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/discovery-batches/{search_id}": {
+      "get": {
+        "operationId": "discovery_batch_status_api_v1_credits_discovery_batches__search_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "search_id",
+            "required": true,
+            "schema": {
+              "title": "Search Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryBatchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Discovery Batch Status",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/discovery-batches/{search_id}/cancel": {
+      "post": {
+        "operationId": "cancel_discovery_batch_api_v1_credits_discovery_batches__search_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "search_id",
+            "required": true,
+            "schema": {
+              "title": "Search Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryBatchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Discovery Batch",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/discovery-quotes": {
+      "post": {
+        "operationId": "discovery_quote_api_v1_credits_discovery_quotes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 160,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceQuoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Discovery Quote",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/history": {
+      "get": {
+        "operationId": "history_api_v1_credits_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditHistoryView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "History",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/orders": {
+      "post": {
+        "operationId": "create_order_api_v1_credits_orders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCreditOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditCheckoutView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Order",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/orders/{reference}": {
+      "get": {
+        "operationId": "order_status_api_v1_credits_orders__reference__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "title": "Reference",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditOrderStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Order Status",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/purchase-quotes": {
+      "post": {
+        "operationId": "purchase_quote_api_v1_credits_purchase_quotes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseQuoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Purchase Quote",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/recent-order": {
+      "get": {
+        "operationId": "recent_order_api_v1_credits_recent_order_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CreditOrderStatusView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Recent Order Api V1 Credits Recent Order Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Recent Order",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/service-quotes": {
+      "post": {
+        "operationId": "analysis_quote_api_v1_credits_service_quotes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalysisRunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceQuoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Analysis Quote",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/synchronous-reuse": {
+      "post": {
+        "operationId": "synchronous_reuse_api_v1_credits_synchronous_reuse_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 160,
+                  "minLength": 8,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SynchronousServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SynchronousReuseView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Synchronous Reuse",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/synchronous-service-quotes": {
+      "post": {
+        "operationId": "synchronous_quote_api_v1_credits_synchronous_service_quotes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 160,
+              "minLength": 8,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SynchronousServiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceQuoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Synchronous Quote",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/wallet": {
+      "get": {
+        "operationId": "wallet_api_v1_credits_wallet_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditWalletView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Wallet",
+        "tags": [
+          "credits"
         ]
       }
     },

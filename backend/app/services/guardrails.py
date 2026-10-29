@@ -44,6 +44,14 @@ def billable_operation(
     if amount < 0:
         raise ValueError("analysis-unit reservation cannot be negative")
 
+    from ..domains.credits.runtime import requires_unified_billing
+
+    if amount and requires_unified_billing(db, user_id):
+        raise HTTPException(409, detail={
+            "code": "service_quote_requires_review", "run_created": False,
+            "message": "Use the reviewed credit quote for this service. This legacy route did not start work or charge analysis units.",
+        })
+
     from .generation_gate import check_generation_admission
 
     check_generation_admission(operation, input_payload)

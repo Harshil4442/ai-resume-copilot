@@ -161,7 +161,16 @@ class JobMatchHistoryResponse(BaseModel):
 # -------------------------
 # Match-specific learning strategy
 # -------------------------
-class LearningStrategyRequest(BaseModel):
+class SynchronousAcceptance(BaseModel):
+    accepted_service_quote_id: str | None = Field(default=None, min_length=5, max_length=64)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+
+
+class ResumeEnrichmentRequest(SynchronousAcceptance):
+    resume_id: int
+
+
+class LearningStrategyRequest(SynchronousAcceptance):
     match_id: int
     mode: Literal["curated", "enhanced"] = "curated"
 
@@ -199,6 +208,7 @@ class LearningTimelineItem(BaseModel):
     deliverable: str
 
 class LearningStrategyResponse(BaseModel):
+    credit_execution: dict | None = None
     match_id: int
     job_title: str
     company: str
@@ -219,7 +229,7 @@ class RagMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
 
-class RagAskRequest(BaseModel):
+class RagAskRequest(SynchronousAcceptance):
     job_match_id: int
     question: str = Field(min_length=2, max_length=1000)
     resume_id: Optional[int] = None
@@ -227,6 +237,7 @@ class RagAskRequest(BaseModel):
     mode: Literal["basic", "enhanced"] = "basic"
 
 class RagAskResponse(BaseModel):
+    credit_execution: dict | None = None
     answer: str
     confidence: Literal["high", "medium", "low"] = "medium"
     suggested_followups: List[str] = Field(default_factory=list)
@@ -312,14 +323,16 @@ class MarketAnalyzeResponse(BaseModel):
 # -------------------------
 # LLM helpers
 # -------------------------
-class RewriteBulletsRequest(BaseModel):
+class RewriteBulletsRequest(SynchronousAcceptance):
     resume_id: int
     job_description: str
     tone: str = "concise"
 
 class RewriteBulletsResponse(BaseModel):
+    credit_execution: dict | None = None
     rewritten_bullets: List[str]
     summary: str
+    evidence_links: list[dict] = Field(default_factory=list)
 
 class InterviewQuestionsRequest(BaseModel):
     job_title: str

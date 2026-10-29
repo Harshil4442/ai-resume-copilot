@@ -109,7 +109,9 @@ class RedisCoordinator:
                                       permit.token, self.lease_ms, self.cooldown_ms,
                                       self.minimum_ms, self.minimum_ms)
             status, delay = int(result[0]), int(result[1])
-        except (redis.RedisError, OSError, ValueError, TypeError, IndexError) as exc:
+        except (redis.RedisError, OSError, ValueError, TypeError, IndexError, AttributeError) as exc:
+            # A malformed Redis protocol handshake can leak AttributeError from
+            # redis-py instead of RedisError. Treat it as lost coordination.
             raise PacingError("host_pacing_unavailable") from exc
         if status == -3:
             raise PacingError("host_pacing_configuration_invalid")

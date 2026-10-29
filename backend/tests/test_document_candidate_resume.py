@@ -37,7 +37,8 @@ def partial(tmp_path, monkeypatch):
             "source_archive_sha256": identity["source_archive_sha256"], "automatic_replay": False,
             "unknown_outcome": "reconcile_exact_native_object_and_build_only"},
         "build-create-started.json": {"nonce": identity["nonce"], "automatic_replay": False,
-            "request_sha256": digest(canonical(refresh.full_source_build_request(identity["nonce"], source)))},
+            "request_sha256": digest(canonical(refresh.full_source_build_request(
+                identity["nonce"], source, historical_profile=True)))},
         "build-acknowledged.json": {"nonce": identity["nonce"], "build_id": identity["build_id"],
             "operation_name": "operations/build/" + refresh.PROJECT + "/" + encoded, "automatic_replay": False}}
     values.update({name: canonical(value) + b"\n" for name, value in top.items()})

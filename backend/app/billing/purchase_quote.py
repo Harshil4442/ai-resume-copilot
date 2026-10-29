@@ -66,6 +66,8 @@ def product_quote(product: Any, catalog_version: str) -> PurchaseQuoteAcceptance
 
 def order_quote(order: Any) -> PurchaseQuoteAcceptance:
     """Use the purchased snapshot, including historical zero-AI service packs."""
+    if order.entitlement_kind == "credit_pass":
+        raise HTTPException(409, "Review this purchase using the unified credit order.")
     credits = order.entitlement_quantity if order.entitlement_kind in {"credit_bundle", "job_service_credits"} else 0
     units = order.entitlement_quantity if order.entitlement_kind == "analysis_units" else 0
     if order.entitlement_kind == "credit_bundle":

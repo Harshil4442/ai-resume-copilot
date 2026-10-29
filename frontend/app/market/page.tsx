@@ -5,6 +5,13 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
+import { useQuery } from "@tanstack/react-query";
+import { AnalysisRunFeedback } from "../../components/AnalysisRunFeedback";
+import { QuotedAnalysisReview } from "../../components/billing/QuotedAnalysisReview";
+import { creditAvailabilityOptions } from "../../lib/unifiedCreditClient";
+import { useQuotedAnalysis } from "../../lib/useQuotedAnalysis";
+import { useProgressQuery } from "../../lib/useProgressQuery";
+import type { AnalysisRun } from "../../lib/career";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { trackEvent } from "../../lib/analytics";
@@ -36,9 +43,35 @@ export default function MarketPage() {
   const [resumeId, setResumeId] = useState("");
   const [maxResults, setMaxResults] = useState(50);
   const [postedWithinDays, setPostedWithinDays] = useState(30);
-  const [data, setData] = useState<MarketAnalyzeResponse | null>(null);
+  const [legacyData, setData] = useState<MarketAnalyzeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const availability = useQuery(creditAvailabilityOptions());
+  const pricingKnown = availability.isSuccess && availability.data !== null;
+  const unifiedServices = Boolean(availability.data?.catalog_enabled || availability.data?.execution_enabled);
+  const input = { target_role: targetRole, location, country_code: countryCode, experience_level: experienceLevel,
+    remote: remote === "any" ? null : remote === "remote", resume_id: resumeId ? Number(resumeId) : null,
+    max_results: maxResults, posted_within_days: postedWithinDays };
+  const selectedResume = resumes.find((resume) => resume.id === Number(resumeId));
+  const quotedAction = useQuotedAnalysis({
+    request: { operation: "market_analysis", input }, selectionKey: JSON.stringify(input), availability: availability.data,
+    context: { resume: selectedResume ? { id: selectedResume.id, filename: selectedResume.filename } : undefined,
+      details: [{ label: "Target role", value: targetRole }, { label: "Location", value: `${location} · ${countryCode}` },
+        { label: "Sample requested", value: `Up to ${maxResults} listings from the last ${postedWithinDays} days` },
+        { label: "Experience and work mode", value: `${experienceLevel || "Any experience"} · ${remote}` }] },
+    onRun: (run) => { setRunId(run.id); setData(null); },
+  });
+  const run = useProgressQuery({ queryKey: ["analysis-run", runId], enabled: Boolean(runId),
+    queryFn: ({ signal }) => apiGet<AnalysisRun>(`/v1/analysis-runs/${runId}`, signal),
+    active: (value) => !value || !["succeeded", "failed", "cancelled"].includes(value.status) });
+  const result = useQuery({ queryKey: ["analysis-result", runId], enabled: run.data?.status === "succeeded",
+    queryFn: () => apiGet<{ result: MarketAnalyzeResponse }>(`/v1/analysis-runs/${runId}/result`) });
+  const data = result.data?.result ?? legacyData;
+  const running = loading || quotedAction.pending || Boolean(runId && (!run.data || !["succeeded", "failed", "cancelled"].includes(run.data.status)));
+  useEffect(() => {
+    if (run.data && ["succeeded", "failed", "cancelled"].includes(run.data.status)) window.dispatchEvent(new Event("refresh_unified_credits"));
+  }, [run.data]);
 
   useEffect(() => {
     apiGet<{ resumes: ResumeItem[] }>("/resume/list")
@@ -56,6 +89,8 @@ export default function MarketPage() {
 
   async function analyze(event: React.FormEvent) {
     event.preventDefault();
+    if (unifiedServices) { quotedAction.requestQuote(); return; }
+    if (!pricingKnown) return;
     setError(null);
     setData(null);
     setLoading(true);
@@ -113,15 +148,19 @@ export default function MarketPage() {
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Sample size<input className="field-control" type="number" min="5" max="100" value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} /></label>
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Days<input className="field-control" type="number" min="1" max="365" value={postedWithinDays} onChange={(event) => setPostedWithinDays(Number(event.target.value))} /></label>
               </div>
-              <Button type="submit" className="mt-2 w-full" disabled={loading || !targetRole.trim()}>{loading ? <LoaderCircle size={16} className="animate-spin" /> : <BarChart3 size={16} />}{loading ? "Analyzing..." : "Analyze demand"}</Button>
-              <p className="text-center text-xs text-muted-foreground">5 analysis units</p>
+              <Button type="submit" className="mt-2 w-full" disabled={!pricingKnown || running || Boolean(quotedAction.review) || (unifiedServices && !quotedAction.available) || !targetRole.trim()}>{running ? <LoaderCircle size={16} className="animate-spin" /> : <BarChart3 size={16} />}{running ? "Analyzing..." : unifiedServices ? "Review market report charge" : "Analyze demand"}</Button>
+              <p className="text-center text-xs text-muted-foreground">{!pricingKnown ? "Checking service availability…" : unifiedServices ? quotedAction.available ? "Review the credit charge and supported sample before starting." : "Market reports are not currently available for credit execution." : "5 legacy analysis units"}</p>
             </div>
           </form>
 
           <div className="min-w-0">
+            {unifiedServices ? <div className="mb-5"><QuotedAnalysisReview action={quotedAction} /></div> : null}
+            <AnalysisRunFeedback run={run.data} />
+            {run.pollingPaused ? <div role="status" className="my-4 space-y-2 text-sm"><p>Automatic progress checks are paused. Checking status does not start another report.</p><Button variant="secondary" onClick={() => void run.refetch()} disabled={run.isFetching}>Check report status</Button></div> : null}
+            {result.isError ? <div role="alert" className="my-4 space-y-2 text-sm"><p>The saved report could not be loaded.</p><Button variant="secondary" onClick={() => void result.refetch()}>Retry loading report</Button></div> : null}
             {error ? <div className="flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-coral" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
-            {loading ? <div className="flex min-h-80 items-center justify-center border-y border-border text-sm text-muted-foreground"><LoaderCircle size={20} className="mr-3 animate-spin text-primary" /> Sampling recent listings and normalizing skills</div> : null}
-            {!loading && !data ? <EmptyState icon={Globe2} title="Run a focused market sample" description="Choose a role and location to compare current source coverage, skill demand, and resume evidence." /> : null}
+            {running ? <div className="flex min-h-80 items-center justify-center border-y border-border text-sm text-muted-foreground"><LoaderCircle size={20} className="mr-3 animate-spin text-primary" /> Sampling recent listings and normalizing skills</div> : null}
+            {!running && !data && !quotedAction.review && !runId ? <EmptyState icon={Globe2} title="Run a focused market sample" description="Choose a role and location to compare current source coverage, skill demand, and resume evidence." /> : null}
 
             {data ? (
               <div className="space-y-10">

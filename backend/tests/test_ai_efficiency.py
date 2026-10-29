@@ -20,6 +20,12 @@ from sqlalchemy.pool import StaticPool
 from starlette.requests import Request
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    # The generation transports in this module are fully synthetic.
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def test_bounded_skills_preserve_source_spans_and_exclude_negated_mentions():
     text = 'Skills: JavaScript, C++, R, Python\nI go to work and render reports.\nNo experience with Java.\nWorked with Kubernetes.'
     mentions = extract_skill_mentions(text)

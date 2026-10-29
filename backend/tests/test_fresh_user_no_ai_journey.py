@@ -679,22 +679,21 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     with factory() as db:
         assert db.query(core.ModelCallEvent).count() == 0
         runs = db.query(core.AnalysisRun).filter_by(user_id=user["id"]).all()
-        assert len(runs) == 3
+        assert len(runs) == 2
         assert {run.operation for run in runs} == {
             "job_match",
             "interview_questions",
-            "match_question",
         }
         assert all(
             run.generation_attempt_count == 0 and run.model_cost_quote is None for run in runs
         )
         assert all(run.usage_state == "committed" and run.committed_units == 1 for run in runs)
-        assert db.get(core.User, user["id"]).ai_credits == 49
+        assert db.get(core.User, user["id"]).ai_credits == 50
         assert (
             sum(item.amount for item in db.query(core.UsageEvent).filter_by(
                 user_id=user["id"], source_type="analysis_run"
             ))
-            == -3
+            == -2
         )
         grants = db.query(core.UsageEvent).filter_by(
             user_id=user["id"], source_type="payment_order", event_type="grant"

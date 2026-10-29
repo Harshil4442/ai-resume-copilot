@@ -80,11 +80,12 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
       const response = await labPage.goto(`${baseURL}${path}`, { waitUntil: "load" });
       responseStatus = response?.status() ?? null;
       expect(response?.status()).toBe(200);
-      await expect(labPage.locator("h1")).toHaveCount(1);
+      const heading = labPage.getByRole("heading", { level: 1 });
+      await expect(heading).toHaveCount(1);
       await labPage.evaluate(() => document.fonts.ready);
       // The CI runner can finish navigation before the font swap and hydration paint.
       // Keep the visible-heading gate, but allow that first paint a bounded interval.
-      await expect(labPage.locator("h1")).toBeVisible({ timeout: 15_000 });
+      await expect(heading).toBeVisible({ timeout: 15_000 });
       // Fixed observation window captures initial rendering/animation after load.
       await labPage.waitForTimeout(5000);
       const beforeInteraction = await labPage.evaluate(() => {
@@ -182,7 +183,7 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
       "Sampled trusted click Event Timing is not INP", "Loopback excludes GCP/Vercel/network/mobile-CPU latency"], measurements };
 }
 
-test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed manual handoff", async ({ page, context, baseURL }) => {
+test("fresh candidate and legacy checkout recovery: real Chromium → BFF → API → SQL, no AI and reviewed manual handoff", async ({ page, context, baseURL }) => {
   test.skip(!process.env.COLD_BROWSER_FRONTEND_URL, "Run only through the disposable Python orchestrator");
   const external: string[] = [];
   const failures: string[] = [];
@@ -262,21 +263,38 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled();
   const initialCatalog = await request.get(`${baseURL}/api/backend/v1/employer-jobs/catalog`);
   expect((await initialCatalog.json()).balance).toBe(0);
+  // Historical-order fixture: the new UI deliberately does not sell dual-wallet packs.
+  // Create one original order through the real authenticated API, then exercise
+  // only its user-reviewed recovery in the UI. This is not new unified-sales proof.
+  const legacyCatalogResponse = await request.get(`${baseURL}/api/backend/billing/config`);
+  expect(legacyCatalogResponse.ok()).toBeTruthy();
+  const legacyCatalog = await legacyCatalogResponse.json();
+  const legacyProduct = legacyCatalog.products.find((product: { sku: string }) => product.sku === "starter_bundle");
+  expect(legacyProduct).toMatchObject({ amount_minor: 64900, currency: "INR", job_service_credits: 100, analysis_units: 2 });
+  const acceptedQuote = { catalog_version: legacyCatalog.catalog_version, amount_minor: legacyProduct.amount_minor,
+    currency: legacyProduct.currency, job_service_credits: legacyProduct.job_service_credits, analysis_units: legacyProduct.analysis_units };
+  const seededOrderResponse = await request.post(`${baseURL}/api/backend/billing/orders`, {
+    data: { sku: "starter_bundle", billing_country: "IN", accepted_quote: acceptedQuote, idempotency_key: "cold-browser-original-legacy-order" }, headers: { Origin: baseURL! },
+  });
+  expect(seededOrderResponse.ok()).toBeTruthy();
+  const seededOrder = await seededOrderResponse.json();
+  expect(seededOrder.accepted_quote).toEqual(acceptedQuote);
   await page.goto("/billing");
-  // Explicitly select the credit pack, independently of billing deep links.
-  const pack = page.locator("article").filter({ hasText: "100 job service credits" });
-  await expect(pack).toBeVisible();
-  const select = pack.getByRole("button", { name: /^(Selected|Review purchase)$/ });
-  // The pack renders before account status resolves. Wait for its enabled
-  // action; an instantaneous count can skip selection while it says "Checking status".
-  await expect(select).toBeEnabled();
-  await select.click();
-  await expect(pack.getByRole("button", { name: "Selected", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Previous payment", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Original checkout terms")).toContainText("100 service credits + 2 analysis units");
+  await expect(page.getByRole("button", { name: "Review purchase", exact: true })).toHaveCount(0);
+  const resumeCheckout = page.getByRole("button", { name: "Resume original checkout", exact: true });
+  await expect(resumeCheckout).toBeDisabled();
   await page.getByRole("checkbox", { name: /I confirm my billing country/ }).check();
   const orderResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/billing/orders") && r.request().method() === "POST");
   const callbackResponse = page.waitForResponse((r) => r.url().includes("/checkout-result") && r.request().method() === "POST");
-  await page.getByRole("button", { name: /Pay with Razorpay/ }).click();
-  const checkout = await (await orderResponse).json();
+  await resumeCheckout.click();
+  const recoveryResponse = await orderResponse;
+  expect(recoveryResponse.request().postDataJSON()).toMatchObject({ order_reference: seededOrder.order_id, accepted_quote: acceptedQuote });
+  const checkout = await recoveryResponse.json();
+  expect(checkout.order_id).toBe(seededOrder.order_id);
+  expect(checkout.provider_order_id).toBe(seededOrder.provider_order_id);
+  expect(checkout.accepted_quote).toEqual(seededOrder.accepted_quote);
   const callback = await callbackResponse;
   expect(callback.ok()).toBeTruthy();
   expect((await callback.json()).fulfilled).toBe(false);
@@ -299,7 +317,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
   await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible();
   const paidProfile = await request.get(`${baseURL}/api/account/profile`);
   expect((await paidProfile.json()).ai_credits).toBe(52);
-  await page.getByRole("link", { name: "Continue to employer jobs", exact: true }).click();
+  await page.goto("/employer-jobs");
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));
   await page.getByLabel("Target role", { exact: true }).fill("Python Engineer");
   await page.getByLabel("Location", { exact: true }).fill("Bengaluru");
@@ -398,6 +416,7 @@ test("fresh candidate: real Chromium → BFF → API → SQL, no AI and reviewed
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
     real_nextauth: true, no_bff_interception: true, no_credits_before_webhook: true,
     finite_bundle_sku: "starter_bundle", purchased_analysis_units: 2, analysis_units_after_no_ai_work: 52,
+    legacy_order_created_by_fixture_api: true, legacy_order_recovery_via_ui: true, new_unified_purchase_proof: false,
     https_loopback_transport: true, secure_http_only_session_cookie: true,
     public_registration_projection: true, generic_auth_proxy_denied: true,
     stale_approval_rejected: true, cross_owner_denied: true, final_status: final.status,

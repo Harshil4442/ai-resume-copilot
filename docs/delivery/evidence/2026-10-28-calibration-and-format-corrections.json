@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-27T20:26:15.480677+00:00",
+  "scope": "Additional development evidence; no production deployment or paid qualification",
+  "source_base_commit": "fb4cd1c6748c6e803257b4c6bf535c5324237c64",
+  "ci": {
+    "run_id": 40572928236,
+    "source_commit": "fb4cd1c6748c6e803257b4c6bf535c5324237c64",
+    "jobs": [
+      "backend",
+      "frontend",
+      "browser-companion",
+      "security-and-container",
+      "cold-browser-journey"
+    ],
+    "all_passed": true,
+    "scope_limit": "Does not cover subsequent uncommitted changes"
+  },
+  "changes": {
+    "billing": "Original supported-service terms restored on resumed checkout; empty eligibility refuses payment",
+    "reuse": "Read-only saved-result lookup remains available when new generation is unavailable",
+    "documents": "Exact source-font guard implemented and independently corrected for duplicate-text occurrence binding, style overrides and inactive table conditions. Licensed Courier Prime bundle is candidate-only; accepted historic evidence preserved.",
+    "interview": "Prompt v6/validator v2 rejects common unconditional negative-experience inferences, preserves genuine conditionals and original bounded repair. Historical v5 calibration exports stay readable; old contracts cannot start new calls."
+  },
+  "input_preflight": {
+    "cases": 10,
+    "pages": 16,
+    "native_receipts_sha256": "e85fe8120903d312f33dde979aeb23e05e4837ecbf764adcee56b9338ed4b8e7",
+    "environment": "local macOS with pypdf, pdfplumber, Poppler and actual agent visual review",
+    "deployed_runtime_qualification": false
+  },
+  "calibration": {
+    "case_count": 10,
+    "generation_calls": 20,
+    "question_count_per_output": 8,
+    "runtime_succeeded": 20,
+    "settled_usage_receipts": 20,
+    "customer_debits": 0,
+    "maximum_model_envelope_usd_micros": 1085440,
+    "observed_model_cost_usd_micros": 92193,
+    "totals": {
+      "reference": {
+        "model": "gemini-3.6-flash",
+        "count": 10,
+        "cost_micros": 81825,
+        "input_tokens": 3237,
+        "output_tokens": 21172,
+        "max_cost_micros": 9468
+      },
+      "candidate": {
+        "model": "gemini-3.1-flash-lite",
+        "count": 10,
+        "cost_micros": 10368,
+        "input_tokens": 3237,
+        "output_tokens": 6369,
+        "max_cost_micros": 1099
+      }
+    },
+    "known_quality_issue": "Candidate synth-072 coaching infers no Playwright use from absence of supplied evidence; independent human reviews still pending.",
+    "reference_approved": false,
+    "human_reviews_completed": 0,
+    "retail_qualified": false,
+    "export_manifest_sha256": "f9a60adfa4a53b75d0360ce467c99edd9ab43504d6a46fc13e2d24b50f8cd860"
+  },
+  "review_package": {
+    "file": "output/review/HireWiz_Interview_Calibration_Review_20261028.zip",
+    "sha256": "8e76f8092c0ae97ad36cf66ae0d40c2edc8732e0cc9700673eb13b1022333e80",
+    "purpose": "Exploratory development review, not a release sign-off",
+    "independent_blank_sheets": 2,
+    "outputs": 20,
+    "scores_generated": 0
+  },
+  "production_changes": false,
+  "payment_activation": false,
+  "validation": {
+    "interview_focused_tests": 197,
+    "historical_runner_unit_and_local_postgres_tests": 24,
+    "font_fix_tests": 58,
+    "font_fix_subtests": 20,
+    "candidate_contract_tests": 460,
+    "monetary_environment_tests": 12,
+    "monetary_environment_subtests": 33,
+    "frontend_billing_and_reuse_tests": 77,
+    "counts_are_separate_overlapping_suites_not_additive": true,
+    "new_native_linux_render": "pending_new_CI",
+    "new_remote_CI": "pending_commit",
+    "live_v6_output_quality": "not_evaluated"
+  },
+  "candidate_document_policy_sha256": "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"
+}

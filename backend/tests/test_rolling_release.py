@@ -154,12 +154,92 @@ def test_full_joined_stage_then_workers_then_api_without_migration_or_retirement
     assert all((name, boundary.plan.pin(name).prior_revision) in boundary.revisions for name in rolling.release.SERVICES)
 
 
+def test_each_new_patch_has_a_fresh_global_proof(context, monkeypatch):
+    boundary, journal = context
+    original_patch = boundary.patch
+    proof_counts = []
+
+    def patch(service, body, mask):
+        proof_counts.append(len(boundary.gates))
+        return original_patch(service, body, mask)
+
+    monkeypatch.setattr(boundary, "patch", patch)
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    assert proof_counts == [1, 2, 3, 4, 5, 6]
+    assert len(boundary.gates) == 7  # The joined result has its own final proof.
+
+
+def test_checked_actions_reobserve_live_state_with_one_joined_proof(context):
+    boundary, journal = context
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    boundary.gates.clear()
+    boundary.health_checks.clear()
+
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    assert len(boundary.gates) == 1
+    assert len(boundary.health_checks) >= len(rolling.release.SERVICES)
+    assert len(boundary.writes) == 6
+
+    boundary.policies[API]["etag"] = "drifted-policy"
+    with pytest.raises(rolling.RollingDenied):
+        rolling.advance(boundary.plan, boundary, journal)
+    assert len(boundary.writes) == 6
+
+
+def test_checked_stage_does_not_bypass_global_gate_for_next_patch(context):
+    boundary, journal = context
+    first = boundary.plan.pin(API)
+    assert rolling.action(boundary.plan, boundary, journal, first, "stage")
+    assert journal.read("stage." + API + ".checked") is not None
+    assert len(boundary.writes) == 1
+
+    boundary.gates.clear()
+    boundary.finance_drift = True
+    next_service = rolling.release.SERVICES[1]
+    with pytest.raises(rolling.RollingDenied, match="financial"):
+        rolling.advance(boundary.plan, boundary, journal)
+    assert len(boundary.gates) == 1
+    assert len(boundary.writes) == 1
+    assert journal.read("stage." + next_service + ".started") is None
+
+
+def test_checked_only_advance_refuses_final_financial_drift(context):
+    boundary, journal = context
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    boundary.gates.clear()
+    boundary.finance_drift = True
+
+    with pytest.raises(rolling.RollingDenied, match="financial"):
+        rolling.advance(boundary.plan, boundary, journal)
+    assert len(boundary.gates) == 1
+    assert len(boundary.writes) == 6
+
+
+def test_checked_only_reconcile_keeps_one_joined_global_proof(context):
+    boundary, journal = context
+    assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"]
+    boundary.gates.clear()
+    boundary.health_checks.clear()
+
+    assert rolling.reconcile(boundary.plan, boundary, journal)["native_mutations"] == 0
+    assert len(boundary.gates) == 1
+    assert len(boundary.health_checks) == len(rolling.release.SERVICES)
+    assert len(boundary.writes) == 6
+
+    boundary.finance_drift = True
+    with pytest.raises(rolling.RollingDenied, match="financial"):
+        rolling.reconcile(boundary.plan, boundary, journal)
+    assert len(boundary.writes) == 6
+
+
 def test_pending_same_lro_is_polled_without_another_patch(context):
     boundary, journal = context
     boundary.pause = True
     first = rolling.advance(boundary.plan, boundary, journal)
     assert first["status"] == "same_native_operation_pending" and len(boundary.writes) == 1
+    boundary.gates.clear()
     assert rolling.advance(boundary.plan, boundary, journal) == first
+    assert len(boundary.gates) == 1  # A known ACK remains unresolved and needs a fresh proof.
     assert len(boundary.writes) == 1 and len(set(boundary.polls)) == 1
     boundary.pause = False
     for value in boundary.operations.values():
@@ -181,6 +261,21 @@ def test_unknown_ack_is_never_replayed_and_explicit_reconcile_starts_no_next_act
     assert len(boundary.writes) == 1
     assert rolling.advance(boundary.plan, boundary, journal)["rolling_release_complete"] is True
     assert len(boundary.writes) == 6
+
+
+def test_unknown_ack_reconcile_still_requires_global_proof(context):
+    boundary, journal = context
+    boundary.lose_ack = True
+    with pytest.raises(RuntimeError):
+        rolling.advance(boundary.plan, boundary, journal)
+    assert len(boundary.writes) == 1
+
+    boundary.gates.clear()
+    boundary.finance_drift = True
+    with pytest.raises(rolling.RollingDenied, match="financial"):
+        rolling.reconcile(boundary.plan, boundary, journal)
+    assert len(boundary.gates) == 1
+    assert len(boundary.writes) == 1
 
 
 def test_native_failed_operation_does_not_become_successful_resource_reconciliation(context):

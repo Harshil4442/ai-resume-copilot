@@ -89,6 +89,9 @@ def get_product(sku: str) -> CatalogProduct | None:
 
 
 def product_purchase_enabled(product: CatalogProduct, *, checkout_enabled: bool) -> bool:
+    from ..domains.credits.release import rollout_enabled
+    if rollout_enabled():
+        return False  # Historical callbacks remain valid; new dual-wallet sales stop.
     if not checkout_enabled or product.entitlement_kind != "credit_bundle":
         return False
     from .cost_policy import CostPolicyUnavailable, service_prices
@@ -100,6 +103,7 @@ def product_purchase_enabled(product: CatalogProduct, *, checkout_enabled: bool)
 
 
 def public_catalog(*, checkout_enabled: bool) -> dict:
+    from ..domains.credits.release import rollout_enabled
     from .cost_policy import CostPolicyUnavailable, service_prices
     try:
         prices = service_prices()
@@ -110,7 +114,7 @@ def public_catalog(*, checkout_enabled: bool) -> dict:
         prices = None
         cost_review = None
         availability = str(exc)
-    available = bool(checkout_enabled and prices)
+    available = bool(checkout_enabled and prices and not rollout_enabled())
     return {
         "catalog_version": CATALOG_VERSION,
         "market": "IN",

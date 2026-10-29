@@ -35,6 +35,13 @@ class AnalysisRunCreate(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
     accepted_quote: AnalysisQuoteAcceptance | None = None
+    accepted_service_quote_id: str | None = Field(default=None, min_length=5, max_length=64)
+
+    @model_validator(mode="after")
+    def one_purchase_contract(self):
+        if self.accepted_quote is not None and self.accepted_service_quote_id is not None:
+            raise ValueError("Review one billing contract for this operation")
+        return self
 
 
 class TailoringFailureGuidance(BaseModel):
@@ -51,6 +58,7 @@ class AnalysisRunResponse(BaseModel):
     status: str
     estimated_units: int
     committed_units: int
+    billing_currency: Literal["legacy_ai_units", "credits", "none"] = "legacy_ai_units"
     usage_state: str
     provider: str | None
     model: str | None
@@ -78,9 +86,15 @@ class AnalysisRunResponse(BaseModel):
         if isinstance(value, dict):
             data = dict(value)
             stored_message = data.pop("error_message", None)
+            funding = data.get("model_cost_quote") or {}
         else:
             data = {name: getattr(value, name) for name in cls.model_fields if hasattr(value, name)}
             stored_message = getattr(value, "error_message", None)
+            funding = getattr(value, "model_cost_quote", None) or {}
+        if funding.get("billing_currency") == "credits":
+            data["billing_currency"] = "credits"
+        elif data.get("estimated_units") == 0:
+            data["billing_currency"] = "none"
         data["failure_guidance"] = public_tailoring_guidance(
             data.get("operation", ""), data.get("status", ""), stored_message, data.get("error_code"),
         )

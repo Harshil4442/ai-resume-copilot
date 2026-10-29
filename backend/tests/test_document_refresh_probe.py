@@ -805,6 +805,9 @@ def test_official_generated_sdk_requests_use_only_concrete_service_adapter_route
     sdk = Path("/opt/homebrew/share/google-cloud-sdk/lib")
     if not (sdk / "googlecloudsdk").is_dir():
         pytest.skip("optional actual installed SDK wiring control")
+    # Clients prepends the SDK's vendored libraries; keep later tests on their
+    # original import path instead of leaking SDK dependencies into the suite.
+    monkeypatch.setattr(p.sys, "path", list(p.sys.path))
     seen = []
     j, ex = completed()
     runtime_rows = runtime()

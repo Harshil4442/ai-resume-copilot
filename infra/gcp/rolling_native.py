@@ -1,7 +1,7 @@
 """Native-only adapter for a reviewed schema18 rolling release.
 
 No admission-opening, migration, fresh transfer, role/key/password change, secret
-publication, IAM grant, revision deletion, arbitrary transport/plugin, or retry.
+publication, IAM grant, revision deletion, arbitrary transport/plugin, or write retry.
 This candidate has not been used against GCP or a database.
 """
 from __future__ import annotations
@@ -33,16 +33,79 @@ FINANCIAL_TABLES = ("payment_orders", "payment_transactions", "payment_refunds",
     "model_cost_liabilities", "model_call_events", "analysis_runs")
 
 
+def _transient_get_error(error):
+    """Require a typed transient cause; auth text alone never authorizes retry."""
+    import ssl
+
+    import requests.exceptions as request_errors
+    from google.auth.exceptions import RefreshError, TransportError
+    from urllib3.exceptions import SSLError as Urllib3SSLError
+
+    if native._transient_get_error(error):
+        return True
+    if type(error) is not TransportError:
+        return False
+    pending, seen, transient = [error], set(), False
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if len(seen) > 16 or isinstance(current, (ssl.SSLError, Urllib3SSLError,
+                request_errors.SSLError, request_errors.ProxyError, RefreshError)):
+            return False
+        if isinstance(current, Exception):
+            transient = transient or native._transient_get_error(current)
+        if isinstance(current, BaseException):
+            pending.extend(current.args)
+            pending.extend((current.__cause__, current.__context__, getattr(current, "reason", None)))
+    return transient
+
+
+def _stock_http():
+    """Fresh stock identity transport; only transient refresh failures may retry."""
+    deadline = time.monotonic() + 15
+    for attempt in range(3):
+        rolling.need(time.monotonic() < deadline, "rolling_native_read_deadline_reconcile_only")
+        try:
+            # A failed constructor cannot carry a partly unwrapped auth session
+            # into the next attempt. No resource client or write exists yet.
+            value = native.SDKGoogleReads(host_auth.SDK, host_auth.ACCOUNT)._http()
+        except Exception as error:
+            rolling.need(time.monotonic() < deadline, "rolling_native_read_deadline_reconcile_only")
+            if not _transient_get_error(error):
+                raise rolling.RollingDenied("rolling_native_authentication_unavailable") from None
+            if attempt == 2:
+                raise rolling.RollingDenied("rolling_native_read_transient_exhausted_reconcile_only") from None
+            delay = 0.1 * (2 ** attempt)
+            rolling.need(delay < deadline - time.monotonic(), "rolling_native_read_deadline_reconcile_only")
+            time.sleep(delay)
+        else:
+            if time.monotonic() >= deadline:
+                try:
+                    value.session.close()
+                except Exception:
+                    pass
+                raise rolling.RollingDenied("rolling_native_read_deadline_reconcile_only")
+            return value
+    raise rolling.RollingDenied("rolling_native_read_deadline_reconcile_only")
+
+
 class NativeRun:
     """Stock normal-manager auth; one physical PATCH send per explicitly armed call."""
+    SERVICES = release.SERVICES
+
     def __init__(self):
-        self.stock = native.SDKGoogleReads(host_auth.SDK, host_auth.ACCOUNT)._http()
+        self.stock = _stock_http()
         from apitools.base.py import encoding
         from googlecloudsdk.generated_clients.apis.run.v2 import run_v2_client, run_v2_messages
 
         self.encoding, self.messages = encoding, run_v2_messages
+        from apitools.base.py.exceptions import HttpError
+        self.http_error = HttpError
         self.connections = self.stock.connections
         session = self.stock.session
+        self._authorized_request = session.request
         session.trust_env, session.max_redirects = False, 0
         for adapter in session.adapters.values():
             adapter.max_retries = adapter.max_retries.__class__(total=0, connect=0, read=0, redirect=0, status=0)
@@ -59,7 +122,7 @@ class NativeRun:
                 rolling.need(request.method == "POST" and path == "/token" and not query)
             else:
                 rolling.need(target.hostname == "run.googleapis.com" and query.get("alt", ["json"]) == ["json"])
-                resources = {"/v2/" + rolling.PARENT + "/services/" + service for service in release.SERVICES}
+                resources = {"/v2/" + rolling.PARENT + "/services/" + service for service in self.SERVICES}
                 if request.method == "PATCH":
                     rolling.need(self.armed is not None)
                     assert self.armed is not None
@@ -95,24 +158,97 @@ class NativeRun:
         rolling.need(len(rolling.canonical(result)) <= 1048576)
         return result
 
+    def _get_once(self, kind, name):
+        """Only these fixed generated GET methods can enter the read retry loop."""
+        resources = {rolling.PARENT + "/services/" + service for service in self.SERVICES}
+        if kind == "service":
+            rolling.need(name in resources, "rolling_native_read_route_refused")
+            return self.client.projects_locations_services.Get(
+                self.messages.RunProjectsLocationsServicesGetRequest(name=name))
+        if kind == "revision":
+            rolling.need(any(re.fullmatch(re.escape(resource + "/revisions/")
+                         + r"[a-z0-9-]{1,63}", name) for resource in resources),
+                         "rolling_native_read_route_refused")
+            return self.client.projects_locations_services_revisions.Get(
+                self.messages.RunProjectsLocationsServicesRevisionsGetRequest(name=name))
+        rolling.need(kind == "operation" and rolling.OPERATION.fullmatch(name),
+                     "rolling_native_read_route_refused")
+        return self.client.projects_locations_operations.Get(
+            self.messages.RunProjectsLocationsOperationsGetRequest(name=name))
+
+    def _read_get(self, kind, name):
+        """Bound known transient GET failures; decoding/proofs and writes never retry."""
+        from google.auth.exceptions import RefreshError, TransportError
+
+        deadline = time.monotonic() + 15
+        for attempt in range(3):
+            rolling.need(time.monotonic() < deadline, "rolling_native_read_deadline_reconcile_only")
+            rolling.need(self.stock.session.request is self._authorized_request,
+                         "rolling_native_auth_wrapper_changed")
+            try:
+                value = self._get_once(kind, name)
+            except rolling.RollingDenied:
+                if self.stock.session.request is not self._authorized_request:
+                    self.stock.session.request = self._authorized_request
+                raise
+            except Exception as error:
+                # The stock SDK temporarily unwraps its authorized request during
+                # credential refresh. Its failure path lacks a finally; restore
+                # only the exact callable captured from that same stock session.
+                auth_error = isinstance(error, (RefreshError, TransportError))
+                changed = self.stock.session.request is not self._authorized_request
+                if changed:
+                    self.stock.session.request = self._authorized_request
+                    rolling.need(auth_error, "rolling_native_auth_wrapper_changed")
+                rolling.need(time.monotonic() < deadline, "rolling_native_read_deadline_reconcile_only")
+                status = error.status_code if isinstance(error, self.http_error) else None
+                if type(status) is int and status == 404 and kind == "revision":
+                    return None
+                if type(status) is int and status in {401, 403, 404}:
+                    code = {401: "rolling_native_read_unauthorized", 403: "rolling_native_read_permission_denied",
+                            404: "rolling_native_read_not_found"}[status]
+                    raise rolling.RollingDenied(code) from None
+                transient = (type(status) is int and status in {429, 502, 503, 504}
+                             or _transient_get_error(error))
+                if not transient:
+                    raise rolling.RollingDenied("rolling_native_read_unavailable") from None
+                if attempt == 2:
+                    raise rolling.RollingDenied("rolling_native_read_transient_exhausted_reconcile_only") from None
+                headers = {}
+                if isinstance(error, self.http_error):
+                    try:
+                        headers = {"Retry-After": next((value for key, value in error.response.items()
+                                   if key.lower() == "retry-after"), None)}
+                    except Exception:
+                        raise rolling.RollingDenied("rolling_native_read_retry_after_invalid") from None
+                try:
+                    delay = native._get_retry_delay(headers, attempt)
+                except release.ReleaseDenied:
+                    raise rolling.RollingDenied("rolling_native_read_retry_after_invalid") from None
+                rolling.need(delay < deadline - time.monotonic(),
+                             "rolling_native_read_deadline_reconcile_only")
+                time.sleep(delay)
+            else:
+                changed = self.stock.session.request is not self._authorized_request
+                if changed:
+                    self.stock.session.request = self._authorized_request
+                rolling.need(not changed, "rolling_native_auth_wrapper_changed")
+                rolling.need(time.monotonic() < deadline, "rolling_native_read_deadline_reconcile_only")
+                return value
+        raise rolling.RollingDenied("rolling_native_read_deadline_reconcile_only")
+
     def service(self, service):
-        rolling.need(service in release.SERVICES)
-        return self.decode(self.client.projects_locations_services.Get(
-            self.messages.RunProjectsLocationsServicesGetRequest(name=rolling.PARENT + "/services/" + service)))
+        rolling.need(service in self.SERVICES)
+        return self.decode(self._read_get("service", rolling.PARENT + "/services/" + service))
 
     def revision(self, service, name):
-        from apitools.base.py.exceptions import HttpNotFoundError
-        rolling.need(service in release.SERVICES)
+        rolling.need(service in self.SERVICES)
         name = rolling.short_revision(name, service)
-        try:
-            return self.decode(self.client.projects_locations_services_revisions.Get(
-                self.messages.RunProjectsLocationsServicesRevisionsGetRequest(
-                    name=rolling.PARENT + "/services/" + service + "/revisions/" + name)))
-        except HttpNotFoundError:
-            return None
+        value = self._read_get("revision", rolling.PARENT + "/services/" + service + "/revisions/" + name)
+        return None if value is None else self.decode(value)
 
     def patch(self, service, body, mask):
-        rolling.need(service in release.SERVICES and mask in {"template,traffic", "traffic"}
+        rolling.need(service in self.SERVICES and mask in {"template,traffic", "traffic"}
                      and self.armed is None and type(body) is dict
                      and body.get("name") == rolling.PARENT + "/services/" + service
                      and set(body) == ({"name", "etag", "traffic", "template"}
@@ -134,8 +270,7 @@ class NativeRun:
 
     def operation(self, name):
         rolling.need(rolling.OPERATION.fullmatch(name))
-        value = self.decode(self.client.projects_locations_operations.Get(
-            self.messages.RunProjectsLocationsOperationsGetRequest(name=name)))
+        value = self.decode(self._read_get("operation", name))
         result = {"name": value.get("name"), "done": value.get("done", False)}
         if value.get("error") is not None:
             result["error"] = {"native_failure": True}

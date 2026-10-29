@@ -426,7 +426,7 @@ def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
     return {
         "order_id": order.public_id,
         "provider_order_id": order.provider_order_id,
-        "checkout_available": bool(order.provider_order_id and order.status == "created"),
+        "checkout_available": bool(order.entitlement_kind != "credit_pass" and order.provider_order_id and order.status == "created"),
         "payment_reference": transaction.provider_payment_id if transaction else None,
         "sku": order.sku,
         "entitlement_kind": order.entitlement_kind,
@@ -459,6 +459,7 @@ def get_recent_order(
             PaymentOrder.user_id == current_user.id,
             PaymentOrder.provider == "razorpay",
             PaymentOrder.created_at >= cutoff,
+            PaymentOrder.entitlement_kind != "credit_pass",
         )
         .order_by(PaymentOrder.created_at.desc())
         .first()

@@ -23,6 +23,7 @@ function item(owner = state.owner): SearchResult {
 }
 function read(url: string) {
   const owner = state.owner;
+  if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
   if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
   if (url === "/resume/list") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
   if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
@@ -185,9 +186,11 @@ describe("employer page saved-search composition", () => {
     state.owner = "two"; state.session = { status: "authenticated", data: { user: { id: "two" } } };
     view.rerender(<SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>);
     expect(screen.queryByText("Python Engineer one")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Resume")).toHaveValue("");
-    expect(screen.getByLabelText("Target role")).toHaveValue("");
+    expect(screen.queryByLabelText("Resume")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Target role")).not.toBeInTheDocument();
     await screen.findByText("Python Engineer two");
+    expect(await screen.findByLabelText("Resume")).toHaveValue("");
+    expect(screen.getByLabelText("Target role")).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: /Python Engineer two/ }));
     await screen.findByRole("heading", { name: "Saved job for two" });
     await act(async () => { completeOldRead({ search: summary("one"), items: [item("one")], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "old" }); });
@@ -290,4 +293,23 @@ it.each([429, 503])("pauses hidden search polling and requires an explicit statu
     fireEvent.click(screen.getByRole("button", { name: "Retry search status" })); await tick(1);
     expect(progressReads).toBe(2); expect(state.post).toHaveBeenCalledTimes(1);
   } finally { visibility.mockRestore(); vi.useRealTimers(); }
+});
+
+it("does not fall back to a legacy paid search when credit availability is unknown", async () => {
+  state.get.mockImplementation((url: string) => url === "/v1/credits/availability" ? Promise.reject(new Error("Availability unavailable")) : read(url));
+  render(<EmployerJobsPage />, { wrapper: withClient() }); await screen.findByText("Python Engineer one");
+  expect(screen.queryByRole("button", { name: "Find jobs" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ })); await screen.findByRole("heading", { name: "Saved job for one" });
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("opens a saved unified batch through its free status endpoint without using legacy preparation", async () => {
+  const saved = { ...summary(), id: "search_unified", status: "completed", desired_count: 5, delivered_count: 1, charged_credits: 1,
+    scope: { billing_currency: "credits", price_quote: { pricing_unit: "completed_batch", maximum_credits: 1, maximum_results: 5 } } };
+  state.get.mockImplementation((url: string) => url.includes("/search-summaries?") ? Promise.resolve({ items: [saved], next_cursor: null })
+    : url.endsWith("/discovery-batches/search_unified") ? Promise.resolve({ id: saved.id, status: "completed", billing_currency: "credits", desired_count: 5, delivered_count: 1,
+      charged_credits: 1, reserved_credits: 0, refunded_credits: 0, partial_batch: true, maximum_batch_size: 5, scope: saved.scope, items: [item()] }) : read(url));
+  render(<EmployerJobsPage />, { wrapper: withClient() }); await screen.findByText("Python Engineer one");
+  fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ })); await screen.findByText("1 credit charged · 0 held · 0 restored");
+  expect(state.get.mock.calls.some(([url]) => String(url).includes("/search-preparations/"))).toBe(false); expect(state.post).not.toHaveBeenCalled();
 });

@@ -401,9 +401,10 @@ def delete_account(
 
     db.query(ModelCallEvent).filter(ModelCallEvent.user_id == uid).delete(synchronize_session=False)
     from ..domains.analysis.models import AnalysisRequestKey
+    from ..domains.credits.privacy import erase_owner_credit_links
     from ..domains.dispatch.models import DispatchOutbox
     from ..domains.employer.service import delete_account_data
-
+    erase_owner_credit_links(db, user_id=uid)
     delete_account_data(db, uid)
     run_ids = [identity for (identity,) in db.query(AnalysisRun.id).filter_by(user_id=uid).all()]
     if run_ids:
@@ -450,6 +451,7 @@ def export_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from ..domains.credits.privacy import export_account_data as export_credit_account_data
     from ..domains.employer.service import export_account_data
 
     uid = current_user.id
@@ -482,6 +484,7 @@ def export_account(
         "analysis_runs": _rows(db, AnalysisRun, uid),
         "usage_events": _rows(db, UsageEvent, uid),
         "employer_services": export_account_data(db, uid),
+        "unified_credits": export_credit_account_data(db, uid),
         "model_call_events": _rows(db, ModelCallEvent, uid),
         "payment_orders": [
             {

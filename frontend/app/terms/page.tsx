@@ -76,14 +76,16 @@ export default function TermsOfService() {
           <h2 className="font-display text-2xl font-normal text-foreground mb-4">4. Public price and paid access</h2>
           <p>
             Current paid products are shown on the public <Link href="/pricing" className="text-primary hover:underline">Pricing page</Link>.
-            HireWiz offers three finite prepaid packs containing the displayed job service credits and separate
-            AI analysis units. No pack grants unlimited usage or creates a subscription or automatic renewal.
-            Accepted older orders retain their purchased terms. Search and application prices are shown separately
-            before you start; unused search reservations are returned, and application credits are committed only
-            after a verified complete submission. Unknown outcomes retain the displayed reservation until reconciled.
+            When available, new credit passes contain the displayed number of credits in one wallet for eligible
+            services. They are finite, 30-day prepaid passes with no subscription or automatic renewal.
+            Accepted older orders and balances retain their purchased terms, including any original no-expiry promise.
+            Credit-pass terms version credit-pass-2026-10-27-v1 applies only where that version is shown and accepted
+            in the purchase review. It does not retrospectively change an earlier purchase.
           </p>
           <ul className="list-disc pl-6 mt-4 space-y-2">
-            <li>The final order summary shows the product, INR total, tax treatment, access duration or credit quantity, and renewal status before payment.</li>
+            <li>The final purchase review shows the product, total INR payable including applicable taxes, credit quantity, minimum guaranteed expiry, eligible services and no automatic renewal.</li>
+            <li>A server-issued purchase quote holds its price for up to 15 minutes, including when a promotional campaign ends during that period. A fresh quote requires another review.</li>
+            <li>New pass credits remain usable for at least 30 full days after verified captured payment. Later confirmation can extend, but cannot shorten, the minimum expiry shown before payment. The final expiry appears in billing.</li>
             <li>You authorize the payment processor used for checkout to charge the payment method you select.</li>
             <li>HireWiz does not collect or store raw card details, CVV, UPI PIN, or bank-login credentials.</li>
             <li>Access is granted only after payment confirmation and may be paused for fraud, mismatch, refund, or dispute review.</li>
@@ -96,26 +98,36 @@ export default function TermsOfService() {
             Nothing in these Terms limits rights that cannot lawfully be waived.
           </p>
           <p className="mt-4">
-            Paid service credits are account-specific feature allowances, separate from complimentary analysis units.
-            They cannot be transferred, withdrawn, or used outside HireWiz. They do not automatically expire while
-            the account is open. A refunded pack removes the corresponding credits; credits already spent can leave
-            a negative balance that prevents new paid operations until resolved. Refund rules apply to the purchase.
+            Credits are account-specific software allowances, not money, stored value or a payment instrument.
+            They cannot be transferred, withdrawn, resold or used outside HireWiz. New pass credits expire at their
+            disclosed timestamp; eligible balances are used in expiry order. Legacy service credits and analysis
+            units remain separately identified on their original conditions until a reviewed migration protects
+            those purchased rights. A purchase refund removes the corresponding allowance; already-spent credits
+            can require a balance adjustment that pauses new paid operations until resolved.
           </p>
         </section>
 
         <section>
-          <h2 className="font-display text-2xl font-normal text-foreground mb-4">5. Analysis units</h2>
+          <h2 className="font-display text-2xl font-normal text-foreground mb-4">5. Service charges, reuse and restoration</h2>
           <p>
-            New free accounts receive 50 complimentary analysis units for specified AI-assisted operations. The
-            unit cost is displayed before a metered operation starts. Units are a feature-use allowance only: they are
-            not money, stored value, virtual currency, or a payment instrument; they have no cash value and cannot be
-            transferred, withdrawn, resold, or redeemed. They do not refresh or expire while the account remains open,
-            and unused units are removed with account deletion. Optional AI depends on a current, funded cost policy. Complimentary units and accepted legacy-access work can pause when their limited funding pool is exhausted.
+            Before a paid service starts, the review shows its credit charge, selected file and job or other inputs,
+            promised deliverable, supported limits and quote expiry. We reserve the accepted charge and do not
+            increase it during that operation. Materially changed inputs or a deliberately new variation require
+            another quote and approval. Viewing, downloading and unchanged reuse of an existing result do not
+            incur another generation charge. The interface separately identifies legacy analysis-unit operations
+            during migration; they do not silently draw from the new wallet.
           </p>
           <p className="mt-4">
-            If a technical failure consumes units without delivering a result, contact support with enough information
-            for us to review the event. We do not promise automatic restoration unless the product interface expressly says so.
+            Failed or incomplete paid delivery restores credits. Restored credits remain usable for at least seven
+            days after restoration, including when the original pass has expired, or receive an appropriate monetary
+            remedy under the Refund Policy. A source snapshot is not a tailored resume. A filled form or uploaded
+            resume is not a completed application. Supported submission charges require verified complete employer
+            acceptance; an unknown submission outcome remains reserved until reconciled.
           </p>
+          <p className="mt-4">Any complimentary units already granted keep their original conditions. New promotional grants
+            are offered only when explicitly shown and funded; there is no unlimited free AI allowance. Service
+            availability depends on supported inputs and available funding. A request that cannot meet its promised
+            quality within the offered terms is declined or separately quoted before execution.</p>
         </section>
 
         <section>

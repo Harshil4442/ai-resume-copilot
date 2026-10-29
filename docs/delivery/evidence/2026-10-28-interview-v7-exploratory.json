@@ -1,0 +1,66 @@
+{
+  "schema_version": "hirewiz-interview-v7-exploratory-evidence-v1",
+  "observed_at_utc": "2026-10-28T17:27:16Z",
+  "source_commit": "ea4f02fa8e744bfa9f2ea41f2d3ff35d25d3ec3a",
+  "scope": "Ten frozen synthetic PDF development cases, with one Gemini reference and one Gemini candidate attempt per case. No held-out cases, customer data or customer credits.",
+  "contract": {
+    "prompt": "interview-evidence-v7",
+    "schema": "interview-eight-preparation-v2",
+    "validator": "interview-complete-v3",
+    "contract_sha256": "dadb9066416f06f272a18cb77b32b2aea19b958d7fdfa13b5d3dc4ed57400586",
+    "question_count_required_per_delivered_output": 8
+  },
+  "execution": {
+    "planned_attempts": 20,
+    "provider_attempts": 20,
+    "delivered_outputs": 18,
+    "failed_outputs_retained": 2,
+    "delivered_questions": 144,
+    "reference_delivered": 9,
+    "reference_failed": 1,
+    "candidate_delivered": 9,
+    "candidate_failed": 1,
+    "queued_or_running": 0,
+    "failure_codes": [
+      "InterviewPersonalClaimError",
+      "InterviewPersonalClaimError"
+    ],
+    "failure_detail_limit": "The rejected responses and exact offending wording were not retained. Both failed outputs remain unavailable and were not retried or replaced.",
+    "machine_output_contract_passed_for_deliveries": true,
+    "actual_model_cost_usd_micros": 127208,
+    "quoted_maximum_model_cost_usd_micros": 1085440,
+    "scenario_total_inr_including_10_processing_100_fx_and_18pct_model_allowance": "25.010544",
+    "invoice_reconciled": false,
+    "unsettled_evaluation_liabilities": 0,
+    "export_manifest_sha256": "3bbc3326f681986a4199b015ebbf915f1db73ea37f53fbf1f12f15a77ac34816"
+  },
+  "review_package": {
+    "local_zip": "/Users/harshil/.codex/hirewiz-evidence/20261028/quality-calibration-v7/HireWiz_Interview_Calibration_Review_v7_20261028.zip",
+    "sha256": "7cb953ec73dc317100f4dd88528500c0c7bec45b2468fc11eab4fab4f6f5828e",
+    "fixed_cases": 10,
+    "blinded_slots": 20,
+    "blank_rows_per_reviewer": 20,
+    "delivered_outputs": 18,
+    "unavailable_outputs": 2,
+    "zip_integrity_and_identity_leak_checks_passed": true,
+    "private_ab_mapping_retained_outside_repository": true
+  },
+  "human_review": {
+    "reviewer_1": "project owner, assigned, no submitted scores",
+    "reviewer_2": "unassigned; owner will name later",
+    "adjudicator": "unassigned",
+    "completed_independent_reviews": 0,
+    "human_quality_approval": false
+  },
+  "release_qualification": false,
+  "approved_reference": false,
+  "payment_activation": false,
+  "production_changes": false,
+  "major_stage_completed": null,
+  "evidence_files_are_private_and_not_committed": [
+    "v7-delivery-and-cost-audit.json",
+    "v7-failure-diagnostics.json",
+    "review-package-v7-build-audit.json",
+    "reviewer-assignment-v7.json"
+  ]
+}

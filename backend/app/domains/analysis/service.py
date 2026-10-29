@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import Any
 
@@ -20,10 +21,12 @@ OPERATION_UNITS = pricing.ANALYSIS_OPERATION_UNITS
 
 def _dependency_snapshot(
     db: Session, user_id: int, operation: str, opportunity_id: str | None, payload: dict,
+    *, paid_context: bool = False,
 ) -> dict:
     """Private semantic reuse includes mutable facts and versioned behavior."""
     from ...services.basic_matching import SCORING_VERSION
     from ...services.interview_catalog import CATALOG_VERSION
+    from ...services.interview_contract import contract_versions
     from ...services.market.skill_extractor import SKILL_EXTRACTOR_VERSION
 
     dependencies: dict[str, Any] = {
@@ -36,6 +39,22 @@ def _dependency_snapshot(
             "title": opportunity.title, "description": opportunity.job_description,
             "resume_id": opportunity.resume_id,
         }
+        if operation == "interview_questions":
+            dependencies["job"].update({
+                "company": opportunity.company, "location": opportunity.location,
+                "source": opportunity.source, "source_url": opportunity.source_url,
+                # Matching writes derived labels into this otherwise preserved
+                # source snapshot. Those are not interview inputs or revisions.
+                "snapshot": {key: value for key, value in (opportunity.job_snapshot or {}).items()
+                             if key not in {"required_skills", "match_mode", "scoring_version"}},
+            })
+    if operation == "interview_questions":
+        dependencies["interview_contract"] = contract_versions()
+        profile = db.query(models.UserProfile).filter_by(user_id=user_id).first()
+        dependencies["preferences"] = {
+            "target_role": profile.target_role, "job_type": profile.preferred_job_type,
+            "location": profile.preferred_location,
+        } if profile else None
     resume_id = payload.get("resume_id") or (opportunity.resume_id if opportunity else None)
     if resume_id:
         resume = _owned_resume(db, user_id, resume_id)
@@ -54,7 +73,11 @@ def _dependency_snapshot(
             evidence_query = evidence_query.filter(models.EvidenceItem.resume_id == resume_id)
         dependencies["approved_evidence"] = [
             {"id": item.id, "text": item.evidence_text, "skills": item.skills,
-             "metrics": item.metrics, "title": item.title}
+             "metrics": item.metrics, "title": item.title,
+             **({"correction_version": item.updated_at.isoformat() if item.updated_at else None,
+                 "provenance": item.provenance, "source_ref": item.source_ref,
+                 "category": item.category, "confidence": item.confidence}
+                if operation == "interview_questions" else {})}
             for item in evidence_query.order_by(models.EvidenceItem.id).all()
         ]
     if payload.get("mode") == "enhanced" or operation == "resume_tailor":
@@ -62,13 +85,68 @@ def _dependency_snapshot(
         from ...services.prompt_privacy import PROMPT_PRIVACY_VERSION
 
         dependencies["generation"] = {
-            "prompt": {"job_match": "match-mega-v2", "interview_questions": "interview-evidence-v4", "resume_tailor": "resume-source-v5"}.get(operation),
+            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v7" if paid_context else "resume-source-v6"}.get(operation),
             "model_policy": os.getenv("LLM_MODEL", "unconfigured"),
             "provider_base": os.getenv("LLM_API_BASE", ""),
             "fallback_policy": GEMINI_FALLBACK_MODELS,
             "privacy_policy": PROMPT_PRIVACY_VERSION,
         }
+        if operation == "interview_questions":
+            from ...services.llm_client import LLM_API_BASE, LLM_MODEL
+
+            dependencies["generation"].update({"effective_model": LLM_MODEL, "effective_provider_base": LLM_API_BASE})
+        if operation == "resume_tailor" and paid_context:
+            dependencies["generation"]["context_selection"] = "full-editable-source-v1"
     return dependencies
+
+
+def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payload: dict) -> None:
+    """Reject work whose selected evidence/job changed after its quote or model call."""
+    from ...services.interview_contract import InterviewInputsChanged
+
+    # Model work occurs outside the result-write transaction. Reload mutable
+    # source rows so the session identity map cannot mask a concurrent edit.
+    db.expire_all()
+    semantic_input = {key: value for key, value in payload.items() if key != "_accepted_analysis_quote"}
+    current = payload_fingerprint({
+        "operation": run.operation, "opportunity_id": run.opportunity_id,
+        "input": semantic_input,
+        "dependencies": _dependency_snapshot(db, run.user_id, run.operation, run.opportunity_id, semantic_input),
+    })
+    if current != run.input_fingerprint:
+        raise InterviewInputsChanged(
+            "The selected resume, approved evidence, job or interview contract changed. "
+            "Review the current inputs and request a new question set; this attempt will not be charged."
+        )
+
+
+class TailoringInputsChanged(ValueError):
+    retryable = False
+
+
+def ensure_tailoring_inputs_current(
+    db: Session, run: models.AnalysisRun, payload: dict,
+) -> None:
+    """Refuse a paid tailoring result if any quoted source changed."""
+    db.expire_all()
+    semantic_input = {
+        key: value for key, value in payload.items()
+        if key != "_accepted_analysis_quote"
+    }
+    current = payload_fingerprint({
+        "operation": run.operation,
+        "opportunity_id": run.opportunity_id,
+        "input": semantic_input,
+        "dependencies": _dependency_snapshot(
+            db, run.user_id, run.operation, run.opportunity_id,
+            semantic_input, paid_context=True,
+        ),
+    })
+    if current != run.input_fingerprint:
+        raise TailoringInputsChanged(
+            "The selected job, resume, approved evidence or tailoring contract changed. "
+            "Review the current inputs and request a new quote."
+        )
 
 
 def _owned_resume(db: Session, user_id: int, resume_id: Any) -> models.Resume:
@@ -110,6 +188,13 @@ def validate_analysis_input(
         payload.setdefault("company", opportunity.company if opportunity else "")
         payload["job_description"] = description
     elif operation == "interview_questions":
+        from ...services.interview_contract import (
+            QUESTION_COUNT,
+            InterviewContextUnavailable,
+            build_interview_messages,
+            load_approved_evidence,
+        )
+
         if not opportunity:
             raise HTTPException(status_code=422, detail="opportunity_id is required")
         mode = payload.setdefault("mode", "curated")
@@ -119,9 +204,24 @@ def validate_analysis_input(
             count = int(payload.get("num_questions", 8))
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=422, detail="num_questions must be an integer") from exc
-        if count < 3 or count > 12:
+        if mode == "enhanced" and (type(payload.get("num_questions", QUESTION_COUNT)) is not int or count != QUESTION_COUNT):
+            raise HTTPException(status_code=422, detail="An enhanced interview set contains exactly eight questions")
+        if mode == "curated" and (count < 3 or count > 12):
             raise HTTPException(status_code=422, detail="num_questions must be between 3 and 12")
         payload["num_questions"] = count
+        if opportunity.resume_id:
+            _owned_resume(db, user_id, opportunity.resume_id)
+        # The selected opportunity owns the resume choice. A stray resume_id
+        # must not make the cache describe a different resume from execution.
+        payload["resume_id"] = opportunity.resume_id
+        if mode == "enhanced":
+            try:
+                build_interview_messages(opportunity.title, opportunity.job_description,
+                                         load_approved_evidence(db, user_id, opportunity.resume_id))
+            except InterviewContextUnavailable as exc:
+                raise HTTPException(status_code=422, detail={
+                    "code": "interview_context_unavailable", "message": str(exc),
+                }) from None
     elif operation == "market_analysis":
         role = str(payload.get("target_role") or "").strip()
         if len(role) < 2:
@@ -180,24 +280,31 @@ def create_run(
     input_payload = dict(payload.input)
     if any(key in input_payload for key in ("expense_paid_units", "_expense_paid_units", "expense_funding", "cost_policy_snapshot", "paid_current_reserved_credits", "_accepted_analysis_quote")):
         raise HTTPException(422, detail="Funding allocation is server-owned and cannot be supplied by the client")
-    validate_analysis_input(
-        db,
-        user_id=user_id,
-        operation=payload.operation,
-        opportunity_id=payload.opportunity_id,
-        payload=input_payload,
-    )
+    from ..credits.analysis import _quote_rejected, recover_paid_run
+
+    recovered = recover_paid_run(db, user_id=user_id, payload=payload, idempotency_key=idempotency_key)
+    if recovered is not None:
+        return recovered
+    try:
+        validate_analysis_input(db, user_id=user_id, operation=payload.operation,
+            opportunity_id=payload.opportunity_id, payload=input_payload)
+    except HTTPException as exc:
+        if payload.accepted_service_quote_id and exc.status_code in {404, 409, 422}:
+            raise _quote_rejected("The selected inputs are unavailable or changed. Review the current inputs before a new quote.") from None
+        raise
     # Serialize admission for one owner, including equivalent requests with
     # different client keys. This short lock ends before any worker/model call.
     db.query(models.User.id).filter(models.User.id == user_id).with_for_update().one()
+    dependencies = _dependency_snapshot(
+        db, user_id, payload.operation, payload.opportunity_id, input_payload,
+        paid_context=bool(payload.accepted_service_quote_id),
+    )
     fingerprint = payload_fingerprint(
         {
             "operation": payload.operation,
             "opportunity_id": payload.opportunity_id,
             "input": input_payload,
-            "dependencies": _dependency_snapshot(
-                db, user_id, payload.operation, payload.opportunity_id, input_payload,
-            ),
+            "dependencies": dependencies,
         }
     )
     alias = db.get(AnalysisRequestKey, (user_id, idempotency_key))
@@ -247,6 +354,13 @@ def create_run(
             db.commit()
             return reusable, False
 
+    from ..credits.analysis import maybe_create_paid_run
+
+    unified = maybe_create_paid_run(db, user_id=user_id, payload=payload,
+        idempotency_key=idempotency_key, input_payload=input_payload, fingerprint=fingerprint)
+    if unified is not None:
+        return unified
+
     # Matching owned requests above return their original run and stored units
     # without a new reservation. Only a new tailoring admission accepts a quote.
     if payload.operation == "resume_tailor":
@@ -264,6 +378,10 @@ def create_run(
     from ...services.generation_gate import check_generation_admission
 
     check_generation_admission(payload.operation, input_payload)
+    from ..free_core import policy as free_policy
+    from ..free_core import service as free_service
+
+    free_operation = free_service.analysis_operation(payload.operation, input_payload) if free_policy.enabled() else None
     now = utcnow()
     run = models.AnalysisRun(
         id=public_id("run"),
@@ -274,7 +392,7 @@ def create_run(
         idempotency_key=idempotency_key,
         input_fingerprint=fingerprint,
         input_payload=input_payload,
-        estimated_units=OPERATION_UNITS[payload.operation],
+        estimated_units=0 if free_operation else OPERATION_UNITS[payload.operation],
         generation_attempt_limit=3 if (
             input_payload.get("mode") == "enhanced" or payload.operation == "resume_tailor"
         ) else 0,
@@ -293,6 +411,11 @@ def create_run(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     db.add(run)
     try:
+        if free_operation:
+            free_service.admit(db, user_id=user_id, operation=free_operation,
+                source_type="analysis_run", source_id=run.id, key="analysis:" + hashlib.sha256(idempotency_key.encode()).hexdigest(),
+                fingerprint=fingerprint, input_bytes=len(json.dumps({"input": input_payload, "dependencies": dependencies},
+                    ensure_ascii=False, default=str).encode("utf-8")), attempts=3)
         db.flush()
         db.add(AnalysisRequestKey(user_id=user_id, idempotency_key=idempotency_key,
                                   analysis_run_id=run.id, input_fingerprint=fingerprint))
@@ -322,6 +445,9 @@ def create_run(
                 "required": exc.required,
             },
         ) from exc
+    except HTTPException:
+        db.rollback()
+        raise
     db.refresh(run)
     return run, True
 

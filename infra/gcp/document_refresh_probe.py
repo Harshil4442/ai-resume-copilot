@@ -105,6 +105,8 @@ def verify_renderer_build(build: dict[str, Any]) -> None:
     need((build.get("immutable_image") != profile.IMAGE or profile.matches_build(build))
          and (build.get("fixed_renderer_base") != profile.IMAGE or profile.uses_profile(build)),
          "document_native_renderer_build_profile_changed")
+    need(build.get("policy_sha256", POLICY) == POLICY,
+         "document_native_candidate_renderer_review_required")
 
 
 def legacy_source(name: str) -> bytes:
@@ -127,8 +129,13 @@ def policy_for_serving(metadata: Any, image: str) -> str:
     env = containers[0].get("env", [])
     need(type(env) is list, "document_native_serving_policy_unverified")
     matches = [row for row in env if type(row) is dict and row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"]
-    need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str
-         and matches[0]["value"] in {POLICY, LEGACY_POLICY}, "document_native_serving_policy_unverified")
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    need(len(matches) == 1 and set(matches[0]) == {"name", "value"} and type(matches[0]["value"]) is str,
+         "document_native_serving_policy_unverified")
+    policy = matches[0]["value"]
+    need((policy == candidate.POLICY_SHA256 and type(image) is str and IMAGE.fullmatch(image))
+         or (image != candidate.IMAGE and policy in {POLICY, LEGACY_POLICY}),
+         "document_native_serving_policy_unverified")
     return matches[0]["value"]
 
 
@@ -138,10 +145,18 @@ def historical_v1_for_serving(metadata: Any, image: str) -> bool:
 
 def runtime_hashes(*, historical_v1: bool = False) -> dict[str, str]:
     need(type(historical_v1) is bool, "document_native_contract_version_invalid")
-    raw = legacy_source("policy.json") if historical_v1 else (ROOT / "infra/document-processing/policy.json").read_bytes()
-    policy = json.loads(raw)
-    need(hashlib.sha256(raw).hexdigest() == (LEGACY_POLICY if historical_v1 else POLICY),
+    # Serving receipts retain their exact deployed source inventory even when
+    # the working tree contains a separately reviewed source-only candidate.
+    if historical_v1:
+        raw = legacy_source("policy.json")
+    else:
+        path = HERE / "document_accepted_v2/policy.json"
+        need(not path.is_symlink(), "document_native_policy_changed")
+        raw = path.read_bytes()
+    need(0 < len(raw) <= MAX_BYTES
+         and hashlib.sha256(raw).hexdigest() == (LEGACY_POLICY if historical_v1 else POLICY),
          "document_native_policy_changed")
+    policy = json.loads(raw)
     source = policy["source_sha256"]
     paths = {"infra/document-processing/processor.py": "/opt/document/processor.py",
              "infra/document-processing/service.py": "/opt/document/service.py",
@@ -152,12 +167,19 @@ def runtime_hashes(*, historical_v1: bool = False) -> dict[str, str]:
         if path == "infra/document-processing/Dockerfile":
             continue
         destination = paths.get(path, "/opt/document/" + path.removeprefix("backend/"))
-        need(type(digest) is str and re.fullmatch(r"[a-f0-9]{64}", digest)
-             and (historical_v1 or hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest),
+        need(type(digest) is str and re.fullmatch(r"[a-f0-9]{64}", digest),
              "document_native_runtime_source_changed")
         result[destination] = digest
     need(len(result) == (11 if historical_v1 else 12), "document_native_runtime_inventory_changed")
     return result
+
+
+def candidate_runtime_hashes() -> dict[str, str]:
+    """Offline candidate inventory only; never select it for a native receipt."""
+    build = build_module()
+    candidate = build.infra("document_candidate")
+    _, hashes, _ = build.full_source_snapshot()
+    return {destination: hashes[source] for source, destination in candidate.RUNTIME.items()}
 
 
 def rendered_payload(image: str, *, historical_v1: bool = False) -> str:
@@ -387,8 +409,11 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     snapshot["revision"] = validate_serving(clients, service, image, "hirewiz-document-inspector", SERVICE_UID)
     configuration = load_source("hirewiz_document_refresh_worker_contract", HERE / "document_worker.py")
     try:
+        candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+        candidate_v3 = policy_for_serving(service, image) == candidate.POLICY_SHA256
         configuration.check_snapshot(snapshot, image, service.get("template", {}).get("labels", {}).get("hirewiz-source"),
-                                     api_phase=True, coordinator_phase=True, historical_v1=historical_v1)
+                                     api_phase=True, coordinator_phase=True, historical_v1=historical_v1,
+                                     candidate_v3=candidate_v3)
     except configuration.ConfigurationDenied:
         raise NativeProofDenied("document_native_worker_configuration_changed") from None
     return image
@@ -397,6 +422,10 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
 def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None,
                        api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if image == candidate.IMAGE or policy_sha256 == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_caller_pins(clients, image, policy_sha256=policy_sha256)
     policy = POLICY if policy_sha256 is None else policy_sha256
     need(type(policy) is str and policy in {POLICY, LEGACY_POLICY}, "document_native_caller_policy_unverified")
     identity = None
@@ -742,7 +771,8 @@ class NativeAcceptance:
 
 
 def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[str, Any],
-               execution: dict[str, Any], *, historical_v1: bool = False) -> NativeAcceptance:
+               execution: dict[str, Any], *, historical_v1: bool = False,
+               require_fresh: bool = True) -> NativeAcceptance:
     nonce = build["nonce"]
     verify_renderer_build(build)
     renderer, fonts = renderer_identity(image, historical_v1=historical_v1, build_identity=build)
@@ -750,7 +780,7 @@ def acceptance(clients: Clients, image: str, build: dict[str, Any], job: dict[st
     validate_execution(execution, job, image, nonce, historical_v1=historical_v1)
     payload = native_payload(clients, job, execution, historical_v1=historical_v1)
     facts = validate_payload(payload, image, execution["name"], datetime.now(UTC),
-                             historical_v1=historical_v1, build_identity=build)
+                             require_fresh=require_fresh, historical_v1=historical_v1, build_identity=build)
     return NativeAcceptance(image, build["build_id"], build["build_resource"], build["source_archive_sha256"],
         build["refresh_dockerfile_sha256"], build["source_sha256"], job["name"], job["uid"],
         execution["name"], execution["uid"], hashlib.sha256(rendered_payload(image, historical_v1=historical_v1).encode()).hexdigest(),
@@ -779,6 +809,7 @@ def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> 
     try:
         build = json.loads(canonical(build_identity))
         need(build.get("immutable_image") == image, "document_native_build_image_changed")
+        verify_renderer_build(build)
         build_module().verify_native_build(build)
         owner = Journal(journal, image, build, create=True)
         clients = Clients()
@@ -874,6 +905,10 @@ def _verify_successor_once(image: str, build_identity: dict[str, Any], journal: 
 
 def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Maintenance uses only the dedicated unattended service-account identity."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_current_successor(image, service_metadata)
     result = _verify_current_successor(image, service_metadata, read_only_release=False)
     assert isinstance(result, NativeAcceptance)
     return result
@@ -881,6 +916,10 @@ def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> Na
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Ordinary release uses only the original, read-only retained SDK identity."""
+    candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
+    if policy_for_serving(service_metadata, image) == candidate.POLICY_SHA256:
+        adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
+        return adapter.verify_current_successor_for_release(image, service_metadata)
     result = _verify_current_successor(image, service_metadata, read_only_release=True)
     assert isinstance(result, NativeAcceptance)
     return result

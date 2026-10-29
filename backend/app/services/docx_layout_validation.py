@@ -18,7 +18,7 @@ import unicodedata
 from contextlib import closing
 from dataclasses import asdict, dataclass
 from io import BytesIO
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 from urllib.parse import urlsplit
 from zipfile import ZipFile
 
@@ -36,6 +36,9 @@ from pypdf.generic import (
     NullObject,
     NumberObject,
 )
+
+if TYPE_CHECKING:
+    from .docx_fonts import FontKey, FontUse
 
 VALIDATOR = "hirewiz-docx-layout-v1"
 MAX_DOCX_BYTES = 5 * 1024 * 1024
@@ -58,6 +61,7 @@ LAYOUT_REASONS = frozenset({
     "nontext_changed", "ambiguous_rendered_span", "text_or_reading_order_changed", "paragraph_page_changed",
     "line_wrap_changed", "font_changed", "retained_style_changed", "paragraph_overflow",
     "unsupported_graphics_overlap", "protected_text_changed", "protected_geometry_changed", "malformed_input",
+    "unsupported_source_font",
 })
 
 
@@ -586,7 +590,8 @@ def _compare_pixels(before: bytes, after: bytes, pages: int, regions: list[tuple
 
 def validate_docx_layout(*, source_docx: bytes, candidate_docx: bytes, edits: list[dict],
                          before_pdf: bytes, after_pdf: bytes,
-                         renderer: RendererIdentity) -> DocxLayoutReceipt:
+                         renderer: RendererIdentity,
+                         font_contract: tuple[FontUse, FontUse, dict[FontKey, str]] | None = None) -> DocxLayoutReceipt:
     """Validate actual renders, preserving native structure and unrelated layout.
 
     Changed paragraph spans must be uniquely extractable and retain page, line
@@ -599,6 +604,11 @@ def validate_docx_layout(*, source_docx: bytes, candidate_docx: bytes, edits: li
         changes = _native_edits(source_docx, candidate_docx, edits)
         old, old_pages, old_links, old_graphics = _view(before_pdf)
         new, pages, links, graphics = _view(after_pdf)
+        if font_contract is not None:
+            from .docx_fonts import verify_rendered_fonts
+            original_fonts, candidate_fonts, resolved_faces = font_contract
+            verify_rendered_fonts(original_fonts, old, resolved_faces)
+            verify_rendered_fonts(candidate_fonts, new, resolved_faces)
         if pages != old_pages:
             raise DocxLayoutError("page_geometry_changed")
         if links != old_links:

@@ -185,6 +185,16 @@ def test_native_build_joins_exact_nonce_source_generation_builder_and_image():
     assert result["fixed_renderer_base"] == refresh.RENDERER_BASE
 
 
+def test_v3_definition_build_requires_qualified_parent_and_exact_recipe():
+    from infra.gcp import document_candidate as courier
+
+    result = refresh.build_contract(build(), "a" * 32, courier.REFRESH_SHA256, candidate_v3=True)
+    assert result["fixed_renderer_base"] == courier.IMAGE
+    assert result["policy_sha256"] == courier.POLICY_SHA256
+    with pytest.raises(refresh.RefreshDenied, match="source_recipe_changed"):
+        refresh.build_contract(build(), "a" * 32, "c" * 64, candidate_v3=True)
+
+
 @pytest.mark.parametrize("change", ["nonce", "builder", "source_generation", "step_env", "extra_image", "unfinished"])
 def test_native_build_drift_cannot_be_adopted_by_a_receipt(change):
     value = build()
@@ -366,10 +376,16 @@ def test_refresh_selects_one_profile_and_passes_exact_candidate_to_native_transi
         return {"status": "document_refresh_serving", "admission_restored": True,
                 "prior_image": refresh.RENDERER_BASE}
 
-    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(preflight=lambda: calls.append("preflight"),
-        close=lambda: calls.append("preflight_closed")), run_successor=successor)
+    def preflight():
+        calls.append("preflight")
+        return {"service": {"template": {"containers": [{"image": refresh.RENDERER_BASE}]}}}
+
+    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(preflight=preflight,
+        close=lambda: calls.append("preflight_closed")), run_successor=successor,
+        policy_for_serving=lambda *_: "prior-policy")
     modules = {"document_refresh_recovery": SimpleNamespace(prepare=prepare),
                "document_refresh_probe": probe,
+               "document_candidate": SimpleNamespace(POLICY_SHA256="candidate-policy"),
                "document_refresh_transition": SimpleNamespace(transition=transition)}
     monkeypatch.setattr(refresh, "infra", modules.__getitem__)
     monkeypatch.setattr(refresh, chosen, candidate)
@@ -394,10 +410,12 @@ def test_full_source_unknown_native_outcome_never_builds_or_sends_twice(monkeypa
         calls.append("one_native_attempt")
         raise RuntimeError("Synthetic unknown native outcome")
 
-    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(preflight=lambda: None, close=lambda: None),
-                            run_successor=unknown)
+    probe = SimpleNamespace(Clients=lambda: SimpleNamespace(
+        preflight=lambda: {"service": {"template": {"containers": [{"image": refresh.RENDERER_BASE}]}}},
+        close=lambda: None), run_successor=unknown, policy_for_serving=lambda *_: "prior-policy")
     modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *args, **kwargs: None),
-               "document_refresh_probe": probe}
+               "document_refresh_probe": probe,
+               "document_candidate": SimpleNamespace(POLICY_SHA256="candidate-policy")}
     monkeypatch.setattr(refresh, "infra", modules.__getitem__)
     monkeypatch.setattr(refresh, "full_source_candidate", candidate)
     monkeypatch.setattr(refresh, "candidate", lambda *args, **kwargs: pytest.fail("No overlay retry"))

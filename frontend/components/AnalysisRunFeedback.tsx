@@ -11,14 +11,15 @@ export function AnalysisRunFeedback({ run, onSaveSourceSnapshot, sourceSnapshotD
   sourceSnapshotDisabled?: boolean;
 }) {
   if (!run || run.status === "succeeded") return null;
+  const currency = run.billing_currency === "credits" ? "credits" : run.billing_currency === "none" ? null : "analysis units";
   if (run.status === "failed") {
     const incompleteInterview = run.operation === "interview_questions" && run.error_code === "InterviewOutputError";
     const tailoring = run.operation === "resume_tailor";
     const guidance = tailoring ? getTailoringGuidance(run.failure_guidance) : null;
     const usageMessage = run.committed_units === 0 && run.usage_state === "released"
-      ? "Any reserved units were released."
+      ? currency ? `Any reserved ${currency} were released.` : "No credits were charged."
       : run.committed_units === 0 && run.usage_state === "waived"
-        ? "No analysis units were charged."
+        ? currency ? `No ${currency} were charged.` : "No credits were charged."
         : "";
     return (
       <div className="mt-4 flex gap-3 border-y border-coral/25 bg-coral/5 px-4 py-4 text-sm text-coral" role="alert">
@@ -40,7 +41,7 @@ export function AnalysisRunFeedback({ run, onSaveSourceSnapshot, sourceSnapshotD
       </div>
     );
   }
-  if (run.status === "cancelled") return <p className="mt-4 text-sm text-muted-foreground">Analysis cancelled. Reserved units were released.</p>;
+  if (run.status === "cancelled") return <p className="mt-4 text-sm text-muted-foreground">Analysis cancelled.{run.usage_state === "released" ? ` Any reserved ${currency || "credits"} were released.` : ""}</p>;
   return (
     <div className="mt-4 flex items-center gap-3 border-y border-primary/20 bg-primary/5 px-4 py-4 text-sm text-foreground" role="status">
       <span className="animate-spin text-primary motion-reduce:animate-none" aria-hidden="true"><LoaderCircle size={18} /></span>

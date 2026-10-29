@@ -8,13 +8,13 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 import pytest
+from scripts import document_refresh as refresh
+
 from backend.tests import test_document_refresh as local
 from backend.tests import test_document_refresh_probe as native
 from backend.tests import test_document_refresh_transition as transition
 from infra.gcp import document_refresh_auth as auth
 from infra.gcp import document_refresh_recovery as recovery
-
-from scripts import document_refresh as refresh
 
 p = native.p
 NEW_NONCE = "f" * 32
@@ -374,6 +374,7 @@ def test_refresh_binds_claim_nonce_to_new_full_pipeline_and_never_reruns_failed_
     monkeypatch.setattr(p, "run_successor", successor)
     monkeypatch.setattr(refresh, "infra", lambda name: {
         "document_refresh_probe": p, "document_refresh_recovery": recovery,
+        "document_candidate": SimpleNamespace(POLICY_SHA256="not-the-serving-v2-policy"),
         "document_refresh_transition": SimpleNamespace(transition=promote),
     }[name])
     result = refresh.refresh(output(setup), publish=True, now=local.NOW,
@@ -404,7 +405,8 @@ def test_workflow_recovery_is_dispatch_only_and_passes_user_input_as_inert_data(
     payload = "$(touch SHOULD_NOT_EXIST) ; exact job data"
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": payload, "HISTORY_DIRECTORY": "private history",
-             "OUTPUT_DIRECTORY": "private output", "RESCUE_EXPIRED_V2": "false",
+             "OUTPUT_DIRECTORY": "private output", "RETIRE_EXPIRED_V2": "false",
+             "RESCUE_EXPIRED_V2": "false", "UPGRADE_CURRENT_V2_TO_V3": "false",
              "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
     assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
     arguments = json.loads(capture.read_bytes())
@@ -412,7 +414,8 @@ def test_workflow_recovery_is_dispatch_only_and_passes_user_input_as_inert_data(
     assert "--rescue-expired-v2" not in arguments
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "RECOVER_FAILED_NATIVE_JOB": "", "HISTORY_DIRECTORY": "private history",
-             "OUTPUT_DIRECTORY": "private output", "RESCUE_EXPIRED_V2": "true",
+             "OUTPUT_DIRECTORY": "private output", "RETIRE_EXPIRED_V2": "false",
+             "RESCUE_EXPIRED_V2": "true", "UPGRADE_CURRENT_V2_TO_V3": "false",
              "CAPTURE_ARGS": str(capture)}, capture_output=True, timeout=5)
     assert result.returncode == 0
     assert json.loads(capture.read_bytes())[-1] == "--rescue-expired-v2"

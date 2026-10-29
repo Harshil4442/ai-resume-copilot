@@ -43,7 +43,7 @@ function createFixture() {
   };
   const requests: RequestRecord[] = [];
   const unexpected: RequestRecord[] = [];
-  const state = { listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived", failureGuidance: undefined as FailureGuidance | null | undefined };
+  const state = { unified: false, listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived", failureGuidance: undefined as FailureGuidance | null | undefined };
   const patchResponses: Record<string, unknown>[] = [];
 
   function failedTailoringRun() {
@@ -75,6 +75,10 @@ function createFixture() {
       if (path === "/auth/profile") value = { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 };
       else if (path === "/public/billing/catalog") value = { analysis_pricing_version: "tailoring-fixture-v1", analysis_operation_units: { resume_tailor: 2 } };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true }, evidence_tailoring: { enabled: true }, async_analysis: { enabled: true } } };
+      else if (path === "/v1/credits/availability") value = { catalog_enabled: state.unified, execution_enabled: state.unified, supported_operations: state.unified ? ["resume_tailor", "resume_tailor_extended"] : [] };
+      else if (state.unified && path === "/v1/credits/wallet") value = { schema_version: "unified-credits-v1", server_time: now, available_credits: 0, reserved_credits: 0, debt_credits: 0, lots: [] };
+      else if (state.unified && path === "/v1/credits/analysis-reuse") value = { reused_run: null };
+      else if (state.unified && path === "/v1/credits/service-quotes") value = { schema_version: "unified-service-quote-v1", quote_id: "csq_browser_review", operation: "resume_tailor", input_fingerprint: "b".repeat(64), route_id: "browser-qualified-route", route_version: "1", tariff_version: "credit-services-v1", mode: "enhanced", credits: 8, deliverable: "Tailored source resume with approved evidence and preserved layout.", supported_limits: { max_pages: 2, max_edits: 5 }, created_at: now, server_time: now, expires_at: "2026-10-07T10:15:00Z" };
       else if (path === "/resume/list") {
         if (state.pauseList) await state.pauseList;
         status = state.listError ? 503 : 200;
@@ -177,7 +181,7 @@ for (const failure of failures) {
     const banner = page.getByRole("main").getByRole("alert");
     await expect(banner.locator("strong")).toHaveText(failure.heading);
     await expect(banner.locator("p").nth(0)).toHaveText(failure.nextStep);
-    await expect(banner.locator("p").nth(1)).toHaveText(failure.usage === "released" ? "Any reserved units were released." : "No analysis units were charged.");
+    await expect(banner.locator("p").nth(1)).toHaveText(failure.usage === "released" ? "Any reserved analysis units were released." : "No analysis units were charged.");
     await expect(banner.locator("p").nth(2)).toHaveText("Your original resume is unchanged. Saving a source snapshot keeps that file as it is.");
     await expect(banner.getByRole("button", { name: "Save unchanged source snapshot", exact: true })).toBeEnabled();
     await expect(banner.getByRole("link", { name: "Choose original or custom resume", exact: true })).toHaveAttribute("href", "/resume");
@@ -453,5 +457,23 @@ test("loading source details blocks both actions until metadata arrives", async 
   } finally { release(); }
   await expect(actions(page).generate).toBeEnabled();
   await expect(actions(page).snapshot).toBeEnabled();
+  expect(fixture.unexpected).toEqual([]);
+});
+
+
+test("unified tailoring review shows exact source and credits before any execution", async ({ page, context, baseURL }) => {
+  const fixture = createFixture(); fixture.state.unified = true;
+  fixture.resumes[0].source_available = true; fixture.resumes[0].source_format = "pdf";
+  await fixture.install(context, baseURL!); await openWorkspace(page);
+  await expect(actions(page).generate).toBeEnabled(); await actions(page).generate.click();
+  await expect(page.getByRole("button", { name: "Approve 8 credits", exact: true })).toBeVisible();
+  const review = page.getByRole("region", { name: "Resume tailoring", exact: true });
+  await expect(review).toContainText(sourceFile.name); await expect(review).toContainText("Software Engineer, Search");
+  await expect(review).toContainText("Maximum pages: 2");
+  expect(fixture.requests.filter((record) => record.path === "/v1/analysis-runs")).toEqual([]);
+  await audit(page);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve 8 credits", exact: true })).toHaveCount(0);
+  expect(fixture.requests.filter((record) => record.path === "/v1/analysis-runs")).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
 });

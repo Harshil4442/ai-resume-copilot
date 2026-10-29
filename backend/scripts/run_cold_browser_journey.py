@@ -33,6 +33,14 @@ ROOT = Path(__file__).resolve().parents[2]
 PG_DEFAULT = "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test"
 
 
+def _disposable_postgres():
+    pg = make_url(os.getenv("HIREWIZ_TEST_POSTGRES_URL", PG_DEFAULT))
+    assert (pg.drivername == "postgresql+psycopg" and pg.host == "127.0.0.1"
+            and pg.port in {55433, 55434} and pg.database == "hirewiz_admission_test"
+            and not pg.query), "Only the dedicated loopback disposable database is accepted"
+    return pg
+
+
 def _port():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -311,7 +319,7 @@ def _browser_failure_summary(report: Path) -> dict[str, object]:
                     failure: dict[str, object] = {"category": category}
                     stack = error.get("stack")
                     stack = stack if isinstance(stack, str) else ""
-                    location = re.search(r"cold-no-ai\.spec\.ts:(\d{1,6}):(\d{1,6})(?:\D|$)", stack)
+                    location = re.search(r"(?:cold-no-ai|cold-unified-discovery)\.spec\.ts:(\d{1,6}):(\d{1,6})(?:\D|$)", stack)
                     if location is not None:
                         failure["spec_line"] = int(location[1])
                         failure["spec_column"] = int(location[2])
@@ -319,7 +327,7 @@ def _browser_failure_summary(report: Path) -> dict[str, object]:
                         # Playwright assertion errors can omit stack entirely.
                         # Keep only fixed-spec numeric coordinates, never its path.
                         point = error.get("location")
-                        if isinstance(point, dict) and str(point.get("file", "")).replace("\\", "/").endswith("/journey/cold-no-ai.spec.ts"):
+                        if isinstance(point, dict) and str(point.get("file", "")).replace("\\", "/").endswith(("/journey/cold-no-ai.spec.ts", "/journey/cold-unified-discovery.spec.ts")):
                             for source, target in (("line", "spec_line"), ("column", "spec_column")):
                                 coordinate = point.get(source)
                                 if type(coordinate) is int and 1 <= coordinate <= 999999:
@@ -426,10 +434,37 @@ def _sql_proof(engine):
                 "current_exact_custom_artifact": True, "employer_receipt": None, "migration": version}
 
 
-def run_journey(evidence: Path):
+def _sql_unified_proof(engine):
+    with engine.connect() as db:
+        def scalar(sql):
+            return db.execute(text(sql)).scalar_one()
+        for table in ("model_call_events", "analysis_runs", "model_cost_liabilities", "employer_applications", "employer_application_attempts", "service_credit_reservations", "service_credit_events"):
+            assert scalar(f"SELECT count(*) FROM {table}") == 0
+        assert scalar("SELECT count(*) FROM dispatch_outbox WHERE topic='employer.apply'") == 0
+        assert scalar("SELECT count(*) FROM payment_orders WHERE sku='starter_pass' AND gross_amount_minor=7900 AND status='paid'") == 1
+        assert scalar("SELECT count(*) FROM credit_grants WHERE source_type='payment_order' AND quantity=40 AND expires_at >= issued_at + interval '30 days'") == 1
+        assert scalar("SELECT sum(remaining_credits) FROM credit_grants") == 39
+        assert scalar("SELECT count(*) FROM credit_discovery_batches") == 2
+        assert scalar("SELECT count(*) FROM credit_discovery_deliveries") == 2
+        assert scalar("SELECT count(*) FROM employer_searches WHERE status='completed' AND delivered_count=2 AND charged_credits=1") == 1
+        assert scalar("SELECT count(*) FROM employer_searches WHERE status='completed' AND delivered_count=0 AND charged_credits=0 AND refunded_credits=1") == 1
+        assert tuple(db.execute(text("SELECT sum(reserved_credits), sum(committed_credits), sum(released_credits) FROM credit_reservations")).one()) == (2, 1, 1)
+        assert scalar("SELECT count(*) FROM credit_execution_holds WHERE state='outcome_unknown' AND reserved_minor=13") == 2
+        assert scalar("SELECT count(*) FROM free_core_reservations WHERE operation='resume_parse'") == 1
+        assert scalar("SELECT count(*) FROM free_core_requests WHERE state='completed'") == 1
+        assert scalar("SELECT count(*) FROM resumes") == 1
+        assert tuple(db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.unified@example.com'")).one()) == (0, 50)
+        return {"model_calls": 0, "analysis_runs": 0, "payment_orders": 1, "purchased_credits": 40,
+            "remaining_credits": 39, "discovery_batches": 2, "new_jobs": 2, "credits_reserved": 2,
+            "credits_charged": 1, "credits_released": 1, "free_resume_parse": 1,
+            "legacy_service_credits": 0, "legacy_analysis_units": 50, "external_applications": 0,
+            "unreconciled_native_holds_preserved": 2, "migration": scalar("SELECT version_num FROM alembic_version")}
+
+
+def run_journey(evidence: Path, *, scenario: str = "legacy"):
+    assert scenario in {"legacy", "unified"}, "Unknown bounded cold-browser scenario"
     assert not any(ROOT.glob("**/.env*")), "Run from a credential-free source archive"
-    pg = make_url(os.getenv("HIREWIZ_TEST_POSTGRES_URL", PG_DEFAULT))
-    assert (pg.host, pg.port, pg.database) == ("127.0.0.1", 55433, "hirewiz_admission_test"), "Only the dedicated loopback disposable database is accepted"
+    pg = _disposable_postgres()
     schema = "cold_browser_" + uuid4().hex
     marker = evidence / ".hirewiz-cold-browser"
     if evidence.exists() and any(evidence.iterdir()) and not marker.is_file():
@@ -441,6 +476,11 @@ def run_journey(evidence: Path):
         (evidence / name).unlink(missing_ok=True)
     source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in (
         "frontend/components/EmployerApplicationPanel.tsx", "frontend/journey/cold-no-ai.spec.ts",
+        "frontend/journey/cold-unified-discovery.spec.ts", "backend/tests/fixtures/cold_browser_credit_policy.py",
+        "frontend/components/UnifiedDiscoveryPanel.tsx", "frontend/components/billing/UnifiedBillingPanel.tsx",
+        "frontend/components/billing/LegacyBillingAccount.tsx", "frontend/components/billing/UnifiedCreditPacks.tsx",
+        "backend/app/routers/credits.py", "backend/app/domains/credits/discovery.py",
+        "backend/app/domains/credits/payments.py", "backend/app/domains/free_core/policy.py",
         "frontend/playwright.cold.config.ts", "frontend/app/api/backend/[...path]/route.ts",
         "frontend/tests/candidate-https-server.mjs", "frontend/app/api/account/[operation]/route.ts",
         "frontend/lib/accountTransportServer.ts", "frontend/lib/accountTransportClient.ts",
@@ -477,6 +517,7 @@ def run_journey(evidence: Path):
         "NODE_EXTRA_CA_CERTS": str(certificate), "HIREWIZ_TEST_TLS_CERT": str(certificate),
         "HIREWIZ_TEST_TLS_KEY": str(key), "PORT": str(frontend_port),
         "COLD_BROWSER_BACKEND_PORT": str(backend_port), "COLD_BROWSER_BACKEND_URL": backend_url,
+        "COLD_BROWSER_POSTGRES_PORT": str(pg.port), "COLD_BROWSER_SCENARIO": scenario,
         "COLD_BROWSER_FRONTEND_URL": frontend_url, "COLD_BROWSER_PROVIDER_PROOF": str(evidence / "provider.json"),
         "COLD_BROWSER_BROWSER_PROOF": str(evidence / "browser.json"), "COLD_BROWSER_REPORT": str(evidence / "playwright.json"),
         "COLD_BROWSER_EVIDENCE": str(evidence), "COLD_BROWSER_ORIGINAL": str(evidence / "original.docx"),
@@ -486,6 +527,9 @@ def run_journey(evidence: Path):
     from backend.tests.expense_policy_fixtures import estimated_expense_policy
     expense = estimated_expense_policy() | {"review_status": "approved", "reviewed_by": "synthetic-local-browser-review"}
     env["HIREWIZ_EXPENSE_POLICY_JSON"] = json.dumps(expense)
+    if scenario == "unified":
+        from backend.tests.fixtures.cold_browser_credit_policy import environment
+        env.update(environment())
     _docx(evidence / "original.docx", "Original source resume")
     _docx(evidence / "custom.docx", "Candidate-written custom resume")
     admin, processes, logs = create_engine(pg), [], []
@@ -527,13 +571,15 @@ def run_journey(evidence: Path):
             summary["browser_failure"] = _browser_failure_summary(evidence / "playwright.json")
         assert browser.returncode == 0, "Actual Chromium journey failed; inspect local browser log"
         phase = "sql_verification"
-        proof = _sql_proof(engine)
+        proof = _sql_unified_proof(engine) if scenario == "unified" else _sql_proof(engine)
         provider = json.loads((evidence / "provider.json").read_text())
         for name in ("forbidden_model_calls", "unexpected_external_requests", "unexpected_socket_egress", "dispatch_errors"):
             assert provider.get(name, 0) == 0
         assert provider["synthetic_checkout_orders"] == provider["synthetic_feed_gets"] == 1
-        assert provider["synthetic_document_inspections"] == provider["synthetic_document_identity_requests"] == 2
-        summary.update({"status": "passed", "scope": "Local production Next + Chromium + actual FastAPI/auth/SQL; finite synthetic external providers only",
+        assert provider["synthetic_document_inspections"] == provider["synthetic_document_identity_requests"] == (1 if scenario == "unified" else 2)
+        summary.update({"status": "passed", "scope": f"Local production Next + Chromium + actual FastAPI/auth/SQL; {scenario} credit journey; finite synthetic external providers only",
+                   "new_unified_purchase_proof": scenario == "unified", "legacy_order_created_by_fixture_api": scenario == "legacy",
+                   "scenario": scenario, "synthetic_policy_only": scenario == "unified",
                    "production_proof": False, "real_payment": False, "real_employer_contact": False,
                    "native_document_scan_and_sandbox_proof": False,
                    "cold_sql_and_processes": True, "redis_used": False, "sql": proof,
@@ -569,4 +615,6 @@ if __name__ == "__main__":
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--allow-disposable-postgres", action="store_true", required=True,
                         help="Allow only the unique-schema loopback disposable database contract")
-    run_journey(parser.parse_args().evidence.resolve())
+    parser.add_argument("--scenario", choices=("legacy", "unified"), default="legacy")
+    args = parser.parse_args()
+    run_journey(args.evidence.resolve(), scenario=args.scenario)

@@ -160,21 +160,100 @@ def verify_pre_native_history(
     return open_rows, verified, used_nonces
 
 
+def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
+                         complete: Any, result: Any, build: Any) -> None:
+    """Recognize a completed V3 receipt only as consumed-history identity."""
+    candidate = build.infra("document_candidate_release")
+    profile = candidate.profile
+    identity = binding.get("build_identity") if type(binding) is dict else None
+    keys = {"version", "kind", "nonce", "build_id", "build_resource", "builder_service_account",
+            "source_bucket", "source_object", "source_generation", "source_archive_sha256",
+            "refresh_dockerfile_sha256", "fixed_renderer_base", "immutable_image", "policy_sha256",
+            "source_sha256"}
+    completed_keys = {"status", "image", "prior_image", "native_acceptance_sha256",
+                      "all_three_caller_pins_verified", "admission_restored", "synchronous_callers_drained",
+                      "current_native_proof_retained", "automatic_replay"}
+    added_keys = {"definition_expires_at", "renderer_contract_version", "required_case_count",
+                  "renderer_parent", "prior_evidence_retained", "fresh_v2_upgraded"}
+    build.need(type(binding) is dict and set(binding) == {"version", "image", "build_identity"}
+               and type(binding["version"]) is int and binding["version"] == 3
+               and type(identity) is dict and set(identity) == keys
+               and type(accepted) is dict and set(accepted) == set(candidate.prior.NativeAcceptance.__dataclass_fields__)
+               and transition_accepted == accepted
+               and type(complete) is dict and set(complete) == completed_keys
+               and type(result) is dict and set(result) == completed_keys | added_keys,
+               "document_refresh_prior_completed_v3_receipt_changed")
+    nonce = identity["nonce"]
+    image = binding["image"]
+    build.need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce)
+               and type(image) is str and candidate.prior.IMAGE.fullmatch(image)
+               and type(identity["version"]) is int and identity["version"] == 1
+               and identity["kind"] == "native_cloud_build"
+               and identity["immutable_image"] == image and identity["fixed_renderer_base"] == profile.IMAGE
+               and identity["builder_service_account"] == build.BUILDER
+               and identity["source_bucket"] == build.PROJECT + "_cloudbuild"
+               and identity["source_object"] == "hirewiz-document-refresh-source/" + nonce + "/source.tar.gz"
+               and type(identity["source_generation"]) is str
+               and re.fullmatch(r"[1-9][0-9]{0,19}", identity["source_generation"])
+               and type(identity["source_archive_sha256"]) is str
+               and re.fullmatch(r"[a-f0-9]{64}", identity["source_archive_sha256"])
+               and identity["policy_sha256"] == candidate.POLICY
+               and identity["refresh_dockerfile_sha256"] == profile.REFRESH_SHA256
+               and identity["source_sha256"] == build.full_source_snapshot()[1]
+               and accepted["image"] == complete["image"] == result["image"] == image
+               and accepted["build_id"] == identity["build_id"]
+               and accepted["build_resource"] == identity["build_resource"]
+               and identity["build_resource"] == candidate.prior.PARENT + "/builds/" + identity["build_id"]
+               and accepted["source_archive_sha256"] == identity["source_archive_sha256"]
+               and accepted["refresh_dockerfile_sha256"] == identity["refresh_dockerfile_sha256"]
+               and accepted["source_sha256"] == identity["source_sha256"]
+               and accepted["job_name"] == candidate.prior.PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12]
+               and accepted["probe_sha256"] == sha(candidate.candidate.rendered_payload(image).encode())
+               and accepted["policy_sha256"] == candidate.POLICY
+               and accepted["font_manifest_sha256"] == profile.FONT
+               and accepted["renderer_version"] == profile.RENDERER
+               and type(accepted["contract_version"]) is int and accepted["contract_version"] == 3
+               and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 11
+               and sha(canonical(accepted)) == complete["native_acceptance_sha256"]
+               and all(result[key] == value for key, value in complete.items())
+               and result["definition_expires_at"] == accepted["definition_expires_at"]
+               and type(result["renderer_contract_version"]) is int and result["renderer_contract_version"] == 3
+               and type(result["required_case_count"]) is int and result["required_case_count"] == 11
+               and result["renderer_parent"] == profile.IMAGE
+               and result["prior_evidence_retained"] is True
+               and type(result["fresh_v2_upgraded"]) is bool
+               and complete["status"] == "document_refresh_serving"
+               and type(complete["prior_image"]) is str and candidate.prior.IMAGE.fullmatch(complete["prior_image"])
+               and complete["prior_image"] != image
+               and complete["admission_restored"] is True
+               and complete["all_three_caller_pins_verified"] is True
+               and complete["synchronous_callers_drained"] is False
+               and complete["current_native_proof_retained"] is True
+               and complete["automatic_replay"] is False,
+               "document_refresh_prior_completed_v3_receipt_changed")
+
+
 def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
-                      build: Any, probe: Any) -> None:
+                      build: Any, probe: Any, *, allow_v3: bool = False) -> None:
     """The retained serving artifact is identity evidence, never fresh acceptance."""
     private(run, build)
     native = run / "native-proof"
     transition = run / "transition"
-    prior = run / "prior-native-retirement"
     build.need(native == expected_journal and native.resolve() == native,
                "document_rescue_prior_completed_journal_changed")
-    for directory in (native, transition, prior):
+    for directory in (native, transition):
         private(directory, build)
     binding = build.decode(read(native / "binding.json", build))
     accepted = build.decode(read(native / "acceptance.json", build))
     transition_accepted = build.decode(read(transition / "native-acceptance.json", build))
     complete = build.decode(read(transition / "complete.json", build))
+    if type(binding) is dict and binding.get("version") == 3:
+        build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
+                   "document_refresh_prior_completed_v3_receipt_changed")
+        completed_serving_v3(binding, accepted, transition_accepted, complete, result, build)
+        return
+    prior = run / "prior-native-retirement"
+    private(prior, build)
     cleanup = build.decode(read(prior / "cleanup.json", build))
     identity = binding.get("build_identity") if type(binding) is dict else None
     build.need(type(identity) is dict and set(binding) == {"image", "build_identity", "probe_sha256"}
@@ -366,8 +445,11 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 
 
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
-           unaccepted_images: set[str] | None = None, *, rescue_expired_v2: bool = False) -> None:
-    build.need(type(rescue_expired_v2) is bool, "document_refresh_recovery_mode_invalid")
+           unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False,
+           rescue_expired_v2: bool = False) -> None:
+    build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
+               and not (retire_expired_v2 and rescue_expired_v2),
+               "document_refresh_recovery_mode_invalid")
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
@@ -376,9 +458,9 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     build.need(service.get("labels", {}).get("hirewiz-refresh-job") not in failed_jobs,
                "document_refresh_recovery_failed_job_serving")
     if image != probe.BASE_IMAGE:
-        if rescue_expired_v2:
-            # Only explicit retirement can use the old expired receipt as
-            # historical identity. It never grants serving acceptance.
+        if retire_expired_v2 or rescue_expired_v2:
+            # Both explicit paths use the expired predecessor only as historical
+            # identity. Its old proof never authorizes a new serving image.
             probe.verify_expired_current_v2_for_retirement(image, service)
         else:
             # Another fresh, genuinely accepted Job may prove the same image bytes.
@@ -415,11 +497,14 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
 
 
 def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
-            resuming_original: Path | None = None, rescue_expired_v2: bool = False,
+            resuming_original: Path | None = None, retire_expired_v2: bool = False,
+            rescue_expired_v2: bool = False,
             rescue_prior_journal: Path | None = None) -> str | None:
     build = refresh_module
-    build.need(type(rescue_expired_v2) is bool and
-               (not rescue_expired_v2 or selected is None and resuming_original is None),
+    build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
+               and not (retire_expired_v2 and rescue_expired_v2)
+               and (not (retire_expired_v2 or rescue_expired_v2)
+                    or selected is None and resuming_original is None),
                "document_refresh_recovery_mode_invalid")
     build.need((rescue_expired_v2 and rescue_prior_journal is not None or
                 not rescue_expired_v2 and rescue_prior_journal is None),
@@ -467,10 +552,10 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                 completed_count += 1
             if os.path.lexists(run / "pre-native-reconciliations"):
                 # A completed successor can consume a Build-only predecessor.
-                # Its own binding must be a verified serving V2 receipt first.
+                # Its own binding must be a verified serving receipt first.
                 if not rescue_expired_v2:
                     completed_serving(run, previous, run / "native-proof", build,
-                                      build.infra("document_refresh_probe"))
+                                      build.infra("document_refresh_probe"), allow_v3=True)
                 binding = build.decode(read(run / "native-proof/binding.json", build))
                 successor = binding["build_identity"]["nonce"]
                 for prior, original, receipt in pre_native_reconciliations(run, build):
@@ -567,18 +652,14 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if chosen is not None:
             assert selected is not None
             failed_jobs.add(selected)
+        mode = ({"retire_expired_v2": True} if retire_expired_v2 else
+                {"rescue_expired_v2": True} if rescue_expired_v2 else {})
         if verified_pre_native:
             failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in verified_pre_native)
-            if rescue_expired_v2:
-                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native},
-                       rescue_expired_v2=True)
-            else:
-                joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native})
+            joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native},
+                   **mode)
         else:
-            if rescue_expired_v2:
-                joined(clients, probe, build, failed_jobs, rescue_expired_v2=True)
-            else:
-                joined(clients, probe, build, failed_jobs)
+            joined(clients, probe, build, failed_jobs, **mode)
         nonce = uuid.uuid4().hex if chosen is not None or open_rows else None
         build.need(nonce is None or nonce not in used_nonces,
                    "document_refresh_pre_native_successor_nonce_reused")

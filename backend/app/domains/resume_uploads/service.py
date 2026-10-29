@@ -99,6 +99,13 @@ def create(db: Session, owner_id: int, body: UploadCreate, key: str, store: Obje
                            clean_bucket=store.config.clean_bucket, clean_name=f"clean/{identifier}/source", enrich_skills=body.enrich_skills,
                            state="awaiting_upload", expires_at=now + timedelta(seconds=ADMISSION_SECONDS),
                            upload_grant_expires_at=now + timedelta(seconds=UPLOAD_GRANT_SECONDS), next_attempt_at=now, attempt_count=0)
+        from ..free_core import policy as free_policy
+        from ..free_core import service as free_service
+
+        if free_policy.enabled():
+            free_service.admit(db, user_id=owner_id, operation="resume_parse", source_type="resume_upload",
+                source_id=identifier, key=f"upload:{key_digest}", fingerprint=digest,
+                input_bytes=body.size_bytes, attempts=3)
         db.add(row)
     # Every fixed object target exists durably before issuing a capability.
     db.commit()

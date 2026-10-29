@@ -3,10 +3,12 @@
 import Script from "next/script";
 import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import posthog from "posthog-js";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import CoreWebVitals from "./CoreWebVitals";
+import { getPostHogClient, setPostHogClient } from "../lib/analytics";
 import { isPasswordResetPath, isPasswordResetUrl, setResetGoogleExclusion } from "../lib/passwordResetPrivacy";
+
+type PostHog = typeof import("posthog-js").default;
 
 const STORAGE_KEY = "hirewiz_cookie_consent";
 const CONSENT_VERSION = 2;
@@ -80,6 +82,7 @@ function AllowedAnalyticsConsent({
   const pathname = usePathname();
   const { data: session, status: sessionStatus } = useSession();
   const identifiedUser = useRef<string | null>(null);
+  const [posthogClient, setPosthogClient] = useState<PostHog | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -90,50 +93,59 @@ function AllowedAnalyticsConsent({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (preference !== "analytics" || !posthogKey) {
       try {
-        posthog.opt_out_capturing();
+        getPostHogClient()?.opt_out_capturing();
       } catch {
         // The SDK may not have been initialized yet.
       }
+      setPostHogClient(null);
       return;
     }
-    posthog.init(posthogKey, {
-      api_host: posthogHost,
-      autocapture: false,
-      capture_pageview: false,
-      capture_pageleave: true,
-      person_profiles: "identified_only",
-      persistence: "localStorage+cookie",
-      respect_dnt: true,
-      opt_out_capturing_by_default: false,
-      before_send: (event) => !event || isPasswordResetPath(window.location.pathname)
-        || isPasswordResetUrl(event.properties.$current_url) || isPasswordResetUrl(event.properties.$referrer) ? null : event,
-    });
-    posthog.opt_in_capturing();
+    // Keep the large SDK off public and private pages until analytics consent.
+    void import("posthog-js").then(({ default: posthog }) => {
+      if (cancelled || readStoredConsent() !== "analytics" || isPasswordResetPath(window.location.pathname)) return;
+      posthog.init(posthogKey, {
+        api_host: posthogHost,
+        autocapture: false,
+        capture_pageview: false,
+        capture_pageleave: true,
+        person_profiles: "identified_only",
+        persistence: "localStorage+cookie",
+        respect_dnt: true,
+        opt_out_capturing_by_default: false,
+        before_send: (event) => !event || isPasswordResetPath(window.location.pathname)
+          || isPasswordResetUrl(event.properties.$current_url) || isPasswordResetUrl(event.properties.$referrer) ? null : event,
+      });
+      posthog.opt_in_capturing();
+      setPostHogClient(posthog);
+      setPosthogClient(posthog);
+    }).catch(() => { /* Analytics must not interrupt the page. */ });
+    return () => { cancelled = true; };
   }, [posthogHost, posthogKey, preference]);
 
   useEffect(() => {
-    if (preference === "analytics" && posthogKey) {
-      posthog.capture("$pageview", { $current_url: window.location.href, path: pathname });
+    if (preference === "analytics" && posthogKey && posthogClient) {
+      posthogClient.capture("$pageview", { $current_url: window.location.href, path: pathname });
     }
-  }, [pathname, posthogKey, preference]);
+  }, [pathname, posthogKey, posthogClient, preference]);
 
   useEffect(() => {
-    if (preference !== "analytics" || !posthogKey) {
+    if (preference !== "analytics" || !posthogKey || !posthogClient) {
       identifiedUser.current = null;
       return;
     }
     const userId = session?.user?.id;
     if (sessionStatus === "authenticated" && userId && identifiedUser.current !== userId) {
-      posthog.identify(userId);
+      posthogClient.identify(userId);
       identifiedUser.current = userId;
     }
     if (sessionStatus === "unauthenticated" && identifiedUser.current) {
-      posthog.reset();
+      posthogClient.reset();
       identifiedUser.current = null;
     }
-  }, [posthogKey, preference, session?.user?.id, sessionStatus]);
+  }, [posthogKey, posthogClient, preference, session?.user?.id, sessionStatus]);
 
   useEffect(() => {
     const open = () => setPreferencesOpen(true);
@@ -154,12 +166,14 @@ function AllowedAnalyticsConsent({
     if (next === "essential") {
       window.gtag?.("consent", "update", { analytics_storage: "denied" });
       try {
-        posthog.reset();
+        getPostHogClient()?.reset();
+        getPostHogClient()?.opt_out_capturing();
       } catch {
         // The SDK may not have been initialized yet.
       }
+      setPostHogClient(null);
+      setPosthogClient(null);
       removeAnalyticsStorage();
-      posthog.opt_out_capturing();
     }
   }, []);
 
@@ -233,7 +247,8 @@ export default function AnalyticsConsent(props: Parameters<typeof AllowedAnalyti
     setResetGoogleExclusion(sensitive, props.gaMeasurementId || undefined);
     if (!sensitive) return;
     window.gtag?.("consent", "update", { analytics_storage: "denied" });
-    try { posthog.opt_out_capturing(); } catch { /* A fresh reset page never initializes the SDK. */ }
+    try { getPostHogClient()?.opt_out_capturing(); } catch { /* A fresh reset page never initializes the SDK. */ }
+    setPostHogClient(null);
   }, [sensitive, props.gaMeasurementId]);
   return sensitive ? null : <AllowedAnalyticsConsent {...props} />;
 }

@@ -512,6 +512,8 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         need(source_hashes == json.loads(legacy_source("policy.json"))["source_sha256"],
              "document_refresh_historical_source_changed")
         policy = LEGACY_POLICY
+    need(build_identity is None or build_identity.get("policy_sha256", policy) == policy,
+         "document_refresh_candidate_renderer_review_required")
     need(type(proof) is dict and proof.get("platform") == "linux/amd64"
          and proof.get("scope") == "local_native_docker_only"
          and proof.get("cloud_run_isolation_proven") is False
@@ -589,11 +591,15 @@ FULL_SOURCE_MAX_BYTES = 4 * 1024 * 1024
 
 
 def full_source_snapshot() -> tuple[dict[str, bytes], dict[str, str], str]:
-    """Exactly the reviewed thirteen source files plus their bound policy."""
+    """Exactly the source-only candidate inventory and its separately pinned policy."""
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
-    need(len(engines.SOURCES) == 13 and len(set(engines.SOURCES)) == 13,
+    candidate = infra("document_candidate")
+    need(set(engines.SOURCES) == candidate.SOURCES
+         and len(engines.SOURCES) == len(candidate.SOURCES)
+         and engines.RUNTIME == candidate.RUNTIME
+         and len(set(engines.RUNTIME.values())) == len(engines.RUNTIME),
          "document_source_manifest_invalid")
     contents = {}
     for name in (*engines.SOURCES, FULL_SOURCE_POLICY):
@@ -609,11 +615,24 @@ def full_source_snapshot() -> tuple[dict[str, bytes], dict[str, str], str]:
     policy = contents[FULL_SOURCE_POLICY]
     policy_value = decode(policy)
     need(type(policy_value) is dict and policy_value.get("source_sha256") == hashes
-         and hashlib.sha256(policy).hexdigest() == accepted().POLICY_SHA256,
+         and hashlib.sha256(policy).hexdigest() == candidate.POLICY_SHA256,
          "document_source_policy_changed")
     need(sum(map(len, contents.values())) <= FULL_SOURCE_MAX_BYTES,
          "document_source_archive_bound")
     return contents, hashes, hashlib.sha256(policy).hexdigest()
+
+
+def accepted_source_hashes() -> dict[str, str]:
+    """The frozen V2 inventory; current candidate source cannot rewrite it."""
+    profile = infra("document_renderer_profiles")
+    path = ROOT / "infra/gcp/document_accepted_v2/policy.json"
+    need(not path.is_symlink(), "document_refresh_accepted_policy_changed")
+    raw = path.read_bytes()
+    need(0 < len(raw) <= MAX_OUTPUT and hashlib.sha256(raw).hexdigest() == profile.BUILD["policy_sha256"],
+         "document_refresh_accepted_policy_changed")
+    value = decode(raw)
+    need(value.get("source_sha256") == profile.SOURCES, "document_refresh_accepted_policy_changed")
+    return dict(profile.SOURCES)
 
 
 def _full_source_tar() -> bytes:
@@ -657,10 +676,16 @@ def archive_full_source(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def full_source_build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
+def full_source_build_request(nonce: str, source: dict[str, str], *, historical_profile: bool = False) -> dict[str, Any]:
     need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce),
          "document_refresh_build_nonce_invalid")
-    _, hashes, _ = full_source_snapshot()
+    need(type(historical_profile) is bool, "document_refresh_contract_version_invalid")
+    if historical_profile:
+        profile = infra("document_renderer_profiles")
+        need(nonce == profile.BUILD["nonce"], "document_refresh_renderer_build_profile_changed")
+        hashes = profile.SOURCES
+    else:
+        _, hashes, _ = full_source_snapshot()
     tag = REPOSITORY + ":source-" + nonce
     body = build_request(nonce, source)
     arguments = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
@@ -673,7 +698,9 @@ def full_source_build_request(nonce: str, source: dict[str, str]) -> dict[str, A
     return body
 
 
-def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False, full_source: bool = False) -> dict[str, Any]:
+def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False,
+                   full_source: bool = False, historical_profile: bool = False,
+                   candidate_v3: bool = False) -> dict[str, Any]:
     """Check actual native Build fields; a caller-supplied summary is insufficient."""
     need(type(value) is dict and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_native_build_invalid")
     build_id = value.get("id", "")
@@ -684,11 +711,16 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
              f"projects/{PROJECT}/serviceAccounts/{BUILDER}", f"projects/157225724590/serviceAccounts/{BUILDER}"},
          "document_refresh_native_build_identity_unverified")
     need(type(full_source) is bool and not (historical_v1 and full_source), "document_refresh_contract_version_invalid")
+    need(type(historical_profile) is bool and (not historical_profile or full_source),
+         "document_refresh_contract_version_invalid")
+    need(type(candidate_v3) is bool and (not candidate_v3 or not (historical_v1 or full_source or historical_profile)),
+         "document_refresh_contract_version_invalid")
     tag = REPOSITORY + (":source-" if full_source else ":refresh-") + nonce
     expected = [["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
         "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--tag", tag, "."], ["push", tag]]
     if full_source:
-        expected = [row["args"] for row in full_source_build_request(nonce, {})["steps"]]
+        expected = [row["args"] for row in full_source_build_request(
+            nonce, {}, historical_profile=historical_profile)["steps"]]
     steps = value.get("steps")
     need(type(steps) is list and len(steps) == 2 and all(
         row.get("name") == DOCKER_BUILDER and row.get("args") == args
@@ -714,6 +746,10 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
          and re.fullmatch(r"[1-9][0-9]{0,19}", str(source.get("generation", ""))),
          "document_refresh_native_source_unverified")
     renderer_base = RENDERER_BASE
+    if candidate_v3:
+        candidate_profile = infra("document_candidate")
+        need(recipe_sha == candidate_profile.REFRESH_SHA256, "document_source_recipe_changed")
+        renderer_base = candidate_profile.IMAGE
     if historical_v1:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_probe import LEGACY_BASE_IMAGE
@@ -724,13 +760,26 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
         "source_bucket": source["bucket"], "source_object": source["object"],
         "source_generation": str(source["generation"]), "refresh_dockerfile_sha256": recipe_sha,
         "fixed_renderer_base": renderer_base, "immutable_image": REPOSITORY + "@" + images[0]["digest"]}
-    if full_source:
-        contents, _, policy = full_source_snapshot()
-        need(recipe_sha == hashlib.sha256(contents[FULL_SOURCE_DOCKERFILE]).hexdigest(),
+    if candidate_v3:
+        need(recipe_sha == hashlib.sha256((ROOT / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes()).hexdigest(),
              "document_source_recipe_changed")
+        result["policy_sha256"] = candidate_profile.POLICY_SHA256
+    if full_source:
+        if historical_profile:
+            profile = infra("document_renderer_profiles")
+            policy = profile.BUILD["policy_sha256"]
+            need(recipe_sha == profile.BUILD["refresh_dockerfile_sha256"], "document_source_recipe_changed")
+        else:
+            contents, _, policy = full_source_snapshot()
+            need(recipe_sha == hashlib.sha256(contents[FULL_SOURCE_DOCKERFILE]).hexdigest(),
+                 "document_source_recipe_changed")
         # Existing acceptance receipts retain their historical recipe-key name.
         # Full-source builds do not claim to reuse the old renderer image.
         result.update(fixed_renderer_base=None, policy_sha256=policy)
+        if historical_profile:
+            need(result == {key: value for key, value in profile.BUILD.items()
+                            if key != "source_archive_sha256"},
+                 "document_refresh_renderer_build_profile_changed")
     return result
 
 
@@ -797,12 +846,18 @@ def build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
         "options": {"logging": "CLOUD_LOGGING_ONLY"}, "timeout": "900s"}
 
 
-def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, full_source: bool = False) -> dict[str, Any]:
+def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, full_source: bool = False,
+                 candidate_v3: bool = False) -> dict[str, Any]:
     from urllib.parse import urlencode
 
     nonce = uuid.uuid4().hex if nonce is None else nonce
     need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_build_nonce_invalid")
     need(type(full_source) is bool, "document_refresh_contract_version_invalid")
+    need(type(candidate_v3) is bool and not (candidate_v3 and full_source), "document_refresh_contract_version_invalid")
+    if candidate_v3:
+        need(recipe == (ROOT / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes(),
+             "document_source_recipe_changed")
+        need(hashlib.sha256(recipe).hexdigest() == infra("document_candidate").REFRESH_SHA256, "document_source_recipe_changed")
     recipe_sha = hashlib.sha256(recipe).hexdigest()
     if full_source:
         contents, _, _ = full_source_snapshot()
@@ -845,11 +900,13 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
             need(time.monotonic() < deadline, "document_refresh_build_deadline_reconcile_only")
             time.sleep(min(10, max(0, deadline - time.monotonic())))
         identity = (build_contract(value, nonce, recipe_sha, full_source=True) if full_source
-                    else build_contract(value, nonce, recipe_sha))
+                    else build_contract(value, nonce, recipe_sha, candidate_v3=candidate_v3))
         stored_source = read_native_source(http, identity)
         native_archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
         need(native_archive_sha == archive_sha, "document_refresh_native_source_changed")
         identity["source_archive_sha256"] = native_archive_sha
+        if candidate_v3:
+            identity["source_sha256"] = full_source_snapshot()[1]
         write_new(directory / "native-build-identity.json", identity)
         return identity
     finally:
@@ -880,28 +937,40 @@ def verify_native_build(identity: dict[str, Any], *, historical_v1: bool = False
     return actual
 
 
-def verify_current_build(build_id: str, nonce: str, image: str, *, historical_v1: bool = False) -> dict[str, Any]:
+def verify_current_build(build_id: str, nonce: str, image: str, *, historical_v1: bool = False,
+                         candidate_v3: bool = False) -> dict[str, Any]:
     """Dedicated service-identity verifier for scheduled maintenance."""
-    return _verify_current_build(build_id, nonce, image, release_read_only=False, historical_v1=historical_v1)
+    return _verify_current_build(build_id, nonce, image, release_read_only=False, historical_v1=historical_v1, candidate_v3=candidate_v3)
 
 
-def verify_current_build_release(build_id: str, nonce: str, image: str, *, historical_v1: bool = False) -> dict[str, Any]:
+def verify_current_build_release(build_id: str, nonce: str, image: str, *, historical_v1: bool = False,
+                                 candidate_v3: bool = False) -> dict[str, Any]:
     """Fixed normal-manager read-only entry; no ADC or controller-UID dependency."""
-    return _verify_current_build(build_id, nonce, image, release_read_only=True, historical_v1=historical_v1)
+    return _verify_current_build(build_id, nonce, image, release_read_only=True, historical_v1=historical_v1, candidate_v3=candidate_v3)
 
 
-def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read_only: bool, historical_v1: bool = False) -> dict[str, Any]:
+def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read_only: bool, historical_v1: bool = False,
+                          candidate_v3: bool = False) -> dict[str, Any]:
     """Reconstruct current native provenance without asserting a lost local proof."""
     need(type(build_id) is str and re.fullmatch(r"[a-f0-9-]{36}", build_id)
          and type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce)
          and type(image) is str and re.fullmatch(re.escape(REPOSITORY) + r"@sha256:[a-f0-9]{64}", image),
          "document_refresh_native_build_identity_unverified")
     need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
+    profile = infra("document_renderer_profiles")
+    historical_profile = image == profile.IMAGE
+    need(type(candidate_v3) is bool and (not candidate_v3 or not (historical_v1 or historical_profile)),
+         "document_refresh_contract_version_invalid")
+    if historical_profile:
+        need(not historical_v1 and build_id == profile.BUILD["build_id"] and nonce == profile.BUILD["nonce"],
+             "document_refresh_renderer_build_profile_changed")
     if historical_v1:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_probe import legacy_source
 
         recipe = legacy_source("refresh.Dockerfile")
+    elif candidate_v3:
+        recipe = (ROOT / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes()
     else:
         recipe = (ROOT / "infra/document-processing/refresh.Dockerfile").read_bytes()
     recipe_sha = hashlib.sha256(recipe).hexdigest()
@@ -918,26 +987,34 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
         full_source = (type(images) is list and len(images) == 1 and type(images[0]) is dict
                        and images[0].get("name") == REPOSITORY + ":source-" + nonce)
         need(not (full_source and historical_v1), "document_source_historical_profile_refused")
+        need(not (candidate_v3 and full_source), "document_source_historical_profile_refused")
+        need(not historical_profile or full_source, "document_refresh_renderer_build_profile_changed")
         if full_source:
-            recipe = (ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()
-            recipe_sha = hashlib.sha256(recipe).hexdigest()
-            actual = build_contract(value, nonce, recipe_sha, full_source=True)
+            recipe_sha = (profile.BUILD["refresh_dockerfile_sha256"] if historical_profile else
+                          hashlib.sha256((ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()).hexdigest())
+            actual = build_contract(value, nonce, recipe_sha, full_source=True, historical_profile=historical_profile)
         else:
-            actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1)
+            actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1, candidate_v3=candidate_v3)
         need(actual["immutable_image"] == image, "document_refresh_native_build_readback_changed")
         stored_source = read_native_source(http, actual)
-        archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
+        if historical_profile:
+            need(type(stored_source) is bytes and 0 < len(stored_source) <= FULL_SOURCE_MAX_BYTES
+                 and hashlib.sha256(stored_source).hexdigest() == profile.BUILD["source_archive_sha256"],
+                 "document_source_archive_changed")
+            archive_sha = profile.BUILD["source_archive_sha256"]
+        else:
+            archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
     finally:
         http.close()
-    sys.path.insert(0, str(ROOT / "backend"))
-    from scripts import document_test_image as engines
-
     if historical_v1:
         source_hashes = json.loads(legacy_source("policy.json"))["source_sha256"]
+    elif candidate_v3:
+        source_hashes = full_source_snapshot()[1]
+    elif historical_profile or not full_source:
+        source_hashes = accepted_source_hashes()
     else:
-        source_hashes = engines.source_hashes()
+        source_hashes = full_source_snapshot()[1]
     actual.update(source_archive_sha256=archive_sha, source_sha256=source_hashes)
-    profile = infra("document_renderer_profiles")
     need(image != profile.IMAGE or profile.matches_build(actual),
          "document_refresh_renderer_build_profile_changed")
     return actual
@@ -1022,9 +1099,9 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 
 
 def infra(name: str) -> Any:
-    need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery",
-                  "document_renderer_profiles", "document_refresh_resume", "document_refresh_partial",
-                  "document_refresh_final", "document_refresh_final_readback"},
+    need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery", "document_candidate_release",
+                  "document_renderer_profiles", "document_refresh_resume", "document_candidate",
+                  "document_refresh_partial", "document_refresh_final", "document_refresh_final_readback"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
@@ -1072,14 +1149,22 @@ def rescue_prior_journal(history: Path, service: dict[str, Any], clients: Any,
 
 def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Path | None = None,
             history: Path | None = None, recover_failed_native_job: str | None = None,
-            full_source: bool = False, rescue_expired_v2: bool = False) -> dict[str, Any]:
+            full_source: bool = False, retire_expired_v2: bool = False,
+            rescue_expired_v2: bool = False,
+            upgrade_current_v2_to_v3: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
-    need(type(full_source) is bool and type(rescue_expired_v2) is bool,
+    need(type(full_source) is bool and type(retire_expired_v2) is bool
+         and type(rescue_expired_v2) is bool and type(upgrade_current_v2_to_v3) is bool
+         and sum((retire_expired_v2, rescue_expired_v2, upgrade_current_v2_to_v3)) <= 1,
          "document_refresh_contract_version_invalid")
+    need(not retire_expired_v2 or (publish and not full_source and recover_failed_native_job is None),
+         "document_refresh_expired_v2_requires_explicit_v3_refresh")
     need(not rescue_expired_v2 or (publish and not full_source
          and recover_failed_native_job is None and prior_journal is None and history is not None),
          "document_refresh_expired_v2_requires_explicit_refresh")
+    need(not upgrade_current_v2_to_v3 or (publish and not full_source and recover_failed_native_job is None),
+         "document_refresh_fresh_v2_upgrade_requires_explicit_refresh")
     probe = infra("document_refresh_probe")
     if rescue_expired_v2:
         clients = probe.Clients()
@@ -1094,12 +1179,31 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             clients.close()
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
-        rescue_expired_v2=rescue_expired_v2, rescue_prior_journal=prior_journal if rescue_expired_v2 else None)
+        retire_expired_v2=retire_expired_v2, rescue_expired_v2=rescue_expired_v2,
+        rescue_prior_journal=prior_journal if rescue_expired_v2 else None)
     preflight = probe.Clients()
     try:
-        preflight.preflight()
+        serving = preflight.preflight()["service"]
     finally:
         preflight.close()
+    current_image = serving["template"]["containers"][0]["image"]
+    current_policy = probe.policy_for_serving(serving, current_image)
+    if rescue_expired_v2:
+        need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
+             "document_refresh_rescue_v2_predecessor_changed")
+    if upgrade_current_v2_to_v3:
+        need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
+             "document_refresh_fresh_v2_upgrade_requires_v2")
+        return infra("document_candidate_release").refresh(directory, publish=publish,
+            now=now, nonce=nonce, upgrade_current_v2_to_v3=True)
+    if retire_expired_v2:
+        need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
+             "document_refresh_expired_v2_predecessor_required")
+        return infra("document_candidate_release").refresh(directory, publish=publish,
+            now=now, nonce=nonce, retire_expired_v2=True)
+    if current_policy == infra("document_candidate").POLICY_SHA256:
+        need(not full_source, "document_refresh_candidate_full_source_review_required")
+        return infra("document_candidate_release").refresh(directory, publish=publish, now=now, nonce=nonce)
     selected = full_source_candidate if full_source else candidate
     value = (selected(directory, publish=publish, now=now) if nonce is None else
              selected(directory, publish=publish, now=now, nonce=nonce))
@@ -1385,7 +1489,9 @@ def main() -> None:
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
     parser.add_argument("--recover-failed-native-job")
+    parser.add_argument("--retire-expired-v2", action="store_true")
     parser.add_argument("--rescue-expired-v2", action="store_true")
+    parser.add_argument("--upgrade-current-v2-to-v3", action="store_true")
     parser.add_argument("--resume-candidate-directory", type=Path)
     parser.add_argument("--resume-manifest-sha256")
     parser.add_argument("--resume-transition-directory", type=Path)
@@ -1397,9 +1503,19 @@ def main() -> None:
          "document_rescue_transition_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
          "document_refresh_recovery_requires_explicit_refresh")
-    need(not args.rescue_expired_v2 or (args.mode == "refresh" and args.publish_candidate
+    need(not args.retire_expired_v2 or (args.mode == "refresh" and args.publish_candidate
+         and not args.rescue_expired_v2
          and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
          "document_refresh_expired_v2_requires_dispatch")
+    need(not args.rescue_expired_v2 or (args.mode == "refresh" and args.publish_candidate
+         and not args.retire_expired_v2 and args.recover_failed_native_job is None
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_expired_v2_requires_dispatch")
+    need(not args.upgrade_current_v2_to_v3 or (args.mode == "refresh" and args.publish_candidate
+         and args.recover_failed_native_job is None and not args.retire_expired_v2
+         and not args.rescue_expired_v2
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_fresh_v2_upgrade_requires_dispatch")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -1448,8 +1564,12 @@ def main() -> None:
                      "recover_failed_native_job": args.recover_failed_native_job}
         if args.mode == "full-source-refresh":
             arguments["full_source"] = True
+        if args.retire_expired_v2:
+            arguments["retire_expired_v2"] = True
         if args.rescue_expired_v2:
             arguments["rescue_expired_v2"] = True
+        if args.upgrade_current_v2_to_v3:
+            arguments["upgrade_current_v2_to_v3"] = True
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":

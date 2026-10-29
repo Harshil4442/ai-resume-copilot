@@ -16,8 +16,16 @@ on:
         type: string
         required: false
         default: ""
+      retire_expired_v2:
+        description: Explicitly retire an expired V2 worker after closing all callers and proving a fresh V3 successor
+        type: boolean
+        default: false
       rescue_expired_v2:
         description: Explicitly replace the exact expired V2 worker after the guarded API hotfix is serving
+        type: boolean
+        default: false
+      upgrade_current_v2_to_v3:
+        description: Explicitly upgrade a freshly verified V2 worker through fresh V3 inventory and eleven-case native proof
         type: boolean
         default: false
 
@@ -42,7 +50,9 @@ jobs:
       REFRESH_MODE: ${{ github.event.schedule == '37 1 * * *' && 'refresh' || inputs.mode || 'monitor' }}
       DOCUMENT_REFRESH_CONTROLLER_UID: ${{ vars.DOCUMENT_REFRESH_CONTROLLER_UID }}
       RECOVER_FAILED_NATIVE_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.recover_failed_native_job || '' }}
+      RETIRE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.retire_expired_v2 || false }}
       RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
+      UPGRADE_CURRENT_V2_TO_V3: ${{ github.event_name == 'workflow_dispatch' && inputs.upgrade_current_v2_to_v3 || false }}
     steps:
       - name: Initialize private maintenance paths
         run: |
@@ -63,8 +73,11 @@ jobs:
           test -n "$PROVIDER" && test "$ACCOUNT" = "hirewiz-document-refresh@ai-resume-parser-482412.iam.gserviceaccount.com"
           test -n "$DOCUMENT_REFRESH_CONTROLLER_UID"
           test -z "$RECOVER_FAILED_NATIVE_JOB" || test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh
+          test "$RETIRE_EXPIRED_V2" != true || test "$REFRESH_MODE" = refresh
           test "$RESCUE_EXPIRED_V2" != true || test "$REFRESH_MODE" = refresh
           test "$RESCUE_EXPIRED_V2" != true || test -z "$RECOVER_FAILED_NATIVE_JOB"
+          test "$RETIRE_EXPIRED_V2" != true || test "$RESCUE_EXPIRED_V2" != true
+          test "$UPGRADE_CURRENT_V2_TO_V3" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true; }
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -249,8 +262,14 @@ jobs:
           if [[ -n "$RECOVER_FAILED_NATIVE_JOB" ]]; then
             args+=(--recover-failed-native-job "$RECOVER_FAILED_NATIVE_JOB")
           fi
+          if [[ "$RETIRE_EXPIRED_V2" = true ]]; then
+            args+=(--retire-expired-v2)
+          fi
           if [[ "$RESCUE_EXPIRED_V2" = true ]]; then
             args+=(--rescue-expired-v2)
+          fi
+          if [[ "$UPGRADE_CURRENT_V2_TO_V3" = true ]]; then
+            args+=(--upgrade-current-v2-to-v3)
           fi
           backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
       - name: Build full-source inspector, prove native cases and transition exact pins
@@ -285,6 +304,8 @@ jobs:
             echo 'Exact-candidate continuation rechecks the original artifact, actual Build/archive/source and 25 local cases, then requires a single create-only resume claim and native V2 ten-case acceptance before the unchanged pin transition/retirement. It does not upload source or create another Build. Any unknown claim/Job/transition outcome is read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = full-source-refresh ]]; then
             echo 'Full-source refresh publishes 13 source inputs plus the policy file and requires verification of 12 copied runtime files, 25 synthetic local cases and native V2 ten-case acceptance before the bounded worker/three-caller pin transition. Inspect the retained result and native journals for the actual outcome; this summary alone proves no completion. No new IAM, sales or employer submission is enabled. Unknown outcomes require read-only reconciliation, never another send.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = refresh ]]; then
+            echo 'Refresh selects the serving document policy: V2 requires ten native cases; V3 requires eleven. Manual expired-V2 rescue requires the exact closed-upload API hotfix and an owned prior journal before fresh ten-case V2 proof. Manual V3 retirement closes callers and requires fresh eleven-case V3 proof. Manual fresh-V2-to-V3 upgrade verifies V2 serving authority before fresh V3 inventory and eleven-case native proof. Daily refresh never upgrades profiles. Unknown native Job or PATCH outcomes require exact read-only reconciliation, never replay. Inspect retained journals for the actual outcome.' >> "$GITHUB_STEP_SUMMARY"
           else
-            echo 'Refresh requires actual native V2 ten-case acceptance before the bounded fail-closed worker and three-caller pin transition. Manual expired-V2 rescue additionally checks the exact guarded API release with uploads closed, proves the old Build/Job/Execution/config/pins as retirement-only, and preflights the prior owned journal before a new Build. On failure retain this journal, inspect the same native operation, and keep admission closed; rerunning a failed POST/PATCH is not recovery. Monitor emits an expiry heartbeat for the configured Cloud Monitoring alert.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Monitor reads the serving worker expiry and emits a heartbeat for the configured Cloud Monitoring alert. This audit does not build, prove, or promote a document image.' >> "$GITHUB_STEP_SUMMARY"
           fi

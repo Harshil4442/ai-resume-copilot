@@ -101,7 +101,7 @@ def transport(request: httpx.Request) -> httpx.Response:
     if request.url.host == "api.razorpay.com" and request.url.path == "/v1/orders":
         assert request.method == "POST"
         payload = json.loads(request.content)
-        assert payload["amount"] == 64_900 and payload["currency"] == "INR"
+        assert payload["amount"] == (7_900 if os.getenv("COLD_BROWSER_SCENARIO") == "unified" else 64_900) and payload["currency"] == "INR"
         assert payload["partial_payment"] is False
         count("synthetic_checkout_orders")
         assert COUNTS["synthetic_checkout_orders"] == 1
@@ -138,11 +138,13 @@ def async_client_init(client, *args, **kwargs):
 
 httpx.AsyncClient.__init__ = async_client_init
 _original_connect = socket.socket.connect
+DISPOSABLE_SQL_PORT = int(os.environ.get("COLD_BROWSER_POSTGRES_PORT", "55433"))
+assert DISPOSABLE_SQL_PORT in {55433, 55434}, "Unexpected disposable SQL port"
 
 
 def restricted_connect(sock, address):
     # Only the explicitly disposable SQL listener is available to this process.
-    if isinstance(address, tuple) and address[0] in {"127.0.0.1", "::1"} and address[1] == 55433:
+    if isinstance(address, tuple) and address[0] in {"127.0.0.1", "::1"} and address[1] == DISPOSABLE_SQL_PORT:
         return _original_connect(sock, address)
     count("unexpected_socket_egress")
     raise AssertionError("Backend fixture attempted non-SQL socket egress")
@@ -186,7 +188,8 @@ def dispatch_loop():
     while not STOP.wait(0.1):
         # The real outbox/worker only processes synthetic feed GET refreshes.
         try:
-            dispatch.dispatch_pending(limit=5, topics={"employer.refresh"})
+            topics = {"employer.refresh", "employer.search"} if os.getenv("COLD_BROWSER_SCENARIO") == "unified" else {"employer.refresh"}
+            dispatch.dispatch_pending(limit=5, topics=topics)
         except Exception:
             count("dispatch_errors")
             raise

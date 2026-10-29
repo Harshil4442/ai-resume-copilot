@@ -19,6 +19,7 @@ from pathlib import Path
 MANIFEST = Path("/opt/document/docx-font-manifest.json")
 # This native engine is included in the verified immutable font/tool inventory.
 SOFFICE = "/usr/lib/libreoffice/program/soffice.bin"
+FONTCONFIG = "/usr/bin/fc-match"
 WRITER_OWNER = "/opt/document/writer_owner.py"
 MAX_MANIFEST = 256 * 1024
 MAX_PDF = 10 * 1024 * 1024
@@ -71,14 +72,14 @@ def _inventory() -> list[dict[str, str]]:
                     paths.add(path.resolve(strict=True))
                     if len(paths) > 1000:
                         raise RendererUnavailable()
-    for filename in ("/usr/bin/soffice", "/usr/lib/libreoffice/program/soffice.bin"):
+    for filename in ("/usr/bin/soffice", "/usr/lib/libreoffice/program/soffice.bin", FONTCONFIG):
         paths.add(Path(filename).resolve(strict=True))
     if len(paths) > 1000:
         raise RendererUnavailable()
     rows, total = [], 0
     for path in sorted(paths):
         if (not path.is_file() or len(str(path)) > 512
-                or not str(path).startswith(("/usr/share/", "/usr/lib/libreoffice/", "/etc/fonts/", "/var/cache/fontconfig/"))):
+                or (str(path) != FONTCONFIG and not str(path).startswith(("/usr/share/", "/usr/lib/libreoffice/", "/etc/fonts/", "/var/cache/fontconfig/")))):
             raise RendererUnavailable()
         size = path.stat().st_size
         total += size
@@ -159,6 +160,63 @@ def font_manifest(*, deadline: float) -> tuple[str, str]:
     return data["renderer_version"], hashlib.sha256(raw).hexdigest()
 
 
+def _font_query(pattern: str, *, deadline: float) -> bytes:
+    # The same bounded, credential-free launcher owns this fixed read-only
+    # Fontconfig process. Writer's own executable allowlist remains unchanged.
+    from service import _run as owned_run
+    remaining = min(5.0, deadline - time.monotonic())
+    if not math.isfinite(remaining) or remaining <= 0:
+        raise RendererUnavailable()
+    try:
+        code, output = owned_run([FONTCONFIG, "--format=%{family}\n%{postscriptname}\n%{file}\n%{weight}\n%{slant}\n%{charset}\n", pattern],
+                                 timeout=remaining, limit=131072)
+    except Exception:
+        raise RendererUnavailable() from None
+    if code != 0:
+        raise RendererUnavailable()
+    return output
+
+
+def _resolve_fonts(required: dict, *, deadline: float) -> dict:
+    """Require a real installed family/style and every used source glyph.
+
+    Fontconfig fallback, metric aliases and synthetic bold/italic are refused.
+    The returned PostScript names are then checked on *both* rendered PDFs.
+    This runs only after font_manifest has attested these installed bytes.
+    """
+    from app.services.docx_fonts import require
+    installed = {row["path"] for row in json.loads(MANIFEST.read_bytes())["files"]}
+    faces = {}
+    for key, points in required.items():
+        family, bold, italic = key
+        # Defense in depth: no user-supplied Fontconfig pattern syntax.
+        require(type(family) is str and 0 < len(family) <= 128
+                and not re.search(r"[\x00-\x1f\x7f\\:,=]", family))
+        output = _font_query(f"{family}:weight={'bold' if bold else 'regular'}:slant={'italic' if italic else 'roman'}", deadline=deadline)
+        try:
+            values = output.decode("utf-8", errors="strict").splitlines()
+            require(len(values) == 6)
+            resolved, postscript, filename, weight, slant, charset = values
+            require(resolved.casefold() == family.casefold() and filename in installed
+                    and filename.startswith(("/usr/share/fonts/", "/usr/lib/libreoffice/share/fonts/"))
+                    and Path(filename).suffix.lower() in {".ttf", ".otf", ".ttc"}
+                    and re.fullmatch(r"[A-Za-z0-9_.+-]{1,128}", postscript))
+            require(weight == ("200" if bold else "80") and slant in ({"100", "110"} if italic else {"0"}))
+            ranges: list[tuple[int, int]] = []
+            for part in charset.split():
+                require(re.fullmatch(r"[0-9a-f]{1,6}(?:-[0-9a-f]{1,6})?", part))
+                bounds = part.split("-")
+                start, end = int(bounds[0], 16), int(bounds[-1], 16)
+                require(0 <= start <= end <= 0x10FFFF and len(ranges) < 4096)
+                ranges.append((start, end))
+            require(points and all(any(start <= point <= end for start, end in ranges) for point in points))
+            faces[key] = postscript
+        except (UnicodeError, ValueError):
+            from app.services.docx_layout_validation import DocxLayoutError
+            raise DocxLayoutError("unsupported_source_font") from None
+    return faces
+
+
 def _render(content: bytes, directory: Path, *, deadline: float) -> bytes:
     if type(content) is not bytes or not 0 < len(content) <= 5 * 1024 * 1024:
         raise RendererUnavailable()
@@ -187,6 +245,12 @@ def validate_rendered_edit(source: bytes, candidate: bytes, edits: list[dict], *
     from app.services.docx_layout_validation import RendererIdentity, validate_docx_layout
     try:
         version, fonts = font_manifest(deadline=deadline)
+        from app.services.docx_fonts import document_fonts
+        original_fonts, candidate_fonts = document_fonts(source), document_fonts(candidate)
+        required = {key: set(points) for key, points in original_fonts.required.items()}
+        for key, points in candidate_fonts.required.items():
+            required.setdefault(key, set()).update(points)
+        resolved = _resolve_fonts(required, deadline=deadline)
         with tempfile.TemporaryDirectory(prefix="writer-compare-", dir="/tmp") as temporary:
             directory = Path(temporary)
             directory.chmod(0o700)
@@ -194,7 +258,8 @@ def validate_rendered_edit(source: bytes, candidate: bytes, edits: list[dict], *
             after = _render(candidate, directory / "after", deadline=deadline)
             result = validate_docx_layout(source_docx=source, candidate_docx=candidate, edits=edits,
                 before_pdf=before, after_pdf=after,
-                renderer=RendererIdentity(image, policy, version, fonts))
+                renderer=RendererIdentity(image, policy, version, fonts),
+                font_contract=(original_fonts, candidate_fonts, resolved))
             if time.monotonic() >= deadline:
                 raise RendererUnavailable()
             return result.to_dict()

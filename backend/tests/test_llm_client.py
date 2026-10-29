@@ -7,6 +7,12 @@ from backend.app.services import llm_client
 from google import genai
 
 
+@pytest.fixture(autouse=True)
+def _no_live_gemini_count(monkeypatch):
+    # Transport tests use synthetic keys and must never call the provider.
+    monkeypatch.setattr(llm_client, "count_gemini_input", lambda *_: 10)
+
+
 def _tailoring_input():
     original = "Developed Python services and reduced response time by 20%."
     return {
@@ -673,7 +679,8 @@ def _question_set():
     return [
         {
             "question": question,
-            "coaching_angle": "Explain the context, your action, and the verified result.",
+            "preparation_steps": ["Compare the available design choices and their trade-offs.",
+                                  "Explain how to verify the proposed behavior and measure its result."],
             "evidence_ids": [],
         }
         for question in questions
@@ -753,11 +760,14 @@ def test_interview_exhausted_repair_fails_without_becoming_a_retryable_run(monke
     assert tasks._retryable(error.value) is False
 
 
-def test_interview_filters_unknown_evidence_and_keeps_approved_facts(monkeypatch):
+def test_interview_repairs_unknown_evidence_and_keeps_approved_facts(monkeypatch):
     data = _question_set()
     data[0]["evidence_ids"] = ["approved-1", "invented", "approved-1"]
     data[1]["evidence_ids"] = ["invented"]
-    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps(data))
+    corrected = _question_set()
+    corrected[0]["evidence_ids"] = ["approved-1", "approved-1"]
+    responses = iter([json.dumps(data), json.dumps(corrected)])
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: next(responses))
 
     result = llm_client.generate_interview_questions(
         "Search Engineer",
@@ -773,9 +783,10 @@ def test_interview_filters_unknown_evidence_and_keeps_approved_facts(monkeypatch
     assert result[1]["answer_state"] == "evidence_needed"
 
 
-def test_interview_caps_an_oversized_response_to_the_requested_count(monkeypatch):
-    monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps(_question_set()))
-    assert len(llm_client.generate_interview_questions("Search Engineer", "Build search.", 3)) == 3
+def test_enhanced_interview_refuses_a_smaller_deliverable_before_generation(monkeypatch):
+    monkeypatch.setattr(llm_client, "_chat", lambda messages: pytest.fail("No generation is allowed"))
+    with pytest.raises(llm_client.InterviewOutputError, match="exactly eight"):
+        llm_client.generate_interview_questions("Search Engineer", "Build search.", 3)
 
 
 def test_interview_provider_errors_are_not_hidden_by_output_repair(monkeypatch):

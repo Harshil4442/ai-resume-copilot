@@ -1,0 +1,11 @@
+{
+  "contract": "hirewiz_unified_credit_schema25_v1",
+  "migration_sources": {
+    "20261027_0022_unified_credit_wallet.py": "38e129617563a6dceed754199552818386e98e62c2604e88d9b69d020a8acfb7",
+    "20261027_0023_unified_execution_reservations.py": "5c00552e2c8b078fbadb213f03daf83c577a480f018e28c82b3b409e53bf890b",
+    "20261027_0024_funded_free_core.py": "63904af968b2b287178190a27cdfdd4651f69971453d0906a3ffa180bb90e31c",
+    "20261028_0025_unified_discovery_batches.py": "1aedea10f4d719248f10e5773bbe8893502ce924923148fee9837e90606bb545"
+  },
+  "new_catalog_sha256": "1cfe94d7269a3f2084ecb95313706d88ea31201ab5b028c605b96c72da50a7d8",
+  "qualification_database_major": 17
+}

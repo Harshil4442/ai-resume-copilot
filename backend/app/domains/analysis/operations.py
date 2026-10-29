@@ -69,6 +69,7 @@ OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     "interview_questions": {
         "type": "object",
         "required": ["opportunity_id", "questions"],
+        "properties": {"questions": {"type": "array", "minItems": 8, "maxItems": 8}},
     },
     "resume_tailor": {
         "type": "object",
@@ -117,9 +118,12 @@ def _ensure_prompt_version(
     operation: str,
     version: str,
     callable_object,
+    linked_callables: tuple = (),
 ) -> models.PromptVersion:
     try:
         source = inspect.getsource(callable_object)
+        if linked_callables:
+            source += "".join(inspect.getsource(item) for item in linked_callables)
     except (OSError, TypeError):
         source = f"{operation}:{version}"
     checksum = hashlib.sha256(source.encode("utf-8")).hexdigest()
@@ -136,6 +140,17 @@ def _ensure_prompt_version(
             raise RuntimeError(
                 f"Prompt template changed without a version bump: {operation}:{version}"
             )
+        if prompt.evaluation_result == {"contract_gate": "golden-v1", "passed": True}:
+            # Earlier runtime registration wrote this exact value without
+            # running an evaluation. Preserve its origin, but do not let it
+            # stand as qualification evidence for a model or prompt route.
+            prompt.evaluation_result = {
+                "status": "not_evaluated",
+                "provenance": "runtime_registration",
+                "superseded_automatic_metadata": {"contract_gate": "golden-v1", "passed": True},
+            }
+            if prompt.release_status == "active":
+                prompt.release_status = "observed"
         return prompt
     prompt = models.PromptVersion(
         id=public_id("prm"),
@@ -144,10 +159,10 @@ def _ensure_prompt_version(
         template_checksum=checksum,
         output_schema=OUTPUT_SCHEMAS.get(operation, {"type": "object"}),
         model_config={"model": os.getenv("LLM_MODEL", "unconfigured")},
-        evaluation_result={"contract_gate": "golden-v1", "passed": True},
-        release_status="active",
+        evaluation_result={"status": "not_evaluated", "provenance": "runtime_registration"},
+        release_status="observed",
         created_at=utcnow(),
-        activated_at=utcnow(),
+        activated_at=None,
     )
     db.add(prompt)
     db.flush()
@@ -412,30 +427,21 @@ def execute_interview_questions(
     payload: dict[str, Any],
     run: models.AnalysisRun,
 ) -> dict[str, Any]:
+    from ...services.interview_contract import (
+        PROMPT_VERSION,
+        QUESTION_COUNT,
+        contract_versions,
+        load_approved_evidence,
+    )
+    from .service import ensure_interview_inputs_current
+
+    ensure_interview_inputs_current(db, run, payload)
     opportunity = get_opportunity(
         db, user_id, run.opportunity_id or str(payload.get("opportunity_id", ""))
     )
     from ...services.llm_client import generate_interview_questions
 
-    evidence_query = db.query(models.EvidenceItem).filter(
-        models.EvidenceItem.user_id == user_id,
-        models.EvidenceItem.approval_state == "approved",
-    )
-    if opportunity.resume_id:
-        evidence_query = evidence_query.filter(
-            models.EvidenceItem.resume_id == opportunity.resume_id
-        )
-    evidence = evidence_query.order_by(models.EvidenceItem.created_at.asc()).limit(40).all()
-    evidence_payload = [
-        {
-            "id": item.id,
-            "title": item.title,
-            "text": item.evidence_text,
-            "metrics": item.metrics or {},
-            "skills": item.skills or [],
-        }
-        for item in evidence
-    ]
+    evidence_payload = load_approved_evidence(db, user_id, opportunity.resume_id)
 
     if payload.get("mode", "curated") == "curated":
         from ...services.interview_catalog import CATALOG_VERSION, curated_interview_questions
@@ -453,7 +459,7 @@ def execute_interview_questions(
     _ensure_prompt_version(
         db,
         operation="interview_questions",
-        version="interview-evidence-v4",
+        version=PROMPT_VERSION,
         callable_object=generate_interview_questions,
     )
     db.commit()
@@ -462,7 +468,7 @@ def execute_interview_questions(
         questions = generate_interview_questions(
             opportunity.title,
             opportunity.job_description,
-            num_questions=max(3, min(int(payload.get("num_questions", 8)), 12)),
+            num_questions=QUESTION_COUNT,
             approved_evidence=evidence_payload,
         )
     except Exception as exc:
@@ -470,7 +476,7 @@ def execute_interview_questions(
         _record_model_call(
             db,
             run=run,
-            prompt_version="interview-evidence-v4",
+            prompt_version=PROMPT_VERSION,
             input_payload=payload,
             output_payload={},
             latency_ms=int((time.perf_counter() - started) * 1000),
@@ -479,10 +485,11 @@ def execute_interview_questions(
         )
         raise
     begin_result_commit(db, user_id, run.id)
+    ensure_interview_inputs_current(db, run, payload)
     _record_model_call(
         db,
         run=run,
-        prompt_version="interview-evidence-v4",
+        prompt_version=PROMPT_VERSION,
         input_payload=payload,
         output_payload=questions,
         latency_ms=int((time.perf_counter() - started) * 1000),
@@ -492,6 +499,7 @@ def execute_interview_questions(
         "opportunity_id": opportunity.id,
         "questions": [{**item, "provenance": "generated"} for item in questions],
         "mode": "enhanced", "provenance": "generated", "catalog_version": None,
+        "contract_versions": contract_versions(),
     }
 
 
@@ -527,6 +535,49 @@ def execute_market_analysis(
     )
 
 
+def tailoring_evidence_payload(
+    db: Session, user_id: int, resume_id: int, *, complete_context: bool = False,
+) -> list[dict]:
+    """Select the exact approved facts used for a tailoring generation."""
+    query = (
+        db.query(models.EvidenceItem)
+        .filter(
+            models.EvidenceItem.user_id == user_id,
+            models.EvidenceItem.resume_id == resume_id,
+            models.EvidenceItem.approval_state == "approved",
+        )
+        .order_by(models.EvidenceItem.created_at.asc())
+    )
+    evidence = query.all() if complete_context else query.limit(100).all()
+    return [
+        {
+            "id": item.id,
+            "title": item.title,
+            "text": item.evidence_text,
+            "metrics": item.metrics or {},
+            "skills": item.skills or [],
+        }
+        for item in evidence
+    ]
+
+
+def tailoring_source_units(resume: models.Resume, *, require_complete: bool = False) -> list[dict]:
+    """Select the same whole editable units at quote and execution time."""
+    from ...services.resume_layout import extract_source_units
+
+    units = extract_source_units(resume.source_document, resume.source_format)
+    if require_complete:
+        return units
+    source_units: list[dict[str, Any]] = []
+    context_length = 0
+    for unit in sorted(units, key=lambda item: item.get("generation_priority", 5)):
+        if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
+            continue
+        source_units.append(unit)
+        context_length += len(unit["text"])
+    return source_units
+
+
 def execute_resume_tailor(
     db: Session,
     *,
@@ -534,6 +585,11 @@ def execute_resume_tailor(
     payload: dict[str, Any],
     run: models.AnalysisRun,
 ) -> dict[str, Any]:
+    from .service import ensure_tailoring_inputs_current
+
+    paid_context = (run.model_cost_quote or {}).get("billing_currency") == "credits"
+    if paid_context:
+        ensure_tailoring_inputs_current(db, run, payload)
     opportunity = get_opportunity(
         db,
         user_id,
@@ -549,60 +605,42 @@ def execute_resume_tailor(
         )
         .one()
     )
-    evidence = (
-        db.query(models.EvidenceItem)
-        .filter(
-            models.EvidenceItem.user_id == user_id,
-            models.EvidenceItem.resume_id == resume.id,
-            models.EvidenceItem.approval_state == "approved",
-        )
-        .order_by(models.EvidenceItem.created_at.asc())
-        .limit(100)
-        .all()
+    evidence_payload = tailoring_evidence_payload(
+        db, user_id, resume.id, complete_context=paid_context
     )
-    if not evidence:
+    if not evidence_payload:
         raise HTTPException(
             status_code=422,
             detail="Approve at least one evidence item before tailoring",
         )
-    evidence_payload = [
-        {
-            "id": item.id,
-            "title": item.title,
-            "text": item.evidence_text,
-            "metrics": item.metrics or {},
-            "skills": item.skills or [],
-        }
-        for item in evidence
-    ]
-
-    from ...services.llm_client import TailoringOutputError, tailor_resume_from_evidence
+    from ...services.llm_client import (
+        TailoringOutputError,
+        build_tailoring_messages,
+        tailor_resume_from_evidence,
+        tailor_resume_from_evidence_full,
+    )
     from ...services.resume_layout import (
         ResumeLayoutError,
         apply_source_edits,
-        extract_source_units,
     )
 
     if not resume.source_document or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
         raise TailoringOutputError("Upload the original resume before tailoring")
-    units = extract_source_units(resume.source_document, resume.source_format)
-    # Limit model context by whole units, never by truncating JSON or a source passage.
-    source_units: list[dict[str, Any]] = []
-    context_length = 0
-    for unit in sorted(units, key=lambda item: item.get("generation_priority", 5)):
-        if len(source_units) >= 100 or context_length + len(unit["text"]) > 24_000:
-            continue
-        source_units.append(unit)
-        context_length += len(unit["text"])
+    source_units = tailoring_source_units(resume, require_complete=paid_context)
     if not source_units:
         raise ResumeLayoutError("No source text can be edited while preserving this layout. Keep the original/custom resume or upload editable DOCX/TeX source; protected fonts, macros or image-only text need manual editing.")
 
-    prompt_version = "resume-source-v5"
+    prompt_version = "resume-source-v7" if paid_context else "resume-source-v6"
+    generator = (
+        tailor_resume_from_evidence_full if paid_context else tailor_resume_from_evidence
+    )
     _ensure_prompt_version(
         db,
         operation="resume_tailor",
         version=prompt_version,
-        callable_object=tailor_resume_from_evidence,
+        callable_object=generator,
+        linked_callables=(build_tailoring_messages, tailor_resume_from_evidence)
+        if paid_context else (),
     )
     source_bytes = resume.source_document
     source_format = resume.source_format
@@ -619,7 +657,7 @@ def execute_resume_tailor(
         for _attempt in range(3):
             candidate = None
             try:
-                candidate = tailor_resume_from_evidence(
+                candidate = generator(
                     job_title=opportunity.title,
                     jd_text=opportunity.job_description,
                     approved_evidence=evidence_payload,
@@ -800,17 +838,27 @@ def execute_resume_tailor(
     )
     # Revalidate source and approvals after expensive work. Short write locks
     # now protect version allocation and prevent a revoked fact being saved.
+    if paid_context:
+        opportunity = (
+            db.query(models.Opportunity)
+            .filter_by(id=opportunity.id, user_id=user_id)
+            .populate_existing().with_for_update().one()
+        )
     resume = (
         db.query(models.Resume)
         .filter(models.Resume.id == resume.id, models.Resume.user_id == user_id)
         .populate_existing().with_for_update().one()
     )
-    current_evidence = (
+    current_evidence_query = (
         db.query(models.EvidenceItem)
         .filter(models.EvidenceItem.user_id == user_id, models.EvidenceItem.resume_id == resume.id,
                 models.EvidenceItem.approval_state == "approved")
-        .order_by(models.EvidenceItem.created_at.asc()).limit(100)
-        .populate_existing().with_for_update().all()
+        .order_by(models.EvidenceItem.created_at.asc())
+        .populate_existing().with_for_update()
+    )
+    current_evidence = (
+        current_evidence_query.all()
+        if paid_context else current_evidence_query.limit(100).all()
     )
     current_payload = [
         {"id": item.id, "title": item.title, "text": item.evidence_text,
@@ -820,6 +868,8 @@ def execute_resume_tailor(
     current_hash = hashlib.sha256(json.dumps(current_payload, sort_keys=True, default=str).encode()).hexdigest()
     if resume.source_document != source_bytes or current_hash != evidence_snapshot:
         raise HTTPException(status_code=409, detail="Resume source or approved evidence changed during tailoring. Review the changes and try again.")
+    if paid_context:
+        ensure_tailoring_inputs_current(db, run, payload)
     next_version = (
         int(
             db.query(func.max(models.ResumeVersion.version_number))

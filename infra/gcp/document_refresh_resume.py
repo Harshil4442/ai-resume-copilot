@@ -116,7 +116,8 @@ def verify_partial_build(files: dict[str, bytes], build: Any) -> dict[str, Any]:
             "source_archive_sha256": identity["source_archive_sha256"], "automatic_replay": False,
             "unknown_outcome": "reconcile_exact_native_object_and_build_only"}
         and build.decode(files["build-create-started.json"]) == {"nonce": identity["nonce"], "automatic_replay": False,
-            "request_sha256": sha(canonical(build.full_source_build_request(identity["nonce"], source)))}
+            "request_sha256": sha(canonical(build.full_source_build_request(
+                identity["nonce"], source, historical_profile=True)))}
         and build.decode(files["build-acknowledged.json"]) == {"nonce": identity["nonce"],
             "build_id": identity["build_id"], "operation_name": "operations/build/" + build.PROJECT + "/" + encoded,
             "automatic_replay": False}, "document_resume_original_ack_changed")

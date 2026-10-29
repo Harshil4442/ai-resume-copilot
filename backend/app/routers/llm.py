@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database import get_db
 from .. import models, schemas
+from ..database import get_db
 from ..security import get_current_user
 from ..services.guardrails import billable_operation
-from ..services.llm_client import rewrite_bullets, generate_interview_questions
+from ..services.llm_client import generate_interview_questions, rewrite_bullets
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
@@ -22,6 +22,14 @@ async def rewrite_bullets_endpoint(
     )
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user.")
+
+    from ..domains.credits import runtime, synchronous
+
+    if runtime.requires_unified_billing(db, current_user.id) or payload.accepted_service_quote_id:
+        return synchronous.execute(db, user_id=current_user.id,
+            payload=synchronous.request("bullet_rewrite", payload),
+            accepted_service_quote_id=payload.accepted_service_quote_id,
+            idempotency_key=payload.idempotency_key)
 
     with billable_operation(
         user_id=current_user.id,

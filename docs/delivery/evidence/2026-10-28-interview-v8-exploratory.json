@@ -1,0 +1,80 @@
+{
+  "schema_version": "hirewiz-interview-v8-exploratory-evidence-v1",
+  "observed_at_utc": "2026-10-28T18:02:00Z",
+  "source_commit": "fda08df9dce4b24fabaa59234101468b084e9d9e",
+  "prompt_change_commit": "8057682",
+  "scope": "Ten frozen fictional PDF development cases, one possible Gemini reference and one possible Gemini candidate attempt per case. No held-out cases, customer data or customer credits.",
+  "contract": {
+    "prompt": "interview-evidence-v8",
+    "schema": "interview-eight-preparation-v2",
+    "validator": "interview-complete-v3",
+    "contract_sha256": "4a65131b0d26c0a0e8d7cb3a68853acada8211de524c4553e911ce9faddc0711",
+    "question_count_required_per_delivered_output": 8
+  },
+  "funding": {
+    "owner_test_top_up_reported_inr": 500,
+    "conservative_full_twenty_quote_usd_micros": 1085440,
+    "hard_modeled_experiment_cap_inr": 30,
+    "cap_method": "Before each one-shot call, accumulated settled or uncertain cost plus the next route's full maximum quote had to fit the INR30 scenario at INR100/USD, 18% model-cost allowance and INR10 processing.",
+    "fresh_schema21_readonly_observation_at_utc": "2026-10-28T17:51:44.278030+00:00",
+    "unresolved_production_model_liability_micros_retained": 120742,
+    "active_production_analysis_at_observation": 0,
+    "additional_provider_purchase": false
+  },
+  "execution": {
+    "planned_slots": 20,
+    "provider_attempts": 18,
+    "delivered_outputs": 16,
+    "failed_outputs_retained": 2,
+    "never_started_due_to_budget_guard": 2,
+    "delivered_questions": 128,
+    "reference_delivered": 8,
+    "reference_failed": 0,
+    "reference_never_started": 2,
+    "calibration_authorization_closed_after_cost_guard": true,
+    "candidate_delivered": 8,
+    "candidate_failed": 2,
+    "candidate_never_started": 0,
+    "failed_case_ids": ["synth-094", "synth-089"],
+    "failure_codes": ["InterviewPersonalClaimError", "InterviewPersonalClaimError"],
+    "failure_detail_limit": "The rejected responses and exact offending wording were not retained. Both failed outputs remain unavailable and were not retried or replaced.",
+    "machine_output_contract_passed_for_deliveries": true,
+    "actual_model_cost_usd_micros": 99033,
+    "scenario_total_inr_including_10_processing_100_fx_and_18pct_model_allowance": "21.685894",
+    "invoice_reconciled": false,
+    "unsettled_evaluation_liabilities": 0,
+    "export_manifest_sha256": "4376516b4296c71b151ce25452ba5bfadf79c627f35f34796f1bdcb8b06acc0b"
+  },
+  "comparison_limit": "The v7 batch delivered 18 of 20 attempted outputs, with one failure on each side. The v8 budget guard left two reference slots unstarted, so a like-for-like delivery-rate or quality comparison is unavailable. V8 candidate generation still had two personal-claim validator failures on different cases; prompt v8 is not qualified.",
+  "review_package": {
+    "local_zip": "/Users/harshil/.codex/hirewiz-evidence/20261028/quality-calibration-v8/HireWiz_Interview_Calibration_Review_v8_20261028.zip",
+    "sha256": "f77d0b6eb8407241218d391808896d25102d68ce9ef3ac93275c5ba9a86d34aa",
+    "fixed_cases": 10,
+    "blinded_slots": 20,
+    "blank_rows_per_reviewer": 20,
+    "delivered_outputs": 16,
+    "failed_outputs": 2,
+    "not_run_budget_guard": 2,
+    "zip_integrity_and_identity_leak_checks_passed": true,
+    "private_ab_mapping_retained_outside_repository": true
+  },
+  "human_review": {
+    "reviewer_1": "project owner, assigned, no submitted scores",
+    "reviewer_2": "unassigned; owner will name later",
+    "adjudicator": "unassigned",
+    "completed_independent_reviews": 0,
+    "human_quality_approval": false
+  },
+  "release_qualification": false,
+  "approved_reference": false,
+  "payment_activation": false,
+  "production_changes": false,
+  "major_stage_completed": null,
+  "evidence_files_are_private_and_not_committed": [
+    "v8-delivery-and-cost-audit.json",
+    "review-package-v8-build-audit.json",
+    "review-coordinator-v8-20261028.json",
+    "allocation.json",
+    "guarded-progress-*.json"
+  ]
+}

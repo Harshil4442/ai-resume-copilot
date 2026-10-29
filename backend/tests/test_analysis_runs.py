@@ -36,14 +36,29 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 SOURCE_EXPERIENCE = "Developed reliable Python services for customers and improved system performance."
-TAILORED_EXPERIENCE = "Built reliable Python services for customers and improved system performance."
+# Keep this positive control's word widths unchanged in the bundled monospace
+# font. Shortening "Developed" to "Built" moves the retained word "system" onto
+# the first line, which the genuine native format-preservation guard refuses.
+TAILORED_EXPERIENCE = "Developed reliable Python services for customers and enhanced system performance."
 PDF_OVERFLOW_ORIGINAL = "Built stable Python interfaces for customers."
 PDF_OVERFLOW_REPLACEMENT = "Made stable Python interfaces for customers."
 
 
 def _native_source():
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from lxml import etree
+
     document = DocxDocument()
-    document.styles["Normal"].font.name = "Times New Roman"
+    # Positive native-render controls use a licensed family actually bundled in
+    # the renderer; unsupported fonts have their own explicit refusal control.
+    document.styles["Normal"].font.name = "Courier Prime"
+    theme_part = next(rel.target_part for rel in document.part.rels.values()
+                      if rel.reltype == RELATIONSHIP_TYPE.THEME)
+    theme = etree.fromstring(theme_part.blob)
+    drawing = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+    for kind in ("majorFont", "minorFont"):
+        theme.find(".//" + drawing + kind + "/" + drawing + "latin").set("typeface", "Courier Prime")
+    theme_part._blob = etree.tostring(theme)
     document.add_heading("Experience", level=2)
     document.add_paragraph(SOURCE_EXPERIENCE)
     output = BytesIO()
@@ -232,7 +247,8 @@ def test_repaired_interview_output_saves_eight_questions_and_charges_once(monkey
     questions = [
         {
             "question": f"How would you improve the reliability of platform service {index}?",
-            "coaching_angle": "Describe a concrete method and a verified result.",
+            "preparation_steps": ["Compare concrete reliability techniques.",
+                                  "Explain how to verify the chosen design."],
             "evidence_ids": [],
         }
         for index in range(1, 9)
@@ -363,7 +379,8 @@ def test_invalid_interview_output_fails_without_charging_or_saving_a_result(
             assert run.committed_units == 0
             assert run.result_payload is None
             assert run.completed_at is not None
-            assert run.error_code == "InterviewOutputError"
+            expected_error = "InterviewStructureError" if provider_response.startswith("I could") else "InterviewCountError"
+            assert run.error_code == expected_error
             assert run.attempt_count == 1
             assert db.get(User, 1).ai_credits == 50
             events = db.query(UsageEvent).order_by(UsageEvent.created_at).all()
@@ -472,8 +489,8 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
     try:
         run_id = _create_tailoring_run(factory)
 
-        assert tasks.process_analysis_run(run_id) == "succeeded"
-        assert tasks.process_analysis_run(run_id) == "succeeded"
+        assert tasks.process_analysis_run(run_id) == "succeeded", native_calls
+        assert tasks.process_analysis_run(run_id) == "succeeded", native_calls
         assert len(calls) == 1
         with factory() as db:
             run = db.get(AnalysisRun, run_id)
@@ -483,7 +500,7 @@ def test_evidence_tailoring_creates_a_traceable_version_and_commits_once(monkeyp
             assert run.usage_state == "committed"
             assert run.committed_units == 2
             assert run.attempt_count == 1
-            assert run.prompt_version == "resume-source-v5"
+            assert run.prompt_version == "resume-source-v6"
             assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.evidence_ids == ["evd_approved"]
@@ -627,7 +644,7 @@ def test_mixed_pdf_tailoring_saves_only_the_proven_safe_edits_and_charges_once(m
             version = db.query(ResumeVersion).one()
             assert run.status == "succeeded" and run.attempt_count == 1
             assert run.usage_state == "committed" and run.committed_units == 2
-            assert run.prompt_version == "resume-source-v5"
+            assert run.prompt_version == "resume-source-v6"
             assert db.get(User, 1).ai_credits == 48
             assert version.generation_run_id == run_id
             assert version.structured_content["source_edits"] == [safe]

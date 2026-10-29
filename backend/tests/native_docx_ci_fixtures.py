@@ -26,9 +26,9 @@ def _complete_corpus(report: dict, contracts: list) -> tuple[list, list]:
     ordinary_names = {"clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
                       "eicar_exact_file", "eicar_zip_member", "missing_definitions",
                       "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member"}
-    layout_names = {"styled_multipage_fit", "rendered_reflow_refusal"}
+    layout_names = {"styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal"}
     if (type(corpus) is not list or len(corpus) != 12
-            or type(layouts) is not list or len(layouts) != 2
+            or type(layouts) is not list or len(layouts) != 3
             or any(type(row) is not dict or type(row.get("case")) is not str or row.get("passed") is not True for row in corpus + layouts)
             or {row.get("case") for row in corpus} != ordinary_names
             or {row.get("case") for row in layouts} != layout_names

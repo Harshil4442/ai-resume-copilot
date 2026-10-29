@@ -33,9 +33,16 @@ SOURCES = (
     "backend/app/services/market/skill_extractor.py", "backend/app/services/market/skill_taxonomy.py",
     "backend/app/services/market/security.py",
     "infra/document-processing/docx_renderer.py", "infra/document-processing/writer_owner.py",
+    "infra/document-processing/courier_prime_fonts.py",
     "backend/app/services/resume_layout.py",
     "backend/app/services/native_project.py",
-    "backend/app/services/pdf_streams.py", "backend/app/services/docx_layout_validation.py",
+    "backend/app/services/pdf_streams.py", "backend/app/services/docx_layout_validation.py", "backend/app/services/docx_fonts.py",
+    "backend/evals/assets/courier_prime/CourierPrime-Regular.ttf",
+    "backend/evals/assets/courier_prime/CourierPrime-Bold.ttf",
+    "backend/evals/assets/courier_prime/CourierPrime-Italic.ttf",
+    "backend/evals/assets/courier_prime/CourierPrime-BoldItalic.ttf",
+    "backend/evals/assets/courier_prime/OFL.txt",
+    "backend/evals/assets/courier_prime/provenance.json",
 )
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LABEL = "hirewiz.document-test.source."
@@ -51,7 +58,7 @@ _FAILURE_CASES = frozenset({
     "clean_pdf", "clean_docx", "page_counter", "active_pdf", "includetext",
     "eicar_exact_file", "eicar_zip_member", "missing_definitions",
     "clean_tex", "clean_texzip", "eicar_tex_source", "eicar_texzip_member",
-    "styled_multipage_fit", "rendered_reflow_refusal",
+    "styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal",
     "clamd_two_clean", "clamd_source_eicar", "clamd_candidate_eicar", "clamd_zip_member_eicar",
     "clamd_encrypted_pdf", "clamd_encrypted_zip", "clamd_max_filesize", "clamd_max_scansize",
     "clamd_max_files", "clamd_max_recursion", "clamd_resident_parser",
@@ -68,6 +75,7 @@ _FAILURE: ContextVar[dict | None] = ContextVar("document_image_failure", default
 # Finite processor refusal protocol, synchronized with the source-pinned core.
 # Never load app packages or copy a native response into diagnostic storage.
 _DOCX_REASONS = frozenset({
+    "unsupported_source_font",
     "document_safety", "renderer_identity", "document_size", "document_package", "package_changed", "edit_binding",
     "hyperlink_changed", "no_changed_paragraphs", "undeclared_native_change", "pdf_active_content", "pdf_link",
     "unsupported_graphics", "pdf_complexity", "unsupported_paint", "pdf_size", "pdf_pages", "pdf_geometry",
@@ -124,8 +132,13 @@ EICAR = (b"X5O!P%@AP[4" + bytes([92]) + b"PZX54(P^)7CC)7}$"
 RUNTIME = {
     path: "/opt/document/" + (path.rsplit("/", 1)[1] if path.startswith("infra/")
                             else path.removeprefix("backend/"))
-    for path in SOURCES if not path.endswith("Dockerfile")
+    for path in SOURCES if not path.endswith("Dockerfile") and "/assets/courier_prime/" not in path
 }
+RUNTIME.update({
+    path: ("/usr/share/fonts/truetype/hirewiz-courier-prime/" if path.endswith(".ttf")
+           else "/usr/share/doc/hirewiz-courier-prime/") + path.rsplit("/", 1)[1]
+    for path in SOURCES if "/assets/courier_prime/" in path
+})
 HASH_PROGRAM = ("import hashlib,json,pathlib; print(json.dumps({k:hashlib.sha256("
                 "pathlib.Path(v).read_bytes()).hexdigest() for k,v in " + repr(RUNTIME) + ".items()}))")
 DETECTION_PROGRAM = '''import base64,json,pathlib,subprocess,sys
@@ -226,7 +239,7 @@ def styled_copy(source):
  if styles.tag!=W+"styles" or any(n.get(W+"styleId")=="Hyperlink" for n in styles): raise ValueError()
  default=[n for n in styles if n.get(W+"styleId")=="DefaultParagraphFont" and n.get(W+"type")=="character"]
  normal=[n for n in styles if n.get(W+"styleId")=="Normal"]
- if len(default)!=1 or len(normal)!=1 or normal[0].find(W+"rPr/"+W+"rFonts").get(W+"ascii")!="Cambria" or normal[0].find(W+"rPr/"+W+"sz").get(W+"val")!="22": raise ValueError()
+ if len(default)!=1 or len(normal)!=1 or normal[0].find(W+"rPr/"+W+"rFonts").get(W+"ascii") not in {"Cambria","Courier Prime"} or normal[0].find(W+"rPr/"+W+"sz").get(W+"val")!="22": raise ValueError()
  style=etree.SubElement(styles,W+"style",{W+"type":"character",W+"styleId":"Hyperlink"})
  etree.SubElement(style,W+"name",{W+"val":"Hyperlink"});etree.SubElement(style,W+"basedOn",{W+"val":"DefaultParagraphFont"})
  properties=etree.Element(W+"rPr");etree.SubElement(properties,W+"rStyle",{W+"val":"Hyperlink"});link[0].insert(0,properties)
@@ -539,7 +552,7 @@ def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -
     if (type(diagnostic.get("stage")) is not str or diagnostic["stage"] != "case_validation"
             or type(diagnostic.get("case")) is not str or type(case) is not str or diagnostic["case"] != case
             or type(diagnostic.get("exit_code")) is not int or diagnostic["exit_code"] != 1
-            or case not in {"styled_multipage_fit", "rendered_reflow_refusal"} or type(code) is not int or code != 1
+            or case not in {"styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal"} or type(code) is not int or code != 1
             or type(binding) is not dict or any(type(key) is not str for key in binding)
             or set(binding) != _DOCX_BINDING_KEYS
             or type(binding["version"]) is not int or binding["version"] != 1
@@ -620,7 +633,7 @@ def _failure_report() -> dict:
         result.update(build_error=build.reason, build_output_sha256=build.output_sha256,
                       build_output_bytes=build.output_bytes, build_error_detail=build.detail)
     refusal = diagnostic.get("docx_refusal")
-    if (result["stage"] == "case_validation" and result["case"] in {"styled_multipage_fit", "rendered_reflow_refusal"}
+    if (result["stage"] == "case_validation" and result["case"] in {"styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal"}
             and result["exit_code"] == 1
             and type(refusal) is _DocxRefusal and type(refusal.case) is str and refusal.case == result["case"]
             and type(refusal.error) is str and refusal.error == "docx_layout_refused"
@@ -952,7 +965,7 @@ def corpus() -> list[tuple[str, str, bytes, str]]:
             ("eicar_texzip_member", "texzip", infected_texzip.getvalue(), "detected")]
 
 
-def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
+def docx_layout_corpus(image: str, *, family: str = "Cambria") -> list[tuple[str, bytes, dict]]:
     """One genuine styled two-page fit and one genuine reflow refusal.
 
     The fixture is synthetic; the expected candidate is the exact source-pinned
@@ -971,9 +984,25 @@ def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
     spec.loader.exec_module(layout)
     original = "Built scalable systems with Python and SQL."
     document = Document()
-    document.styles["Normal"].font.name = "Cambria"
+    if family not in {"Cambria", "Courier Prime"}:
+        raise DocumentImageError()
+    document.styles["Normal"].font.name = family
     document.styles["Normal"].font.size = Pt(11)
-    document.add_paragraph("Taylor Example")
+    title = document.add_paragraph("Taylor Example")
+    if family == "Courier Prime":
+        # The candidate exercises actual theme selection as well as Normal
+        # inheritance. No used/default Latin theme face relies on Caladea.
+        from lxml import etree
+        theme_part = next(rel.target_part for rel in document.part.rels.values()
+                          if rel.reltype == RELATIONSHIP_TYPE.THEME)
+        theme = etree.fromstring(theme_part.blob)
+        drawing = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
+        for kind in ("majorFont", "minorFont"):
+            theme.find(".//" + drawing + kind + "/" + drawing + "latin").set("typeface", family)
+        theme_part._blob = etree.tostring(theme)
+        fonts = title.runs[0]._r.get_or_add_rPr().get_or_add_rFonts()
+        fonts.set(qn("w:asciiTheme"), "minorAscii")
+        fonts.set(qn("w:hAnsiTheme"), "minorHAnsi")
     paragraph = document.add_paragraph()
     paragraph.add_run("Built scalable systems with ")
     paragraph.add_run("Python").bold = True
@@ -1012,6 +1041,17 @@ def docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
             "worker_image": "local-document-image@" + image, "policy_sha256": policy}
         rows.append((name, json.dumps(request).encode(), expected))
     return rows
+
+
+def candidate_docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
+    """Keep the historical Cambria source as an explicit fallback refusal.
+
+    The candidate's successful layout control requests the actual bundled
+    Courier Prime family. The frozen quality corpus is independent/unchanged.
+    """
+    rows = docx_layout_corpus(image, family="Courier Prime")
+    _name, request, binding = docx_layout_corpus(image)[0]
+    return rows + [("unsupported_source_font_refusal", request, binding)]
 
 
 def _canonical_clamd_zip(content: bytes) -> bytes:
@@ -1301,7 +1341,7 @@ def check(platform: str, *, image: str | None = None) -> dict:
             validate_clamd_native(value, name, expected_outcome, resident, payload, platform)
             clamd_observations.append(value)
         _progress("layout_corpus")
-        for name, payload, binding in docx_layout_corpus(image):
+        for name, payload, binding in candidate_docx_layout_corpus(image):
             _progress("case_request", case=name)
             request = directory / (name + ".json")
             request.write_bytes(payload)
@@ -1322,6 +1362,11 @@ def check(platform: str, *, image: str | None = None) -> dict:
                     _diagnose_docx_links(docker, image, platform, request, result, binding, code, case=name)
                     raise DocumentImageError()
                 layout_observations.append({"case": name, "passed": True, "layout": receipt, "scan": result["scan"]})
+            elif name == "unsupported_source_font_refusal":
+                if code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") != "unsupported_source_font":
+                    _note_docx_refusal(result, binding, code, case=name)
+                    raise DocumentImageError()
+                layout_observations.append({"case": name, "passed": True, "reason": result["reason"]})
             # The core compares the complete link tuple before line bands.
             # This overlong paragraph moves the following link and is refused.
             elif (code != 1 or result.get("error") != "docx_layout_refused" or result.get("reason") not in {

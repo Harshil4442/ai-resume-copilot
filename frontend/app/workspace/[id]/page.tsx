@@ -35,6 +35,12 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
+import { ResumeBulletSuggestions } from "../../../components/career/ResumeBulletSuggestions";
+import { MatchQuestionPanel } from "../../../components/career/MatchQuestionPanel";
+import { LearningStrategyPanel } from "../../../components/career/LearningStrategyPanel";
+import { QuotedAnalysisReview } from "../../../components/billing/QuotedAnalysisReview";
+import { creditAvailabilityOptions, creditWalletKey } from "../../../lib/unifiedCreditClient";
+import { useQuotedAnalysis } from "../../../lib/useQuotedAnalysis";
 import { AnalysisRunFeedback } from "../../../components/AnalysisRunFeedback";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -163,6 +169,7 @@ function OpportunityContent() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>(() => tabs.find((entry) => entry.id === searchParams.get("tab"))?.id || "overview");
   const [matchMode, setMatchMode] = useState<"basic" | "enhanced">("basic");
+  const [tailoringScope, setTailoringScope] = useState<"standard" | "extended">("standard");
   const [interviewMode, setInterviewMode] = useState<"curated" | "enhanced">("curated");
   const [matchRunId, setMatchRunId] = useState<string | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
@@ -191,6 +198,12 @@ function OpportunityContent() {
     queryKey: ["resumes"],
     queryFn: () => apiGet<ResumeListResponse>("/resume/list"),
   });
+  const creditAvailability = useQuery(creditAvailabilityOptions());
+  const pricingKnown = creditAvailability.isSuccess && creditAvailability.data !== null;
+  const unifiedServices = Boolean(creditAvailability.data?.catalog_enabled || creditAvailability.data?.execution_enabled);
+  const basicAllowance = creditAvailability.data?.free_core_limits.basic_match;
+  const curatedAllowance = creditAvailability.data?.free_core_limits.curated_interview;
+  const skillAllowance = creditAvailability.data?.free_core_limits.skill_roi;
   const sourceResume = resumes.data?.resumes.find((resume) => resume.id === opportunity.data?.resume_id);
   const sourceState: SourceState = !opportunity.data?.resume_id ? "no_selection"
     : resumes.isLoading ? "loading"
@@ -211,7 +224,7 @@ function OpportunityContent() {
       }
       return { pricing_version: version, units };
     },
-    enabled: tab === "resume" && opportunity.isSuccess,
+    enabled: tab === "resume" && opportunity.isSuccess && pricingKnown && !unifiedServices,
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -257,6 +270,7 @@ function OpportunityContent() {
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
       trackedTerminalRuns.current.add(run.id);
+      void queryClient.invalidateQueries({ queryKey: creditWalletKey });
       if (run.operation === "interview_questions" || run.operation === "resume_tailor") {
         void queryClient.invalidateQueries({ queryKey: ["profile"] });
       }
@@ -309,6 +323,27 @@ function OpportunityContent() {
       await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
       await queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] });
     },
+  });
+  const reviewContext = {
+    resume: sourceResume ? { id: sourceResume.id, filename: sourceResume.filename } : undefined,
+    job: opportunity.data ? { id: opportunityId, title: opportunity.data.title, employer: opportunity.data.company || undefined } : undefined,
+  };
+  const selectionIdentity = JSON.stringify({ opportunity: opportunity.data, evidence: evidence.data });
+  const matchAction = useQuotedAnalysis({
+    request: { operation: "job_match", opportunity_id: opportunityId, input: { resume_id: opportunity.data?.resume_id, mode: "enhanced" } },
+    context: reviewContext, selectionKey: `${selectionIdentity}:${matchMode}`, availability: creditAvailability.data,
+    onRun: (run) => setMatchRunId(run.id),
+  });
+  const interviewAction = useQuotedAnalysis({
+    request: { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: "enhanced" } },
+    context: reviewContext, selectionKey: `${selectionIdentity}:${interviewMode}`, availability: creditAvailability.data,
+    onRun: (run) => setInterviewRunId(run.id),
+  });
+  const tailoringAction = useQuotedAnalysis({
+    request: { operation: "resume_tailor", opportunity_id: opportunityId, input: { tailoring_scope: tailoringScope } },
+    context: { ...reviewContext, details: [{ label: "Tailoring scope", value: tailoringScope === "extended" ? "Extended — review the supported limits in the quote" : "Standard" }] },
+    selectionKey: `${selectionIdentity}:${tailoringScope}`, availability: creditAvailability.data,
+    onRun: (run) => setTailorRunId(run.id),
   });
   const startMatch = useMutation({
     mutationFn: () => {
@@ -586,8 +621,8 @@ function OpportunityContent() {
                 </select>
               </label>
             ) : null}
-            <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode · 1 analysis unit<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced">Enhanced assessment · uses AI</option></select></label><div className="flex items-end gap-2">
-              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => startMatch.mutate()} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}>
+            <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode{matchMode === "basic" && basicAllowance ? " · 0 credits" : !unifiedServices && pricingKnown ? " · 1 analysis unit" : ""}<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced" disabled={unifiedServices && !matchAction.available}>{unifiedServices ? "Enhanced assessment · review AI credit charge" : "Enhanced assessment · uses AI"}</option></select></label><div className="flex items-end gap-2">
+              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => unifiedServices && matchMode === "enhanced" ? matchAction.requestQuote() : startMatch.mutate()} disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}>
                 {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {latestMatch ? "Refresh match" : "Run match"}
               </Button>
@@ -598,6 +633,9 @@ function OpportunityContent() {
           </div>
         </header>
 
+        {!pricingKnown ? <div role="status" className="mt-4 space-y-2 text-sm text-muted-foreground"><p>{creditAvailability.isFetching ? "Checking current service availability…" : "Could not verify the current service charges. Refresh availability to continue."}</p>{!creditAvailability.isFetching ? <Button variant="secondary" size="sm" onClick={() => void creditAvailability.refetch()}>Refresh service availability</Button> : null}</div> : null}
+        {matchMode === "basic" && basicAllowance ? <p className="mt-3 text-xs text-muted-foreground">Basic comparison allowance: up to {basicAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved results remain accessible.</p> : null}
+        {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={matchAction} /></div> : null}
         {(startMatch.isError || matchRun.data) ? <AnalysisRunFeedback run={matchRun.data} /> : null}
         <RunStatusCheck query={matchRun} label="match" />
         {startMatch.isError ? <p className="mt-3 text-sm text-coral">{startMatch.error instanceof Error ? startMatch.error.message : "Could not start analysis."}</p> : null}
@@ -618,7 +656,7 @@ function OpportunityContent() {
             <div className="grid gap-10 xl:grid-cols-[1fr_340px]">
               <section className="min-w-0">
                 {latestMatch ? <MatchSummary match={latestMatch} /> : (
-                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={startMatch.isPending || !item.resume_id || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))} onClick={() => startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
+                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || !item.resume_id || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))} onClick={() => unifiedServices && matchMode === "enhanced" ? matchAction.requestQuote() : startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
                 )}
                 {latestMatch?.improvement_tips.length ? (
                   <div className="mt-10 border-t border-border pt-7">
@@ -628,6 +666,7 @@ function OpportunityContent() {
                     </ul>
                   </div>
                 ) : null}
+                {unifiedServices && sourceResume && latestMatch ? <MatchQuestionPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
                 <div className="mt-10 border-t border-border pt-7">
                   <h2 className="font-display text-lg font-normal text-foreground">Role snapshot</h2>
                   <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{item.job_description}</p>
@@ -712,6 +751,7 @@ function OpportunityContent() {
                   ))}
                 </div>
               </section>
+              {unifiedServices && sourceResume ? <ResumeBulletSuggestions resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined, description: item.job_description }} availability={creditAvailability.data} approvedEvidence={evidence.isSuccess && approvedCount > 0} /> : null}
               <section aria-labelledby="resume-versions-heading" className="border-t border-border pt-8">
                 <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                   <div className="max-w-2xl">
@@ -720,20 +760,21 @@ function OpportunityContent() {
                     <p className="mt-3 text-sm leading-6 text-muted-foreground">Compare the original wording with the proposed changes for this role. Each replacement links to approved evidence. Downloads keep the source file format and layout.</p>
                   </div>
                   <div className="min-w-0 space-y-3 xl:max-w-md">
+                    {unifiedServices ? <label className="grid gap-2 text-sm font-semibold">Tailoring scope<select className="field-control" value={tailoringScope} disabled={tailoringAction.pending || tailoringAction.attempted} onChange={(event) => setTailoringScope(event.target.value as "standard" | "extended")}><option value="standard">Standard</option><option value="extended">Extended — separately reviewed charge</option></select></label> : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button aria-describedby={tailoringIssue ? "tailoring-price resume-actions-status" : "tailoring-price"} disabled={connectResume.isPending || !sourceReady || !evidence.isSuccess || approvedCount === 0 || tailoringIsRunning || !tailoringPriceReady} onClick={requestTailoring}>
+                      <Button aria-describedby={tailoringIssue ? "tailoring-price resume-actions-status" : "tailoring-price"} disabled={connectResume.isPending || !sourceReady || !evidence.isSuccess || approvedCount === 0 || tailoringIsRunning || !pricingKnown || (unifiedServices ? !tailoringAction.available || tailoringAction.pending || Boolean(tailoringAction.review) : !tailoringPriceReady)} onClick={() => unifiedServices ? tailoringAction.requestQuote() : requestTailoring()}>
                         {tailoringIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <WandSparkles size={16} />}
-                        {retryTailoringIntent ? "Retry same request" : "Generate tailored version"}{displayedTailoringQuote && tailoringPriceReady ? ` · ${displayedTailoringQuote.units} AI analysis ${displayedTailoringQuote.units === 1 ? "unit" : "units"}` : ""}
+                        {retryTailoringIntent ? "Retry same request" : "Generate tailored version"}{!unifiedServices && displayedTailoringQuote && tailoringPriceReady ? ` · ${displayedTailoringQuote.units} AI analysis ${displayedTailoringQuote.units === 1 ? "unit" : "units"}` : ""}
                       </Button>
                       <Button variant="secondary" aria-describedby={tailoringIssue ? "resume-actions-status" : undefined} disabled={connectResume.isPending || !sourceReady || createVersion.isPending} onClick={() => createVersion.mutate()}><FilePlus2 size={16} /> Save source snapshot</Button>
                     </div>
                     <p id="tailoring-price" className="text-xs leading-5 text-muted-foreground" role="status">
-                      {retryTailoringIntent ? `The previous request could not be confirmed. Retry keeps the same request and accepted ${retryTailoringIntent.quote.units}-unit price.`
+                      {unifiedServices ? (tailoringAction.available ? "Review the exact credit charge, source file and supported limits before tailoring. Source snapshots do not use a generation credit." : "This tailoring scope is not available for credit execution yet. Your original file and saved versions remain available.") : retryTailoringIntent ? `The previous request could not be confirmed. Retry keeps the same request and accepted ${retryTailoringIntent.quote.units}-unit price.`
                         : tailoringPrice.isFetching ? "Loading the current tailoring price. Source snapshots remain free."
                         : !tailoringPriceReady ? "The tailoring price is unavailable. Source snapshots remain free."
                         : `Generating accepts ${displayedTailoringQuote!.units} AI analysis ${displayedTailoringQuote!.units === 1 ? "unit" : "units"}. These are separate from job service credits. Source snapshots are free.`}
                     </p>
-                    {!tailoringPriceReady && !tailoringPrice.isFetching ? <Button size="sm" variant="ghost" onClick={() => { tailoringIntent.current = null; startTailoring.reset(); void tailoringPrice.refetch(); }}>Refresh tailoring price</Button> : null}
+                    {!unifiedServices && !tailoringPriceReady && !tailoringPrice.isFetching ? <Button size="sm" variant="ghost" onClick={() => { tailoringIntent.current = null; startTailoring.reset(); void tailoringPrice.refetch(); }}>Refresh tailoring price</Button> : null}
                     {tailoringIssue ? <p id="resume-actions-status" className="text-xs leading-5 text-muted-foreground" role="status">{tailoringIssue}</p> : null}
                     {sourceIssue && sourceState !== "loading" ? <div className="flex flex-wrap gap-2">
                       {sourceCanRefresh ? <Button size="sm" variant="secondary" disabled={opportunity.isFetching || resumes.isFetching} onClick={refreshSourceDetails}><RefreshCw size={14} /> Refresh details</Button> : null}
@@ -743,6 +784,7 @@ function OpportunityContent() {
                     {sourceReady && evidence.isError ? <Button size="sm" variant="secondary" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}><RefreshCw size={14} /> Refresh evidence</Button> : null}
                   </div>
                 </div>
+                {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={tailoringAction} /></div> : null}
                 <AnalysisRunFeedback run={tailorRun.data} onSaveSourceSnapshot={() => createVersion.mutate()} sourceSnapshotDisabled={connectResume.isPending || !sourceReady || createVersion.isPending} />
                 <RunStatusCheck query={tailorRun} label="tailoring" />
                 {startTailoring.isError ? <p className="mt-3 text-sm text-coral" role="alert">{startTailoring.error instanceof Error ? startTailoring.error.message : "Could not start tailoring."}</p> : null}
@@ -821,7 +863,8 @@ function OpportunityContent() {
 
           {tab === "learning" ? (
             <section>
-              <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p></div>
+              <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
+              {unifiedServices && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
               {skillRoi.isLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
               {!skillRoi.isLoading && !skillRoi.data?.items.length ? <EmptyState icon={BookOpenCheck} title="Skill ROI needs match data" description="Run matches for active opportunities to see which skill investment has the strongest return." /> : null}
               <div className="mt-7 divide-y divide-border border-y border-border">
@@ -844,7 +887,7 @@ function OpportunityContent() {
                   <h2 id="interview-heading" className="font-display mt-2 text-3xl font-normal">Interview questions</h2>
                   <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Prepare {interviewQuestionCount} practice questions for this role. Curated questions use a role catalog; enhanced generation sends role and approved evidence to AI. Review guidance before practicing.</p>
                 </div>
-                <div className="grid min-w-0 gap-3 sm:w-72 sm:shrink-0"><label className="grid gap-2 text-xs font-semibold text-muted-foreground">Question mode · 1 analysis unit<select className="field-control" value={interviewMode} disabled={interviewIsRunning} onChange={(event) => setInterviewMode(event.target.value as "curated" | "enhanced")}><option value="curated">Curated role catalog · no generative AI</option><option value="enhanced">Enhanced questions · uses AI</option></select></label><Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => startInterview.mutate()} disabled={interviewIsRunning}>
+                <div className="grid min-w-0 gap-3 sm:w-72 sm:shrink-0"><label className="grid gap-2 text-xs font-semibold text-muted-foreground">Question mode{interviewMode === "curated" && curatedAllowance ? " · 0 credits" : !unifiedServices && pricingKnown ? " · 1 analysis unit" : ""}<select className="field-control" value={interviewMode} disabled={interviewIsRunning} onChange={(event) => setInterviewMode(event.target.value as "curated" | "enhanced")}><option value="curated">Curated role catalog · no generative AI</option><option value="enhanced" disabled={unifiedServices && !interviewAction.available}>{unifiedServices ? "Enhanced questions · review AI credit charge" : "Enhanced questions · uses AI"}</option></select></label><Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => unifiedServices && interviewMode === "enhanced" ? interviewAction.requestQuote() : startInterview.mutate()} disabled={!pricingKnown || interviewIsRunning || interviewAction.pending || Boolean(interviewAction.review) || (unifiedServices && interviewMode === "enhanced" && !interviewAction.available)}>
                   {interviewIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
                   {interviewIsRunning ? "Generating questions" : interviewQuestions.length ? "Regenerate questions" : "Generate questions"}
                 </Button></div>
@@ -857,6 +900,8 @@ function OpportunityContent() {
                   {interviewQuestions.length > evidenceBackedCount ? <span className="inline-flex items-center gap-2 text-muted-foreground"><CircleAlert size={16} aria-hidden="true" /> {interviewQuestions.length - evidenceBackedCount} {interviewQuestions.length - evidenceBackedCount === 1 ? "needs" : "need"} evidence</span> : null}
                 </div>
               ) : null}
+              {interviewMode === "curated" && curatedAllowance ? <p className="mt-3 text-xs text-muted-foreground">Curated question allowance: up to {curatedAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved questions remain accessible.</p> : null}
+              {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div> : null}
               <AnalysisRunFeedback run={interviewRun.data} />
               <RunStatusCheck query={interviewRun} label="interview" />
               {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}

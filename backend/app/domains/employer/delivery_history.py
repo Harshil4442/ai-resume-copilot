@@ -545,7 +545,9 @@ def membership(db, owner, opening_keys, posting_ids):
         .all()
     }
     progress = _progress(db, owner)
-    return keys, aliases, _readiness(db, owner, progress)
+    from ..credits.discovery import membership as batch_membership
+    batch_keys, batch_postings = batch_membership(db, owner, opening_keys, posting_ids)
+    return keys | batch_keys, aliases | batch_postings, _readiness(db, owner, progress)
 
 
 def write_completed(db, search, deliveries, selected, *, restore_ready=False):

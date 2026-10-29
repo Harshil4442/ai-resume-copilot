@@ -1,0 +1,46 @@
+{
+  "family": "Courier Prime",
+  "source_repository": "https://github.com/google/fonts",
+  "source_commit": "7204f5a9b1e530633e00c67bd4954ceb7d8c2483",
+  "source_directory": "ofl/courierprime",
+  "license": "SIL Open Font License 1.1",
+  "modified": false,
+  "files": [
+    {
+      "path": "CourierPrime-Regular.ttf",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/CourierPrime-Regular.ttf",
+      "size_bytes": 71188,
+      "sha256": "72f793376f8e2841656bf21d77a5de010f2929bd6956a22ee848ad0c7eb978af"
+    },
+    {
+      "path": "CourierPrime-Bold.ttf",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/CourierPrime-Bold.ttf",
+      "size_bytes": 72856,
+      "sha256": "ff1f38786c849d1c41fa8e447960abdb2bd75fdfb0cfcdeb524fad65a5af3638"
+    },
+    {
+      "path": "CourierPrime-Italic.ttf",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/CourierPrime-Italic.ttf",
+      "size_bytes": 79980,
+      "sha256": "f1b9a5829789f7e56432a9f3bc7665ef4531dbba1c112639e48bef39621a006b"
+    },
+    {
+      "path": "CourierPrime-BoldItalic.ttf",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/CourierPrime-BoldItalic.ttf",
+      "size_bytes": 80872,
+      "sha256": "3355273f3ea6d6362658f9564f4e83d59e156cf1a182e3c1592b5c5943627dcc"
+    },
+    {
+      "path": "OFL.txt",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/OFL.txt",
+      "size_bytes": 4403,
+      "sha256": "9a755af092b494944c99f471be6fddd19b006a448fefdc4717e4ee0aa09a97b0"
+    },
+    {
+      "path": "METADATA.pb",
+      "source_url": "https://raw.githubusercontent.com/google/fonts/7204f5a9b1e530633e00c67bd4954ceb7d8c2483/ofl/courierprime/METADATA.pb",
+      "size_bytes": 1548,
+      "sha256": "2f37b982be7620d7abe633a1a14ec13675ed1ce69583d66a48b8a5ca5f197055"
+    }
+  ]
+}

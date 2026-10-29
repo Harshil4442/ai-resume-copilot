@@ -9,11 +9,13 @@ import ResumePage from "./page";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("../../lib/analytics", () => ({ trackEvent: vi.fn() }));
-vi.mock("../../lib/api", () => ({ apiPatchJson: vi.fn(), apiPostForm: vi.fn() }));
+const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+vi.mock("../../lib/api", () => ({ apiGet: api.get, apiPostJson: api.post, apiPatchJson: vi.fn(), apiPostForm: vi.fn(),
+  ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
 const resume: ResumeParseResponse = { resume_id: 42, skills: ["Python"], experience_years: 1, sections: {}, contact_info: {}, source_available: true, source_format: "pdf", extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [] };
 const clients: QueryClient[]=[];
 
-beforeEach(()=>{vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();});
+beforeEach(()=>{vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue({catalog_enabled:false,execution_enabled:false,supported_operations:[]});});
 afterEach(()=>{cleanup();clients.forEach((client)=>client.clear());clients.length=0;vi.restoreAllMocks();vi.unstubAllEnvs();});
 function display(){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});clients.push(client);return render(<QueryClientProvider client={client}><ResumePage/></QueryClientProvider>);}
 function select(){fireEvent.change(screen.getByLabelText("Choose your source resume"),{target:{files:[new File(["synthetic file"],"resume.pdf",{type:"application/pdf"})]}});}
@@ -57,4 +59,17 @@ it("refuses the large disabled-route file before starting an upload",async()=>{
   fireEvent.change(screen.getByLabelText("Choose your source resume"),{target:{files:[new File([new Uint8Array(5*1024*1024)],"resume.pdf",{type:"application/pdf"})]}});
   expect(await screen.findByRole("alert")).toHaveTextContent("cannot pass through the current website upload route");
   expect(send).not.toHaveBeenCalled();expect(screen.getByRole("button",{name:/parse resume/i})).toBeDisabled();
+});
+
+
+it("uploads without AI first and exposes a separate enrichment review for unified credits", async () => {
+  api.get.mockResolvedValue({ catalog_enabled: true, execution_enabled: true, supported_operations: ["resume_enrichment"],
+    free_core_operations: ["resume_parse"], free_core_limits: { resume_parse: { per_account_30_days: 1, max_input_bytes: 5000000, max_source_records: 1 } } });
+  const upload = vi.spyOn(uploads, "uploadResumeFile").mockResolvedValue(resume);
+  display(); select(); await screen.findByText(/After the source is saved/);
+  expect(screen.queryByRole("checkbox")).toBeNull(); fireEvent.click(screen.getByRole("button", { name: /Parse resume/ }));
+  await screen.findByRole("button", { name: "Review skill enrichment charge" });
+  expect(upload).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ enrichSkills: false }));
+  expect(api.post).not.toHaveBeenCalled();
+  expect(screen.getByText(/1 new parsed resume per rolling 30 days/)).toBeVisible();
 });

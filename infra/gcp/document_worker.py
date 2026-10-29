@@ -28,6 +28,7 @@ MAINTENANCE_SERVICES = frozenset({SERVICE, "ai-resume-parser", "hirewiz-analysis
                                  "hirewiz-resume-coordinator"})
 RESOURCE = f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
 POLICY_SHA256 = "d3baf46026934f48b8def219b48d348d7b03bc3b4d0cb713a6f222c7299df7f2"
+CANDIDATE_POLICY_SHA256 = "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f"
 LEGACY_V1_POLICY_SHA256 = "dbd15ce3120bb6211bb6c1d7b166aaddbd8b80e00a72d564e6274ef10db3aaf1"
 ACCEPTED_IMAGE = (
     f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
@@ -86,7 +87,7 @@ def _proposal() -> dict[str, Any]:
         if source.is_symlink() or draft.is_symlink():
             _deny()
         raw = source.read_bytes()
-        if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != POLICY_SHA256:
+        if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != CANDIDATE_POLICY_SHA256:
             _deny()
         policy = decode(raw)
         if policy.get("version") != 3 or policy.get("deployment_proven") is not False:
@@ -95,7 +96,7 @@ def _proposal() -> dict[str, Any]:
         if not _same(proposal, {
                         "version": 1, "project": PROJECT, "region": REGION, "service": SERVICE,
                         "service_account": SERVICE_ACCOUNT, "api_invoker": API_INVOKER,
-                        "policy_sha256": POLICY_SHA256, "image": None,
+                        "policy_sha256": CANDIDATE_POLICY_SHA256, "image": None,
                         "api_wiring_enabled": False, "deployment_proven": False}):
             _deny()
         return proposal
@@ -130,8 +131,23 @@ def api_environment(origin: str) -> dict[str, str]:
     }
 
 
-def render(image: str, release: str) -> dict[str, Any]:
+def render(image: str, release: str, *, candidate_v3: bool = False) -> dict[str, Any]:
     _proposal()
+    if type(candidate_v3) is not bool:
+        _deny()
+    policy = POLICY_SHA256
+    if candidate_v3:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("document_candidate_configuration", ROOT / "infra/gcp/document_candidate.py")
+        if spec is None or spec.loader is None:
+            _deny()
+        profile = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(profile)
+        # Configuration agreement is not build/probe acceptance. The release
+        # verifier separately proves this exact base or its definitions-only child.
+        if profile.POLICY_SHA256 != CANDIDATE_POLICY_SHA256:
+            _deny()
+        policy = CANDIDATE_POLICY_SHA256
     if not isinstance(image, str) or not _IMAGE.fullmatch(image):
         _deny()
     if not isinstance(release, str) or not _RELEASE.fullmatch(release):
@@ -156,7 +172,7 @@ def render(image: str, release: str) -> dict[str, Any]:
                 "startupProbe": {"tcpSocket": {"port": 8080}, "periodSeconds": 10,
                                  "timeoutSeconds": 1, "failureThreshold": 24},
                 "env": [{"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image},
-                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": POLICY_SHA256}],
+                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": policy}],
             }],
         },
     }
@@ -317,13 +333,15 @@ def validate_maintenance_identity(snapshot: dict[str, Any], *, expected_uid: str
 
 
 def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
-                   coordinator_phase: bool = False, historical_v1: bool = False) -> dict[str, Any]:
+                   coordinator_phase: bool = False, historical_v1: bool = False,
+                   candidate_v3: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
     try:
         if (type(api_phase) is not bool or type(coordinator_phase) is not bool or type(historical_v1) is not bool
+                or type(candidate_v3) is not bool or historical_v1 and candidate_v3
                 or coordinator_phase and not api_phase):
             _deny()
-        expected = render(image, release)
+        expected = render(image, release, candidate_v3=candidate_v3)
         if historical_v1:
             # Only the fixed pre-native policy may describe an existing V1
             # service. Rendering new proposals and API pins stays current-only;

@@ -5,10 +5,14 @@ import random
 import re
 import time
 from collections import Counter
+from contextvars import ContextVar
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
+
+from .gemini_token_count import count_gemini_input, gemini_input
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +22,14 @@ GEMINI_FALLBACK_MODELS = (
     "gemini-3.1-flash-lite",
     "gemini-2.5-flash",
 )
+
+_FULL_TAILORING_CONTEXT: ContextVar[bool] = ContextVar(
+    "hirewiz_full_tailoring_context", default=False
+)
+
+
+def full_tailoring_context_enabled() -> bool:
+    return _FULL_TAILORING_CONTEXT.get()
 
 
 class LLMProviderError(RuntimeError):
@@ -30,6 +42,45 @@ class LLMProviderError(RuntimeError):
 
 class InterviewOutputError(ValueError):
     """The provider did not produce a complete, usable interview question set."""
+
+    retryable = False
+    reason_code = "invalid_interview_output"
+    repair_blocked = False
+
+
+class InterviewStructureError(InterviewOutputError):
+    reason_code = "invalid_structure"
+
+
+class InterviewCountError(InterviewOutputError):
+    reason_code = "invalid_question_count"
+
+
+class InterviewEvidenceReferenceError(InterviewOutputError):
+    reason_code = "invalid_evidence_reference"
+
+
+class InterviewPersonalClaimError(InterviewOutputError):
+    reason_code = "unsupported_personal_claim"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        question_index: int | None = None,
+        field: Literal["question", "preparation_step"] | None = None,
+        step_index: int | None = None,
+    ):
+        super().__init__(message)
+        # Only the position is retained; rejected provider prose is never
+        # copied into the repair request or persisted as an error detail.
+        self.question_index = question_index
+        self.field = field
+        self.step_index = step_index
+
+
+class InterviewDuplicateQuestionError(InterviewOutputError):
+    reason_code = "duplicate_question"
 
 
 class TailoringOutputError(ValueError):
@@ -119,7 +170,9 @@ def _chat(messages: list[dict]) -> str:
 
 
 def _chat_with_budget(messages: list[dict], budget) -> str:
+    from .generation_budget import GenerationBudgetExhausted
     from .generation_gate import require_generation
+    from .model_cost_policy import input_token_estimate
 
     require_generation()
     if LLM_MODEL.startswith("gemini"):
@@ -128,15 +181,32 @@ def _chat_with_budget(messages: list[dict], budget) -> str:
             from google.genai import types
         except ImportError as exc:
             raise RuntimeError("google-genai package is not installed.") from exc
-        system_text = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        contents = [
-            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-            for m in messages if m["role"] != "system"
-        ]
+        # This input builder is parity-tested against the pinned SDK's wire
+        # serializer. A dependency upgrade must review that parity first.
+        if getattr(genai, "__version__", None) != "2.16.0":
+            from .model_cost_policy import ModelCostUnavailable
+            raise ModelCostUnavailable("Gemini request serializer needs a reviewed SDK version")
+        contents, system_text, request_input = gemini_input(messages)
         saw_transient = False
         for model in _gemini_models(LLM_MODEL.strip("\"' \r\n")):
             require_generation()
-            record = budget.admit("google", model, messages, api_base="https://generativelanguage.googleapis.com")
+            if budget.preflight is None or budget.before is None or budget.after is None:
+                raise GenerationBudgetExhausted("Optional AI generation requires a persisted operation budget.")
+            api_base = "https://generativelanguage.googleapis.com"
+            input_cap = budget.preflight("google", model, messages, api_base)
+            if input_token_estimate(messages) > input_cap:
+                raise GenerationBudgetExhausted("The prompt exceeds the operation's authorized input estimate.")
+            counted = count_gemini_input(model, request_input, _api_key().strip("\"' \r\n"))
+            # The public countTokens example itself differs from generation
+            # prompt usage. Preserve framing headroom as well as the older
+            # conservative UTF-8 bound for settlement liability.
+            counted_with_headroom = counted + max(32, (counted + 49) // 50)
+            if counted_with_headroom > input_cap:
+                raise GenerationBudgetExhausted("The complete Gemini prompt exceeds its authorized input bound.")
+            record = budget.admit(
+                "google", model, messages, api_base=api_base,
+                counted_input_tokens=counted_with_headroom,
+            )
             started = time.perf_counter()
             client = None
             try:
@@ -256,8 +326,19 @@ def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> dict:
     except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
         raise TailoringOutputError("The rewrite could not be validated. Keep the original wording and use evidence-backed resume editing.") from exc
 
-def _parse_interview_questions(content: str, num_questions: int) -> list[dict]:
-    """Accept JSON arrays and questions objects, including Markdown-wrapped responses."""
+def _parse_interview_questions(content: str, num_questions: int, allowed_ids: set[str]) -> list[dict]:
+    """Validate the current structured preparation contract without rewriting it.
+
+    The finite prose guards reject known unsafe patterns, not every possible
+    implication. Cited facts are rendered verbatim outside generated guidance.
+    """
+    from .interview_contract import (
+        MAX_PREPARATION_STEPS,
+        MIN_PREPARATION_STEPS,
+        unsupported_experience_inference,
+        unsupported_positive_history,
+    )
+
     decoder = json.JSONDecoder()
     data = None
     for index, character in enumerate(content):
@@ -273,39 +354,58 @@ def _parse_interview_questions(content: str, num_questions: int) -> list[dict]:
             data = candidate
             break
     if data is None:
-        raise InterviewOutputError("The response did not contain a JSON question list.")
+        raise InterviewStructureError("The response did not contain a JSON question list.")
+    if len(data) != num_questions:
+        raise InterviewCountError(f"Expected exactly {num_questions} questions.")
 
     questions = []
     seen = set()
-    for item in data:
-        if not isinstance(item, dict):
-            continue
+    for question_index, item in enumerate(data):
+        if not isinstance(item, dict) or set(item) != {"question", "preparation_steps", "evidence_ids"}:
+            raise InterviewStructureError("Every question needs exactly question, preparation_steps and evidence_ids.")
         question = item.get("question")
-        coaching_angle = item.get("coaching_angle")
+        preparation_steps = item.get("preparation_steps")
         evidence_ids = item.get("evidence_ids")
         if (
             not isinstance(question, str)
             or not question.strip()
-            or not isinstance(coaching_angle, str)
-            or not coaching_angle.strip()
+            or not isinstance(preparation_steps, list)
+            or not MIN_PREPARATION_STEPS <= len(preparation_steps) <= MAX_PREPARATION_STEPS
+            or any(not isinstance(step, str) or not step.strip() for step in preparation_steps)
             or not isinstance(evidence_ids, list)
             or any(not isinstance(value, str) for value in evidence_ids)
         ):
-            continue
-        identity = " ".join(question.casefold().split()).rstrip(".?!").strip()
+            raise InterviewStructureError("Every question needs text, two to four preparation steps and evidence references.")
+        if any(value not in allowed_ids for value in evidence_ids):
+            raise InterviewEvidenceReferenceError("A question cited evidence that was not supplied.")
+        fields: list[tuple[Literal["question", "preparation_step"], int | None, str]] = [
+            ("question", None, question),
+        ]
+        fields.extend(("preparation_step", index, step) for index, step in enumerate(preparation_steps))
+        for field, step_index, value in fields:
+            if unsupported_experience_inference(value):
+                raise InterviewPersonalClaimError(
+                    "Do not turn missing evidence into a claim about the candidate's lack of experience. "
+                    "Use a neutral question, preparation instruction or genuine conditional instead.",
+                    question_index=question_index, field=field, step_index=step_index,
+                )
+        for field, step_index, value in fields:
+            if unsupported_positive_history(value):
+                raise InterviewPersonalClaimError(
+                    "Do not assert personal history, ownership or results in generated guidance. "
+                    "Provide technical or future-oriented preparation actions; the application quotes approved facts separately.",
+                    question_index=question_index, field=field, step_index=step_index,
+                )
+        identity = " ".join(re.findall(r"\w+", question.casefold()))
         if identity in seen:
-            continue
+            raise InterviewDuplicateQuestionError("Every question must be distinct.")
         seen.add(identity)
         questions.append({
             "question": question.strip(),
-            "coaching_angle": coaching_angle.strip(),
+            "preparation_steps": [step.strip() for step in preparation_steps],
             "evidence_ids": evidence_ids,
         })
-    if len(questions) < num_questions:
-        raise InterviewOutputError(
-            f"Expected {num_questions} distinct questions, received {len(questions)} usable questions."
-        )
-    return questions[:num_questions]
+    return questions
 
 
 def generate_interview_questions(
@@ -314,75 +414,104 @@ def generate_interview_questions(
     num_questions: int = 8,
     approved_evidence: list[dict] | None = None,
 ) -> list[dict[str, object]]:
+    from .interview_contract import (
+        EXAMPLE_INSTRUCTION,
+        QUESTION_COUNT,
+        build_interview_messages,
+        require_complete_context,
+    )
+
+    if type(num_questions) is not int or num_questions != QUESTION_COUNT:
+        raise InterviewOutputError("An enhanced interview set contains exactly eight questions.")
     evidence = approved_evidence or []
     allowed_ids = {str(item.get("id")) for item in evidence if item.get("id")}
-    system_prompt = (
-        "You are an evidence-grounded interview coach. Generate thoughtful interview questions "
-        "for the job description and a concise coaching angle for each. Never write a fictional "
-        "first-person model answer or invent candidate history, metrics, skills, or outcomes. "
-        "Reference only evidence IDs supplied by the user. If no evidence supports a question, use "
-        "an empty evidence_ids list. Missing evidence must not reduce the number of questions. "
-        "Return exactly the requested number of distinct, role-specific questions. "
-        "Output only a JSON list; every item must have a non-empty question string, a non-empty "
-        "coaching_angle string, and an evidence_ids list of strings."
-    )
-    evidence_context = json.dumps(evidence, default=str)[:6000]
-    user_content = (
-        f"JOB TITLE: {job_title}\n\nJOB DESCRIPTION:\n{jd_text}\n\n"
-        f"APPROVED EVIDENCE:\n{evidence_context}\n\nNumber of Qs: {num_questions}"
-    )
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
+    messages = build_interview_messages(job_title, jd_text, evidence)
     data = None
+    last_validation_error: InterviewOutputError | None = None
+    repair_blocked = False
     for attempt in range(2):
-        content = _chat(messages)
+        require_complete_context(messages)
+        try:
+            content = _chat(messages)
+        except LLMProviderError as exc:
+            if last_validation_error is None or not exc.budget_exhausted:
+                raise
+            # A failed validation and its paid provider event remain a failure.
+            # Budget refusal of a repair must not erase the finite validation
+            # category or retain the provider response/error body as diagnostics.
+            repair_blocked = True
+            break
         if not isinstance(content, str):
             content = ""
         try:
-            data = _parse_interview_questions(content, num_questions)
+            data = _parse_interview_questions(content, num_questions, allowed_ids)
             break
         except InterviewOutputError as exc:
+            last_validation_error = exc
             if attempt == 0:
+                location = ""
+                if isinstance(exc, InterviewPersonalClaimError) and exc.question_index is not None:
+                    if exc.field == "question":
+                        location = f" Question {exc.question_index + 1}, question field, needs replacement."
+                    elif exc.field == "preparation_step" and exc.step_index is not None:
+                        location = (
+                            f" Question {exc.question_index + 1}, preparation step "
+                            f"{exc.step_index + 1}, needs replacement."
+                        )
                 messages.extend([
-                    {"role": "assistant", "content": content or "No usable response was returned."},
                     {
                         "role": "user",
                         "content": (
-                            f"The response could not be used: {exc} Return a replacement JSON list "
+                            f"The response could not be used: {exc}{location} Return a replacement JSON list "
                             f"with exactly {num_questions} distinct questions and all required fields. "
                             "Keep using the original job description and approved evidence. "
+                            "Each item has only question, preparation_steps (two to four neutral, "
+                            "role-specific actions) and evidence_ids. Do not assert personal history or results. "
                             "Use empty evidence_ids when no approved fact supports a question."
                         ),
                     },
                 ])
     if data is None:
-        raise InterviewOutputError(
-            f"Could not generate a complete set of {num_questions} interview questions. Please try again."
-        )
+        reason = last_validation_error.reason_code if last_validation_error is not None else InterviewOutputError.reason_code
+        if isinstance(last_validation_error, InterviewPersonalClaimError):
+            failure: InterviewOutputError = InterviewPersonalClaimError(
+                f"Could not generate a complete set of {num_questions} interview questions. "
+                f"Validation category: {reason}.",
+                question_index=last_validation_error.question_index,
+                field=last_validation_error.field,
+                step_index=last_validation_error.step_index,
+            )
+        else:
+            failure_type = type(last_validation_error) if last_validation_error is not None else InterviewOutputError
+            failure = failure_type(
+                f"Could not generate a complete set of {num_questions} interview questions. "
+                f"Validation category: {reason}.",
+            )
+        failure.repair_blocked = repair_blocked
+        # Deliberately outside the exception handler: no unsafe response or
+        # transient error context can make this validated failure retryable.
+        raise failure from None
 
     evidence_by_id = {str(item.get("id")): item for item in evidence if item.get("id")}
     questions: list[dict[str, object]] = []
     for raw_item in data:
         question = raw_item["question"]
-        coaching_angle = raw_item["coaching_angle"]
-        evidence_ids = list(dict.fromkeys(
-            item for item in raw_item["evidence_ids"] if item in allowed_ids
-        ))
+        preparation = "\n".join(f"{index}. {step}" for index, step in enumerate(raw_item["preparation_steps"], 1))
+        evidence_ids = list(dict.fromkeys(raw_item["evidence_ids"]))
         cited = [evidence_by_id[item] for item in evidence_ids]
         if cited:
             facts = "; ".join(
                 f"{item.get('title', 'Evidence')}: {item.get('text', '')}" for item in cited
-            )[:1800]
-            answer = f"Approved facts to use: {facts}\n\nCoaching focus: {coaching_angle}"
+            )
+            answer = f"Approved facts to use: {facts}"
             answer_state = "evidence_backed"
         else:
             answer = (
                 "No approved evidence is linked to this question yet. Add or approve a relevant "
-                f"fact before drafting a personal answer. Coaching focus: {coaching_angle}"
+                "fact before drafting a personal answer."
             )
             answer_state = "evidence_needed"
+        answer += f"\n\nPreparation steps:\n{preparation}\n\nOptional verified example: {EXAMPLE_INSTRUCTION}"
         questions.append(
             {
                 "question": question,
@@ -631,23 +760,19 @@ def _validate_tailoring_edit(item: object, units: dict, allowed: dict, repeated:
     }
 
 
-def tailor_resume_from_evidence(
+def build_tailoring_messages(
     *,
     job_title: str,
     jd_text: str,
     approved_evidence: list[dict],
     source_units: list[dict],
     repair_note: str = "",
-) -> dict:
-    """Suggest evidence-cited replacements at existing source-document locations."""
+    complete_context: bool | None = None,
+) -> list[dict]:
+    """Build the full source-preserving prompt shared by quote and execution."""
     if not approved_evidence or not source_units:
         raise TailoringOutputError("Approved evidence and editable source text are required")
-    allowed = {
-        str(item["id"]): item
-        for item in approved_evidence
-        if item.get("id") and str(item.get("text") or "").strip()
-    }
-    units = {item["unit_id"]: item for item in source_units}
+    complete = full_tailoring_context_enabled() if complete_context is None else complete_context
     system_prompt = (
         "You are a careful resume editor. Improve the relevance, clarity, and action verbs of "
         "existing resume text for the target job, using only APPROVED EVIDENCE. The original "
@@ -691,7 +816,9 @@ def tailor_resume_from_evidence(
         "Put unsupported job requirements in evidence_needed, never in the resume."
     )
     evidence_context = [
-        {**item, "text": str(item.get("text") or "")[:4000]} for item in approved_evidence
+        {**item, "text": str(item.get("text") or "") if complete
+         else str(item.get("text") or "")[:4000]}
+        for item in approved_evidence
     ]
     prompt_units = []
     for item in source_units:
@@ -702,7 +829,7 @@ def tailor_resume_from_evidence(
             "target_body_chars": int(body_chars * 0.85) if item.get("kind") == "text_object" else body_chars,
         })
     user_content = (
-        f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text[:7000]}\n\n"
+        f"TARGET JOB: {job_title}\n\nJOB DESCRIPTION:\n{jd_text if complete else jd_text[:7000]}\n\n"
         f"APPROVED EVIDENCE:\n{json.dumps(evidence_context, default=str)}\n\n"
         f"EDITABLE SOURCE UNITS:\n{json.dumps(prompt_units, default=str)}"
     )
@@ -713,12 +840,46 @@ def tailor_resume_from_evidence(
             "an unchanged or cramped fragment cannot improve safely. Return actual changed text; "
             "do not repeat unchanged proposals. Preserve every source, evidence and format constraint."
         )
-    raw_content = _chat(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def tailor_resume_from_evidence(
+    *,
+    job_title: str,
+    jd_text: str,
+    approved_evidence: list[dict],
+    source_units: list[dict],
+    repair_note: str = "",
+) -> dict:
+    """Suggest evidence-cited replacements at existing source-document locations."""
+    messages = build_tailoring_messages(
+        job_title=job_title,
+        jd_text=jd_text,
+        approved_evidence=approved_evidence,
+        source_units=source_units,
+        repair_note=repair_note,
     )
+    if repair_note:
+        from .analysis_prompt_preflight import require_tailoring_repair_bound
+
+        require_tailoring_repair_bound(
+            job_title=job_title,
+            jd_text=jd_text,
+            approved_evidence=approved_evidence,
+            source_units=source_units,
+            repair_note=repair_note,
+            messages=messages,
+        )
+    allowed = {
+        str(item["id"]): item
+        for item in approved_evidence
+        if item.get("id") and str(item.get("text") or "").strip()
+    }
+    units = {item["unit_id"]: item for item in source_units}
+    raw_content = _chat(messages)
     data = None
     try:
         candidate = _extract_json_object(raw_content)
@@ -787,6 +948,28 @@ def tailor_resume_from_evidence(
             for error in errors
         ],
     }
+
+
+def tailor_resume_from_evidence_full(
+    *,
+    job_title: str,
+    jd_text: str,
+    approved_evidence: list[dict],
+    source_units: list[dict],
+    repair_note: str = "",
+) -> dict:
+    """Paid v7 route: use the full owned job, evidence and editable source."""
+    token = _FULL_TAILORING_CONTEXT.set(True)
+    try:
+        return tailor_resume_from_evidence(
+            job_title=job_title,
+            jd_text=jd_text,
+            approved_evidence=approved_evidence,
+            source_units=source_units,
+            repair_note=repair_note,
+        )
+    finally:
+        _FULL_TAILORING_CONTEXT.reset(token)
 
 
 def extract_jd_skills_llm(jd_text: str) -> list[str]:
@@ -858,10 +1041,10 @@ def extract_skills_llm(resume_text: str) -> list[str]:
         "Example: [\"Python\", \"FastAPI\", \"Docker\", \"Machine Learning\"]. "
         "Do not include soft skills like 'communication' or 'teamwork'."
     )
-    # Limit text to keep token usage low (first 3000 chars covers skills section)
+    # The complete source is required; the durable budget refuses an unsupported scope.
     content = _chat([
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": resume_text[:3000]},
+        {"role": "user", "content": resume_text},
     ])
     parsed = json.loads(content)
     if isinstance(parsed, list) and all(isinstance(skill, str) and skill.strip() for skill in parsed):
@@ -1167,14 +1350,14 @@ def generate_learning_strategy_llm(
         f"COMPANY: {company or 'Unknown'}\n"
         f"MATCH SCORE: {match_score:.1f}/100\n"
         f"EXPERIENCE YEARS: {experience_years:.1f}\n\n"
-        f"JOB DESCRIPTION EXCERPT:\n{jd_text[:2500]}\n\n"
-        f"RESUME SKILLS:\n{', '.join(resume_skills[:60])}\n\n"
-        f"JD REQUIRED SKILLS:\n{', '.join(required_skills[:60])}\n\n"
-        f"TRUE GAPS:\n{', '.join(true_gaps[:30])}\n\n"
-        f"PARTIAL MATCHES:\n{json.dumps(partial_matches[:20])}\n\n"
-        f"FIT SUMMARY:\n{fit_summary[:1200]}\n\n"
-        f"DIMENSION SCORES:\n{json.dumps(dimension_scores[:12])}\n\n"
-        f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips[:8])}"
+        f"COMPLETE JOB DESCRIPTION:\n{jd_text}\n\n"
+        f"RESUME SKILLS:\n{', '.join(resume_skills)}\n\n"
+        f"JD REQUIRED SKILLS:\n{', '.join(required_skills)}\n\n"
+        f"TRUE GAPS:\n{', '.join(true_gaps)}\n\n"
+        f"PARTIAL MATCHES:\n{json.dumps(partial_matches)}\n\n"
+        f"FIT SUMMARY:\n{fit_summary}\n\n"
+        f"DIMENSION SCORES:\n{json.dumps(dimension_scores)}\n\n"
+        f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips)}"
     )
 
     raw = _chat([
