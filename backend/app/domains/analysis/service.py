@@ -375,9 +375,12 @@ def create_run(
         # later price change cannot create another paid equivalent request.
         input_payload["_accepted_analysis_quote"] = quote
 
-    from ...services.generation_gate import check_generation_admission
+    from ...services.generation_gate import check_generation_admission, requires_generation
 
-    check_generation_admission(payload.operation, input_payload)
+    check_generation_admission(payload.operation, input_payload, user_id=user_id, db=db)
+    from ...services.ai_pilot import current_pilot
+
+    owner_pilot = current_pilot() if requires_generation(payload.operation, input_payload) else None
     from ..free_core import policy as free_policy
     from ..free_core import service as free_service
 
@@ -393,7 +396,7 @@ def create_run(
         input_fingerprint=fingerprint,
         input_payload=input_payload,
         estimated_units=0 if free_operation else OPERATION_UNITS[payload.operation],
-        generation_attempt_limit=3 if (
+        generation_attempt_limit=1 if owner_pilot is not None else 3 if (
             input_payload.get("mode") == "enhanced" or payload.operation == "resume_tailor"
         ) else 0,
         committed_units=0,

@@ -246,7 +246,8 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
             raise pricing.CreditContractError("This service quote already belongs to another request")
         from ...services.generation_gate import check_generation_admission
 
-        check_generation_admission(LEGACY_OPERATIONS[payload.operation], {"mode": "enhanced"})
+        check_generation_admission(LEGACY_OPERATIONS[payload.operation], {"mode": "enhanced"},
+                                   user_id=user_id, db=db)
         stamp = utcnow()
         run = models.AnalysisRun(id=public_id("run"), user_id=user_id,
             operation="sync_" + payload.operation, status="running", idempotency_key=key,

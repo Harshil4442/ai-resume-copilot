@@ -177,6 +177,12 @@ def persistent_run_budget(factory, run_id: str):
                 raise GenerationBudgetExhausted("The operation's model budget is exhausted.")
             if run.model_cost_quote is None and db.query(models.ModelCallEvent.id).filter_by(analysis_run_id=run_id).first():
                 raise ModelCostUnavailable("This legacy operation has unquoted model history. Start a new reviewed operation.")
+            from .ai_pilot import PilotUnavailable, require_provider_attempt
+
+            try:
+                require_provider_attempt(db, run, provider, model, api_base)
+            except PilotUnavailable as exc:
+                raise GenerationBudgetExhausted(str(exc)) from exc
             quote, _ = attempt_quote(run, provider, model, api_base)
             return quote["max_input_tokens"]
 
@@ -194,6 +200,12 @@ def persistent_run_budget(factory, run_id: str):
                 raise GenerationBudgetExhausted("Returned usage exceeded the authorized estimate. Further model attempts are blocked.")
             if run.model_cost_quote is None and db.query(models.ModelCallEvent.id).filter_by(analysis_run_id=run_id).first():
                 raise ModelCostUnavailable("This legacy operation has unquoted model history. Start a new reviewed operation.")
+            from .ai_pilot import PilotUnavailable, require_provider_attempt
+
+            try:
+                require_provider_attempt(db, run, provider, model, api_base)
+            except PilotUnavailable as exc:
+                raise GenerationBudgetExhausted(str(exc)) from exc
             quote, current_ceiling = attempt_quote(run, provider, model, api_base)
             input_tokens = max(input_token_estimate(messages), counted_input_tokens or 0)
             if input_tokens > quote["max_input_tokens"]:
