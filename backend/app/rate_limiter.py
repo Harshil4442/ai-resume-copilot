@@ -1,10 +1,13 @@
 import os
 import sys
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import HTTPException, Request
 from limits.errors import StorageError
+from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
+from redis.retry import Retry
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -45,4 +48,9 @@ class AuthDependencyLimiter(Limiter):
 storage_uri = "memory://" if "pytest" in sys.modules else (
     os.getenv("RATE_LIMIT_STORAGE_URL") or os.getenv("REDIS_URL") or "memory://"
 )
-limiter = AuthDependencyLimiter(key_func=get_remote_address, storage_uri=storage_uri)
+storage_options: dict[str, Any] = ({
+    "socket_connect_timeout": 1.0, "socket_timeout": 1.0,
+    "retry": Retry(NoBackoff(), 0), "retry_on_timeout": False,
+} if storage_uri.startswith(("redis://", "rediss://")) else {})
+limiter = AuthDependencyLimiter(key_func=get_remote_address, storage_uri=storage_uri,
+    storage_options=storage_options)

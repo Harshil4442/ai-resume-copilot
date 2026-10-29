@@ -9,6 +9,7 @@ from google.cloud.firestore_admin_v1.types import Database, ListDatabasesRespons
 
 from app.domains.recovery.store import GuardUnavailable
 from tests.test_candidate_production_factory import PASSWORD, configured, register  # noqa: F401
+from tests.test_native_metadata_admission import inert_shared_redis
 
 
 def enabled(c, monkeypatch, *, mutate=None):
@@ -25,6 +26,7 @@ def enabled(c, monkeypatch, *, mutate=None):
         return mutate(value, len(calls)) if mutate else value
     c.native.sdk.admin.transport.list_databases.side_effect = listed
     c.native.sdk.admin.list_databases = Mock(wraps=c.native.sdk.admin.list_databases)
+    c.admission = inert_shared_redis(monkeypatch, project="hirewiz-local-authority")
     monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "true")
     return result, calls
 
@@ -39,8 +41,10 @@ def test_actual_read_only_validate_is_enclosed_without_changing_fresh_session_or
     assert c.native.sdk.admin.transport.get_database.call_count == get_before
     assert c.native.calls == commits_before
     assert c.native.sdk.admin.list_databases.call_args.kwargs["retry"] is None
+    assert c.admission.grants == 2
     c.accounts.validate(result.context, auth_generation=1)
     assert len(calls) == 4 and calls[3] > calls[2]
+    assert c.admission.grants == 4
 
 
 @pytest.mark.parametrize("stage", ["before", "after"])
@@ -92,3 +96,45 @@ def test_mode_change_during_dependent_read_is_denied_after_fresh_checks(configur
     with pytest.raises(GuardUnavailable):
         c.accounts.validate(result.context, auth_generation=1)
     assert len(calls) == 2 and calls[1] > calls[0]
+
+
+def test_list_activation_requires_shared_admission_to_be_explicitly_enabled(configured, monkeypatch):  # noqa: F811
+    c = configured
+    result, calls = enabled(c, monkeypatch)
+    monkeypatch.setenv("CANDIDATE_METADATA_ADMISSION_ENABLED", "false")
+    with pytest.raises(GuardUnavailable):
+        c.accounts.validate(result.context, auth_generation=1)
+    assert not calls and c.admission.grants == 0
+
+
+@pytest.mark.parametrize("list_mode", [True, False])
+def test_real_account_factory_shared_refusal_precedes_any_next_metadata_call(configured, monkeypatch, list_mode):  # noqa: F811
+    from app.domains.recovery.native_metadata_admission import MetadataCapacityUnavailable
+
+    c = configured
+    result, calls = enabled(c, monkeypatch)
+    monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "true" if list_mode else "false")
+    c.admission.entries["LIMITS:hirewiz-native-metadata-v1/hirewiz-local-authority"] = 40
+    get_before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(MetadataCapacityUnavailable):
+        c.accounts.validate(result.context, auth_generation=1)
+    assert not calls and c.native.sdk.admin.transport.get_database.call_count == get_before
+
+
+@pytest.mark.parametrize("change", ["capacity", "disabled"])
+def test_late_capacity_or_disabled_admission_cannot_export_earlier_validation(configured, monkeypatch, change):  # noqa: F811
+    from app.domains.recovery.native_metadata_admission import MetadataAdmissionError
+
+    c = configured
+    result, calls = enabled(c, monkeypatch)
+    original = c.native.sdk.client.transport.batch_get_documents.side_effect
+    def changed(*args, **kwargs):
+        if change == "capacity":
+            c.admission.entries["LIMITS:hirewiz-native-metadata-v1/hirewiz-local-authority"] = 40
+        else:
+            monkeypatch.setenv("CANDIDATE_METADATA_ADMISSION_ENABLED", "false")
+        return original(*args, **kwargs)
+    c.native.sdk.client.transport.batch_get_documents.side_effect = changed
+    with pytest.raises(MetadataAdmissionError):
+        c.accounts.validate(result.context, auth_generation=1)
+    assert len(calls) == c.admission.grants == 1

@@ -259,7 +259,9 @@ class ConfiguredCandidateAccounts:
             return
         from ..recovery.gcp_rpc import FirestoreIdentityList
         from ..recovery.native_identity_observation import identity_observation_scope
+        from ..recovery.native_metadata_admission import require_enabled
 
+        require_enabled()
         current = self._composition()
         fixed = CandidateNativeConfiguration.model_validate_json(self._raw)
         bindings = ((current.lifetime.registry.rpc, fixed.execution_witness_pin.registry),

@@ -16,6 +16,7 @@ from time import monotonic
 from typing import Any, NoReturn
 
 from .gcp_contracts import RegistryPin
+from .native_metadata_admission import MetadataAdmissionError
 from .store import GuardUnavailable
 
 FAILURE = "Native identity observation is unavailable"
@@ -128,6 +129,8 @@ class _ObservationScope:
         if monotonic() >= self.deadline:
             self.poisoned = True
         if failure is not None:
+            if isinstance(failure, MetadataAdmissionError):
+                raise failure
             raise GuardUnavailable(FAILURE) from failure
         if self.poisoned and not preserve_error:
             self.reject()

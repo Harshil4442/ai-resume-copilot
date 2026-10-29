@@ -16,6 +16,7 @@ from google.api_core.exceptions import Aborted
 from .contracts import canonical
 from .gcp_contracts import AmbiguousCommit, RpcCommit, RpcSnapshot, RpcWrite
 from .native_diagnostics import native_phase
+from .native_metadata_admission import MetadataAdmissionError, before_metadata_rpc
 from .store import GuardDenied, GuardUnavailable
 
 MAX_DOCUMENTS = 64
@@ -58,6 +59,7 @@ class FirestoreIdentityList:
                    for rpc, name in zip(self.rpcs, self.names, strict=True)):
                 raise ValueError("Identity List transport or resource changed")
             with native_phase("firestore_rpc", "identity_list"):
+                before_metadata_rpc(self.parent.split("/")[1], required=True)
                 response = self.admin.list_databases(request=ListDatabasesRequest(parent=self.parent, show_deleted=False),
                     retry=None, timeout=self.timeout)
             if (not isinstance(response, ListDatabasesResponse) or response.unreachable
@@ -81,6 +83,8 @@ class FirestoreIdentityList:
                     raise ValueError("The exact live native database is unavailable")
                 result[id(rpc)] = {"name": name, "uid": database.uid, "type": "FIRESTORE_NATIVE"}
             return result
+        except MetadataAdmissionError:
+            raise
         except Exception as exc:
             raise GuardUnavailable("Complete pinned database List is unavailable") from exc
 
@@ -150,6 +154,7 @@ class FirestoreRpc:
 
         try:
             with native_phase("firestore_rpc", "identity"):
+                before_metadata_rpc(self.database_resource.split("/")[1])
                 response = self.admin.get_database(request={"name": self.database_resource},
                                                    retry=None, timeout=self.rpc_timeout)
             if (not isinstance(response, Database) or response.name != self.database_resource
@@ -157,6 +162,8 @@ class FirestoreRpc:
                     or str(UUID(response.uid)) != response.uid):
                 raise ValueError("Database metadata differs from the explicit identity")
             return {"name": response.name, "uid": response.uid, "type": "FIRESTORE_NATIVE"}
+        except MetadataAdmissionError:
+            raise
         except Exception as exc:
             raise GuardUnavailable("Pinned database metadata is unavailable") from exc
 

@@ -18,9 +18,15 @@ from app.domains.recovery.native_identity_observation import (
 )
 from app.domains.recovery.store import GuardUnavailable
 from tests.test_gcp_rpc import DATABASE, UID, sdk  # noqa: F401
+from tests.test_native_metadata_admission import inert_shared_redis
 
 SECOND = "projects/local-proof/databases/second-proof"
 SECOND_UID = "17538789-d17f-4d02-bdcb-8a04aff617fa"
+
+
+@pytest.fixture(autouse=True)
+def _bounded_list_admission(monkeypatch):
+    return inert_shared_redis(monkeypatch)
 
 
 def response():

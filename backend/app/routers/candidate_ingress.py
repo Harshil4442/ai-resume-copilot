@@ -11,7 +11,9 @@ from ..domains.candidate_ingress.contracts import (
     MAX_HEADER_BYTES,
     IngressClockSynchronizationRequired,
 )
+from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
+from .native_metadata_http import metadata_http_error
 
 _CHECKED = object()
 
@@ -54,6 +56,8 @@ def require_candidate_ingress(request: Request) -> None:
             headers["X-Hirewiz-Ingress-Time-Lower"] = str(exc.lower_ms)
             headers["X-Hirewiz-Ingress-Time-Upper"] = str(exc.upper_ms)
         raise HTTPException(503, "Private candidate transport is unavailable", headers=headers) from None
+    except MetadataAdmissionError as exc:
+        raise metadata_http_error(exc) from None
     except GuardUnavailable:
         raise HTTPException(
             503,

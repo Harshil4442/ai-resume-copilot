@@ -16,7 +16,7 @@ _STAGES = {
     "execution_witness": frozenset({"check", "identity", "closure"}),
     "protected_publication": frozenset({"identity", "root", "closure"}),
     "witness_bytes": frozenset({"live_metadata", "exact_metadata", "bounded_media"}),
-    "firestore_rpc": frozenset({"identity", "identity_list"}),
+    "firestore_rpc": frozenset({"identity", "identity_list", "metadata_admission"}),
 }
 _TYPES = frozenset({
     "Exception", "ValueError", "TypeError", "KeyError", "AssertionError", "RuntimeError",
@@ -25,6 +25,7 @@ _TYPES = frozenset({
     "PermissionDenied", "Forbidden", "Unauthenticated", "Unauthorized", "NotFound",
     "DeadlineExceeded", "Aborted", "FailedPrecondition", "ServiceUnavailable",
     "ResourceExhausted", "TooManyRequests",
+    "MetadataCapacityUnavailable", "MetadataAdmissionUnavailable",
     "InternalServerError", "GoogleAPICallError", "RetryError", "ConnectTimeout", "ReadTimeout",
     "SSLError", "TransportError",
     # Finite standard Google SDK status and credential class names only. These
