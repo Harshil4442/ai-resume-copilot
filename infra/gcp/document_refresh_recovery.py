@@ -260,7 +260,7 @@ def completed_serving_source(run, binding, accepted, transition_accepted, comple
         and accepted["source_sha256"] == probe.source.sources and accepted["policy_sha256"] == probe.POLICY
         and accepted["renderer_version"] == probe.profile.RENDERER and accepted["font_manifest_sha256"] == probe.profile.FONT
         and type(accepted["contract_version"]) is int and accepted["contract_version"] == 4
-        and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 15
+        and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 16
         and accepted["job_name"] == source_release.prior.PARENT + "/jobs/hirewiz-doc-six-" + identity["nonce"][:12]
         and accepted["probe_sha256"] == sha(probe._rendered(image).encode())
         and sha(canonical(accepted)) == complete["native_acceptance_sha256"]
@@ -270,7 +270,7 @@ def completed_serving_source(run, binding, accepted, transition_accepted, comple
         and all(result[key] == value for key, value in complete.items())
         and result["source_commit"] == identity["source_commit"]
         and result["renderer_contract_version"] == 4 and type(result["renderer_contract_version"]) is int
-        and result["required_case_count"] == 15 and type(result["required_case_count"]) is int
+        and result["required_case_count"] == 16 and type(result["required_case_count"]) is int
         and result["definition_expires_at"] == accepted["definition_expires_at"]
         and result["prior_evidence_retained"] is True and result["prior_jobs_retained"] is True,
         "document_refresh_prior_completed_source_receipt_changed")

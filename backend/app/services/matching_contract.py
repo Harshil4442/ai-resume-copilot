@@ -176,15 +176,15 @@ def validate(raw: object, context: dict) -> dict:
     names = [row.name for row in output.dimensions] + [row.name for row in output.unassessed_dimensions]
     if len(names) != 8 or set(names) != set(DIMENSIONS):
         raise MatchingOutputUnavailable("Every comparison dimension must be assessed or explicitly uncertain once.")
-    for row in output.dimensions:
-        facts = _facts(row.evidence_ids, evidence)
-        if not any(row.evidence_quote in fact["text"] for fact in facts):
+    for dimension in output.dimensions:
+        facts = _facts(dimension.evidence_ids, evidence)
+        if not any(dimension.evidence_quote in fact["text"] for fact in facts):
             raise MatchingOutputUnavailable("A dimension has no verbatim approved evidence basis.")
-        _prose(row.feedback, row.evidence_ids, evidence)
-    for row in output.unassessed_dimensions:
-        _prose(row.reason, [], evidence)
-    for row in [output.fit_summary, *output.improvement_tips]:
-        _prose(row.text, row.evidence_ids, evidence)
+        _prose(dimension.feedback, dimension.evidence_ids, evidence)
+    for unassessed in output.unassessed_dimensions:
+        _prose(unassessed.reason, [], evidence)
+    for prose in [output.fit_summary, *output.improvement_tips]:
+        _prose(prose.text, prose.evidence_ids, evidence)
     result = output.model_dump()
     result["fit_summary"] = output.fit_summary.text
     result["improvement_tips"] = [row.text for row in output.improvement_tips]

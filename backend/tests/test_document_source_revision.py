@@ -235,7 +235,7 @@ def accepted(source, identity, probe):
         identity["source_archive_sha256"], identity["refresh_dockerfile_sha256"], source.sources,
         release.prior.PARENT + "/jobs/hirewiz-doc-six-" + NONCE[:12], "owned-job-uid", "owned-execution", "owned-execution-uid",
         profile.digest(probe._rendered(IMAGE).encode()), "d" * 64, source.policy, courier.FONT, courier.RENDERER,
-        (datetime.now(UTC) + timedelta(days=2)).isoformat(), 4, 15)
+        (datetime.now(UTC) + timedelta(days=2)).isoformat(), 4, 16)
 
 
 @pytest.mark.parametrize("change", [None, "probe", "policy", "count", "intent", "result"])
@@ -257,7 +257,7 @@ def test_completed_source_history_is_joined_identity_never_replayed_authority(so
         "native_acceptance_sha256": recovery.sha(recovery.canonical(acceptance)),
         "all_three_caller_pins_verified": True, "admission_restored": True,
         "synchronous_callers_drained": False, "current_native_proof_retained": True, "automatic_replay": False}
-    result = complete | {"source_commit": current.commit, "renderer_contract_version": 4, "required_case_count": 15,
+    result = complete | {"source_commit": current.commit, "renderer_contract_version": 4, "required_case_count": 16,
         "definition_expires_at": acceptance["definition_expires_at"], "prior_evidence_retained": True, "prior_jobs_retained": True}
     if change in {"probe", "policy", "count"}:
         key, value = {"probe": ("probe_sha256", "0" * 64), "policy": ("policy_sha256", courier.POLICY_SHA256),
@@ -299,7 +299,7 @@ def test_new_source_native_acceptance_keeps_old_safety_and_exact_new_identity(so
     monkeypatch.setattr(probe, "_observation", lambda _client, mode, *_args: (job, execution, inventory if mode == "inventory" else value))
     result = probe._acceptance(object())
     assert result.source_sha256 == current.sources and result.policy_sha256 == current.policy
-    assert result.contract_version == 4 and result.required_case_count == 15
+    assert result.contract_version == 4 and result.required_case_count == 16
     release.transition.require_current_acceptance(result, IMAGE, probe)
     with pytest.raises(release.transition.TransitionDenied, match="current_acceptance_required"):
         release.transition.require_current_acceptance(replace(result, contract_version=3, required_case_count=11), IMAGE, probe)
@@ -365,7 +365,7 @@ def test_native_proof_requires_exact_new_kind_and_all_safety_and_parser_cases(so
             receipt.validate(value, IMAGE, current.policy, current.runtime)
 
 
-def test_four_fixed_pdf_cases_use_actual_parser_without_live_scanner_or_models(monkeypatch):
+def test_five_fixed_pdf_cases_use_actual_parser_without_live_scanner_or_models(monkeypatch):
     from tests.test_document_processor import load
     from tests.test_document_processor import payload as envelope
     processor = load("processor")
@@ -377,6 +377,24 @@ def test_four_fixed_pdf_cases_use_actual_parser_without_live_scanner_or_models(m
         else:
             result = processor.inspect(envelope(content))
             engines.validate_reading_order_result(name, content, 0, result)
+
+
+def test_native_spacing_control_detects_absolute_threshold_word_collapse(monkeypatch):
+    from app.services import parsing
+    from tests.test_document_processor import load
+    from tests.test_document_processor import payload as envelope
+    processor = load("processor")
+    monkeypatch.setattr(processor, "scan_original", lambda _: {"engine": "ClamAV", "version": "synthetic", "definitions": "not-native-evidence"})
+    content = dict(engines.reading_order_corpus())["pdf_font_relative_spacing"]
+    current = processor.inspect(envelope(content))
+    engines.validate_reading_order_result("pdf_font_relative_spacing", content, 0, current)
+    # pdfplumber's None selects its original absolute3pt default. No alternate
+    # parser or expected extraction is injected into the deliverable.
+    monkeypatch.setattr(parsing, "PDF_WORD_X_TOLERANCE_RATIO", None)
+    previous = processor.inspect(envelope(content))
+    assert previous["parsed"]["sections"].get("experience") != current["parsed"]["sections"]["experience"]
+    with pytest.raises(engines.DocumentImageError):
+        engines.validate_reading_order_result("pdf_font_relative_spacing", content, 0, previous)
 
 
 def test_retained_readback_does_not_authorize_new_work_after_helper_changes(source):
@@ -405,7 +423,7 @@ def test_definition_child_checks_actual_parent_before_any_upload(source, monkeyp
         def close(self):
             pass
     accepted = SimpleNamespace(image=PARENT, policy_sha256=current.policy, source_sha256=current.sources,
-        contract_version=4, required_case_count=15, renderer_version=courier.RENDERER, font_manifest_sha256=courier.FONT)
+        contract_version=4, required_case_count=16, renderer_version=courier.RENDERER, font_manifest_sha256=courier.FONT)
     if change == "policy":
         accepted.policy_sha256 = courier.POLICY_SHA256
     elif change == "runtime":

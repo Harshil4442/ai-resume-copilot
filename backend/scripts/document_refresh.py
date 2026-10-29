@@ -576,7 +576,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         raise RefreshDenied("document_refresh_definition_header_invalid") from None
     need(timedelta(0) <= age < CANDIDATE_MAX_AGE, "document_refresh_candidate_not_fresh")
     return {"issued_at_utc": timestamp.isoformat(), "expires_at_utc": (timestamp + AGE_LIMIT).isoformat(),
-            "definition_number": number, "local_cases": 21 if historical_v1 else 30 if source_revision else 25,
+            "definition_number": number, "local_cases": 21 if historical_v1 else 31 if source_revision else 25,
             "renderer_version": renderer_version,
             "rendered_fonts_sha256": fit["layout"]["rendered_fonts_sha256"]}
 

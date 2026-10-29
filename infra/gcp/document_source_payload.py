@@ -1,7 +1,7 @@
 """Finite source-revision probe built from the unchanged V3 safety corpus.
 
 Only source identity literals and the final report sink are adapted. The original
-sandbox/scanner/renderer checks execute unchanged before four new parser cases.
+sandbox/scanner/renderer checks execute unchanged before five new parser cases.
 No candidate resume, provider or arbitrary execution input is accepted.
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import re
 from infra.gcp import document_source_candidate as profile
 
 EXTRA_CASES = ("pdf_independent_columns", "pdf_late_date_rows", "pdf_spanning_columns_refused",
-               "pdf_earlier_unaligned_sections_refused")
+               "pdf_earlier_unaligned_sections_refused", "pdf_font_relative_spacing")
 INVENTORY_EVENT = "hirewiz_document_source_inventory_v1"
 CORPUS_EVENT = "hirewiz_document_source_required_v4"
 
@@ -23,12 +23,24 @@ def reading_pdf(mode):
     writer=PdfWriter()
     page=writer.add_blank_page(width=612,height=792)
     fonts=DictionaryObject()
-    for key,face in (("F1","Helvetica"),("F2","Helvetica-Bold"),("F3","Helvetica-Oblique")):
+    for key,face in (("F1","Helvetica"),("F2","Helvetica-Bold"),("F3","Helvetica-Oblique"),("F4","Courier")):
         fonts[NameObject("/"+key)]=writer._add_object(DictionaryObject({NameObject("/Type"):NameObject("/Font"),
             NameObject("/Subtype"):NameObject("/Type1"),NameObject("/BaseFont"):NameObject("/"+face)}))
     page[NameObject("/Resources")]=DictionaryObject({NameObject("/Font"):fonts})
     rows=[(48,752,"Casey Sample","F2",20),(48,732,"casey@example.test | https://example.test/casey","F1",10)]
-    if mode=="pdf_late_date_rows":
+    if mode=="pdf_font_relative_spacing":
+        rows.append((48,710,"EXPERIENCE","F2",14))
+        # Standard Courier advances exactly0.6em. Draw glyphs separately so
+        # literal space characters cannot substitute for measured gaps.
+        for text,size,y in (("Delivered 14 API checks.",6,680),("API checks",40,620)):
+            x=48.0
+            for character in text:
+                if character==" ":
+                    x+=size*.24
+                else:
+                    rows.append((x,y,character,"F4",size))
+                    x+=size*.64
+    elif mode=="pdf_late_date_rows":
         rows += [(48,710,"EXPERIENCE","F2",14),(48,686,"Harbor Labs","F2",11),
                  (48,666,"Delivered 4 Python APIs.","F1",11),(48,626,"EDUCATION","F2",14),
                  (48,606,"North College 2015 - 2019","F1",11),(480,686,"2020 - 2022","F3",10)]
@@ -95,6 +107,10 @@ def source_main():
                                     and "billing API" in sections.get("projects","")
                                     and "billing API" not in sections.get("experience","")
                                     and text.index("EXPERIENCE")<text.index("PROJECTS"))
+                            elif name=="pdf_font_relative_spacing":
+                                row["reading_order_pass"]=(sections.get("experience","").splitlines()
+                                    ==["Delivered 14 API checks.","API checks"]
+                                    and parsed.get("contact_info",{}).get("email")=="casey@example.test")
                             row["passed"]=(row["reading_order_pass"] and diagnostic.processor=="clean"
                                 and diagnostic.launcher_code==0 and diagnostic.validation=="complete")
                     require(row["cleanup_passed"] and row["passed"])
@@ -104,7 +120,7 @@ def source_main():
         observed={row["case"] for row in report["cases"]}
         report["cases"].extend({"case":name,"passed":False,"attempted":False}
             for name in SOURCE_EXTRA_CASES if name not in observed)
-        report["all_required_passed"]=(exit_code==0 and len(report["cases"])==15
+        report["all_required_passed"]=(exit_code==0 and len(report["cases"])==16
             and all(row["passed"] is True for row in report["cases"]))
         exit_code=0 if report["all_required_passed"] else 1
     report["elapsed_ms"]=min(600000,max(0,int((time.monotonic()-started)*1000)))

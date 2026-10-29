@@ -10,21 +10,23 @@ payloads and historical journals remain unchanged.
 
 The separately pinned policy is
 `infra/document-processing/policy.source-revision.json`, SHA-256
-`999d4f273617ec5f06fb12c5cec2e731edb2c6ca291e65ed077126e18213cbae`.
+`43af7715702355491413b40544a439529caa7e668a3514229173a4eef35de4e1`.
 Only the source hashes for `processor.py` and `parsing.py` differ from frozen V3.
 The 21 source inputs, 20 installed runtime files, wire protocol, source/edit
 bounds, renderer/font rules, sandbox, resource limits and IAM requirements stay
 the same. The policy's safety semantics remain V3; its separately versioned
-native release proof is **V4, 15 required cases**.
+native release proof is **V4, 16 required cases**.
 
-The four additional generic PDF controls cover row-painted independent columns,
+The five additional generic PDF controls cover row-painted independent columns,
 late-painted right-aligned dates, spanning-column refusal and earlier unaligned
-section refusal. They run after all eleven unchanged V3 scanner, source, font,
+section refusal, plus font-relative word spacing at small/large sizes. They run
+after all eleven unchanged V3 scanner, source, font,
 DOCX and sandbox controls. The local engine checker also retains all existing
-source/scanner/clamd/layout checks and adds these four controls. This narrow
+source/scanner/clamd/layout checks and adds these five controls. This narrow
 regression corpus does **not** establish full résumé quality: the separate
-development assessment currently passes 23/40 strict reading-order cases, with
-17 failures. Full development/held-out extraction, native format output and human
+prior 5ea development assessment passed 23/40 strict reading-order cases, with
+17 failures; the full cohort has not been rerun for the new spacing source. Full
+development/held-out extraction, native format output and human
 quality qualification are still required; do not relax expected facts to pass.
 
 ## Two exact Build kinds
@@ -38,7 +40,7 @@ quality qualification are still required; do not relax expected facts to pass.
    authorize a Build. This replaces the parser once; it is not a daily rebuild.
 2. `native_cloud_build_source_definitions_v1` is the daily successor. Before
    upload or Build intent, fresh current-worker/native proof must establish the
-   actual current immutable parent, this policy/runtime map, V4/15 proof and the
+   actual current immutable parent, this policy/runtime map, V4/16 proof and the
    unchanged renderer/font identity. Its recipe is the frozen V3 definitions
    recipe with exactly the two parent-image literals replaced. Only antivirus
    definition files and the explicitly declared Git/qualification metadata can
@@ -61,7 +63,7 @@ A different result requires review, not an automatic pin update.
 controllers. Inventory and corpus remain separate, scoped singleton Jobs with
 the existing service identity, gen2 sandbox, fixed resource/time bounds and zero
 task retries. The actual Job/Execution templates, UIDs, runtime bytes, unique
-bounded stdout receipt, definitions freshness and full 15-case proof are read
+bounded stdout receipt, definitions freshness and full 16-case proof are read
 back. Historical readback reconstructs the precise probe from its retained Git
 commit; retained evidence cannot authorize new work after a helper/source edit.
 

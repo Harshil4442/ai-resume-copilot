@@ -51,8 +51,10 @@ class Route(legacy.Closed):
 
 
 class Authorization(legacy.Authorization):
-    schema_version: Literal["supported-quality-evaluation-v2"]
-    purpose: Literal["internal_quality_evaluation_not_retail_qualification"]
+    # Pydantic intentionally replaces these two closed protocol tags for v2;
+    # the inherited finite funding/time/route validators remain unchanged.
+    schema_version: Literal["supported-quality-evaluation-v2"]  # type: ignore[assignment]
+    purpose: Literal["internal_quality_evaluation_not_retail_qualification"]  # type: ignore[assignment]
     operation: Literal["interview_questions", "resume_tailor", "job_match", "resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"]
     split: Literal["development", "held_out"]
     routes: dict[Literal["reference", "candidate"], Route]

@@ -183,6 +183,39 @@ def test_complete_native_preflight_but_no_retail_qualification(evaluation):
     assert inputs.Authorization.model_validate_json(evaluation["auth"].model_dump_json()) == evaluation["auth"]
 
 
+@pytest.mark.parametrize("field", ["schema_version", "purpose"])
+def test_v1_and_v2_protocol_tags_are_not_interchangeable(evaluation, field):
+    current = evaluation["auth"].model_dump(mode="json")
+    legacy = {key: value for key, value in current.items() if key in inputs.legacy.Authorization.model_fields}
+    legacy.update(schema_version="synthetic-interview-development-v1", purpose="internal_calibration_not_sales_qualification")
+    assert inputs.legacy.Authorization.model_validate(legacy).schema_version == "synthetic-interview-development-v1"
+    wrong_current = current | {field: legacy[field]}
+    wrong_legacy = legacy | {field: current[field]}
+    with pytest.raises(ValueError):
+        inputs.Authorization.model_validate(wrong_current)
+    with pytest.raises(ValueError):
+        inputs.legacy.Authorization.model_validate(wrong_legacy)
+
+
+@pytest.mark.parametrize("change", ["missing_side", "naive_time", "long_window", "zero_budget", "fractional_budget", "extra_field"])
+def test_v2_protocol_override_retains_inherited_closed_allocation_bounds(evaluation, change):
+    value = evaluation["auth"].model_dump(mode="json")
+    if change == "missing_side":
+        value["routes"].pop("candidate")
+    elif change == "naive_time":
+        value["valid_from"] = evaluation["auth"].valid_from.replace(tzinfo=None).isoformat()
+    elif change == "long_window":
+        value["expires_at"] = (evaluation["auth"].valid_from + timedelta(days=1, seconds=1)).isoformat()
+    elif change == "zero_budget":
+        value["maximum_provider_cost_micros"] = 0
+    elif change == "fractional_budget":
+        value["maximum_provider_cost_micros"] = 1.5
+    else:
+        value["bypass_native_review"] = True
+    with pytest.raises(ValueError):
+        inputs.Authorization.model_validate(value)
+
+
 def test_missing_captures_block_before_database_or_generation(evaluation, monkeypatch):
     values = evaluation | {"native_receipts": None}
     assert runner.preflight(**values)["state"] == "blocked"

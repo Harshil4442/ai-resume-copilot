@@ -3142,6 +3142,10 @@ export interface components {
         };
         /** DimensionScore */
         DimensionScore: {
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            /** Evidence Quote */
+            evidence_quote?: string | null;
             /** Feedback */
             feedback: string;
             /** Name */
@@ -3487,10 +3491,16 @@ export interface components {
         JobMatchResponse: {
             /** Dimensions */
             dimensions: components["schemas"]["DimensionScore"][];
+            /** Evidence Links */
+            evidence_links?: {
+                [key: string]: unknown;
+            };
             /** Fit Summary */
             fit_summary: string;
             /** Full Matches */
             full_matches: string[];
+            /** Gap Semantics */
+            gap_semantics?: string | null;
             /** Grade */
             grade: string;
             /** Improvement Tips */
@@ -3499,6 +3509,8 @@ export interface components {
             match_id: number;
             /** Match Score */
             match_score: number;
+            /** Missing Evidence */
+            missing_evidence?: string[];
             /** Mode */
             mode?: ("basic" | "enhanced") | null;
             /** Partial Matches */
@@ -3507,12 +3519,22 @@ export interface components {
             provenance?: string | null;
             /** Required Skills */
             required_skills: string[];
+            /** Score Basis */
+            score_basis?: string | null;
             /** Scoring Version */
             scoring_version?: string | null;
+            /** Skill Analysis */
+            skill_analysis?: {
+                [key: string]: unknown;
+            }[];
             /** Skill Verification Rate */
             skill_verification_rate: number;
             /** True Gaps */
             true_gaps: string[];
+            /** Unassessed Dimensions */
+            unassessed_dimensions?: {
+                [key: string]: unknown;
+            }[];
             /** Uncertainties */
             uncertainties?: string[];
         };

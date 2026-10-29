@@ -24,7 +24,7 @@ class SourceProbe:
     POLICY = profile.POLICY_SHA256
     BASE_IMAGE, SERVICE_UID = prior.BASE_IMAGE, prior.SERVICE_UID
     NativeProofDenied = prior.NativeProofDenied
-    CONTRACT_VERSION, REQUIRED_CASE_COUNT = 4, 15
+    CONTRACT_VERSION, REQUIRED_CASE_COUNT = 4, 16
     validate_serving = staticmethod(prior.validate_serving)
     sha = staticmethod(corpus.sha)
 
@@ -134,7 +134,7 @@ class SourceProbe:
         prior.need(complete is True and all(value["identity_preflight"][key] == observed
                    for key, observed in identity.items()), "document_source_revision_native_identity_changed")
         scans = [row["scan"] for row in value["cases"] if "scan" in row]
-        prior.need(len(scans) == 7 and all(scan == scans[0] for scan in scans), "document_source_revision_scans_disagree")
+        prior.need(len(scans) == 8 and all(scan == scans[0] for scan in scans), "document_source_revision_scans_disagree")
         number, issued = scans[0]["definitions"].split("/", 1)
         stamp = datetime.fromisoformat(issued)
         prior.need(re.fullmatch(r"[0-9]{1,10}", number) and stamp.tzinfo is not None
@@ -242,7 +242,7 @@ def promote(build, native_journal, transition_journal, *, application_context, r
     finally:
         http.close()
     return result | {"source_commit": build["source_commit"], "renderer_contract_version": 4,
-        "required_case_count": 15, "definition_expires_at": accepted.definition_expires_at,
+        "required_case_count": 16, "definition_expires_at": accepted.definition_expires_at,
         "prior_evidence_retained": True, "prior_jobs_retained": True}
 
 
@@ -275,7 +275,7 @@ def parent_before_build(image, current_source):
         accepted = probe.verify_current_successor(image, metadata)
         prior.need(accepted.image == image and accepted.policy_sha256 == current_source.policy
                    and accepted.source_sha256 == current_source.sources
-                   and accepted.contract_version == 4 and accepted.required_case_count == 15
+                   and accepted.contract_version == 4 and accepted.required_case_count == 16
                    and accepted.renderer_version == courier.RENDERER and accepted.font_manifest_sha256 == courier.FONT,
                    "document_source_revision_parent_profile_changed")
     finally:

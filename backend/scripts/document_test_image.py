@@ -1290,6 +1290,13 @@ def validate_reading_order_result(name, content, code, result):
         return
     parsed = result.get("parsed", {})
     sections = parsed.get("sections", {})
+    if name == "pdf_font_relative_spacing":
+        if (code != 0 or any(result.get(key) != expected for key, expected in binding.items())
+                or result.get("scan", {}).get("engine") != "ClamAV"
+                or sections.get("experience", "").splitlines() != ["Delivered 14 API checks.", "API checks"]
+                or parsed.get("contact_info", {}).get("email") != "casey@example.test"):
+            raise DocumentImageError()
+        return
     if (code != 0 or any(result.get(key) != expected for key, expected in binding.items())
             or result.get("scan", {}).get("engine") != "ClamAV"
             or parsed.get("experience_years") != 2
