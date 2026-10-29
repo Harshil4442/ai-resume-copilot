@@ -390,8 +390,13 @@ def analysis_reuse(payload: AnalysisRunCreate, request: Request, response: Respo
     normalized = dict(payload.input)
     validate_analysis_input(db, user_id=current_user.id, operation=payload.operation,
                             opportunity_id=payload.opportunity_id, payload=normalized)
+    complete_match = payload.operation == "job_match" and normalized.get("mode") == "enhanced"
     paid_tailoring = payload.operation == "resume_tailor"
-    contexts = ((True, False) if include_legacy else (True,)) if paid_tailoring else (False,)
+    # An old mega-match remains an owned historical read, not a current complete
+    # matching deliverable. Its missing evidence/output contract cannot be reused
+    # by a new paid preflight, even when old tailoring reads are requested.
+    contexts = (True,) if complete_match else (
+        ((True, False) if include_legacy else (True,)) if paid_tailoring else (False,))
     identities = [payload_fingerprint({"operation": payload.operation,
         "opportunity_id": payload.opportunity_id, "input": normalized,
         "dependencies": _dependency_snapshot(db, current_user.id, payload.operation, payload.opportunity_id, normalized,
