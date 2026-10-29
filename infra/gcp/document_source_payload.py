@@ -1,7 +1,7 @@
 """Finite source-revision probe built from the unchanged V3 safety corpus.
 
 Only source identity literals and the final report sink are adapted. The original
-sandbox/scanner/renderer checks execute unchanged before five new parser cases.
+sandbox/scanner/renderer checks execute unchanged before six new parser cases.
 No candidate resume, provider or arbitrary execution input is accepted.
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ import re
 from infra.gcp import document_source_candidate as profile
 
 EXTRA_CASES = ("pdf_independent_columns", "pdf_late_date_rows", "pdf_spanning_columns_refused",
-               "pdf_earlier_unaligned_sections_refused", "pdf_font_relative_spacing")
+               "pdf_earlier_unaligned_sections", "pdf_unaligned_gutter_refused", "pdf_font_relative_spacing")
 INVENTORY_EVENT = "hirewiz_document_source_inventory_v1"
 CORPUS_EVENT = "hirewiz_document_source_required_v4"
 
@@ -44,12 +44,14 @@ def reading_pdf(mode):
         rows += [(48,710,"EXPERIENCE","F2",14),(48,686,"Harbor Labs","F2",11),
                  (48,666,"Delivered 4 Python APIs.","F1",11),(48,626,"EDUCATION","F2",14),
                  (48,606,"North College 2015 - 2019","F1",11),(480,686,"2020 - 2022","F3",10)]
-    elif mode=="pdf_earlier_unaligned_sections_refused":
+    elif mode in {"pdf_earlier_unaligned_sections", "pdf_unaligned_gutter_refused"}:
         rows += [(48,710,"EDUCATION","F2",14),(330,700,"EXPERIENCE","F2",14),
                  (48,680,"North College 2015 - 2019","F1",11),(330,680,"Harbor Labs 2020 - 2022","F1",11),
                  (48,660,"Degree in Computing","F1",11),(330,660,"Built 3 Python APIs","F1",11),
                  (48,620,"PROJECTS","F2",14),(330,620,"SKILLS","F2",14),
                  (48,600,"Built 2 billing checks","F1",11),(330,600,"Python, SQL, Docker","F1",11)]
+        if mode=="pdf_unaligned_gutter_refused":
+            rows.append((48,560,"A statement crosses the independent column gutter and cannot be assigned safely.","F1",11))
     else:
         # Paint by rows, so authored flow cannot substitute for column logic.
         rows += [(48,690,"SUMMARY","F2",14),(330,690,"PROJECTS","F2",14),
@@ -107,6 +109,13 @@ def source_main():
                                     and "billing API" in sections.get("projects","")
                                     and "billing API" not in sections.get("experience","")
                                     and text.index("EXPERIENCE")<text.index("PROJECTS"))
+                            elif name=="pdf_earlier_unaligned_sections":
+                                row["reading_order_pass"]=(row["reading_order_pass"]
+                                    and sections.get("education","").splitlines()==["North College 2015 - 2019","Degree in Computing"]
+                                    and sections.get("experience","").splitlines()==["Harbor Labs 2020 - 2022","Built 3 Python APIs"]
+                                    and sections.get("projects","")=="Built 2 billing checks"
+                                    and sections.get("skills","")=="Python, SQL, Docker"
+                                    and text.index("EDUCATION")<text.index("PROJECTS")<text.index("EXPERIENCE")<text.index("SKILLS"))
                             elif name=="pdf_font_relative_spacing":
                                 row["reading_order_pass"]=(sections.get("experience","").splitlines()
                                     ==["Delivered 14 API checks.","API checks"]
@@ -120,7 +129,7 @@ def source_main():
         observed={row["case"] for row in report["cases"]}
         report["cases"].extend({"case":name,"passed":False,"attempted":False}
             for name in SOURCE_EXTRA_CASES if name not in observed)
-        report["all_required_passed"]=(exit_code==0 and len(report["cases"])==16
+        report["all_required_passed"]=(exit_code==0 and len(report["cases"])==17
             and all(row["passed"] is True for row in report["cases"]))
         exit_code=0 if report["all_required_passed"] else 1
     report["elapsed_ms"]=min(600000,max(0,int((time.monotonic()-started)*1000)))

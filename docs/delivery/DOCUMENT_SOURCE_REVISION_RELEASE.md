@@ -10,24 +10,33 @@ payloads and historical journals remain unchanged.
 
 The separately pinned policy is
 `infra/document-processing/policy.source-revision.json`, SHA-256
-`43af7715702355491413b40544a439529caa7e668a3514229173a4eef35de4e1`.
+`6a080773cc96cd7eca35160ef2e20e299d8dc458e8696b782f40b722d30c2fb1`.
 Only the source hashes for `processor.py` and `parsing.py` differ from frozen V3.
 The 21 source inputs, 20 installed runtime files, wire protocol, source/edit
 bounds, renderer/font rules, sandbox, resource limits and IAM requirements stay
 the same. The policy's safety semantics remain V3; its separately versioned
-native release proof is **V4, 16 required cases**.
+native release proof is **V4, 17 required cases**.
 
-The five additional generic PDF controls cover row-painted independent columns,
-late-painted right-aligned dates, spanning-column refusal and earlier unaligned
-section refusal, plus font-relative word spacing at small/large sizes. They run
-after all eleven unchanged V3 scanner, source, font,
-DOCX and sandbox controls. The local engine checker also retains all existing
-source/scanner/clamd/layout checks and adds these five controls. This narrow
-regression corpus does **not** establish full résumé quality: the separate
-prior 5ea development assessment passed 23/40 strict reading-order cases, with
-17 failures; the full cohort has not been rerun for the new spacing source. Full
-development/held-out extraction, native format output and human
-quality qualification are still required; do not relax expected facts to pass.
+The six additional generic PDF controls cover row-painted independent columns,
+late-painted right-aligned dates, spanning-column refusal, safely separated
+unaligned sections, a genuinely ambiguous unaligned gutter refusal, and
+font-relative word spacing at small/large sizes. The positive unaligned case
+requires the exact education, experience, projects and skills facts, two years of
+work experience and column-major section order; mixing or dropping facts fails.
+They run after all eleven unchanged V3 scanner, source, font, DOCX and sandbox
+controls. The resulting V4 receipt has 17 cases and nine mutually consistent clean
+scan receipts. The local engine checker retains every existing source/scanner/
+clamd/layout check and adds the same six controls.
+
+The current parser source is SHA-256
+`afeb4eccdcb7812b30d51cb1debb7d21096fec38a7fee2b44d6c8ad471f4538e`.
+Its separately reviewed frozen development oracle records 34/40 strict cases
+passing; the remaining three ambiguous-gutter refusals and three literal-hyphen
+failures remain unresolved. Seven previously interleaved unaligned cases are
+repaired without changing the oracle. These are development results, not full
+resume-quality acceptance. The finite native regression corpus, full development/
+held-out extraction, native format output and human quality qualification remain
+separate gates; do not relax expected facts to pass.
 
 ## Two exact Build kinds
 
@@ -40,7 +49,7 @@ quality qualification are still required; do not relax expected facts to pass.
    authorize a Build. This replaces the parser once; it is not a daily rebuild.
 2. `native_cloud_build_source_definitions_v1` is the daily successor. Before
    upload or Build intent, fresh current-worker/native proof must establish the
-   actual current immutable parent, this policy/runtime map, V4/16 proof and the
+   actual current immutable parent, this policy/runtime map, V4/17 proof and the
    unchanged renderer/font identity. Its recipe is the frozen V3 definitions
    recipe with exactly the two parent-image literals replaced. Only antivirus
    definition files and the explicitly declared Git/qualification metadata can
@@ -63,7 +72,7 @@ A different result requires review, not an automatic pin update.
 controllers. Inventory and corpus remain separate, scoped singleton Jobs with
 the existing service identity, gen2 sandbox, fixed resource/time bounds and zero
 task retries. The actual Job/Execution templates, UIDs, runtime bytes, unique
-bounded stdout receipt, definitions freshness and full 16-case proof are read
+bounded stdout receipt, definitions freshness and full 17-case proof are read
 back. Historical readback reconstructs the precise probe from its retained Git
 commit; retained evidence cannot authorize new work after a helper/source edit.
 

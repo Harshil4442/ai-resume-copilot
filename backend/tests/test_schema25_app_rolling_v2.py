@@ -5,6 +5,7 @@ import copy
 import json
 import subprocess
 from dataclasses import asdict, fields, replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,21 @@ from test_schema25_app_rolling_release import app_release as app
 from scripts import schema25_app_release_contract_v2 as contract
 
 rolling = app.rolling
+
+
+def test_final_polling_dependencies_and_tests_are_bound_into_the_source_fingerprint(monkeypatch):
+    required = {"frontend/lib/boundedStatusPolling.ts", "frontend/lib/boundedStatusPolling.test.ts",
+        "frontend/lib/readQueryPolicy.ts", "frontend/lib/readQueryPolicy.test.ts", "frontend/lib/api.ts",
+        "frontend/lib/resumeUpload.ts", "frontend/lib/resumeUpload.test.ts",
+        "frontend/components/ResumeUploadProgress.tsx", "frontend/app/billing/page.test.tsx"}
+    assert required <= set(contract.BOOTSTRAP_PATHS)
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    before = contract.source_fingerprint(ROOT, prior)
+    original = Path.read_bytes
+    target = ROOT / "frontend/lib/boundedStatusPolling.ts"
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n// source drift\n"
+        if path == target else original(path))
+    assert contract.source_fingerprint(ROOT, prior) != before
 
 
 class V2Fixture(AppFixture):

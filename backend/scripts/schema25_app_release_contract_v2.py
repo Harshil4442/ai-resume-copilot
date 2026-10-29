@@ -15,7 +15,7 @@ from scripts import schema25_app_release_contract as v1
 CONTRACT = "hirewiz_schema25_app_rolling_v2"
 PRIOR_RELEASE = "ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2"
 PRIOR_APP_SHA256 = "5d09318281793a9d9f46827ca19194164579f1c45e78b36d2d48b4655b326b89"
-CANDIDATE_APP_SHA256 = "3711eeae0945045ef5d137dfff3f3ea6771a700a70dd36877611979fc3035f7f"
+CANDIDATE_APP_SHA256 = "1db7f750644b8d2dc701ceab51a977e2298582a1465417f280c74e01058edbbe"
 COMPATIBILITY_STEP = "Qualify schema25 app v2 compatibility"
 PROTOCOL_STEP = "Qualify schema25 app v2 native protocol"
 COMPATIBILITY_COMMAND = ".venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py"
@@ -64,7 +64,10 @@ BOOTSTRAP_PATHS = ("backend/app/domains/candidate_accounts/bootstrap.py", "backe
     "frontend/lib/ownerProfile.ts", "frontend/lib/opportunityQueries.ts", "frontend/lib/unifiedCreditClient.ts",
     "frontend/components/Nav.tsx", "frontend/components/billing/LegacyBillingAccount.tsx",
     "frontend/components/billing/UnifiedBillingPanel.tsx", "frontend/app/dashboard/page.tsx", "frontend/app/profile/page.tsx",
-    "frontend/app/workspace/page.tsx", "frontend/app/workspace/[id]/page.tsx", "frontend/lib/generated/api.ts")
+    "frontend/app/workspace/page.tsx", "frontend/app/workspace/[id]/page.tsx", "frontend/lib/generated/api.ts",
+    "frontend/lib/boundedStatusPolling.ts", "frontend/lib/boundedStatusPolling.test.ts", "frontend/lib/readQueryPolicy.ts",
+    "frontend/lib/readQueryPolicy.test.ts", "frontend/lib/api.ts", "frontend/lib/resumeUpload.ts",
+    "frontend/lib/resumeUpload.test.ts", "frontend/components/ResumeUploadProgress.tsx", "frontend/app/billing/page.test.tsx")
 STAGE5_FLAGS = ("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED")
 
 

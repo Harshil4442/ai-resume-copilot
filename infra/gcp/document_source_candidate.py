@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 KIND = "native_cloud_build_source_revision_v1"
 DEFINITIONS_KIND = "native_cloud_build_source_definitions_v1"
 POLICY_PATH = "infra/document-processing/policy.source-revision.json"
-POLICY_SHA256 = "43af7715702355491413b40544a439529caa7e668a3514229173a4eef35de4e1"
+POLICY_SHA256 = "6a080773cc96cd7eca35160ef2e20e299d8dc458e8696b782f40b722d30c2fb1"
 CONTRACT_VERSION = 4
 CONTRACT_PATHS = ("infra/gcp/document_source_candidate.py", "infra/gcp/document_source_payload.py",
                   "infra/gcp/document_source_receipt.py", "infra/gcp/document_source_release.py",

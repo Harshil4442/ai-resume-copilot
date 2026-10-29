@@ -1311,6 +1311,15 @@ def validate_reading_order_result(name, content, code, result):
         if ("billing API" not in sections.get("projects", "") or "billing API" in sections.get("experience", "")
                 or "EXPERIENCE" not in raw or "PROJECTS" not in raw or raw.index("EXPERIENCE") >= raw.index("PROJECTS")):
             raise DocumentImageError()
+    if name == "pdf_earlier_unaligned_sections":
+        raw = parsed.get("raw_text", "")
+        if (sections.get("education", "").splitlines() != ["North College 2015 - 2019", "Degree in Computing"]
+                or sections.get("experience", "").splitlines() != ["Harbor Labs 2020 - 2022", "Built 3 Python APIs"]
+                or sections.get("projects", "") != "Built 2 billing checks"
+                or sections.get("skills", "") != "Python, SQL, Docker"
+                or not all(heading in raw for heading in ("EDUCATION", "PROJECTS", "EXPERIENCE", "SKILLS"))
+                or not raw.index("EDUCATION") < raw.index("PROJECTS") < raw.index("EXPERIENCE") < raw.index("SKILLS")):
+            raise DocumentImageError()
 
 
 def check(platform: str, *, image: str | None = None, source_revision: bool = False) -> dict:
