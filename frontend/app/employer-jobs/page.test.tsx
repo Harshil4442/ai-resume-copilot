@@ -12,6 +12,7 @@ vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div
 import EmployerJobsPage from "./page";
 import { ApiError } from "../../lib/api";
 import SessionProviderWrapper from "../../components/SessionProviderWrapper";
+import Nav from "../../components/Nav";
 import type { EmployerSearchPreparation, EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
 
 let client: QueryClient;
@@ -23,6 +24,8 @@ function item(owner = state.owner): SearchResult {
 }
 function read(url: string) {
   const owner = state.owner;
+  if (url === "/auth/profile") return Promise.resolve({ email: `${owner}@example.invalid`, ai_credits: 7, job_service_credits: 50 });
+  if (url === "/v1/features") return Promise.resolve({ features: {} });
   if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
   if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
   if (url === "/resume/list") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
@@ -35,7 +38,8 @@ function pendingSearch(): EmployerSearchPreparation {
   return { id: "search_pending", kind: "search_preparation", status: "pending", as_of: "2026-10-11T00:00:00Z", desired_count: 3, accepted_quote: { unit_price: 2, pricing_version: "accepted-price", requested_count: 3, maximum_credits: 6, search_input_fingerprint: "accepted-input" }, candidates_examined: 0, charged_credits: 0, reserved_credits: 6, refunded_credits: 0, completed_search_id: null, failure_reason: null };
 }
 function withClient() {
-  return function TestQueryProvider({ children }: { children: React.ReactNode }) { return <QueryClientProvider client={client}>{children}</QueryClientProvider>; };
+  // Match the root layout: Nav owns the balance/catalog event subscription.
+  return function TestQueryProvider({ children }: { children: React.ReactNode }) { return <QueryClientProvider client={client}><Nav />{children}</QueryClientProvider>; };
 }
 
 beforeEach(() => {
