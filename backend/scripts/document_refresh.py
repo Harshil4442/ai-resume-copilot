@@ -38,6 +38,23 @@ MAX_OUTPUT = 1024 * 1024
 # Exact source-owned codes safe for the private final-continuation failure
 # artifact. Vendor exception text and response bodies never enter this set.
 FINAL_READ_ONLY_FAILURE_CODES = frozenset("""
+    document_final_readback_claim_changed
+    document_final_readback_coordinator_changed
+    document_final_readback_exact_artifact_required
+    document_final_readback_exact_candidate_required
+    document_final_readback_exact_mode_required
+    document_final_readback_failed_journal_changed
+    document_final_readback_failure_receipt_changed
+    document_final_readback_flags_changed
+    document_final_readback_native_acceptance_changed
+    document_final_readback_original_flags_changed
+    document_final_readback_prior_changed
+    document_final_readback_private_artifact_required
+    document_final_readback_request_changed
+    document_final_readback_revision_changed
+    document_final_readback_source_tree_changed
+    document_final_readback_state_changed
+    document_final_readback_write_route_refused
     document_final_analysis_admission_changed
     document_final_analysis_chain_changed
     document_final_analysis_open_changed
@@ -1084,7 +1101,7 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 def infra(name: str) -> Any:
     need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery", "document_candidate_release",
                   "document_renderer_profiles", "document_refresh_resume", "document_candidate",
-                  "document_refresh_partial", "document_refresh_final"},
+                  "document_refresh_partial", "document_refresh_final", "document_refresh_final_readback"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
@@ -1317,6 +1334,55 @@ def resume_final_v2_transition(directory: Path, original: Path) -> dict[str, Any
         http.close()
 
 
+def reconcile_final_v2_transition(directory: Path, original: Path) -> dict[str, Any]:
+    """Prove the third consumed claim and acknowledged open without another write."""
+    controller = infra("document_refresh_transition")
+    final = infra("document_refresh_final_readback")
+    need(original.is_absolute() and original.resolve() == original and not original.is_symlink()
+         and original.is_dir() and original.stat().st_uid == os.getuid()
+         and stat.S_IMODE(original.stat().st_mode) == 0o700
+         and {p.name for p in original.iterdir()} == {
+             "native-proof", "source-transition", "partial-transition", "final-transition", "failure.json"},
+         "document_final_readback_private_artifact_required")
+    failure = final.partial.source_json(original, "failure.json", controller)
+    need(failure == {"status": "maintenance_attention_required",
+                     "fixed_code": "document_transition_readback_changed",
+                     "state_requires_read_only_reconciliation": True,
+                     "automatic_replay": False},
+         "document_final_readback_failure_receipt_changed")
+    native = retain_prior_journal(original / "native-proof", directory / "native-proof")
+    source = retain_prior_journal(original / "source-transition", directory / "source-transition")
+    previous = retain_prior_journal(original / "partial-transition", directory / "partial-transition")
+    failed = retain_prior_journal(original / "final-transition", directory / "final-transition")
+    members = sorted((*(native.glob("*.json")), *(source.glob("*.json")),
+                      *(previous.glob("*.json")), *(failed.glob("*.json"))),
+                     key=lambda path: path.relative_to(directory).as_posix())
+    need(len(members) == 45, "document_final_readback_source_tree_changed")
+    rows = [("failure.json", (original / "failure.json").read_bytes())]
+    rows.extend((member.relative_to(directory).as_posix(), member.read_bytes()) for member in members)
+    tree = hashlib.sha256()
+    for name, raw in sorted(rows):
+        tree.update(name.encode() + b"\0" + raw + b"\0")
+    need(tree.hexdigest() == final.JOURNAL_TREE_SHA256,
+         "document_final_readback_source_tree_changed")
+    write_new(directory / "source-failure.json", failure)
+    binding = decode((native / "binding.json").read_bytes())
+    need(type(binding) is dict and binding.get("image") == controller.RESCUE_IMAGE
+         and type(binding.get("build_identity")) is dict
+         and binding["build_identity"].get("build_id") == controller.RESCUE_BUILD_ID
+         and binding["build_identity"].get("nonce") == controller.RESCUE_NONCE,
+         "document_final_readback_exact_candidate_required")
+    delegate = native_http()
+    try:
+        http = final.ReadOnlyHttp(delegate, controller)
+        return final.reconcile(controller.RESCUE_IMAGE, binding["build_identity"], native,
+                               source, previous, failed, directory / "readback",
+                               source_tree_sha256=tree.hexdigest(), http=http,
+                               probe=infra("document_refresh_probe"), t=controller)
+    finally:
+        delegate.close()
+
+
 def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Path | None = None,
                    history: Path | None = None, rescue_expired_v2: bool = False) -> dict[str, Any]:
     """Shared native one-send, transition and actual-prior retirement ordering."""
@@ -1415,8 +1481,8 @@ def emit_status(result: dict[str, Any]) -> None:
 
 def main() -> None:
     os.umask(0o077)
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile"), required=True)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
@@ -1432,7 +1498,7 @@ def main() -> None:
     args = parser.parse_args()
     need(args.mode == "resume-full-source-refresh" or args.resume_candidate_directory is None
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
-    need(args.mode in {"resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition"}
+    need(args.mode in {"resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition"}
          or args.resume_transition_directory is None,
          "document_rescue_transition_arguments_mode_required")
     need(args.recover_failed_native_job is None or args.mode in {"refresh", "full-source-refresh"} and args.publish_candidate,
@@ -1485,6 +1551,13 @@ def main() -> None:
              and not args.rescue_expired_v2,
              "document_final_exact_transition_mode_required")
         result = resume_final_v2_transition(args.output_directory, args.resume_transition_directory)
+    elif args.mode == "reconcile-final-v2-transition":
+        need(args.resume_transition_directory is not None and not args.publish_candidate
+             and args.prior_native_journal is None and args.prior_history_directory is None
+             and args.transition_journal is None and args.recover_failed_native_job is None
+             and not args.rescue_expired_v2,
+             "document_final_readback_exact_mode_required")
+        result = reconcile_final_v2_transition(args.output_directory, args.resume_transition_directory)
     elif args.mode in {"refresh", "full-source-refresh"}:
         arguments = {"publish": args.publish_candidate, "now": datetime.now(UTC),
                      "prior_journal": args.prior_native_journal, "history": args.prior_history_directory,
@@ -1526,16 +1599,24 @@ def _final_failure_code(error: Exception) -> str:
     return "document_refresh_unavailable"
 
 
+def _cli_option(name: str) -> str | None:
+    """Read one exact CLI option in either spelling without argument parsing."""
+    values = []
+    for index, argument in enumerate(sys.argv):
+        if argument == name and index + 1 < len(sys.argv):
+            values.append(sys.argv[index + 1])
+        elif argument.startswith(name + "="):
+            values.append(argument[len(name) + 1:])
+    return values[0] if len(values) == 1 else None
+
+
 def _record_final_failure(code: str) -> None:
     """Keep a private fixed-code receipt even when no transition marker exists."""
-    argv = sys.argv
-    if argv.count("--mode") != 1 or argv.count("--output-directory") != 1:
+    mode = _cli_option("--mode")
+    output = _cli_option("--output-directory")
+    if mode not in {"resume-final-v2-transition", "reconcile-final-v2-transition"} or output is None:
         return
-    mode = argv.index("--mode") + 1
-    output = argv.index("--output-directory") + 1
-    if mode >= len(argv) or argv[mode] != "resume-final-v2-transition" or output >= len(argv):
-        return
-    directory = Path(argv[output])
+    directory = Path(output)
     if (not directory.is_absolute() or directory.is_symlink() or directory.resolve() != directory
             or not directory.is_dir() or directory.stat().st_uid != os.getuid()
             or stat.S_IMODE(directory.stat().st_mode) != 0o700):
@@ -1550,14 +1631,19 @@ def run_cli() -> int:
         main()
         return 0
     except Exception as error:
+        mode = _cli_option("--mode") or ""
+        readback_requested = any(argument == "reconcile-final-v2-transition"
+                                 or argument.endswith("=reconcile-final-v2-transition")
+                                 for argument in sys.argv)
         # Reporting is an independent bounded write, never a retry of the failed
-        # Build/Job/PATCH. Missing-heartbeat alert covers unavailable auth/logging.
-        try:
-            emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
-        except Exception:
-            pass
-        mode_index = sys.argv.index("--mode") + 1 if sys.argv.count("--mode") == 1 else len(sys.argv)
-        final_mode = mode_index < len(sys.argv) and sys.argv[mode_index] == "resume-final-v2-transition"
+        # Build/Job/PATCH. The exact read-only reconciliation mode must not
+        # write even a failure heartbeat to Cloud Logging.
+        if not readback_requested:
+            try:
+                emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
+            except Exception:
+                pass
+        final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
         code = (_final_failure_code(error) if final_mode else
                 str(error) if type(error) is RefreshDenied else "document_refresh_unavailable")
         if final_mode:
