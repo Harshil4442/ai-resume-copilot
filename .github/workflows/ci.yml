@@ -125,6 +125,7 @@ jobs:
           tests/test_nologin_role_source_pin.py
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
+          tests/test_ci_postgres_lock_diagnostics.py
           app/services/document_ingestion.py ../infra/document-processing
           app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
           tests/test_docx_font_resolution.py tests/test_docx_failure_guidance.py tests/test_document_font_bundle.py
@@ -170,6 +171,7 @@ jobs:
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
+          scripts/ci_postgres_lock_diagnostics.py
           app/services/document_ingestion.py scripts/document_test_image.py
           app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
           scripts/document_refresh.py ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py
@@ -318,6 +320,7 @@ jobs:
           PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_CI_LOCK_DIAGNOSTICS: "1"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/python -I -B isolated_checks/test_document_service_reap.py
@@ -325,8 +328,16 @@ jobs:
             --worker ../infra/native-tex/cloud_service.py \
             --owned ../infra/document-processing/service.py
           # Catch the native delivery/application contract before the full suite.
-          .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
-          .venv/bin/pytest -q
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics
+      - name: Save encrypted PostgreSQL failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: encrypted-postgres-lock-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/hirewiz-ci-pg-lock-${{ github.run_id }}-${{ github.run_attempt }}/failure.enc
       - name: Remove only owned transfer client containers
         if: ${{ always() && contains(fromJSON('["success","failure","cancelled"]'), steps.transfer_clients.outcome) }}
         working-directory: backend
