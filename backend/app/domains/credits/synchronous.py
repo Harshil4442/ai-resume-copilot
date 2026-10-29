@@ -128,7 +128,7 @@ def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceReque
 
 def prepare_quote_context(db: Session, *, user_id: int, payload: SynchronousServiceRequest):
     prepared = owned_context(db, user_id=user_id, payload=payload)
-    config = runtime.current_runtime(user_id)
+    config = runtime.current_runtime(user_id, db=db)
     if payload.operation == "learning_strategy":
         skills = list(prepared.context["reviewed_resources"])
         current = contracts.reviewed_learning_resources(skills)
@@ -236,7 +236,7 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
             analysis_run_id=saved.id, input_fingerprint=prepared.fingerprint))
         db.commit()
         return response
-    if not runtime.enabled_for(user_id):
+    if not runtime.enabled_for(user_id, db=db):
         raise _reject("Unified paid execution is not enabled for this account")
     if not accepted_service_quote_id:
         raise _reject("Review a current service quote before starting this work")

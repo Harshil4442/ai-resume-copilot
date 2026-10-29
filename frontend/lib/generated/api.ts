@@ -1286,6 +1286,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/credits/canary-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Canary Enrollment */
+        get: operations["canary_enrollment_api_v1_credits_canary_enrollment_get"];
+        put?: never;
+        /** Choose Canary */
+        post: operations["choose_canary_api_v1_credits_canary_enrollment_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/credits/catalog": {
         parameters: {
             query?: never;
@@ -2607,6 +2625,72 @@ export interface components {
             timezone: string;
             /** Version */
             version: string;
+        };
+        /** CanaryChoiceRequest */
+        CanaryChoiceRequest: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "opt_in" | "revoke";
+            /**
+             * Confirmed Notice
+             * @default false
+             */
+            confirmed_notice: boolean;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Notice Sha256 */
+            notice_sha256: string;
+            /** Review Id */
+            review_id: string;
+            /** Review Sha256 */
+            review_sha256: string;
+        };
+        /** CanaryChoiceView */
+        CanaryChoiceView: {
+            /**
+             * Choice
+             * @enum {string}
+             */
+            choice: "opt_in" | "revoke";
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Review Sha256 */
+            review_sha256: string;
+            /** Sequence */
+            sequence: number;
+            /**
+             * Status
+             * @constant
+             */
+            status: "CHOICE_RECORDED";
+        };
+        /** CanaryEnrollmentView */
+        CanaryEnrollmentView: {
+            /** Accepted Work Survives Revocation */
+            accepted_work_survives_revocation?: boolean | null;
+            /** Can Opt In */
+            can_opt_in?: boolean | null;
+            /** Execution Flag Enabled */
+            execution_flag_enabled?: boolean | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Notice */
+            notice?: string | null;
+            /** Notice Sha256 */
+            notice_sha256?: string | null;
+            /** Review Id */
+            review_id?: string | null;
+            /** Review Sha256 */
+            review_sha256?: string | null;
+            /** Runtime Sha256 */
+            runtime_sha256?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "NOT_AVAILABLE" | "NOT_OPTED_IN" | "OPTED_IN";
         };
         /** CandidateRequest */
         CandidateRequest: {
@@ -8902,6 +8986,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreditAvailabilityView"];
+                };
+            };
+        };
+    };
+    canary_enrollment_api_v1_credits_canary_enrollment_get: {
+        parameters: {
+            query?: {
+                review_id?: string | null;
+                review_sha256?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanaryEnrollmentView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_canary_api_v1_credits_canary_enrollment_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanaryChoiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanaryChoiceView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

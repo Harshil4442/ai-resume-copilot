@@ -174,6 +174,12 @@ def persistent_run_budget(factory, run_id: str):
                 or run.cancel_requested or run.status not in {"queued", "running"}
             ):
                 raise GenerationBudgetExhausted("The operation is no longer authorized for model requests.")
+            from ..domains.credits.canary import require_accepted_provider_run
+            from ..domains.credits.finance import FundingUnavailable
+            try:
+                require_accepted_provider_run(db, run)
+            except FundingUnavailable as exc:
+                raise GenerationBudgetExhausted("New model work requires reviewed canary admission.") from exc
             if run.generation_attempt_count >= run.generation_attempt_limit or run.model_cost_state == "overrun":
                 raise GenerationBudgetExhausted("The operation's model budget is exhausted.")
             if run.model_cost_quote is None and db.query(models.ModelCallEvent.id).filter_by(analysis_run_id=run_id).first():
@@ -187,6 +193,12 @@ def persistent_run_budget(factory, run_id: str):
             run = db.query(models.AnalysisRun).filter_by(id=run_id, user_id=user_id).with_for_update().one_or_none()
             if run is None or db.get(models.User, user_id) is None:
                 raise GenerationBudgetExhausted("The operation is no longer authorized for model requests.")
+            from ..domains.credits.canary import require_accepted_provider_run
+            from ..domains.credits.finance import FundingUnavailable
+            try:
+                require_accepted_provider_run(db, run)
+            except FundingUnavailable as exc:
+                raise GenerationBudgetExhausted("New model work requires reviewed canary admission.") from exc
             if run.cancel_requested or run.status not in {"queued", "running"}:
                 raise GenerationBudgetExhausted("The operation is no longer authorized for model requests.")
             if run.generation_attempt_count >= run.generation_attempt_limit:

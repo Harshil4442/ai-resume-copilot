@@ -165,7 +165,7 @@ def test_quote_rejects_oversized_prompt_before_credit_reservation(monkeypatch, o
                 ),
             )
             config = SimpleNamespace(resolve_route=lambda *args, **kwargs: route)
-            monkeypatch.setattr(runtime, "current_runtime", lambda user_id: config)
+            monkeypatch.setattr(runtime, "current_runtime", lambda user_id, **kwargs: config)
             request = schemas.AnalysisRunCreate(
                 operation=operation, opportunity_id="opp_preflight",
                 input={"mode": "enhanced", "num_questions": 8}
@@ -269,7 +269,7 @@ def test_fragmented_pdf_quote_uses_actual_route_capacity(monkeypatch):
                 supported_source_formats=("pdf",),
                 model_quotes=(SimpleNamespace(max_input_tokens=needed),),
             )
-            monkeypatch.setattr(runtime, "current_runtime", lambda user_id:
+            monkeypatch.setattr(runtime, "current_runtime", lambda user_id, **kwargs:
                                 SimpleNamespace(resolve_route=lambda *args, **kwargs: route))
             request = schemas.AnalysisRunCreate(
                 operation="resume_tailor", opportunity_id="opp_fragments", input={}

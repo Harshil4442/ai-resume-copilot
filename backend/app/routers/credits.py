@@ -49,6 +49,83 @@ router = APIRouter(prefix="/v1/credits", tags=["credits"])
 public_router = APIRouter(prefix="/public/credits", tags=["public-credits"])
 
 
+class CanaryChoiceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    review_id: str = Field(pattern=r"^[a-z][a-z0-9-]{7,47}$")
+    review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    notice_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    choice: Literal["opt_in", "revoke"]
+    confirmed_notice: bool = Field(strict=True, default=False)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class CanaryEnrollmentView(BaseModel):
+    status: Literal["NOT_AVAILABLE", "NOT_OPTED_IN", "OPTED_IN"]
+    review_id: str | None = None
+    review_sha256: str | None = None
+    notice: str | None = None
+    notice_sha256: str | None = None
+    expires_at: datetime | None = None
+    runtime_sha256: str | None = None
+    can_opt_in: bool | None = None
+    execution_flag_enabled: bool | None = None
+    accepted_work_survives_revocation: bool | None = None
+
+
+class CanaryChoiceView(BaseModel):
+    status: Literal["CHOICE_RECORDED"]
+    choice: Literal["opt_in", "revoke"]
+    sequence: int
+    review_sha256: str
+    idempotency_key: str
+
+
+@router.get("/canary-enrollment", response_model=CanaryEnrollmentView, response_model_exclude_none=True)
+def canary_enrollment(response: Response,
+                      review_id: str | None = Query(default=None, pattern=r"^[a-z][a-z0-9-]{7,47}$"),
+                      review_sha256: str | None = Query(default=None, pattern=r"^[a-f0-9]{64}$"),
+                      db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from ..domains.credits import canary
+    from ..domains.credits.runtime import RuntimeConfig
+
+    _headers(response)
+    if (review_id is None) != (review_sha256 is None):
+        raise HTTPException(422, "Select both the review identity and its exact digest")
+    try:
+        try:
+            configured = RuntimeConfig.model_validate_json(os.getenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", ""))
+        except ValueError:
+            configured = None
+        return canary.enrollment(db, user_id=current_user.id, runtime=configured,
+                                 review_id=review_id, review_sha256=review_sha256)
+    except (FundingUnavailable, ValueError):
+        return {"status": "NOT_AVAILABLE"}
+
+
+@router.post("/canary-enrollment", response_model=CanaryChoiceView)
+@limiter.limit("10/minute")
+def choose_canary(payload: CanaryChoiceRequest, request: Request, response: Response,
+                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from ..domains.credits import canary
+    from ..domains.credits.runtime import RuntimeConfig
+
+    _headers(response)
+    if payload.choice == "opt_in" and payload.confirmed_notice is not True:
+        raise HTTPException(422, "Review the canary notice and explicitly choose participation")
+    try:
+        configured = (RuntimeConfig.model_validate_json(os.getenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", ""))
+                      if payload.choice == "opt_in" else None)
+        receipt = canary.choose(db, user_id=current_user.id, review_id=payload.review_id,
+            review_sha256=payload.review_sha256, notice_sha256=payload.notice_sha256,
+            choice=payload.choice, idempotency_key=payload.idempotency_key, runtime=configured)
+        db.commit()
+        return {"status": "CHOICE_RECORDED", "choice": receipt["choice"], "sequence": receipt["sequence"],
+                "review_sha256": receipt["review_sha256"], "idempotency_key": payload.idempotency_key}
+    except (FundingUnavailable, ValueError):
+        db.rollback()
+        raise HTTPException(409, "Canary participation could not be confirmed; read its current status") from None
+
+
 def _headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, private"
 
@@ -79,32 +156,32 @@ def _route_available(route, user_id: int | None, email: str = "") -> bool:
     return True
 
 
-def _purchase_enabled(user_id: int | None = None, email: str = "") -> bool:
+def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Session | None = None) -> bool:
     if not release.checkout_ready():
         return False
     if user_id is None and os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower() != "reviewed_public":
         return False
     from ..domains.credits.runtime import current_runtime
     try:
-        config = current_runtime(user_id if user_id is not None else 1)
+        config = current_runtime(user_id, db=db)
         if config.policy != release.current_review().policy:
             return False
         from ..domains.credits.service_quotes import require_route
         for route in config.routes:
             require_route(route, config.policy, now=datetime.now(UTC))
-        return bool(_service_offers(user_id, email))
+        return bool(_service_offers(user_id, email, db=db))
     except FundingUnavailable:
         return False
 
 
-def _service_offers(user_id: int | None = None, email: str = "") -> list[dict]:
+def _service_offers(user_id: int | None = None, email: str = "", *, db: Session | None = None) -> list[dict]:
     from ..domains.credits.runtime import current_runtime
     from ..domains.credits.service_quotes import require_route
 
     if user_id is None and os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower() != "reviewed_public":
         return []
     try:
-        config = current_runtime(user_id if user_id is not None else 1)
+        config = current_runtime(user_id, db=db)
         offers = []
         for route in config.routes:
             require_route(route, config.policy, now=datetime.now(UTC))
@@ -123,8 +200,8 @@ def _catalog(db: Session, user_id: int | None = None, email: str = "") -> Credit
         raise HTTPException(404, "Unified credits are not available yet.")
     try:
         result = pricing.public_catalog(campaign=service.configured_campaign(db), now=datetime.now(UTC),
-                                        checkout_enabled=_purchase_enabled(user_id, email))
-        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": _service_offers(user_id, email)})
+                                        checkout_enabled=_purchase_enabled(user_id, email, db=db))
+        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": _service_offers(user_id, email, db=db)})
     except pricing.CreditContractError:
         raise HTTPException(503, "Credit pricing is temporarily unavailable.") from None
 
@@ -146,10 +223,10 @@ def catalog(response: Response, db: Session = Depends(get_db), current_user: Use
 def purchase_quote(payload: PurchaseQuoteRequest, request: Request, response: Response,
                    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email):
+    if not _purchase_enabled(current_user.id, current_user.email, db=db):
         raise HTTPException(503, "Credit purchases are not available yet.")
     try:
-        offers = _service_offers(current_user.id, current_user.email)
+        offers = _service_offers(current_user.id, current_user.email, db=db)
         if not offers:
             raise FundingUnavailable("No qualified service is available for this pass.")
         quote = service.issue_purchase_quote(db, user_id=current_user.id, sku=payload.sku,
@@ -173,7 +250,7 @@ def wallet(response: Response, db: Session = Depends(get_db), current_user: User
 
 
 @router.get("/availability", response_model=CreditAvailabilityView)
-def availability(response: Response, current_user: User = Depends(get_current_user)):
+def availability(response: Response, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from ..domains.credits.runtime import current_runtime
     from ..domains.credits.service_quotes import require_route
     from ..domains.free_core import policy as free_policy
@@ -181,7 +258,7 @@ def availability(response: Response, current_user: User = Depends(get_current_us
     _headers(response)
     supported = []
     try:
-        runtime = current_runtime(current_user.id)
+        runtime = current_runtime(current_user.id, db=db)
         for route in runtime.routes:
             try:
                 require_route(route, runtime.policy, now=datetime.now(UTC))
@@ -224,7 +301,7 @@ def analysis_quote(payload: AnalysisRunCreate, request: Request, response: Respo
         if not decide_feature(feature, user_id=current_user.id, email=current_user.email).enabled:
             raise HTTPException(404, "This analysis is not enabled.")
     try:
-        current_runtime(current_user.id)  # Refuse before inspecting a disabled route's source.
+        current_runtime(current_user.id, db=db)  # Refuse before inspecting a disabled route's source.
         from ..domains.credits.analysis import prepare_quote_context
         _, fingerprint, runtime, route = prepare_quote_context(db, user_id=current_user.id, payload=payload)
         if not _route_available(route, current_user.id, current_user.email):
@@ -420,8 +497,8 @@ def _owned_order(db: Session, owner: int, reference: str) -> PaymentOrder:
     return order
 
 
-def _offers_remain_available(view: PurchaseQuoteView, user_id: int, email: str) -> bool:
-    current = _service_offers(user_id, email)
+def _offers_remain_available(view: PurchaseQuoteView, user_id: int, email: str, *, db: Session | None = None) -> bool:
+    current = _service_offers(user_id, email, db=db)
     return bool(view.eligible_services) and all(
         offer.model_dump(mode="json") in current for offer in view.eligible_services)
 
@@ -434,8 +511,8 @@ def _status(db: Session, order: PaymentOrder, email: str) -> dict:
     return {"schema_version": "unified-credits-v1", "order_id": order.public_id,
             "provider_order_id": order.provider_order_id, "status": _normalized_order_status(order),
             "payment_status": order.status, "fulfilled": bool(grant and entitlement),
-            "checkout_available": bool(_purchase_enabled(order.user_id, email) and order.status == "created"
-                and order.provider_order_id and _offers_remain_available(view, order.user_id, email)),
+            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db) and order.status == "created"
+                and order.provider_order_id and _offers_remain_available(view, order.user_id, email, db=db)),
             "amount_minor": order.gross_amount_minor, "refunded_amount_minor": order.refunded_amount_minor,
             "currency": order.currency, "sku": order.sku, "created_at": pricing.aware(order.created_at),
             "paid_at": pricing.aware(order.paid_at) if order.paid_at else None,
@@ -472,7 +549,7 @@ def _checkout(order: PaymentOrder, user: User, settings: RazorpaySettings) -> di
 def create_order(payload: CreateCreditOrder, request: Request, response: Response,
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email):
+    if not _purchase_enabled(current_user.id, current_user.email, db=db):
         raise HTTPException(503, "Credit purchases are not available yet.")
     settings = RazorpaySettings.from_env()
     identity = payload.order_reference or purchase_request_id(current_user.id, "unified:" + payload.idempotency_key)
@@ -487,7 +564,7 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
                 raise _order_status_required(original) from None
             if view.quote_id != payload.quote_id or original.status != "created":
                 raise _order_status_required(original)
-            if not _offers_remain_available(view, current_user.id, current_user.email):
+            if not _offers_remain_available(view, current_user.id, current_user.email, db=db):
                 raise _order_status_required(original)
             return _checkout(original, current_user, settings)
         user = db.query(User).filter_by(id=current_user.id).with_for_update().one()
@@ -500,7 +577,7 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
         review = release.current_review()
         quote = service.accept_purchase_quote(db, user_id=user.id, quote_id=payload.quote_id, order_id=identity)
         view = service.quote_response(quote)
-        if not _offers_remain_available(view, current_user.id, current_user.email):
+        if not _offers_remain_available(view, current_user.id, current_user.email, db=db):
             raise pricing.CreditContractError("Supported services changed. Review a fresh purchase quote.")
         now = datetime.now(UTC)
         order = PaymentOrder(public_id=identity, user_id=user.id, provider="razorpay", provider_mode=settings.mode,

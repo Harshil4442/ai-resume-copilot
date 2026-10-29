@@ -123,8 +123,11 @@ describes the original base migration/release and its financial activation gates
    be proved, leave the route closed and report the pilot as unavailable.
 7. Import a real, current runtime review only after the declared route envelope
    has passed quality and cost qualification. Use an explicitly funded opted-in
-   cohort of at most 5% for the initial canary. Retain exact identities for all
-   accepted work and reconcile any unknown outcome before retrying an action.
+   cohort and genuine accepted traffic of at most 5% for the initial canary.
+   The [bounded admission contract](UNIFIED_CANARY_ADMISSION.md) requires an immutable
+   real eligibility census, explicit owner choice, fresh SQL checks and atomic
+   acceptance counting; raw owner-ID environment lists grant no authority. Retain
+   exact identities for accepted work and reconcile unknown outcomes before retrying.
 8. Observe representative shadow accounting for at least seven days and at least
    200 successful paid-equivalent operations across supported cohorts. The
    passage of seven calendar days, a synthetic dataset, or a report with the word

@@ -391,6 +391,14 @@ def create_run(
     from ...services.generation_gate import check_generation_admission
 
     check_generation_admission(payload.operation, input_payload)
+    from ...services.generation_gate import requires_generation
+    if requires_generation(payload.operation, input_payload):
+        from ..credits.canary import deny_new_legacy_generation
+        from ..credits.finance import FundingUnavailable
+        try:
+            deny_new_legacy_generation(db)
+        except FundingUnavailable as exc:
+            raise HTTPException(503, detail="New legacy AI requests are paused during the reviewed canary") from exc
     from ..free_core import policy as free_policy
     from ..free_core import service as free_service
 

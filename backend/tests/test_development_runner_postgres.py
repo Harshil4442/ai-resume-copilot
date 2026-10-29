@@ -271,3 +271,21 @@ def test_implementation_change_stops_before_another_run_claim(prepared, monkeypa
         assert db.query(models.AnalysisRun).filter_by(status="succeeded").count() == 1
         assert db.query(models.AnalysisRun).filter_by(status="queued").count() == 19
         assert db.query(models.ModelCallEvent).count() == db.query(models.ModelCostLiability).count() == 1
+
+
+def test_current_canary_allows_only_the_validated_local_runner_scope(prepared, monkeypatch):
+    from app.domains.credits import canary
+    from app.domains.credits.finance import FundingUnavailable
+
+    factory, values = prepared
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+    calls = provider(monkeypatch)
+    outcome = runner.execute(factory, **values, side="candidate", maximum_operations=1)
+    assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
+    with factory() as db:
+        saved = db.query(models.AnalysisRun).filter_by(status="succeeded").one()
+        with pytest.raises(FundingUnavailable, match="validated local runner"):
+            canary.require_accepted_provider_run(db, saved)
+        assert db.query(models.User).one().ai_credits == 0
+        assert db.query(models.ModelCostLiability).one().settled_cost_micros > 0

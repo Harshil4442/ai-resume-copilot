@@ -55,6 +55,14 @@ def billable_operation(
     from .generation_gate import check_generation_admission
 
     check_generation_admission(operation, input_payload)
+    from .generation_gate import requires_generation
+    if requires_generation(operation, input_payload):
+        from ..domains.credits.canary import deny_new_legacy_generation
+        from ..domains.credits.finance import FundingUnavailable
+        try:
+            deny_new_legacy_generation(db)
+        except FundingUnavailable as exc:
+            raise HTTPException(503, detail="New legacy AI requests are paused during the reviewed canary") from exc
 
     from ..domains.employer.admissions import lock_application_set
 

@@ -973,6 +973,210 @@
         "title": "CampaignView",
         "type": "object"
       },
+      "CanaryChoiceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "choice": {
+            "enum": [
+              "opt_in",
+              "revoke"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "confirmed_notice": {
+            "default": false,
+            "title": "Confirmed Notice",
+            "type": "boolean"
+          },
+          "idempotency_key": {
+            "maxLength": 160,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "notice_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Notice Sha256",
+            "type": "string"
+          },
+          "review_id": {
+            "pattern": "^[a-z][a-z0-9-]{7,47}$",
+            "title": "Review Id",
+            "type": "string"
+          },
+          "review_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Review Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "review_sha256",
+          "notice_sha256",
+          "choice",
+          "idempotency_key"
+        ],
+        "title": "CanaryChoiceRequest",
+        "type": "object"
+      },
+      "CanaryChoiceView": {
+        "properties": {
+          "choice": {
+            "enum": [
+              "opt_in",
+              "revoke"
+            ],
+            "title": "Choice",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "review_sha256": {
+            "title": "Review Sha256",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "status": {
+            "const": "CHOICE_RECORDED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "choice",
+          "sequence",
+          "review_sha256",
+          "idempotency_key"
+        ],
+        "title": "CanaryChoiceView",
+        "type": "object"
+      },
+      "CanaryEnrollmentView": {
+        "properties": {
+          "accepted_work_survives_revocation": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Work Survives Revocation"
+          },
+          "can_opt_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Opt In"
+          },
+          "execution_flag_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Flag Enabled"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "notice_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice Sha256"
+          },
+          "review_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Id"
+          },
+          "review_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Sha256"
+          },
+          "runtime_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Sha256"
+          },
+          "status": {
+            "enum": [
+              "NOT_AVAILABLE",
+              "NOT_OPTED_IN",
+              "OPTED_IN"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CanaryEnrollmentView",
+        "type": "object"
+      },
       "CandidateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13908,6 +14112,122 @@
           }
         ],
         "summary": "Availability",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/canary-enrollment": {
+      "get": {
+        "operationId": "canary_enrollment_api_v1_credits_canary_enrollment_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "review_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z][a-z0-9-]{7,47}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review_sha256",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanaryEnrollmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Canary Enrollment",
+        "tags": [
+          "credits"
+        ]
+      },
+      "post": {
+        "operationId": "choose_canary_api_v1_credits_canary_enrollment_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanaryChoiceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanaryChoiceView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Choose Canary",
         "tags": [
           "credits"
         ]

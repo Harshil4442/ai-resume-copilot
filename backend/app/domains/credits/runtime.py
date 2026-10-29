@@ -60,9 +60,7 @@ class RuntimeConfig(finance.Closed):
         return selected
 
 
-def enabled_for(user_id: int) -> bool:
-    if os.getenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "").strip().lower() != "true":
-        return False
+def _audience_enabled(db, user_id: int | None, configured: RuntimeConfig, *, now: datetime) -> bool:
     audience = os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower()
     if audience == "reviewed_public":
         # This digest covers the complete canonical policy, budgets and routes,
@@ -71,9 +69,6 @@ def enabled_for(user_id: int) -> bool:
         from .release import current_review
 
         try:
-            configured = RuntimeConfig.model_validate_json(
-                os.getenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", "")
-            )
             review = current_review()
             return (
                 configured.policy == review.policy
@@ -82,17 +77,23 @@ def enabled_for(user_id: int) -> bool:
             )
         except (ValueError, KeyError, finance.FundingUnavailable):
             return False
-    if audience != "canary":
+    if audience != "canary" or user_id is None:
         return False
-    raw = os.getenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "")
-    parts = raw.split(",")
-    if not parts or any(not value.strip().isdigit() or int(value.strip()) <= 0 for value in parts):
-        return False
-    return user_id in {int(value.strip()) for value in parts}
+    from .canary import require_participation
+    require_participation(db, user_id=user_id, runtime=configured, now=now)
+    return True
 
 
-def current_runtime(user_id: int, *, now: datetime | None = None) -> RuntimeConfig:
-    if not enabled_for(user_id):
+def enabled_for(user_id: int, *, db=None, now: datetime | None = None) -> bool:
+    try:
+        current_runtime(user_id, db=db, now=now)
+        return True
+    except finance.FundingUnavailable:
+        return False
+
+
+def current_runtime(user_id: int | None, *, db=None, now: datetime | None = None) -> RuntimeConfig:
+    if os.getenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "").strip().lower() != "true":
         raise finance.FundingUnavailable("Unified paid execution is not enabled for this account")
     stamp = service._stamp(now)
     try:
@@ -109,6 +110,8 @@ def current_runtime(user_id: int, *, now: datetime | None = None) -> RuntimeConf
         finance.require_current_policy(runtime.policy, now=stamp, commercial=commercial)
         if not runtime.budgets.valid_from <= stamp < runtime.budgets.expires_at:
             raise ValueError("The execution budget review expired")
+        if not _audience_enabled(db, user_id, runtime, now=stamp):
+            raise finance.FundingUnavailable("Unified paid execution is not enabled for this account")
         return runtime
     except (ValueError, finance.FundingUnavailable) as exc:
         raise finance.FundingUnavailable(
@@ -121,10 +124,11 @@ def resolve_route(
     operation: str,
     input_payload: dict,
     *,
+    db=None,
     observed_limits: dict[str, int] | None = None,
     now: datetime | None = None,
 ) -> QualifiedRoute:
-    config = current_runtime(user_id, now=now)
+    config = current_runtime(user_id, db=db, now=now)
     route = config.resolve_route(operation, input_payload, observed_limits=observed_limits)
     require_route(route, config.policy, now=service._stamp(now))
     return route
@@ -137,9 +141,12 @@ def has_unified_contract(db, user_id: int) -> bool:
     canary work counts through its durable analysis billing snapshot. This read
     does not require newly migrated credit tables during a compatibility deploy.
     """
-    from ...models import AnalysisRun, PaymentOrder
+    from ...models import AdminAuditEvent, AnalysisRun, PaymentOrder
     from ..employer.models import EmployerSearch
 
+    if db.query(AdminAuditEvent.id).filter_by(action="credit_canary_consent", target_type="credit_canary",
+            actor_user_id=user_id).filter(AdminAuditEvent.after_state["choice"].as_string() == "opt_in").first():
+        return True  # Retained explicit participation cannot fall back to another currency.
     if db.query(PaymentOrder.id).filter_by(user_id=user_id, entitlement_kind="credit_pass").first():
         return True
     if db.query(EmployerSearch.id).filter(EmployerSearch.user_id == user_id,
@@ -157,4 +164,13 @@ def has_unified_contract(db, user_id: int) -> bool:
 
 
 def requires_unified_billing(db, user_id: int) -> bool:
-    return enabled_for(user_id) or has_unified_contract(db, user_id)
+    from . import canary
+
+    if canary.requested(db):
+        try:
+            reviewed, _ = canary.load_review(db)
+        except (finance.FundingUnavailable, ValueError, KeyError, TypeError):
+            return True  # An unverifiable declaration cannot switch currency.
+        if user_id in reviewed.selected_owner_ids:
+            return True
+    return enabled_for(user_id, db=db) or has_unified_contract(db, user_id)

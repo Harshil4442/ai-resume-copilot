@@ -155,7 +155,7 @@ def prepare_quote_context(db: Session, *, user_id: int, payload: DiscoveryReques
         "maximum_results": payload.desired_count,
     }
     try:
-        configured = runtime.current_runtime(user_id)
+        configured = runtime.current_runtime(user_id, db=db)
         route = configured.resolve_route(OPERATION, context, observed_limits=observed)
         service_quotes.require_route(route, configured.policy, now=utcnow())
         if route.mode != "native" or route.model_quotes or route.credits != 1:

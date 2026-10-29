@@ -72,7 +72,7 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
         "source_bytes": source_bytes,
         "evidence_items": len(dependencies.get("approved_evidence", [])),
     }
-    config = runtime.current_runtime(user_id)
+    config = runtime.current_runtime(user_id, db=db)
     route = config.resolve_route(payload.operation, normalized, observed_limits=observed)
     if (
         payload.operation == "resume_tailor"
@@ -258,7 +258,7 @@ def maybe_create_paid_run(
 ):
     """Called after existing owned reuse checks and before any legacy reservation."""
     accepted = getattr(payload, "accepted_service_quote_id", None)
-    enabled = runtime.enabled_for(user_id)
+    enabled = runtime.enabled_for(user_id, db=db)
     if accepted:
         prior = (
             db.query(CreditServiceQuote)
@@ -288,7 +288,7 @@ def maybe_create_paid_run(
         accepted
         or (
             paid_operation(payload.operation, input_payload)
-            and runtime.has_unified_contract(db, user_id)
+            and runtime.requires_unified_billing(db, user_id)
         )
     ):
         raise _quote_rejected(

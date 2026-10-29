@@ -68,6 +68,8 @@ def claim_attempt(
     service._key(claim_key, 64)
     hold = _owned_hold(db, user_id=user_id, hold_id=hold_id)
     lock_money(db)
+    from .canary import require_accepted_hold
+    require_accepted_hold(db, hold)
     if hold.delivery_state != "pending" or hold.state in {"overrun", "outcome_unknown", "settled"}:
         raise finance.FundingUnavailable("This operation cannot dispatch another model request")
     if hold.snapshot["route"] != route.model_dump(mode="json") or hold.snapshot[
@@ -393,6 +395,8 @@ def persistent_execution_budget(
                     "overrun", "outcome_unknown", "settled",
                 }:
                     raise finance.FundingUnavailable("This operation cannot dispatch another model request")
+                from .canary import require_accepted_hold
+                require_accepted_hold(db, hold)
                 if (
                     not isinstance(hold.snapshot, dict)
                     or hold.snapshot.get("route") != route.model_dump(mode="json")
