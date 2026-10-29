@@ -9,6 +9,8 @@ import type { CreditBundleProduct } from "../lib/billingProducts";
 import type { components } from "../lib/generated/api";
 import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
 import type { ServiceCreditHistoryPage } from "../lib/serviceCreditHistory";
+import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
 
 const base = "/v1/employer-jobs";
 const now = "2026-10-08T10:00:00Z";
@@ -76,15 +78,21 @@ function fixture() {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
     await context.addCookies([{ name: "next-auth.session-token", value: token, url: baseURL, httpOnly: true, sameSite: "Lax" }]);
     await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
-    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|me)$/.test(url.pathname), async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|me|bootstrap)$/.test(url.pathname), async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace(/^\/api\/account\/(profile|me)$/, "/auth/$1").replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/(profile|me|bootstrap)$/, "/auth/$1").replace("/api/backend", "");
       const method = request.method();
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, query: url.searchParams.toString() });
       let value: unknown; let status = 200;
-      if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" } satisfies components["schemas"]["UserProfileResponse"];
+      if (path === "/auth/bootstrap" && method === "GET") {
+        value = ownedBootstrapFixture({ profile: { email: "fixture@example.com", tier: state.premium ? "premium" : "free",
+          ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], premium_until: "2026-11-08T10:00:00Z" },
+          wallet: { schema_version: "unified-credits-v1", server_time: now, available_credits: 7, reserved_credits: 0, debt_credits: 0, lots: [] } });
+        expect(parseOwnedBootstrap(value)).not.toBeNull();
+      }
+      else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" } satisfies components["schemas"]["UserProfileResponse"];
       else if (path === "/auth/me") value = { id: 424242, email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance } satisfies components["schemas"]["UserMeResponse"];
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
       else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
@@ -161,6 +169,19 @@ async function checkLayout(page: Page) {
   expect(result.violations).toEqual([]);
 }
 
+test("owned bootstrap fixture serves advisory GET and rejects an unexpected POST", async ({ page, context, baseURL }) => {
+  const f = fixture(); await f.install(context, baseURL!); await page.goto("/employer-jobs");
+  await expect(page.getByRole("combobox", { name: "Resume", exact: true })).toBeVisible();
+  const response = await page.evaluate(async () => {
+    const result = await fetch("/api/account/bootstrap", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    return { status: result.status, body: await result.json() };
+  });
+  expect(response).toEqual({ status: 503, body: { detail: "Unexpected fixture request" } });
+  expect(f.requests.some((request) => request.path === "/auth/bootstrap" && request.method === "GET")).toBe(true);
+  expect(f.unexpected).toEqual(["POST /auth/bootstrap"]);
+  expect(f.requests.some((request) => request.path.endsWith("/approve") || request.path.endsWith("/execute"))).toBe(false);
+});
+
 function seedSavedSearch(f: ReturnType<typeof fixture>) {
   const saved: EmployerSearch = {
     id: "search_saved_pages", status: "completed", desired_count: 27, delivered_count: 27,
@@ -236,12 +257,16 @@ test("account switching clears the previous search, resume cache, and reviewed a
   await context.route("**/api/auth/session", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user: { id: owner === "a" ? "424242" : "424243", email: `${owner}@fixture.example`, name: `Owner ${owner}` }, expires: "2099-01-01T00:00:00.000Z" }) });
   });
-  await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
+  await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|bootstrap)$/.test(url.pathname), async (route) => {
     if (owner === "a") { await route.fallback(); return; }
-    const path = new URL(route.request().url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
+    const path = new URL(route.request().url()).pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", "");
     nextOwnerRequests.push({ path, method: route.request().method() });
     let value: unknown;
-    if (path === "/resume/list") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
+    if (path === "/auth/bootstrap" && route.request().method() === "GET") {
+      value = ownedBootstrapFixture({ profile: { email: "b@fixture.example", ai_credits: 9 }, features: { career_workspace: false } });
+      expect(parseOwnedBootstrap(value)).not.toBeNull();
+    }
+    else if (path === "/resume/list") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
     else if (path === `${base}/catalog`) value = { ...f.catalog, balance: 37, sources: [] };
     else if (path === `${base}/searches` || path === `${base}/applications`) value = { items: [] };
     else if (path === `${base}/search-summaries`) value = { items: [], next_cursor: null };
@@ -277,6 +302,7 @@ test("account switching clears the previous search, resume cache, and reviewed a
   await expect(page.getByLabel("Target role")).toHaveValue("");
   await expect(page.getByText("37", { exact: true })).toBeVisible();
   expect(nextOwnerRequests.some((r) => r.path === "/resume/list")).toBe(true);
+  expect(nextOwnerRequests.some((r) => r.path === "/auth/bootstrap" && r.method === "GET")).toBe(true);
   expect(nextOwnerRequests.some((r) => r.path === `${base}/catalog`)).toBe(true);
   expect(nextOwnerRequests.some((r) => r.path.includes("app_fixture") || r.method !== "GET")).toBe(false);
   expect(f.requests.some((r) => r.path.endsWith("/approve") || r.path.endsWith("/execute"))).toBe(false);
