@@ -386,6 +386,14 @@ describe("capability and size admission",()=>{
 
 describe("finite upload status budget", () => {
   afterEach(() => vi.restoreAllMocks());
+  it("rechecks the absolute deadline after a visible-page await before completion POST", async () => {
+    vi.useFakeTimers(); const value = file(); serve(value);
+    vi.spyOn(document, "visibilityState", "get").mockImplementationOnce(() => {
+      vi.setSystemTime(Date.now() + 240_000); return "visible";
+    });
+    await expect(uploadResumeFile(value)).rejects.toThrow(/took too long/i);
+    expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(0); expect(deletes()).toHaveLength(1);
+  });
   it("caps automatic status GETs at8 and keeps the original four-minute timeout and one cleanup", async () => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
@@ -435,5 +443,19 @@ describe("finite upload status budget", () => {
     await vi.advanceTimersByTimeAsync(10_000); controller.abort(); await rejected;
     visible = true; document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(200_000);
     expect(gets()).toHaveLength(0); expect(completions()).toHaveLength(1); expect(deletes()).toHaveLength(1);
+  });
+  it("rechecks visibility when the page hides again during a fresh resume delay", async () => {
+    vi.useFakeTimers(); let visible = true;
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visible ? "visible" : "hidden");
+    const value = file(), controller = new AbortController(); serve(value, { complete: async () => json(status("queued")) });
+    let ready!: () => void; const queued = new Promise<void>((resolve) => { ready = resolve; });
+    const result = uploadResumeFile(value, { signal: controller.signal, onProgress: ({ phase }) => { if (phase === "queued") ready(); } });
+    const rejected = expect(result).rejects.toMatchObject({ name: "ResumeUploadCancelled", cleanup: "requested" });
+    await queued; visible = false; document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(100_000); expect(gets()).toHaveLength(0);
+    visible = true; document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(2000);
+    visible = false; document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(3000);
+    expect(gets()).toHaveLength(0);
+    controller.abort(); await rejected; expect(puts()).toHaveLength(1); expect(completions()).toHaveLength(1);
   });
 });

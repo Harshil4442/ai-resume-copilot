@@ -232,7 +232,8 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
     while (true) {
       waiting();
       if (completionAllowed) {
-        if (await waitUntilPageVisible(signal)) waiting();
+        await waitUntilPageVisible(signal);
+        waiting();
         completionAllowed = false;
         if (++completionAttempts > 3) throw new Error("Your upload could not be queued. Check your saved resumes before trying again.");
         try { current = validateStatus(await control(`/resume/uploads/${id}/complete`, "POST", signal), id, sourceFormat); waitMs = 0; }
@@ -252,11 +253,13 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
       }
       const nextDelay = progressPollDelay(Math.min(reads + 1, MAX_PROGRESS_READS - 1)) || POLL_MS;
       await delay(signal, Math.min(Math.max(waitMs, nextDelay), Math.max(1, deadline - Date.now())));
-      if (!pageVisible()) progress("paused");
-      if (await waitUntilPageVisible(signal)) {
+      while (!pageVisible()) {
+        progress("paused");
+        await waitUntilPageVisible(signal);
         waiting();
         // Resume one future check, with a fresh delay; never catch up missed polls.
         await delay(signal, Math.min(nextDelay, Math.max(1, deadline - Date.now())));
+        waiting();
       }
       waiting();
       try {
