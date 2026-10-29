@@ -81,6 +81,12 @@ separate. Stages 1–7 remain in progress and Stage 8 remains pending.
 
 ## Safe release sequence
 
+Once schema25 and the reviewed pilot have already been restored, use the distinct
+[application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial
+compatible prior8cb app update. Do not replay the completed migration or treat a
+live pilot as an all-admission-closed migration snapshot. The following sequence
+describes the original base migration/release and its financial activation gates.
+
 1. Freeze the source revision, dependency lockfiles, generated OpenAPI and client
    types. Run the configured Linux CI, including genuine document engines and
    authorized local emulators. A macOS skip or synthetic output is not equivalent.

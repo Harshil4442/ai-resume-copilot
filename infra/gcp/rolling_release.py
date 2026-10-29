@@ -463,7 +463,8 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
             "traffic": _traffic_for(plan, pin, False)}
 
 
-def _readback(plan: RollingPlan, boundary: Boundary, pin: ServicePin, started: dict[str, Any]) -> dict[str, Any]:
+def _readback_metadata(plan: RollingPlan, boundary: Boundary, pin: ServicePin, started: dict[str, Any]) -> dict[str, Any]:
+    """Exact native metadata only; legacy _readback still requires full health."""
     value = boundary.service(pin.service)
     _ready(value, pin)
     need(int(value["generation"]) == started["expected_generation"]
@@ -480,11 +481,16 @@ def _readback(plan: RollingPlan, boundary: Boundary, pin: ServicePin, started: d
     need({key: revision.get(key) for key in keys} == {key: value["template"][key] for key in keys})
     need(any(row.get("type") == "Ready" and row.get("state") == "CONDITION_SUCCEEDED"
              for row in revision.get("conditions", [])))
+    return {"service_uid": pin.uid, "revision": plan.revision(pin.service),
+            "generation": int(value["generation"]), "native_metadata_reobserved": True}
+
+
+def _readback(plan: RollingPlan, boundary: Boundary, pin: ServicePin, started: dict[str, Any]) -> dict[str, Any]:
+    result = _readback_metadata(plan, boundary, pin, started)
     boundary.health(plan, pin.service, plan.revision(pin.service), plan.release, plan.tag)
     if started["phase"] == "rollback":
         boundary.health(plan, pin.service, pin.prior_revision, pin.prior_release, plan.rollback_tag)
-    return {"service_uid": pin.uid, "revision": plan.revision(pin.service),
-            "generation": int(value["generation"]), "native_metadata_reobserved": True}
+    return result
 
 
 def action(plan: RollingPlan, boundary: Boundary, journal: Journal, pin: ServicePin,
@@ -553,6 +559,10 @@ def action(plan: RollingPlan, boundary: Boundary, journal: Journal, pin: Service
 def advance(plan: RollingPlan, boundary: Boundary, journal: Journal) -> dict[str, Any]:
     plan.validate()
     with journal.locked():
+        # The distinct app25 recovery path can restore prior traffic even when
+        # candidate HTTP health fails. Its immutable intent also fences this
+        # shared forward engine *inside* the same lock, before any new action.
+        need(journal.read("app25.rollback.intent") is None, "rolling_explicit_rollback_in_progress")
         need(not any(journal.read("rollback." + service + ".started") for service in release.SERVICES),
              "rolling_explicit_rollback_in_progress")
         for phase, services in (("stage", release.SERVICES),
