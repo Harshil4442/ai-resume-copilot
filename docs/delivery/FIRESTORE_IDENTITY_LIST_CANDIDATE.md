@@ -97,9 +97,12 @@ If the measured budget cannot support intended demand, keep activation gated.
 Active analysis polling must be included in that journey-level demand. The
 companion connection-status loop is local extension messaging and does not
 automatically poll the owned HTTP account endpoints; its explicit authenticated
-actions still count when they reach those endpoints. The existing payment poll
-can request 24 times at 2.5-second intervals: 48 List operations per minute for
-that journey alone exceeds a 40-call budget and remains an activation blocker.
+actions still count when they reach those endpoints. The qualified payment poll
+now allows eight adaptive automatic reads, plus one explicit manual read; the
+historical 24-at-2.5-second estimate is superseded. Multiple streams, initial page
+reads and lifecycle traffic still need aggregate measurement against the 40-unit
+budget. The bounded owned-local plan is in `STAGE5_OWNED_HTTP_CAPACITY.md`; it does
+not qualify provider peaks or the unchanged million-request target.
 
 ## Verification scope
 
