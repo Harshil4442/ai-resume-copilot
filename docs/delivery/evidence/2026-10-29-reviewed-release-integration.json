@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "observed_at": "2026-10-29T13:52:42.658056+00:00",
+  "observed_at": "2026-10-29T14:55:01.133288+00:00",
   "scope": "Existing Stages2,4,5,6,7; reviewed implementation, not release or commercial acceptance",
   "production_unchanged": {
     "backend": "8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a",
@@ -80,5 +80,40 @@
     "app25_source_compatibility_sha256": "533fcdd8cfa73dfb39a162a5a986c26adbfa0a5eed3085b4114e9c5fc0a739b8",
     "full_exact_source_ci": "pending",
     "major_stage_completion_claimed": false
+  },
+  "last_combined_ci_attempt": {
+    "run_id": 40886925823,
+    "source": "10867198f2d324bb45c38f490c5334308b896282",
+    "conclusion": "failure",
+    "backend_passed": 8202,
+    "backend_failed": 2,
+    "backend_skipped": 17,
+    "backend_subtests_passed": 253,
+    "backend_seconds": 1906.24,
+    "failed_nodes": [
+      "tests/test_cold_browser_runner.py::test_unified_cold_policy_is_test_only_and_shares_one_funding_authority",
+      "tests/test_development_runner_postgres.py::test_current_canary_allows_only_the_validated_local_runner_scope"
+    ],
+    "other_jobs": {
+      "security-and-container": "success",
+      "browser-companion": "success",
+      "frontend": "failed strict mock-request assertions for the new enrollment GET",
+      "cold-browser-journey": "failed the same stale funding fixture before browser execution"
+    },
+    "corrections": "Test fixtures now explicitly bind complete synthetic public/shared fleet funding. The standalone fixture import remains independent of app.database. The browser mock handles only the exact uninvited enrollment GET. Production guards and runtime bytes remain unchanged.",
+    "mandatory_positive_pg_case": "Ran and failed at108; corrected exact-source CI remains required, no skip/bypass added.",
+    "release_accepted": false
+  },
+  "fixture_followup_review": {
+    "sources": [
+      "81710b463050ddcf8a45f9946db08afd51f04260",
+      "6542641e49ba6713a4652b48565a6351ebab7b45"
+    ],
+    "production_runtime_changed": false,
+    "integrated_backend_checks_passed": 85,
+    "cold_and_related_checks_passed": 121,
+    "ruff_mypy": "passed",
+    "local_browser_scope": "7 of8 synthetic320/1440 scenarios passed initially; one desktop stability failure passed a controlled single-case rerun. Local Webpack/dependency-symlink conditions are not hermetic CI acceptance.",
+    "full_corrected_ci": "pending"
   }
 }
