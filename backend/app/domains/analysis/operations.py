@@ -598,6 +598,12 @@ def execute_resume_tailor(
     from .service import ensure_tailoring_inputs_current
 
     paid_context = (run.model_cost_quote or {}).get("billing_currency") == "credits"
+    if run.id.startswith("qev2_") or (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2":
+        from .supported_evaluation import is_complete_context
+
+        # Reuse the production full-source operation only under the independent
+        # internal runner authority; no retail quote or credit hold is invented.
+        paid_context = is_complete_context(db, run)
     if paid_context:
         ensure_tailoring_inputs_current(db, run, payload)
     opportunity = get_opportunity(
