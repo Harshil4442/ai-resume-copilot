@@ -11,7 +11,13 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-companion" / "extension"
-DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.4.zip"
+DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.5.zip"
+SOURCE_FILES = (
+    "assistance-runtime.js", "assistance-transport.js", "background.js", "config.js", "device.js",
+    "greenhouse-native-network.js", "greenhouse-owned-upload.js", "greenhouse-resume-component.js", "local-adapter.js",
+    "lost-key-recovery.js", "manifest.json", "pairing-runtime.js", "pairing-transport.js", "popup.css", "popup.html",
+    "popup.js", "protocol.js", "razorpay-adapter.js", "startup-diagnostics.js", "transport.js",
+)
 
 
 def native_configuration(path: Path) -> bytes:
@@ -27,7 +33,7 @@ def native_configuration(path: Path) -> bytes:
             value[key] = item
         return value
     value = json.loads(raw, object_pairs_hook=pairs)
-    # Package 0.8.4 aligns the transport deadline only; native admission stays pinned.
+    # Package 0.8.5 adds local diagnostics/recovery only; native admission stays pinned.
     if (type(value) is not dict or set(value) != {"executorRevision", "authorityKey"}
             or value["executorRevision"] != "companion_0_8_1"):
         raise ValueError("native_public_configuration_revision")
@@ -52,14 +58,14 @@ def main():
     parser.add_argument("--native-config", type=Path, help="Exact reviewed public claim-key/executor pins for normal-user pairing")
     arguments = parser.parse_args()
     manifest = json.loads((SOURCE / "manifest.json").read_text())
-    if (manifest["version"] != "0.8.4" or manifest["host_permissions"] != []
+    if (manifest["version"] != "0.8.5" or manifest["host_permissions"] != []
             or manifest["optional_host_permissions"] != [
                 "https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*",
                 "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]
             or manifest["optional_permissions"] != ["webRequest"]):
         raise ValueError("reviewed_source_manifest_mismatch")
     sources = sorted(SOURCE.iterdir())
-    if not sources or any(not source.is_file() or source.is_symlink()
+    if tuple(source.name for source in sources) != SOURCE_FILES or any(not source.is_file() or source.is_symlink()
                           or source.suffix not in {".js", ".json", ".html", ".css"} for source in sources):
         raise ValueError("reviewed_source_file_mismatch")
     names = ["hirewiz-browser-companion/" + source.name for source in sources]
