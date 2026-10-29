@@ -210,6 +210,34 @@ Both new Stage5 flags remain absent/false. Deploying code does not enable
 pacing/List. Existing pilot flags, closed money/model/free-core/checkout/submit
 gates, numeric secrets, IAM and native resource/document pins remain protected.
 
+### V2 promotion aliases and V4 worker validation
+
+Only the qualified v2 document-resource observer can select the existing V4
+worker discriminator. It selects that discriminator from the exact observed
+policy, after the unchanged fresh native Build/Job acceptance check. Unknown
+policies and missing native acceptance still refuse. The fixed historical base
+image cannot claim V4 merely by changing its policy literal. V1 and other release
+observers keep their previous policy checks. Both shared validation and traffic
+helpers are included in the v2 qualification fingerprint.
+
+V2 promotion moves every already captured prior tag to the candidate revision
+in the same promotion traffic PATCH. Each tag/type is preserved at zero percent;
+the candidate's reviewed tag receives 100 percent. No tag can be invented or
+changed, and no revision or image is deleted. This leaves the application aliases
+homogeneous for document maintenance once all three app services are promoted.
+Staging keeps the exact original allocations; maintenance continues to refuse
+that temporary mixed state. The actual candidate CI/Build/image tuple must also
+be reviewed in the maintenance registry on main before maintenance can accept
+that application source. No future tuple is predicted here.
+
+The captured prior traffic and serialized plan are unchanged. Ordinary v2
+rollback restores those original ab allocations with its existing single PATCH,
+generation and journal rules; no separate post-promotion alias retirement or
+recovery plan is needed. Default/v1 promotion continues to retain its prior
+tagged revisions exactly as before. The separately qualified zero-percent 8cb
+cleanup is still required before the first V4 maintenance transition from the
+current mixed 8cb/ab state. These are source rules, not deployment acceptance.
+
 ### Actual qualification contexts
 
 CI runs the unchanged v1 test in an owned detached actual-ab2 checkout. Current

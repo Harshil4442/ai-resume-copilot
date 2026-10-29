@@ -122,6 +122,18 @@ class App25V2Plan(rolling.RollingPlan):
     def disabled_flags(self):
         return CLOSED_FLAGS
 
+    def promoted_aliases(self, pin, rows):
+        """Move only the captured prior aliases with the qualified promotion.
+
+        Captured traffic stays immutable for ordinary rollback. No extra PATCH,
+        generation, tag, revision or serialized plan member is introduced.
+        """
+        need(pin == self.pin(pin.service), "v2_alias_service_pin_changed")
+        expected = [{key: value for key, value in row.items() if key != "percent"}
+                    for row in pin.traffic if row.get("tag")]
+        need(rows == expected, "v2_alias_intent_changed")
+        return [{**row, "revision": self.revision(pin.service)} for row in rows]
+
     def validate(self):
         super().validate()
         need(type(self) is App25V2Plan and self.schema_contract == contract_v2.CONTRACT
@@ -248,9 +260,10 @@ class NativeApp25Boundary(native.NativeRollingBoundary):
     """CLI constructs this exact native class; no provider/plugin injection."""
     plan_type: type[rolling.RollingPlan] = App25Plan
     prior_source = PRIOR
+    source_boundary = initial.Source25Boundary
     def __init__(self, root):
         super().__init__(root)
-        self.observer = initial.Source25Boundary(self.root)
+        self.observer = self.source_boundary(self.root)
 
     def _compatibility(self, plan):
         fingerprint = (compatibility_source(self.root) if self.plan_type is App25Plan else
@@ -492,8 +505,15 @@ def load(raw):
     return plan
 
 
+class App25V2Source(initial.Source25Boundary):
+    """V2 qualification alone selects the existing, natively proven V4 policy."""
+    def verify_document_configuration(self, source):
+        return self._verify_document_workers(source, runtime_phase=True, qualified_source_revision=True)
+
+
 class NativeApp25BoundaryV2(NativeApp25Boundary):
     plan_type, prior_source = App25V2Plan, PRIOR_V2
+    source_boundary = App25V2Source
 
 
 def load_v2(raw):

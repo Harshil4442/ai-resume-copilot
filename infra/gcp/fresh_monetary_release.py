@@ -900,6 +900,7 @@ class FreshNativeBoundary(release.NativeBoundary):
     def _verify_document_workers(
         self, source: release.Plan, *, runtime_phase: bool,
         successor_identity: Callable[[str, dict[str, Any]], None] | None = None,
+        qualified_source_revision: bool = False,
     ) -> dict[str, Any]:
         """Read current native configuration/IAM; no invocation or isolation claim.
 
@@ -908,6 +909,8 @@ class FreshNativeBoundary(release.NativeBoundary):
         The exact fresh boundary supplies the authenticated v2 metadata reader.
         """
         documents = release.documents
+        if type(qualified_source_revision) is not bool:
+            raise release.ReleaseDenied("fresh_document_source_revision_selector_invalid")
         if runtime_phase and source.runtime_service_account != documents.API_INVOKER:
             raise release.ReleaseDenied("fresh_document_runtime_identity_mismatch")
         reader = getattr(self, "_get", None)
@@ -983,12 +986,24 @@ class FreshNativeBoundary(release.NativeBoundary):
                     # A maintenance-only historical identity callback must not
                     # hand a stale NativeAcceptance to any serving path.
                     raise release.ReleaseDenied("fresh_document_historical_serving_acceptance_refused")
+            source_options = {}
+            if qualified_source_revision:
+                from document_source_candidate import POLICY_SHA256
+
+                if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") == POLICY_SHA256
+                       for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
+                    source_options["source_revision"] = True
+            if source_options and image == documents.ACCEPTED_IMAGE:
+                # The fixed historical image cannot acquire the new source
+                # identity merely by changing its policy environment literal.
+                raise release.ReleaseDenied("fresh_document_source_revision_base_image_refused")
             report = documents.check_snapshot(
                 snapshot, image, source.release, api_phase=runtime_phase,
                 coordinator_phase=coordinator_phase,
                 candidate_v3=any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"
                                  and row.get("value") == documents.CANDIDATE_POLICY_SHA256
                                  for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])),
+                **source_options,
             )
             tex = release.native_tex
             tex_origin = getattr(tex, "ACCEPTED_ORIGIN", "")

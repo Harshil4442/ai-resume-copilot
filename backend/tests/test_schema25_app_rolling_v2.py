@@ -32,6 +32,18 @@ def test_final_polling_dependencies_and_tests_are_bound_into_the_source_fingerpr
     assert contract.source_fingerprint(ROOT, prior) != before
 
 
+@pytest.mark.parametrize("name", ["infra/gcp/rolling_release.py", "infra/gcp/fresh_monetary_release.py"])
+def test_release_order_helpers_are_bound_into_v2_qualification(monkeypatch, name):
+    assert name in contract.QUALIFICATION_PATHS
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    before = contract.source_fingerprint(ROOT, prior)
+    original = Path.read_bytes
+    target = ROOT / name
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# source drift\n"
+        if path == target else original(path))
+    assert contract.source_fingerprint(ROOT, prior) != before
+
+
 class V2Fixture(AppFixture):
     def __init__(self):
         super().__init__()
@@ -62,6 +74,220 @@ def context(tmp_path):
     tmp_path.chmod(0o700)
     boundary = V2Fixture()
     return boundary, rolling.Journal(tmp_path, boundary.plan)
+
+
+def tagged_v2():
+    boundary = V2Fixture()
+    pins = []
+    for pin in boundary.plan.services:
+        rows = [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": pin.prior_revision,
+                 "percent": 100, "tag": "prior-health"},
+                {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": pin.prior_revision,
+                 "tag": "retained-ab"}]
+        boundary.states[pin.service]["traffic"] = copy.deepcopy(rows)
+        boundary.states[pin.service]["trafficStatuses"] = copy.deepcopy(rows)
+        pins.append(replace(pin, traffic=tuple(rolling.pinned_traffic(pin.service, boundary.service(pin.service)))))
+    boundary.plan = replace(boundary.plan, services=tuple(pins))
+    boundary.plan.validate()
+    boundary.targets = {p.service: app.candidate_template(boundary.plan, p, boundary.service(p.service)) for p in pins}
+    return boundary
+
+
+@pytest.mark.parametrize("kind", ["default", "v1"])
+def test_default_and_v1_promotion_keep_exact_historical_alias_traffic(kind):
+    from backend.tests.test_rolling_release import FixtureBoundary
+
+    boundary = FixtureBoundary() if kind == "default" else AppFixture()
+    plan = boundary.plan
+    pin = plan.services[0]
+    captured = ({"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": pin.prior_revision,
+                 "percent": 100, "tag": "old-health"},)
+    pin = replace(pin, traffic=captured)
+    original = copy.deepcopy(captured)
+    expected = [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": pin.prior_revision,
+                 "tag": "old-health"},
+                {"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": plan.revision(pin.service),
+                 "tag": plan.tag, "percent": 100}]
+    assert rolling._traffic_for(plan, pin, True) == sorted(expected, key=rolling.canonical)
+    assert pin.traffic == original
+
+
+@pytest.mark.parametrize("tamper", ["add", "drop", "tag", "revision", "type", "percent"])
+def test_v2_promotion_cannot_invent_or_mutate_captured_alias_intent(tamper):
+    boundary = tagged_v2()
+    pin = boundary.plan.services[0]
+    rows = [{key: value for key, value in row.items() if key != "percent"} for row in pin.traffic]
+    if tamper == "add":
+        rows.append({**rows[0], "tag": "unreviewed"})
+    elif tamper == "drop":
+        rows.pop()
+    elif tamper == "percent":
+        rows[0]["percent"] = 100
+    else:
+        rows[0][tamper] = "unreviewed"
+    with pytest.raises(rolling.RollingDenied, match="alias_intent_changed"):
+        boundary.plan.promoted_aliases(pin, rows)
+    assert not boundary.writes
+
+
+def test_v2_promoted_tags_are_homogeneous_and_original_rollback_still_works(tmp_path):
+    import document_application_context as applications
+
+    tmp_path.chmod(0o700)
+    boundary = tagged_v2()
+    plan = boundary.plan
+    original_plan = rolling.canonical(asdict(plan))
+    originals = copy.deepcopy(boundary.revisions)
+    journal = rolling.Journal(tmp_path, plan)
+    app.execute("stage", plan, boundary, journal)
+    for pin in plan.services:
+        assert [row for row in boundary.service(pin.service)["traffic"] if row.get("percent")] == [
+            row for row in pin.traffic if row.get("percent")]
+    assert app.execute("advance", plan, boundary, journal)["rolling_release_complete"]
+    assert len(boundary.writes) == 6
+    for pin in plan.services:
+        current = boundary.service(pin.service)
+        rows = current["traffic"]
+        assert {row["tag"] for row in rows} == {"prior-health", "retained-ab", plan.tag}
+        assert {row["revision"] for row in rows} == {plan.revision(pin.service)}
+        assert sum(row.get("percent", 0) for row in rows) == 100
+        assert int(current["generation"]) == pin.generation + 2
+        assert all(row["type"] == "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION" for row in rows)
+        if pin.service in applications.CALLERS:
+            def revision(full, service=pin.service):
+                value = boundary.revision(service, full)
+                return value | {"service": service, "uid": "12345678-1234-1234-1234-123456789abc"}
+            accepted = applications.serving(SimpleNamespace(revision=revision), current, plan.image, pin.service, pin.uid)
+            assert accepted["name"] == current["latestCreatedRevision"]
+    assert rolling.canonical(asdict(plan)) == original_plan
+    assert all(boundary.revisions[key] == value for key, value in originals.items())
+    assert app.execute("rollback", plan, boundary, journal)["status"] == "schema25_app_prior_traffic_restored"
+    for pin in plan.services:
+        current = boundary.service(pin.service)
+        assert current["traffic"] == rolling._traffic_for(plan, pin, False, rollback=True)
+        assert [row for row in current["traffic"] if row.get("percent")] == [
+            row for row in pin.traffic if row.get("percent")]
+        assert int(current["generation"]) == pin.generation + 3
+    assert len(boundary.writes) == 9
+    assert rolling.canonical(asdict(plan)) == original_plan
+
+
+@pytest.mark.parametrize("failure", ["pending", "unknown"])
+def test_v2_tag_retarget_pending_or_unknown_promotion_never_repeats_patch(tmp_path, failure):
+    tmp_path.chmod(0o700)
+    boundary = tagged_v2()
+    plan = boundary.plan
+    journal = rolling.Journal(tmp_path, plan)
+    app.execute("stage", plan, boundary, journal)
+    boundary.pause = failure == "pending"
+    boundary.lose_ack = failure == "unknown"
+    if failure == "unknown":
+        with pytest.raises(RuntimeError):
+            app.execute("advance", plan, boundary, journal)
+    else:
+        assert app.execute("advance", plan, boundary, journal)["status"] == "schema25_app_same_operation_pending"
+    assert len(boundary.writes) == 4
+    app.execute("reconcile", plan, boundary, journal)
+    assert len(boundary.writes) == 4
+    boundary.pause = False
+    for operation in boundary.operations.values():
+        operation["done"] = True
+    app.execute("reconcile", plan, boundary, journal)
+    assert len(boundary.writes) == 4
+    assert app.execute("advance", plan, boundary, journal)["rolling_release_complete"]
+    assert len(boundary.writes) == 6
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("policy_name", ["old", "v3", "v4", "unknown"])
+def test_only_qualified_v2_resource_checker_selects_actual_v4_policy(monkeypatch, version, policy_name):
+    import document_refresh_probe as native_proof
+    import document_source_candidate as source_profile
+    import test_document_worker_deployment as worker_fixture
+
+    documents = app.rolling.release.documents
+    policy = {"old": documents.POLICY_SHA256, "v3": documents.CANDIDATE_POLICY_SHA256,
+              "v4": source_profile.POLICY_SHA256, "unknown": "f" * 64}[policy_name]
+    snapshot = worker_fixture.snapshots(documents)
+    snapshot["service"]["uri"] = documents.ACCEPTED_ORIGIN
+    snapshot["service_iam"] = documents.render(worker_fixture.IMAGE, worker_fixture.RELEASE)["after_isolation_service_iam"]
+    for template in (snapshot["service"]["template"], snapshot["revision"]):
+        for row in template["containers"][0]["env"]:
+            if row["name"] == "DOCUMENT_WORKER_POLICY_SHA256":
+                row["value"] = policy
+    boundary = app.NativeApp25Boundary(ROOT) if version == "v1" else app.NativeApp25BoundaryV2(ROOT)
+    calls = []
+    def get(api, path):
+        assert api == "run"
+        calls.append("metadata")
+        return copy.deepcopy(snapshot["service"] if path == documents.RESOURCE else snapshot["revision"])
+    def cloud(*args):
+        if args[:4] == ("iam", "service-accounts", "keys", "list"):
+            return []
+        if args[:3] == ("iam", "service-accounts", "describe"):
+            return snapshot["service_account"]
+        if args[:3] == ("run", "services", "get-iam-policy"):
+            return snapshot["service_iam"]
+        if args[:2] == ("projects", "get-iam-policy"):
+            return snapshot["project_iam"]
+        pytest.fail("Unexpected provider read in finite synthetic document proof")
+    def accepted(image, service):
+        assert image == worker_fixture.IMAGE and service == snapshot["service"]
+        calls.append("native_acceptance")
+        return SimpleNamespace(image=image)
+    original = documents.check_snapshot
+    def checked(*args, **kwargs):
+        calls.append(("configuration", kwargs))
+        original(*args, **kwargs)
+        # Stop before unrelated TeX/network reads, after the REAL worker checker.
+        raise app.rolling.release.ReleaseDenied("synthetic_worker_configuration_matched")
+    monkeypatch.setattr(boundary.observer, "_get", get)
+    monkeypatch.setattr(boundary.observer, "_cloud", cloud)
+    monkeypatch.setattr(native_proof, "verify_current_successor_for_release", accepted)
+    monkeypatch.setattr(documents, "check_snapshot", checked)
+    supported = policy_name in {"old", "v3"} or version == "v2" and policy_name == "v4"
+    expected = "synthetic_worker_configuration_matched" if supported else "fresh_document_native_configuration_unverified"
+    with pytest.raises(app.rolling.release.ReleaseDenied, match=expected):
+        boundary.observer.verify_document_configuration(SimpleNamespace(release=worker_fixture.RELEASE,
+            runtime_service_account=documents.API_INVOKER))
+    configuration = next(value[1] for value in calls if isinstance(value, tuple))
+    assert configuration.get("source_revision", False) is (version == "v2" and policy_name == "v4")
+    assert configuration["candidate_v3"] is (policy_name == "v3")
+    assert calls.index("native_acceptance") < next(i for i, value in enumerate(calls) if isinstance(value, tuple))
+
+
+@pytest.mark.parametrize("historical_base", [False, True])
+def test_v2_v4_selector_cannot_replace_actual_native_acceptance(monkeypatch, historical_base):
+    import document_refresh_probe as native_proof
+    import document_source_candidate as source_profile
+    import test_document_worker_deployment as worker_fixture
+
+    documents = app.rolling.release.documents
+    snapshot = worker_fixture.snapshots(documents)
+    snapshot["service"]["uri"] = documents.ACCEPTED_ORIGIN
+    for template in (snapshot["service"]["template"], snapshot["revision"]):
+        if historical_base:
+            template["containers"][0]["image"] = documents.ACCEPTED_IMAGE
+        template["containers"][0]["env"][1]["value"] = source_profile.POLICY_SHA256
+    boundary = app.NativeApp25BoundaryV2(ROOT)
+    monkeypatch.setattr(boundary.observer, "_get", lambda api, path: copy.deepcopy(
+        snapshot["service"] if path == documents.RESOURCE else snapshot["revision"]))
+    monkeypatch.setattr(boundary.observer, "_cloud", lambda *args: [] if args[:4] == (
+        "iam", "service-accounts", "keys", "list") else snapshot["service_account"] if args[:3] == (
+        "iam", "service-accounts", "describe") else snapshot["service_iam"] if args[:3] == (
+        "run", "services", "get-iam-policy") else snapshot["project_iam"])
+    native_calls = []
+    def denied(*args):
+        native_calls.append(True)
+        raise native_proof.NativeProofDenied("synthetic_missing_native_acceptance")
+    monkeypatch.setattr(native_proof, "verify_current_successor_for_release", denied)
+    monkeypatch.setattr(documents, "check_snapshot", lambda *a, **k: pytest.fail("Selector cannot authorize native acceptance"))
+    reason = ("fresh_document_source_revision_base_image_refused" if historical_base
+              else "fresh_document_native_configuration_unverified")
+    with pytest.raises(app.rolling.release.ReleaseDenied, match=reason):
+        boundary.observer.verify_document_configuration(SimpleNamespace(release=worker_fixture.RELEASE,
+            runtime_service_account=documents.API_INVOKER))
+    assert len(native_calls) == (0 if historical_base else 1)
 
 
 def test_v1_v2_loaders_never_adopt_each_others_plan(context):

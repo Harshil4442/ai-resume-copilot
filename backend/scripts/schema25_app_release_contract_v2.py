@@ -41,6 +41,7 @@ QUALIFICATION_PATHS = ("backend/scripts/schema25_app_release_contract_v2.py",
     "backend/tests/test_schema25_app_compatibility_v2_postgres.py", "backend/tests/test_schema25_app_protocol_v2.py",
     "backend/tests/test_schema25_app_rolling_v2.py", "backend/tests/test_schema25_app_alias_retirement.py",
     "infra/gcp/schema25_app_rolling_release.py", "infra/gcp/schema25_app_alias_retirement.py",
+    "infra/gcp/rolling_release.py", "infra/gcp/fresh_monetary_release.py",
     ".github/workflows/ci.yml", "backend/uv.lock", "backend/tests/conftest.py",
     "backend/scripts/qualify_schema25_retained_v1.py")
 PROTOCOL_SUITES = ("tests/test_firestore_identity_list.py", "tests/test_candidate_validation_identity_list.py",
