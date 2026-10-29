@@ -12,13 +12,34 @@ import { GreenhouseOwnedUpload, validateSubmittedApplication } from "./greenhous
 import { GreenhouseNativeExchange } from "./greenhouse-native-network.js";
 import { greenhouseResumeComponent } from "./greenhouse-resume-component.js";
 import { base64url, canonical, digest } from "./protocol.js";
+import { LEGACY_KEYS, LostKeyRecovery, RECOVERY_UNAVAILABLE, RecoveryGate, recoveryKey } from "./lost-key-recovery.js";
 
 let assistancePromise;
 const nativeAssistance = () => CONFIG.mode === "reviewed_assistance" && CONFIG.nativePairing != null;
+const recovery = new LostKeyRecovery({ readLegacy: () => boundedStorage(chrome.storage.local.get([...LEGACY_KEYS])) });
+const recoveryGate = new RecoveryGate();
+let localRecoveryContext = null, missingKeyObserved = false;
+async function recoveryFence(expected = localRecoveryContext) {
+  if (!nativeAssistance()) return;
+  if (canonical(await recovery.context()) !== canonical(expected)) throw new Error(RECOVERY_UNAVAILABLE);
+}
+async function scopedRead(name, context) {
+  await recoveryFence(context);
+  const key = recoveryKey(context, name);
+  return (await boundedStorage(chrome.storage.local.get(key)))[key] ?? null;
+}
+async function scopedWrite(name, value, context) {
+  await recoveryFence(context);
+  const key = recoveryKey(context, name);
+  await boundedStorage(chrome.storage.local.set({ [key]: value }));
+  await recoveryFence(context);
+}
 async function assistanceEngine() {
   return assistancePromise ??= (async () => {
+    const context = localRecoveryContext;
     if (CONFIG.mode !== "reviewed_assistance" || CONFIG.extensionId !== chrome.runtime.id) throw new Error("Reviewed assistance configuration is unavailable");
     const permission = async (origin) => {
+      await recoveryFence(context);
       if (![CONFIG.websiteOrigin, CONFIG.portalOrigin].includes(origin)
         || !await chrome.permissions.contains({ origins: [`${origin}/*`] })) throw new Error("The exact reviewed origin permission is missing or revoked");
     };
@@ -31,20 +52,21 @@ async function assistanceEngine() {
     };
     const ownedUpload=new GreenhouseOwnedUpload();let component=null;
     const evidenceStore=async(kind,reviewId,value=undefined)=>{
-      const key="native_application_evidence",stored=(await boundedStorage(chrome.storage.local.get(key)))[key]||{};
+      const stored=await scopedRead("native_application_evidence",context)||{};
       if(!stored || typeof stored!=="object" || Array.isArray(stored) || Object.keys(stored).length>4 || JSON.stringify(stored).length>65536)throw new Error("Retained native evidence needs inspection.");
       const id=`${kind}:${reviewId}`;
       if(value===undefined)return stored[id]||null;
       const next={...stored,[id]:value};
       if(Object.keys(next).length>4 || JSON.stringify(next).length>65536)throw new Error("Inspect retained native attempts before another application.");
-      await boundedStorage(chrome.storage.local.set({[key]:next}));return value;
+      await scopedWrite("native_application_evidence",next,context);return value;
     };
     const clearEvidence=async(kind,reviewId)=>{
-      const key="native_application_evidence",stored=(await boundedStorage(chrome.storage.local.get(key)))[key]||{};
+      const stored=await scopedRead("native_application_evidence",context)||{};
       if(!stored || typeof stored!=="object" || Array.isArray(stored) || Object.keys(stored).length>4 || JSON.stringify(stored).length>65536)throw new Error("Retained native evidence needs inspection.");
-      const next={...stored};delete next[`${kind}:${reviewId}`];await boundedStorage(chrome.storage.local.set({[key]:next}));
+      const next={...stored};delete next[`${kind}:${reviewId}`];await scopedWrite("native_application_evidence",next,context);
     };
     const resumeComponent=async(operation,tabId,documentId,expected)=>{
+      await recoveryFence(context);
       const [result]=await chrome.scripting.executeScript({target:{tabId,documentIds:[documentId]},world:"MAIN",func:greenhouseResumeComponent,args:[operation,expected]});
       if(result?.documentId!==documentId || result?.result?.outcome!==(operation==="apply"?"callback_dispatched":"inspected"))throw new Error(result?.result?.reason||"The known resume component is unavailable.");
       return result.result;
@@ -80,6 +102,7 @@ async function assistanceEngine() {
         if(!nativeAssistance())throw new Error("Native candidate browser enrollment is required for exact upload.");
         const tab=await targetTab(url);
         const checked=await resumeComponent("inspect",tab.id,inspection.document_id,{target_url:url});
+        await recoveryFence(context);
         const plan=await ownedUpload.prepare(url,checked.resume_component_sha256);
         if(checked.storage_origin!==plan.storage_origin){ownedUpload.clear();throw new Error("The known portal uploader and approved employer storage origin differ.");}
         component={...checked,tab_id:tab.id,document_id:inspection.document_id};return plan;
@@ -89,6 +112,7 @@ async function assistanceEngine() {
         if(!component || component.tab_id!==tab.id || component.document_id!==lease.document_id || lease.native_context?.tab_id!==tab.id
           || component.resume_component_sha256!==plan.resume_component_sha256)throw new Error("The exact reviewed resume component is no longer retained.");
         const beforeDispatch=async()=>{
+          await recoveryFence(context);
           if(isCancelled())throw new Error("Upload cancelled before dispatch.");
           const current=await browser.inspect(url,mapping,lease.document_id,3);
           if(current.context_digest!==expected.context_digest || canonical(current.assisted_values)!==canonical(expected.current_assisted_values)
@@ -145,6 +169,7 @@ async function assistanceEngine() {
       },
       async fill(url, mapping, expected, action) {
         const tab = await targetTab(url);
+        await recoveryFence(context);
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [expected.document_id] }, func: razorpayAdapter,
           args: [expected, action, { document_id: expected.document_id, frame_id: 0, field_mapping: mapping, review_protocol_version: expected.review_protocol_version ?? 1, upload: action.upload }] });
         return result?.documentId === expected.document_id && result?.result ? result.result : { outcome: "blocked", reason: "The reviewed document is no longer available" };
@@ -159,8 +184,8 @@ async function assistanceEngine() {
       identity = { ...connection.transport.identity, device_id: connection.state.device_id };
     } else identity = await deviceIdentity();
     const transport = new AssistanceTransport({ configuration: CONFIG, identity, beforePost: () => permission(CONFIG.websiteOrigin) });
-    const store = { read: async () => (await boundedStorage(chrome.storage.local.get("assistance_checkpoint"))).assistance_checkpoint ?? null,
-      write: (value) => boundedStorage(chrome.storage.local.set({ assistance_checkpoint: value })) };
+    const store = { read: () => scopedRead("assistance_checkpoint", context),
+      write: (value) => scopedWrite("assistance_checkpoint", value, context) };
     const runtime = await new AssistanceRuntime({ transport, browser, store }).initialise();
     if (nativeAssistance()) await runtime.check();
     return runtime;
@@ -177,16 +202,19 @@ function boundedStorage(operation) {
 }
 async function pairingEngine() {
   return pairingPromise ??= (async () => {
+    const context = localRecoveryContext;
     if (!nativeMode() || CONFIG.extensionId !== chrome.runtime.id) throw new Error("Reviewed browser connection configuration is unavailable");
     const checkPermission = async () => {
+      await recoveryFence(context);
       if (!await chrome.permissions.contains({ origins: [`${CONFIG.websiteOrigin}/*`] })) throw new Error("The exact HireWiz connection permission is missing or revoked");
     };
     const configuration = nativeAssistance() ? { ...CONFIG, ...CONFIG.nativePairing, mode: "pairing_only" } : CONFIG;
-    const prior = (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null;
-    const transport = new PairingTransport({ configuration, identity: await deviceIdentity({ requireRetained: prior !== null }), beforePost: checkPermission });
+    const prior = await scopedRead("pairing_checkpoint", context);
+    const transport = new PairingTransport({ configuration, identity: await deviceIdentity({ requireRetained: context !== null || prior !== null,
+      slot: context?.slot ?? "device" }), beforePost: checkPermission });
     const store = {
-      read: async () => (await boundedStorage(chrome.storage.local.get("pairing_checkpoint"))).pairing_checkpoint ?? null,
-      write: (value) => boundedStorage(chrome.storage.local.set({ pairing_checkpoint: value })),
+      read: () => scopedRead("pairing_checkpoint", context),
+      write: (value) => scopedWrite("pairing_checkpoint", value, context),
     };
     return new PairingRuntime({ transport, store, checkPermission }).initialise();
   })();
@@ -229,10 +257,22 @@ async function engine() {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   // No page/content-script/external messages may trigger a privileged operation.
   if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("popup.html")) return false;
-  (async () => {
+  const exclusive = ["lost_key_review", "lost_key_commit"].includes(message?.type);
+  recoveryGate.run(exclusive, async () => {
+    if (["lost_key_review", "lost_key_commit", "lost_key_inspect"].includes(message?.type)) {
+      const keys = message.type === "lost_key_commit" ? "acknowledged,recovery_id,type" : "type";
+      if (!nativeAssistance() || CONFIG.extensionId !== chrome.runtime.id || Object.keys(message).sort().join(",") !== keys) throw new Error(RECOVERY_UNAVAILABLE);
+      if (message.type === "lost_key_inspect") return recovery.inspect();
+      if (!missingKeyObserved) throw new Error(RECOVERY_UNAVAILABLE);
+      if (message.type === "lost_key_review") return recovery.review();
+      const result = await recovery.commit(message);
+      pairingPromise = assistancePromise = null; localRecoveryContext = null; missingKeyObserved = false;
+      return result;
+    }
+    if (CONFIG.mode === "reviewed_assistance" && (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string"
+        || Object.keys(message).some((key) => !["type", "application_id"].includes(key)))) throw new Error("Unsupported assistance operation");
+    if (nativeAssistance()) localRecoveryContext = await recovery.context();
     if (CONFIG.mode === "reviewed_assistance") {
-      if (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string"
-        || Object.keys(message).some((key) => !["type", "application_id"].includes(key))) throw new Error("Unsupported assistance operation");
       if (nativeAssistance()) {
         const connection = await pairingEngine();
         if (message.type === "status") return { mode: CONFIG.mode, native_pairing: true,
@@ -290,9 +330,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === "fill") return current.approveAndFill(message.command_id, message.review_digest, message.acknowledged === true);
     if (message.type === "cancel") return current.cancel();
     throw new Error("Unsupported companion operation");
-  })().then((value) => respond({ ok: true, value }), (error) => {
+  }).then((value) => respond({ ok: true, value }), (error) => {
     const phase = message?.type === "status" ? deviceFailurePhase(error) : null;
-    respond({ ok: false, error: error.message, ...(phase ? { device_phase: phase } : {}) });
+    if (phase === "MISSING-RETAINED" && localRecoveryContext === null) missingKeyObserved = true;
+    const recoveryOperation = ["lost_key_review", "lost_key_commit", "lost_key_inspect"].includes(message?.type);
+    const missingRecoveredKey = phase === "MISSING-RETAINED" && localRecoveryContext !== null;
+    respond({ ok: false, error: recoveryOperation || missingRecoveredKey ? RECOVERY_UNAVAILABLE : error.message,
+      ...(phase && !missingRecoveredKey ? { device_phase: phase } : {}) });
   });
   return true;
 });
