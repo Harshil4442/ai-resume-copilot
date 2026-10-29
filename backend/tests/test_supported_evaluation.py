@@ -366,11 +366,16 @@ def test_tex_real_blank_source_admission_uses_actual_pdf_parser_output(evaluatio
 
 
 def test_real_two_column_pdf_reading_order_failure_remains_a_refusal(evaluation, monkeypatch):
-    case, _, _, _, parsed = actual_composite_capture(evaluation, monkeypatch, kind="tex", columns=2)
-    assert not inputs.reading_order(case, parsed["raw_text"])
-    rows, issues = inputs.native_inputs(evaluation["packet_root"], evaluation["native_root"], evaluation["auth"], evaluation["authorization_root"], evaluation["native_receipts"])
-    assert not next(r for r in rows if r["case_id"] == case["case_id"])["native_input_ready"]
-    assert any("interleaved reading order" in issue for issue in issues)
+    from tests import test_document_processor as worker
+
+    processor = worker.load("processor")
+    # The separately reviewed parser now refuses this ambiguous PDF before it
+    # can produce a capture. Do not manufacture text/a success receipt to reach
+    # the later evaluation reading-order check.
+    monkeypatch.setattr(worker, "load", lambda _: processor)
+    monkeypatch.setattr(llm_client, "_chat", lambda *_: pytest.fail("No provider call"))
+    with pytest.raises(processor.InspectionDenied, match="^document_inspection_refused$"):
+        actual_composite_capture(evaluation, monkeypatch, kind="tex", columns=2)
 
 
 @pytest.mark.parametrize("changed", ["missing_compilation", "fake_source_text", "source_sha", "request_sha", "renderer", "policy", "compiled_pdf", "pdf_inspection", "native_review_pdf"])
