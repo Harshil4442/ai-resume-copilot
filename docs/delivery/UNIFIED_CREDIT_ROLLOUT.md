@@ -1,7 +1,8 @@
 # Unified credit release runbook
 
-Status: implementation and local verification in progress. This runbook does not
-certify production readiness, grant a financial budget, or enable checkout.
+Status: schema25 base deployment completed on 29 October; current account and
+companion acceptance and the eight-stage qualification program remain in progress.
+This runbook does not grant a financial budget or enable checkout.
 The controlling product contract is
 [`CREDIT_COST_QUALITY_V1_1.md`](../requirements/CREDIT_COST_QUALITY_V1_1.md).
 
@@ -56,8 +57,8 @@ The future application-submission tariff does not enable final submission.
 | 3. Deterministic processing and reuse | Basic/curated paths, owned saved-result reuse and employer-origin batch discovery | Complete application journeys with real supported sources; no unsupported coverage claim |
 | 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts and 200 materialized synthetic native inputs | Actual funded model outputs, complete native runtime/render receipts, blinded human comparison and statistical evidence |
 | 5. Capacity privacy and responsive experience | Account export/erasure, funded free limits, responsive review screens | Representative load/performance measurements and integrated privacy/security review |
-| 6. Shadow accounting and migration preparation | Read-only accounting report, native schema25 operator and PostgreSQL17 migration/previous-app rollback rehearsal; legacy balances preserved | Exact production source/image capture, retained migration proof and representative shadow observation |
-| 7. Controlled deployment and commercial decision | Draft PR57 and protected Vercel preview; release gates fail closed | Complete candidate CI, tested immutable backend build, guarded migration, opted-in canary, commercial hosting and all payment gates |
+| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and freshly observed; retained data, financial digests and ACL preserved; captured resources restored | Representative seven-day/200-operation shadow accounting |
+| 7. Controlled deployment and commercial decision | PR57 merged; tested immutable API/workers promoted; frontend canonical production alias promoted; separate pilot reopening checked | Current account/companion acceptance after lifecycle repair, qualified optimized-route canary, commercial hosting and payment gates |
 | 8. Ongoing quality and economics | Stop conditions and accounting signals defined | Operational alert ownership, regular invoice/quality review and measured ongoing evidence |
 
 Machine-readable status and evidence are in `CREDIT_QUALITY_PROGRESS.json` and
@@ -69,8 +70,9 @@ The follow-on evidence in `evidence/2026-10-28-unified-credit-release-preparatio
 separates the locally connected legacy-order recovery journey from the new
 single-credit purchase/discovery journey. Their external payment and employer
 feeds are finite synthetic fixtures. Neither is a live commercial transaction or
-an employer application. The preview serves the new frontend but is not proof of
-the new production API contract.
+an employer application. Current production deployment evidence is recorded in
+`evidence/2026-10-29-schema25-production-base.json`; paid-route qualification is
+separate. Stages 1–7 remain in progress and Stage 8 remains pending.
 
 ## Safe release sequence
 
@@ -164,12 +166,35 @@ native readback; no flag edit to this pilot plan is sufficient.
 
 The permitted finite flag set is direct resume upload, employer discovery,
 browser assistance, its typed controls, attachments, native upload/pairing and
-candidate ingress. Review the exact selected flags against the captured
+candidate ingress and account lifecycle. Review the exact selected flags against the captured
 pre-maintenance state before capture. If a needed feature is outside this set,
 leave it closed for a separate release; do not edit the captured plan or add a
 generic flag override. Preserve the original private journals as the rollback
 and audit record. The pre-activation schema25 traffic-only rollback remains
 separate and must be reviewed again after any pilot reopening.
+
+### Restore an omitted account lifecycle flag after completed reopening
+
+If the original pilot reopening has already completed but omitted
+`CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED`, use the same operator with a **new plan,
+nonce and private journal**, requesting only that flag. Pass the unchanged
+original `--prior-pilot-plan`, its exact `--prior-pilot-sha256`, and
+`--prior-pilot-journal` on capture, advance and reconcile, in addition to the
+original deployment, maintenance and coordinator proofs. Never edit, append to
+or replay the earlier plan/journal.
+
+This finite continuation embeds the original pilot plan, verifies its completed
+journal and exact serving state, and recomputes the account flag from the pinned
+pre-maintenance revisions. It retains only the earlier verified pilot flags and
+changes only the account flag on services where it was originally true. All
+images, source, service identities, unrelated settings, secrets, document pins
+and physical traffic bindings remain pinned. The changed API revision must pass
+its authenticated health check before completion; an unavailable health identity
+is a stop, not permission to skip it. A lost write acknowledgement requires
+read-only reconciliation against the same new plan/journal, never another PATCH.
+Nested continuations and additional requested flags are refused. This restores
+account lifecycle availability; it does not link an unlinked Google identity or
+open AI generation, new credits, free-core processing, checkout or submission.
 
 ### Maintenance before capture
 

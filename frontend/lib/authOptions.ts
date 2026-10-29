@@ -15,6 +15,14 @@ type BackendAuthToken = {
   browser_pairing_session?: unknown;
 };
 
+class EnrolledSignInRequiredError extends Error {
+  // NextAuth's OAuth callback maps this fixed name to OAuthAccountNotLinked.
+  name = "AccountNotLinkedError";
+  constructor() {
+    super("Use your enrolled HireWiz sign-in method.");
+  }
+}
+
 const configuredNextAuthSecret = process.env.NEXTAUTH_SECRET?.trim();
 if (
   process.env.NODE_ENV === "production" &&
@@ -105,6 +113,10 @@ export const authOptions: NextAuthOptions = {
           backendStatus = res.status;
           failureCategory = "backend_response";
           if (!res.ok) {
+            if (res.status === 403 && Object.keys(res.data).join(",") === "detail"
+                && res.data.detail === "Google account is not explicitly linked; use your enrolled sign-in method") {
+              throw new EnrolledSignInRequiredError();
+            }
             throw new Error("AUTH_UNAVAILABLE");
           }
           failureCategory = "backend_contract";
@@ -124,7 +136,8 @@ export const authOptions: NextAuthOptions = {
             delete token.candidateLogoutRequest;
           }
           token.candidateSignInMethod = "google";
-        } catch {
+        } catch (error) {
+          if (error instanceof EnrolledSignInRequiredError) throw error;
           console.error("Google backend sign-in is unavailable.", {
             category: failureCategory,
             ...(backendStatus === undefined ? {} : { status: backendStatus }),

@@ -51,6 +51,31 @@ async function passwordAuthorization() {
 }
 
 describe("Google backend failure diagnostics", () => {
+  it("directs an explicitly unlinked Google account to its enrolled sign-in method without minting a token", async () => {
+    mocked.backendAuth.mockResolvedValue({ ok: false, status: 403, data: {
+      detail: "Google account is not explicitly linked; use your enrolled sign-in method",
+    } });
+    const { token, promise } = await exchange();
+
+    await expect(promise).rejects.toMatchObject({ name: "AccountNotLinkedError" });
+    expect(token).toEqual({});
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: 403, data: { detail: "private-response" } },
+    { status: 403, data: { detail: "Google account is not explicitly linked; use your enrolled sign-in method", private: "private-response" } },
+    { status: 500, data: { detail: "Google account is not explicitly linked; use your enrolled sign-in method" } },
+    { status: 401, data: { detail: "Google account is not explicitly linked; use your enrolled sign-in method" } },
+  ])("keeps other backend refusals generic and private ($status)", async (reply) => {
+    mocked.backendAuth.mockResolvedValue({ ...reply, ok: false });
+    const { token, promise } = await exchange();
+
+    await expect(promise).rejects.toThrow("AUTH_UNAVAILABLE");
+    expect(token).toEqual({});
+    expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain("private-response");
+  });
+
   it("rejects backend 500 without minting a token or logging response or identity data", async () => {
     const sensitive = { detail: "private-sql-error", id_token: "synthetic-id-token", email: "person@example.invalid" };
     mocked.backendAuth.mockResolvedValue({ ok: false, status: 500, data: sensitive });

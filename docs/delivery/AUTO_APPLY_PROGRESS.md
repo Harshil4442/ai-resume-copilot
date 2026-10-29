@@ -1,42 +1,54 @@
 # HireWiz development and deployment progress
 
-Updated **26 October 2026 (IST)**. Companion 0.8.4 and the frontend transport
-repair are deployed. All six original outcomes are **COMPLETE within the approved free twenty-origin
-pilot**. The actual native review/cancel/revoke journey and final operational
-readback passed. Commercial launch and worldwide coverage expansion remain
-outside this completion scope.
+Updated **29 October 2026 (IST)**. The schema25 base release is deployed.
+Public mobile/desktop and SEO acceptance passed. Current signed-in account and
+companion acceptance remain pending: maintenance closed the native account
+lifecycle switch, and the first pilot reopening omitted it. The separately linked,
+same-image correction is now applied on API generation350; authenticated health
+and website registration/enrollment availability passed. The current real-account
+journey still requires manual password sign-in and Mac unlock. Do not report the
+current release as fully accepted until that journey passes.
+
+The six outcomes below record **historical acceptance on 26 October**, within the
+approved twenty-origin pilot. They are not fresh evidence that every feature is
+currently available. New AI generation/tailoring, unified credits, free-core
+processing, checkout and final employer submission remain closed. Worldwide
+coverage, commercial launch and the new credit/quality program retain their
+separate requirements gates.
 
 ## Latest verified releases
 
-| Component | Accepted release | Verification |
+| Component | Current release | Verification |
 |---|---|---|
-| API | Generation **338**, revision `ai-resume-parser-d-a1fc222a7ed3-open`; source `436585cdd92a9c1e09c0d630eb73e9c61e9b1a78`; image `sha256:2440572bc905d228f0f3e215d8d22b98e54a6d46942ac4382d88f3452bcef029` | The original generation 335 repair passed stage, promotion and independent readback. Natural document maintenance subsequently updated the document pin and serving revision; the API image, source and pairing/account configuration are unchanged. Normally merged [PR51](https://github.com/Harshil4442/ai-resume-copilot/pull/51). |
-| Frontend | `dpl_BgUZzrsgUgCeDm6Uwdsojh2svCqx`, source `02bcab79e28ab292dc6a8efc0c3a06bcd02c97fa` | Production/READY; both canonical aliases verified at **18:19:21 UTC on 25 October**. Apex-to-www 308 routing and disabled automatic domain assignment remain intact. Previous BPx/source 204 remains available for rollback. Normally merged [PR55](https://github.com/Harshil4442/ai-resume-copilot/pull/55), merge `0d2af52d`. |
-| Companion | **0.8.4**, **67,399 bytes**, SHA-256 `a1324aeda3b168a519ed47ab7a2a13228c91d5e6aa5ab2bea9ab9ba0d09f8c40` | Anonymous canonical download returned 200 at **18:19:36 UTC** and matched the reviewed ZIP. All 18 installed source files match; native Chrome showed 0.8.4 after reloading the same extension. Actual pairing, exact-file review, approval, cancellation before Fill and native device revocation passed with the same key and retained history. |
+| API and application workers | Source `8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a`; image `sha256:956735cd476c1159397ef21143b497f0b4d40df4d47f6b5d54cd8818a544eafa`; schema `20261028_0025` | Immutable build `45473be6-d177-49e1-a8a3-7970df8271db`, exact-source CI `40784200833`, checked stage/promotion journals, separate six-flag pilot reopening and the linked account-lifecycle correction on API generation350. Fourteen new tables and retained data, financial digests and ACL were verified. Current account acceptance remains pending. |
+| Frontend | Source `b0c4581fe66b88369fca0219cabca8d1229684ba`; `dpl_CBiaNHpwCJHGbWcBeD3t7z9Kx3t3` | Production READY and canonical alias promoted. Exact-source CI `40840161705`. Public pages explicitly disclose the limited pilot and unavailable purchases/AI generation. |
+| Document inspector | Configuration source `b281118da4ff810cadff196dbe8bc4cade3cecf3`; image `sha256:5811233d8dd35b1fadc73f4c1a43783c83edde47c5e90142a1e96c1428312db9` | Fresh native ten-case corpus and V2 to V3 transition; read-only reconciliation run `40811330747`. |
+| Companion | Historical acceptance **0.8.4** | The October26 exact-file review/cancel/revoke evidence below is preserved. Current installation and account journey require fresh verification after the account repair. |
 
-The final five-service readback at **18:35:50 UTC on 25 October** found API 338, analysis 66,
-employer 31, coordinator 25 and inspector 15 Ready at their expected revisions.
-Schema remains **`20261023_0021`**. The worker/coordinator application release
-retains source `7a00839d` / image `c1ce5b32`; the accepted inspector image is now
-`b5d97436`, with definitions valid until **28 October, 06:24:12 UTC**. The scheduled
-[document refresh run 40169964119](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40169964119)
-completed its build, actual native V2 ten-case proof, exact pin transition,
-admission restoration and cleanup. Its updated caller revisions retain their
-application images. Pairing/account configuration is unchanged. Three worker
-queues are RUNNING, the employer-application queue is PAUSED, and all three
-schedules are ENABLED. Public API health returned 200 for the exact release.
-Checkout, extended typed controls, attachment/native upload and final/automatic
-submission remain disabled; basic reviewed assistance remains enabled. The final
-readback reported no drift. Its retained evidence digest is
-`95c3a4521810d96849c11acffb7fe7375fab69487b505d2bc28af27e01c164cf`.
+The final filtered configuration readback found all five services Ready, three
+worker queues RUNNING, the application queue PAUSED and three schedules ENABLED.
+The coordinator retains its own captured source `7a00839d`; it is not relabeled as
+the document configuration source. Temporary health-check IAM access was removed
+and independently read back absent after both the original release and the
+account-lifecycle correction.
 
-Required exact-source release checks passed for
-[API source 436](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40148931093)
-and [companion/frontend source 02bc](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/40216952903).
-These are release evidence, not additional development checkpoints. The current
-application release remains immutable when this status documentation changes.
+Public checks at widths 390/1440 passed layout, images, purchase closure, canonical
+metadata, robots and sitemap. All observed CLS values were 0. The homepage's first
+mobile LCP was 7.388s; a focused diagnostic was 1.452s. Both remain in the record;
+the first slow result has no proven cause. Pricing mobile LCP was 1.760s. These
+samples do not establish field p75 or capacity qualification.
 
-## Original six outcomes
+The Gemini provider monthly spend cap is now **INR450**. Provider enforcement can
+lag by approximately ten minutes; this is secondary protection, not a substitute
+for application cost reservations or reconciled financial qualification.
+
+[Current release evidence](evidence/2026-10-29-schema25-production-base.json) and
+[the eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md) distinguish
+completed deployment work from remaining functional and commercial acceptance.
+CI and regression checks are evidence, not additional development checkpoints.
+No original effort totals are available; missing estimates remain null.
+
+## Original six outcomes — historical acceptance on 26 October
 
 | Original outcome | Status | Accepted evidence and remaining work |
 |---|---|---|

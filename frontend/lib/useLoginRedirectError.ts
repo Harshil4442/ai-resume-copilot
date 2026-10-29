@@ -29,7 +29,7 @@ export function loginRedirectError(search: string): string | null {
     case "OAuthSignin":
       return "Could not start Google sign-in. Please try again.";
     case "OAuthAccountNotLinked":
-      return "Sign in with the method you originally used for this account.";
+      return "Google is not linked to this account. Sign in with your HireWiz password, or reset it using the link below.";
     case "AccessDenied":
       return "Sign-in was not allowed. Please try again or use another sign-in method.";
     case "CredentialsSignin":
