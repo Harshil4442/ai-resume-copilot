@@ -255,25 +255,21 @@ function OpportunityContent() {
     if (matchRun.data?.status === "succeeded") {
       void queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] });
       void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
-      void queryClient.invalidateQueries({ queryKey: ["profile"] });
     }
   }, [matchRun.data?.status, opportunityId, queryClient]);
 
   useEffect(() => {
     if (tailorRun.data?.status === "succeeded") {
       void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
-      void queryClient.invalidateQueries({ queryKey: ["profile"] });
     }
   }, [opportunityId, queryClient, tailorRun.data?.status]);
 
   useEffect(() => {
+    let refreshAccount = false;
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
       trackedTerminalRuns.current.add(run.id);
-      void queryClient.invalidateQueries({ queryKey: creditWalletKey });
-      if (run.operation === "interview_questions" || run.operation === "resume_tailor") {
-        void queryClient.invalidateQueries({ queryKey: ["profile"] });
-      }
+      refreshAccount = true;
       trackEvent(run.status === "succeeded" ? "analysis_completed" : "analysis_failed", {
         run_id: run.id,
         operation: run.operation,
@@ -284,6 +280,7 @@ function OpportunityContent() {
         trackEvent("first_useful_match", { opportunity_id: opportunityId });
       }
     }
+    if (refreshAccount) void queryClient.invalidateQueries({ queryKey: creditWalletKey });
   }, [interviewRun.data, matchRun.data, opportunityId, queryClient, tailorRun.data]);
 
   const transition = useMutation({

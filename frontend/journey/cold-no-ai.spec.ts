@@ -316,8 +316,21 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   try { for (let i = 0; i < 2; i++) {
     const webhook = await provider.post(`${process.env.COLD_BROWSER_BACKEND_URL}/api/billing/webhooks/razorpay`, { data: raw, headers: { "content-type": "application/json", "x-razorpay-signature": signature, "x-razorpay-event-id": "evt_synthetic_browser" } });
     expect(webhook.ok()).toBeTruthy();
+    expect(await webhook.json()).toEqual({ ok: true, status: i === 0 ? "processed" : "duplicate" });
   } } finally { await provider.dispose(); }
-  await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible();
+  const deliveredOrderResponse = await request.get(`${baseURL}/api/backend/billing/orders/${checkout.order_id}`);
+  expect(deliveredOrderResponse.ok()).toBeTruthy();
+  expect(await deliveredOrderResponse.json()).toMatchObject({
+    order_id: checkout.order_id, provider_order_id: checkout.provider_order_id,
+    status: "paid", fulfilled: true, accepted_quote: acceptedQuote,
+  });
+  const paidCatalog = await request.get(`${baseURL}/api/backend/v1/employer-jobs/catalog`);
+  expect(paidCatalog.ok()).toBeTruthy();
+  expect((await paidCatalog.json()).balance).toBe(100);
+  // Automatic confirmation waits five seconds after the initial pending read.
+  // Keep the real UI assertion, with bounded response time beyond that delay;
+  // a manual click would be disabled while the automatic loop is still busy.
+  await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible({ timeout: 15_000 });
   const paidProfile = await request.get(`${baseURL}/api/account/profile`);
   expect((await paidProfile.json()).ai_credits).toBe(2);
   await page.goto("/employer-jobs");

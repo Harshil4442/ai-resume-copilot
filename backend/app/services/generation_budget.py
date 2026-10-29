@@ -153,13 +153,26 @@ def persistent_run_budget(factory, run_id: str):
         budget = GenerationBudget(limit=run.generation_attempt_limit, used=run.generation_attempt_count, run_id=run_id)
         user_id = run.user_id
         from .interview_contract import PROMPT_VERSION as INTERVIEW_PROMPT_VERSION
+        from .synchronous_contracts import VERSIONS as SYNCHRONOUS_VERSIONS
         from .tailoring_contract import COMPLETE_PROMPT_VERSION, LEGACY_PROMPT_VERSION
+        complete_context = (run.model_cost_quote or {}).get("billing_currency") == "credits" or (
+            run.id.startswith("qev2_") and (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2"
+        )
         tailoring_version = (
             COMPLETE_PROMPT_VERSION
-            if (run.model_cost_quote or {}).get("billing_currency") == "credits"
+            if complete_context
             else LEGACY_PROMPT_VERSION
         )
-        prompt_version = {"job_match": "match-mega-v2", "interview_questions": INTERVIEW_PROMPT_VERSION, "resume_tailor": tailoring_version}.get(run.operation, "legacy-v1")
+        matching_version = "match-mega-v2"
+        if run.operation == "job_match" and complete_context:
+            from .matching_contract import PROMPT_VERSION as COMPLETE_MATCHING_VERSION
+
+            matching_version = COMPLETE_MATCHING_VERSION
+        prompt_version = {"job_match": matching_version, "interview_questions": INTERVIEW_PROMPT_VERSION,
+                          "resume_tailor": tailoring_version,
+                          **{name: SYNCHRONOUS_VERSIONS["prompt"] for name in (
+                              "resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy")},
+                          }.get(run.operation, "legacy-v1")
 
     # Only this trusted in-flight callback retains the deleted telemetry ID's
     # link to its detached liability. There is no post-erasure lookup API.

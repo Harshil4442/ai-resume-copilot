@@ -1,15 +1,19 @@
 import os
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ..billing.signup import NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS, NEW_ACCOUNT_LEGACY_SERVICE_CREDITS
 from ..database import get_db
+from ..domains.candidate_accounts.bootstrap import OwnedBootstrapView, bootstrap_view
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
+from ..domains.candidate_accounts.profile_view import profile_view
 from ..domains.notifications import enqueue_notification
+from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
+from ..domains.recovery.store import GuardDenied
 from ..models import (
     AdminAuditEvent,
     AnalysisRun,
@@ -52,6 +56,7 @@ from ..security import (
     verify_password,
 )
 from .candidate_ingress import require_candidate_ingress
+from .native_metadata_http import metadata_http_error
 from .sensitive_auth import SensitiveAuthRoute
 
 router = APIRouter(prefix="/auth", tags=["auth"], route_class=SensitiveAuthRoute)
@@ -148,6 +153,8 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
                 policy_version=CURRENT_POLICY_VERSION)
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Candidate password authentication failed") from None
+        except MetadataAdmissionError as exc:
+            raise metadata_http_error(exc) from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
         enrolled = db.query(User).filter_by(id=uid).one_or_none()
@@ -215,6 +222,8 @@ def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get
             result = production_candidate_accounts().login(email=email, password=payload.password)
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Invalid email or password") from None
+        except MetadataAdmissionError as exc:
+            raise metadata_http_error(exc) from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
         token = create_access_token(subject=str(uid), expires_delta=timedelta(days=1), candidate_lifetime={
@@ -250,6 +259,8 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
             result = production_candidate_accounts().login_google(identity)
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Google account is not explicitly linked; use your enrolled sign-in method") from None
+        except MetadataAdmissionError as exc:
+            raise metadata_http_error(exc) from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
         token = create_access_token(subject=str(result.context.candidate_id), expires_delta=timedelta(days=1),
@@ -313,8 +324,23 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    profile = _get_or_create_profile(db, current_user)
-    return _profile_response(profile, current_user.email)
+    try:
+        return profile_view(db, current_user)
+    except GuardDenied:
+        raise HTTPException(401, "Not authenticated") from None
+
+
+@router.get("/bootstrap", response_model=OwnedBootstrapView)
+def get_owned_bootstrap(request: Request, response: Response,
+                        db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if (request.url.query or request.headers.get("content-encoding") or request.headers.get("transfer-encoding")
+            or request.headers.get("content-length", "0") != "0"):
+        raise HTTPException(422, "Owned bootstrap accepts only an empty GET")
+    response.headers.update({"Cache-Control": "private, no-store", "Pragma": "no-cache"})
+    try:
+        return bootstrap_view(db, current_user)
+    except GuardDenied:
+        raise HTTPException(401, "Not authenticated") from None
 
 @router.put("/profile", response_model=UserProfileResponse)
 def update_profile(
@@ -364,6 +390,8 @@ def delete_account(
             production_candidate_accounts().prepare_delete(context)
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Not authenticated") from None
+        except MetadataAdmissionError as exc:
+            raise metadata_http_error(exc) from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
     now = datetime.now(UTC)

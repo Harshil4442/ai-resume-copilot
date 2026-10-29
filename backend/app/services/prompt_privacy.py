@@ -11,7 +11,8 @@ import re
 from typing import Any
 
 REDACTED = '[sensitive information removed]'
-PROMPT_PRIVACY_VERSION = 'explicit-sensitive-fields-v1'
+PROMPT_PRIVACY_VERSION = 'explicit-sensitive-fields-v2'
+COMPLETE_SOURCE_PREFIX = 'COMPLETE SOURCE DATA:\n'
 _EMAIL = re.compile(r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b', re.IGNORECASE)
 _INTERNATIONAL_PHONE = re.compile(r'(?<!\w)\+\d[\d ()-]{6,}\d(?!\w)')
 _LABELS = (
@@ -45,6 +46,13 @@ def redact_prompt_text(text: str) -> str:
     # Preserve a JSON document's structure when possible. Narrative prompt
     # blocks fall through to local explicit-label and identifier redaction.
     clean = text or ''
+    if clean.startswith(COMPLETE_SOURCE_PREFIX):
+        try:
+            parsed = json.loads(clean[len(COMPLETE_SOURCE_PREFIX):])
+        except (json.JSONDecodeError, ValueError):
+            pass
+        else:
+            return COMPLETE_SOURCE_PREFIX + json.dumps(redact_structured(parsed), ensure_ascii=False)
     if clean.lstrip().startswith(('{', '[')):
         try:
             parsed = json.loads(clean)

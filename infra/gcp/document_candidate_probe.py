@@ -55,8 +55,10 @@ def rendered_payload(image: str) -> str:
 
 
 def source_contract() -> dict[str, str]:
-    build = prior.build_module()
-    _, hashes, policy = build.full_source_snapshot()
+    from infra.gcp.document_source_candidate import frozen_v3
+
+    raw, frozen = frozen_v3(ROOT)
+    hashes, policy = frozen["source_sha256"], hashlib.sha256(raw).hexdigest()
     runtime = {destination: hashes[source] for source, destination in candidate.RUNTIME.items()}
     need(policy == candidate.POLICY_SHA256 == payload.POLICY_SHA256
          and runtime == payload.EXPECTED_RUNTIME_HASHES, "runtime_sources_changed")
@@ -96,6 +98,11 @@ def v1_job(body: dict[str, Any]) -> dict[str, Any]:
 
 def validate_job(job: Any, plan: dict[str, Any]) -> None:
     wanted = desired(plan["image"], plan["job_nonce"], plan["mode"])
+    validate_job_template(job, wanted)
+
+
+def validate_job_template(job: Any, wanted: dict[str, Any]) -> None:
+    """Common exact native Job guard; source profiles only supply a typed desired template."""
     need(type(job) is dict and job.get("name") == wanted["name"]
          and type(job.get("uid")) is str and prior.UUID.fullmatch(job["uid"])
          and job.get("launchStage") == "BETA" and job.get("labels") == wanted["labels"]
@@ -111,6 +118,11 @@ def validate_job(job: Any, plan: dict[str, Any]) -> None:
 
 
 def validate_execution(row: Any, job: dict[str, Any], plan: dict[str, Any]) -> None:
+    wanted = desired(plan["image"], plan["job_nonce"], plan["mode"])
+    validate_execution_template(row, job, wanted)
+
+
+def validate_execution_template(row: Any, job: dict[str, Any], wanted: dict[str, Any]) -> None:
     prefix = job["name"] + "/executions/"
     need(type(row) is dict and type(row.get("name")) is str and row["name"].startswith(prefix)
          and re.fullmatch(re.escape(job["name"].rsplit("/", 1)[-1]) + r"-[a-z0-9]{1,20}", row["name"].rsplit("/", 1)[-1])
@@ -120,14 +132,17 @@ def validate_execution(row: Any, job: dict[str, Any], plan: dict[str, Any]) -> N
          and prior.integer(row.get("taskCount"), 1) and prior.integer(row.get("succeededCount"), 1)
          and all(prior.integer(row.get(k, 0), 0) for k in ("failedCount", "cancelledCount", "runningCount", "retriedCount"))
          and row.get("completionTime") and row.get("startTime")
-         and prior.task_matches(row.get("template"), desired(plan["image"], plan["job_nonce"], plan["mode"])["template"]["template"])
+         and prior.task_matches(row.get("template"), wanted["template"]["template"])
          and prior.integer(job.get("executionCount"), 1)
          and job.get("latestCreatedExecution", {}).get("name") in {row["name"], row["name"].rsplit("/", 1)[-1]},
          "execution_not_singleton_success")
 
 
-def native_payload(clients: Any, job: dict[str, Any], execution: dict[str, Any], mode: str) -> dict[str, Any]:
-    event = "hirewiz_document_candidate_inventory_v1" if mode == "inventory" else "hirewiz_document_candidate_required_v3"
+def native_payload(clients: Any, job: dict[str, Any], execution: dict[str, Any], mode: str, *, event: str | None = None) -> dict[str, Any]:
+    allowed = {"hirewiz_document_candidate_inventory_v1", "hirewiz_document_candidate_required_v3",
+               "hirewiz_document_source_inventory_v1", "hirewiz_document_source_required_v4"}
+    event = event or ("hirewiz_document_candidate_inventory_v1" if mode == "inventory" else "hirewiz_document_candidate_required_v3")
+    need(event in allowed, "event_invalid")
     job_id, execution_id = job["name"].rsplit("/", 1)[-1], execution["name"].rsplit("/", 1)[-1]
     begin, end = prior.timestamp(job["createTime"]), prior.timestamp(execution["completionTime"])
     query = (f'resource.type="cloud_run_job" AND resource.labels.project_id="{prior.PROJECT}" '
@@ -161,11 +176,12 @@ def native_payload(clients: Any, job: dict[str, Any], execution: dict[str, Any],
     raise prior.NativeProofDenied("document_candidate_logs_incomplete")
 
 
-def validate_inventory(value: Any, image: str, runtime: dict[str, str]) -> dict[str, str]:
+def validate_inventory(value: Any, image: str, runtime: dict[str, str], *,
+                       policy: str = candidate.POLICY_SHA256, event: str = "hirewiz_document_candidate_inventory_v1") -> dict[str, str]:
     need(type(value) is dict and set(value) == receipt.TOP
-         and value.get("event") == "hirewiz_document_candidate_inventory_v1"
+         and value.get("event") == event
          and type(value.get("version")) is int and value["version"] == 1
-         and value.get("worker_image") == image and value.get("policy_sha256") == candidate.POLICY_SHA256
+         and value.get("worker_image") == image and value.get("policy_sha256") == policy
          and value.get("activation_flags") == {key: False for key in receipt.ACTIVATION}
          and all(value["activation_flags"][key] is False for key in receipt.ACTIVATION)
          and value.get("all_required_passed") is False and value.get("cases") == []

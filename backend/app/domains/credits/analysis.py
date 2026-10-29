@@ -74,6 +74,19 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
     }
     config = runtime.current_runtime(user_id, db=db)
     route = config.resolve_route(payload.operation, normalized, observed_limits=observed)
+    if payload.operation == "job_match":
+        from ...services import matching_contract
+        from ...services.model_cost_policy import input_token_estimate
+        from ..analysis.operations import complete_matching_context
+
+        resume = db.query(models.Resume).filter_by(id=normalized["resume_id"], user_id=user_id).one()
+        try:
+            context = complete_matching_context(db, user_id=user_id, resume=resume, payload=normalized)
+            estimate = input_token_estimate(matching_contract.messages(context))
+        except matching_contract.MatchingContextUnavailable as exc:
+            raise finance.FundingUnavailable(str(exc)) from None
+        if len(route.model_quotes) != 1 or estimate > route.model_quotes[0].max_input_tokens:
+            raise finance.FundingUnavailable("The complete comparison requires one funded provider attempt covering the full context; no content or evidence was shortened.")
     if (
         payload.operation == "resume_tailor"
         and dependencies.get("resume", {}).get("source_format")

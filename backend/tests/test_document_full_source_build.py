@@ -14,11 +14,37 @@ import pytest
 import test_document_refresh_probe as native
 from infra.gcp import document_candidate as candidate
 from infra.gcp import document_refresh_probe as probe
+from infra.gcp import document_source_candidate as source_profile
 
 from scripts import document_refresh as refresh
 
 NONCE = native.NONCE
 IMAGE = native.IMAGE
+
+
+@pytest.fixture(autouse=True)
+def frozen_v3_build_inputs(tmp_path_factory, monkeypatch):
+    """Exercise the retained V3 publisher on its real frozen source bytes.
+
+    The separate source-revision tests cover current bytes. This is not a
+    substitution into candidate parsing or a native qualification receipt.
+    """
+    root = tmp_path_factory.mktemp("legacy-v3-build-inputs")
+    for name, content in source_profile.historical_v3_contents(refresh.ROOT).items():
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    for folder, pattern in (("infra/gcp", "*.py"), ("infra/document-processing", "*.Dockerfile")):
+        for path in (refresh.ROOT / folder).glob(pattern):
+            target = root / folder / path.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(path.read_bytes())
+    for path in (refresh.ROOT / "infra/gcp/document_accepted_v2").glob("*"):
+        if path.is_file():
+            target = root / "infra/gcp/document_accepted_v2" / path.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(path.read_bytes())
+    monkeypatch.setattr(refresh, "ROOT", root)
 
 
 def build():

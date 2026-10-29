@@ -23,6 +23,7 @@ from ..recovery.gcp_buffer import BufferedRegistry, BufferedTransaction
 from ..recovery.gcp_pairing import pairing_control_record
 from ..recovery.gcp_partitioned_contracts import PartitionedRoot
 from ..recovery.gcp_service import control_record
+from ..recovery.native_metadata_admission import MetadataAdmissionError
 from ..recovery.store import GuardUnavailable
 from .contracts import (
     MAX_HEADER_BYTES,
@@ -296,6 +297,8 @@ class GcpTrustedIngressEnvironment:
             }:
                 raise ValueError("Independent ingress database UID changed")
             self._clock_root(resource)
+        except MetadataAdmissionError:
+            raise
         except Exception:
             raise GuardUnavailable("Fresh private ingress custody, epoch or clock is unavailable") from None
 
@@ -365,6 +368,8 @@ class ConfiguredCandidateIngress:
             )
             self._configured()
         except IngressClockSynchronizationRequired:
+            raise
+        except MetadataAdmissionError:
             raise
         except Exception:
             raise GuardUnavailable("Private candidate ingress authorization is unavailable") from None

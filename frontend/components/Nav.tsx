@@ -18,14 +18,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { apiGet } from "../lib/api";
+import { featureDecisionsOptions } from "../lib/ownedBootstrapClient";
 import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../lib/ownerProfile";
 import { creditAvailabilityOptions, creditWalletOptions, creditWalletKey } from "../lib/unifiedCreditClient";
 import Logo from "./ui/Logo";
 
-type FeatureResponse = {
-  features: Record<string, { enabled: boolean }>;
-};
 type NavLink = {
   href: string;
   label: string;
@@ -68,10 +65,8 @@ export default function Nav() {
     enabled: authenticated && !companionPage,
   });
   const features = useQuery({
-    queryKey: ["feature-decisions"],
-    queryFn: () => apiGet<FeatureResponse>("/v1/features"),
+    ...featureDecisionsOptions(),
     enabled: authenticated && !companionPage,
-    staleTime: 60_000,
   });
   const creditAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !companionPage });
   const unifiedWalletEnabled = !companionPage && creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;

@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,6 +25,7 @@ function item(owner = state.owner): SearchResult {
 }
 function read(url: string) {
   const owner = state.owner;
+  if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { email: `${owner}@example.invalid` } }));
   if (url === "/auth/profile") return Promise.resolve({ email: `${owner}@example.invalid`, ai_credits: 7, job_service_credits: 50 });
   if (url === "/v1/features") return Promise.resolve({ features: {} });
   if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
@@ -300,7 +302,7 @@ it.each([429, 503])("pauses hidden search polling and requires an explicit statu
 });
 
 it("does not fall back to a legacy paid search when credit availability is unknown", async () => {
-  state.get.mockImplementation((url: string) => url === "/v1/credits/availability" ? Promise.reject(new Error("Availability unavailable")) : read(url));
+  state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ availability: null })) : read(url));
   render(<EmployerJobsPage />, { wrapper: withClient() }); await screen.findByText("Python Engineer one");
   expect(screen.queryByRole("button", { name: "Find jobs" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ })); await screen.findByRole("heading", { name: "Saved job for one" });

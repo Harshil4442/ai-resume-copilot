@@ -2,14 +2,17 @@
 import pytest
 from backend.app.database import Base, get_db
 from backend.app.domains.analysis import service as analysis_service
+from backend.app.domains.common import payload_fingerprint, utcnow
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditReservation, CreditServiceQuote
 from backend.app.domains.dispatch.models import DispatchOutbox
-from backend.app.models import AnalysisRun, Resume, User
+from backend.app.models import AnalysisRun, EvidenceItem, Resume, User
 from backend.app.routers import credits
+from backend.app.routers.v1 import analysis as analysis_router
 from backend.app.security import get_current_user
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from limits.storage import MemoryStorage
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -33,8 +36,13 @@ def factory():
 @pytest.fixture
 def api(setup):
     factory, config = setup
+    # Every case has a separate synthetic client/ledger. Retain the real limiter
+    # while preventing unrelated test cases from sharing one minute's counters.
+    assert type(credits.limiter._storage) is MemoryStorage
+    credits.limiter._storage.reset()
     app = FastAPI()
     app.include_router(credits.router, prefix="/api")
+    app.include_router(analysis_router.router, prefix="/api/v1")
 
     def database():
         with factory() as db:
@@ -91,6 +99,133 @@ def test_reuse_is_free_when_funding_paused_but_input_changes_do_not_reuse(api, m
     with factory() as db:
         assert db.query(AnalysisRun).count() == 1
         assert db.query(CreditReservation).count() == 1
+
+
+def _funded_match(api):
+    client, factory, _ = api
+    quoted = client.post("/api/v1/credits/service-quotes", json=request().model_dump())
+    assert quoted.status_code == 200, quoted.text
+    with factory() as db:
+        run, created = analysis_service.create_run(db, user_id=1,
+            payload=request().model_copy(update={"accepted_service_quote_id": quoted.json()["quote_id"]}),
+            header_idempotency_key=None)
+        assert created
+        return run.id
+
+
+def _historical_match(factory, *, mode="enhanced"):
+    """Explicit synthetic old read record, never a provider/quality receipt."""
+    payload = request().model_copy(update={"input": request().input | {"mode": mode}})
+    normalized = dict(payload.input)
+    with factory() as db:
+        analysis_service.validate_analysis_input(db, user_id=1, operation=payload.operation,
+            opportunity_id=payload.opportunity_id, payload=normalized)
+        dependencies = analysis_service._dependency_snapshot(db, 1, payload.operation,
+            payload.opportunity_id, normalized, paid_context=False)
+        fingerprint = payload_fingerprint({"operation": payload.operation,
+            "opportunity_id": payload.opportunity_id, "input": normalized, "dependencies": dependencies})
+        run = AnalysisRun(id=f"run_synthetic_historical_{mode}", user_id=1, operation="job_match",
+            status="succeeded", idempotency_key=f"synthetic-historical-{mode}",
+            input_fingerprint=fingerprint, input_payload=normalized,
+            prompt_version="match-mega-v2" if mode == "enhanced" else None,
+            estimated_units=1 if mode == "enhanced" else 0,
+            committed_units=1 if mode == "enhanced" else 0, usage_state="committed")
+        db.add(run)
+        db.commit()
+        return payload.model_dump(), run.id
+
+
+def test_old_mega_match_is_not_current_reuse_but_remains_an_explicit_owned_legacy_read(api, monkeypatch):
+    client, factory, _ = api
+    payload, identity = _historical_match(factory)
+    monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON")
+    for suffix in ("", "?include_legacy=true"):
+        reused = client.post("/api/v1/credits/analysis-reuse" + suffix, json=payload)
+        assert reused.status_code == 200 and reused.json() == {"reused_run": None}
+    stored = client.get(f"/api/v1/analysis-runs/{identity}")
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["id"] == identity
+    assert stored.json()["prompt_version"] == "match-mega-v2"
+    assert stored.json()["billing_currency"] == "legacy_ai_units"
+    with factory() as db:
+        assert db.query(CreditReservation).count() == db.query(CreditServiceQuote).count() == 0
+        assert service.wallet(db, user_id=1).available_credits == 40
+        db.get(AnalysisRun, identity).user_id = 2
+        db.commit()
+    assert client.get(f"/api/v1/analysis-runs/{identity}").status_code == 404
+
+
+@pytest.mark.parametrize("include_legacy", [False, True])
+def test_basic_matching_keeps_existing_non_paid_reuse_context(api, include_legacy):
+    client, factory, _ = api
+    payload, identity = _historical_match(factory, mode="basic")
+    reused = client.post(f"/api/v1/credits/analysis-reuse?include_legacy={str(include_legacy).lower()}", json=payload)
+    assert reused.status_code == 200, reused.text
+    assert reused.json()["reused_run"]["id"] == identity
+    assert reused.json()["reused_run"]["billing_currency"] == "none"
+
+
+@pytest.mark.parametrize("change", ["text", "approval", "source_ref", "corrected_at"])
+def test_funded_complete_matching_reuse_tracks_current_approved_facts(api, monkeypatch, change):
+    client, factory, _ = api
+    _funded_match(api)
+    monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON")
+    with factory() as db:
+        item = db.get(EvidenceItem, "matching-proof")
+        if change == "text":
+            item.evidence_text = "Corrected candidate fact: developed Python APIs."
+        elif change == "approval":
+            item.approval_state = "rejected"
+        elif change == "source_ref":
+            item.source_ref = "synthetic-corrected-source"
+        else:
+            from datetime import timedelta
+            item.updated_at = item.updated_at + timedelta(seconds=1)
+        db.commit()
+    reused = client.post("/api/v1/credits/analysis-reuse?include_legacy=true", json=request().model_dump())
+    assert reused.status_code == 200 and reused.json() == {"reused_run": None}
+    with factory() as db:
+        assert db.query(AnalysisRun).count() == db.query(CreditReservation).count() == 1
+        assert service.wallet(db, user_id=1).available_credits == 37
+
+
+def test_current_complete_output_contract_drift_cannot_reuse_prior_paid_match(api, monkeypatch):
+    from backend.app.services import delivery_contracts
+
+    client, factory, _ = api
+    _funded_match(api)
+    monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON")
+    original = delivery_contracts.current_output_contract
+    def changed(operation):
+        return "f" * 64 if operation in {"job_match", "enhanced_job_match"} else original(operation)
+    monkeypatch.setattr(delivery_contracts, "current_output_contract", changed)
+    reused = client.post("/api/v1/credits/analysis-reuse", json=request().model_dump())
+    assert reused.status_code == 200 and reused.json() == {"reused_run": None}
+    with factory() as db:
+        assert db.query(AnalysisRun).count() == db.query(CreditReservation).count() == 1
+        assert service.wallet(db, user_id=1).available_credits == 37
+
+
+@pytest.mark.parametrize("change", ["failed", "cancelled", "cancel_requested", "input_purged", "result_purged", "foreign_owner"])
+def test_current_matching_reuse_preserves_status_privacy_and_owner_filters(api, change):
+    client, factory, _ = api
+    identity = _funded_match(api)
+    with factory() as db:
+        # Synthetic retained-row read guard; no settlement/erasure procedure is qualified here.
+        run = db.get(AnalysisRun, identity)
+        if change in {"failed", "cancelled"}:
+            run.status = change
+        elif change == "cancel_requested":
+            run.cancel_requested = True
+        elif change == "input_purged":
+            run.input_purged_at = utcnow()
+        elif change == "result_purged":
+            run.result_purged_at = utcnow()
+        else:
+            run.user_id = 2
+        db.commit()
+    reused = client.post("/api/v1/credits/analysis-reuse", json=request().model_dump())
+    assert reused.status_code == 200 and reused.json() == {"reused_run": None}
 
 
 def test_reuse_cannot_include_a_payment_acceptance(api):

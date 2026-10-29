@@ -70,6 +70,236 @@ def classify_section_header(header_text: str) -> str:
 # PDF extraction with layout-aware header detection
 # ---------------------------------------------------------------------------
 
+# Geometry only: native typesetting may encode word spaces as ~0.3em gaps,
+# below pdfplumber's default absolute3pt threshold at small body sizes. A
+# font-relative threshold keeps positive letter kerning within large-font words.
+PDF_WORD_X_TOLERANCE_RATIO = 0.15
+
+
+class PDFReadingOrderError(ValueError):
+    """A recognized independent-column layout cannot be read without mixing facts."""
+
+
+def _pdf_header_candidate(text: str, words: list[dict], median_size: float) -> bool:
+    average = sum(word.get("size", 10) for word in words) / len(words)
+    bold = any("bold" in word.get("fontname", "").lower() for word in words)
+    short = len(text.split()) <= 6
+    return short and (average >= median_size * 1.15 or bold or text.isupper())
+
+
+def _pdf_physical_rows(words: list[dict], median_size: float) -> list[list[dict]]:
+    """Group nearby line tops without quantization boundaries or chained drift.
+
+    A one-point change must not put same-baseline words into different five-point
+    buckets. Each row keeps its first physical top as its fixed anchor, so a run
+    of successively lower words cannot bridge separate lines transitively.
+    """
+    tolerance = max(2.0, min(3.0, median_size * .25))
+    rows: list[list[dict]] = []
+    for word in sorted(words, key=lambda item: (item.get("top", 0), item["x0"])):
+        if not rows or word.get("top", 0) - rows[-1][0].get("top", 0) > tolerance:
+            rows.append([])
+        rows[-1].append(word)
+    return rows
+
+
+def _pdf_header_anchors(headers: list[list[dict]], median_size: float) -> list[list[list[dict]]]:
+    """Cluster repeated section starts, not body words or a guessed page midpoint."""
+    tolerance = max(2.0, min(5.0, median_size * .3))
+    anchors: list[list[list[dict]]] = []
+    for header in sorted(headers, key=lambda chunk: min(word["x0"] for word in chunk)):
+        x0 = min(word["x0"] for word in header)
+        if not anchors or x0 - min(word["x0"] for word in anchors[-1][0]) > tolerance:
+            anchors.append([])
+        anchors[-1].append(header)
+    return anchors
+
+
+def _pdf_single_aligned_heading_flow(headers: list[list[dict]], words: list[dict], median_size: float) -> bool | None:
+    """Different heading widths do not create columns in a single body stream.
+
+    Centered/right-aligned headings share a geometric alignment even though
+    their left edges differ. Require their body chunks to share one horizontal
+    interval too; actual competing body streams cannot use this exemption.
+    """
+    bounds = [(min(word["x0"] for word in header), max(word["x1"] for word in header)) for header in headers]
+    tolerance = max(2.0, min(5.0, median_size * .3))
+    centers = [(left + right) / 2 for left, right in bounds]
+    rights = [right for _, right in bounds]
+    if min(max(centers) - min(centers), max(rights) - min(rights)) > tolerance:
+        return None
+    heading_words = {id(word) for header in headers for word in header}
+    top = min(word["top"] for header in headers for word in header)
+    body = [word for word in words if id(word) not in heading_words and word["top"] >= top]
+    intervals = []
+    for row in _pdf_physical_rows(body, median_size):
+        chunks: list[list[dict]] = []
+        for word in sorted(row, key=lambda item: item["x0"]):
+            if not chunks or word["x0"] - chunks[-1][-1]["x1"] >= max(12, median_size):
+                chunks.append([])
+            chunks[-1].append(word)
+        for index, chunk in enumerate(chunks):
+            text = " ".join(word["text"] for word in chunk)
+            # A date-only right field on the same physical row as ordinary body
+            # text does not establish a competing paragraph stream. This is
+            # proof-only: all date words remain in the actual row/output. A
+            # floating date or a date plus claim receives no exemption.
+            if (index == len(chunks) - 1 and index > 0 and _PDF_SIDE_DATE.fullmatch(text)
+                    and any(any(character.isalpha() for character in " ".join(word["text"] for word in other))
+                            and not _PDF_SIDE_DATE.fullmatch(" ".join(word["text"] for word in other))
+                            for other in chunks[:index])):
+                continue
+            intervals.append((min(word["x0"] for word in chunk), max(word["x1"] for word in chunk)))
+    return bool(intervals) and max(left for left, _ in intervals) < min(right for _, right in intervals)
+
+
+def _pdf_reading_groups(page, words: list[dict], median_size: float) -> list[list[dict]]:
+    """Split only demonstrably independent two-column sections, never date rows.
+
+    pdfplumber supplies words/fonts and table geometry. Source paint order and
+    pdfminer's box-flow ordering are not reliable column-reading contracts.
+    Every admitted word remains in exactly one original-coordinate group.
+    """
+    rows = _pdf_physical_rows(words, median_size)
+    tables = None
+    header_rows: list[list[list[dict]]] = []
+    for row in rows:
+        chunks: list[list[dict]] = []
+        for word in sorted(row, key=lambda item: item["x0"]):
+            if not chunks or word["x0"] - chunks[-1][-1]["x1"] >= max(24, median_size * 3):
+                chunks.append([])
+            chunks[-1].append(word)
+        headers = []
+        for chunk in chunks:
+            text = " ".join(word["text"] for word in chunk)
+            if _pdf_header_candidate(text, chunk, median_size) and classify_section_header(text) != "other":
+                headers.append(chunk)
+        if headers:
+            header_rows.append(headers)
+
+    all_headers = [header for row in header_rows for header in row]
+    anchors = _pdf_header_anchors(all_headers, median_size)
+    # One left-aligned section stream, including right-aligned dates, keeps its
+    # existing row semantics. Widely separated styled section streams need a
+    # physical ownership proof even when none of their headings share a row.
+    separated = (len(anchors) >= 2 and
+                 min(word["x0"] for word in anchors[-1][0]) -
+                 min(word["x0"] for word in anchors[0][0]) >= max(72, median_size * 8))
+    paired_rows = [headers for headers in header_rows if len(headers) >= 2]
+    if not paired_rows and len(anchors) >= 2:
+        single_flow = _pdf_single_aligned_heading_flow(all_headers, words, median_size)
+        if single_flow is True:
+            return [words]
+        if single_flow is False:
+            raise PDFReadingOrderError("This independent-column PDF body needs manual review; use the original or an editable source.")
+    if not paired_rows and not separated:
+        return [words]
+
+    try:
+        # A failed geometry probe after independent streams are recognized must
+        # never fall back to a mixed plaintext reading.
+        try:
+            tables = page.find_tables()
+        except Exception as error:
+            raise PDFReadingOrderError("The PDF table and column flow could not be verified; use the original or an editable source.") from error
+
+        def shared_table(headers):
+            left = min(word["x0"] for header in headers for word in header)
+            right = max(word["x1"] for header in headers for word in header)
+            top = min(word["top"] for header in headers for word in header)
+            bottom = max(word["bottom"] for header in headers for word in header)
+            # A shared ruled table has row semantics, including labels/dates painted
+            # in separate passes. Keep its existing row extraction rather than
+            # reading each cell column as an unrelated resume section.
+            return any(len(table.rows) >= 2 and len(table.columns) >= 2
+                       and table.bbox[0] <= left and table.bbox[2] >= right
+                       and table.bbox[1] <= top and table.bbox[3] >= bottom
+                       for table in tables)
+
+        # Headers inside one shared row-oriented table are not independent
+        # streams, including when the rest of the page has ordinary sections.
+        shared_headers = set()
+        for table in tables:
+            if len(table.rows) < 2 or len(table.columns) < 2:
+                continue
+            # A column-local table must not erase an independent stream beside
+            # it. Shared row semantics apply only if its entire vertical band has
+            # no competing outside text, including text from an earlier heading.
+            if any(word["top"] < table.bbox[3] and word["bottom"] > table.bbox[1]
+                   and (word["x0"] < table.bbox[0] or word["x1"] > table.bbox[2]) for word in words):
+                continue
+            inside = [header for header in all_headers
+                      if table.bbox[0] <= min(word["x0"] for word in header)
+                      and max(word["x1"] for word in header) <= table.bbox[2]
+                      and table.bbox[1] <= min(word["top"] for word in header)
+                      and max(word["bottom"] for word in header) <= table.bbox[3]]
+            if (inside and max(min(word["x0"] for word in header) for header in inside) -
+                    min(min(word["x0"] for word in header) for header in inside) >= max(72, median_size * 8)):
+                shared_headers.update(id(header) for header in inside)
+        header_rows = [[header for header in row if id(header) not in shared_headers] for row in header_rows]
+        all_headers = [header for row in header_rows for header in row]
+        anchors = _pdf_header_anchors(all_headers, median_size)
+        paired_rows = [headers for headers in header_rows if len(headers) >= 2]
+        separated = (len(anchors) >= 2 and
+                     min(word["x0"] for word in anchors[-1][0]) -
+                     min(word["x0"] for word in anchors[0][0]) >= max(72, median_size * 8))
+        if not paired_rows and not separated:
+            return [words]
+
+        paired_rows = [headers for headers in paired_rows if not shared_table(headers)]
+        if paired_rows:
+            headers = paired_rows[0]
+            if len(headers) != 2:
+                raise PDFReadingOrderError("This independent-column PDF layout needs manual review; use the original or an editable source.")
+            top = min(word["top"] for header in headers for word in header)
+            right_start = min(word["x0"] for word in headers[1])
+            earlier = [header for header in all_headers if max(word["bottom"] for word in header) < top]
+            earlier_sides = {"right" if min(word["x0"] for word in header) >= right_start else "left"
+                             for header in earlier}
+            if len(earlier_sides) == 2:
+                # Include the complete earlier independent flow in the proof;
+                # a later aligned pair cannot turn it into shared header text.
+                top = min(word["top"] for header in earlier for word in header)
+        else:
+            if shared_table(all_headers):
+                return [words]
+            if not separated or len(anchors) != 2 or any(len(anchor) < 2 for anchor in anchors):
+                raise PDFReadingOrderError("This independent-column PDF layout needs manual review; use the original or an editable source.")
+            # Repeated, styled canonical starts establish candidate streams;
+            # only the full-body gutter and rule checks below establish ownership.
+            top = min(word["top"] for header in all_headers for word in header)
+            right_start = min(word["x0"] for header in anchors[1] for word in header)
+
+        body_headers = [header for header in all_headers if min(word["top"] for word in header) >= top]
+        body_anchors = _pdf_header_anchors(body_headers, median_size)
+        if len(body_anchors) != 2:
+            raise PDFReadingOrderError("This independent-column PDF layout needs manual review; use the original or an editable source.")
+        prelude = [word for word in words if word["top"] < top]
+        body = [word for word in words if word["top"] >= top]
+        left_words = [word for word in body if word["x0"] < right_start]
+        right_words = [word for word in body if word["x0"] >= right_start]
+        left_end = max(word["x1"] for word in left_words)
+        # Local table borders/underlines can extend beyond their text. Keep the
+        # cut in the actual gutter rather than slicing such a left-column box.
+        left_edges = [edge["x1"] for edge in page.edges if edge.get("orientation") == "h"
+                      and edge["top"] > top and edge["x0"] < right_start and edge["x1"] < right_start]
+        left_end = max(left_end, *left_edges) if left_edges else left_end
+        gap = min(word["x0"] for word in right_words) - left_end
+        if gap < max(12, median_size):
+            raise PDFReadingOrderError("The PDF columns overlap or span their gutter; use the original or an editable source.")
+        cut = left_end + gap / 2
+        if any(edge.get("orientation") == "h" and edge["x0"] < cut < edge["x1"]
+               and edge["top"] > top for edge in page.edges):
+            raise PDFReadingOrderError("The PDF mixes independent columns with spanning rules; use the original or an editable source.")
+        if min(len(_pdf_physical_rows(side, median_size)) for side in (left_words, right_words)) < 2:
+            raise PDFReadingOrderError("The PDF column flow could not be verified; use the original or an editable source.")
+        return [prelude, left_words, right_words]
+    except PDFReadingOrderError:
+        raise
+    except Exception as error:
+        raise PDFReadingOrderError("The PDF column geometry could not be verified; use the original or an editable source.") from error
+
+
 def extract_text_and_sections_from_pdf(file_bytes: bytes) -> tuple[str, dict[str, str]]:
     """
     Extract raw text and classify sections from a PDF.
@@ -81,35 +311,31 @@ def extract_text_and_sections_from_pdf(file_bytes: bytes) -> tuple[str, dict[str
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             try:
-                words = page.extract_words(extra_attrs=["size", "fontname"])
+                words = page.extract_words(x_tolerance_ratio=PDF_WORD_X_TOLERANCE_RATIO, extra_attrs=["size", "fontname"])
                 if not words:
                     raise ValueError("no words")
 
                 sizes = sorted(w.get("size", 10) for w in words if w.get("size"))
                 median_size = sizes[len(sizes) // 2] if sizes else 10
-                header_threshold = median_size * 1.15
+                # Preserve the existing single-column/date-row behavior. Only
+                # verified independent columns receive separate Y grouping.
+                try:
+                    for group in _pdf_reading_groups(page, words, median_size):
+                        for row in _pdf_physical_rows(group, median_size):
+                            line_words = sorted(row, key=lambda word: word["x0"])
+                            line_text = " ".join(word["text"] for word in line_words).strip()
+                            if line_text:
+                                tagged_lines.append((line_text, _pdf_header_candidate(line_text, line_words, median_size)))
+                except PDFReadingOrderError:
+                    raise
+                except Exception as error:
+                    raise PDFReadingOrderError("The PDF column geometry could not be verified; use the original or an editable source.") from error
 
-                # Group words into lines by rounded y-position
-                lines_map: dict[int, list[dict]] = {}
-                for w in words:
-                    y = round(w.get("top", 0) / 5) * 5
-                    lines_map.setdefault(y, []).append(w)
-
-                for y in sorted(lines_map):
-                    lw = lines_map[y]
-                    line_text = " ".join(w["text"] for w in lw).strip()
-                    if not line_text:
-                        continue
-                    avg_size = sum(w.get("size", 10) for w in lw) / len(lw)
-                    is_bold = any("bold" in w.get("fontname", "").lower() for w in lw)
-                    is_large = avg_size >= header_threshold
-                    is_caps = line_text.isupper() and len(line_text.split()) <= 6
-                    is_short = len(line_text.split()) <= 6
-                    tagged_lines.append((line_text, (is_large or is_bold or is_caps) and is_short))
-
+            except PDFReadingOrderError:
+                raise  # A known ambiguous flow must never become mixed plaintext.
             except Exception:
                 # Fallback: plain text, use ALL-CAPS heuristic
-                for line in (page.extract_text() or "").splitlines():
+                for line in (page.extract_text(x_tolerance_ratio=PDF_WORD_X_TOLERANCE_RATIO) or "").splitlines():
                     s = line.strip()
                     if s:
                         tagged_lines.append((s, s.isupper() and len(s.split()) <= 6))
@@ -237,6 +463,12 @@ _DATE_RANGE = re.compile(
     rf"(?:(?P<start_month>{_MONTH_PAT})\s+)?(?P<start_year>20\d{{2}}|19\d{{2}})"
     rf"\s*(?:[-\u2013\u2014]|to)\s*"
     rf"(?:(?P<end_month>{_MONTH_PAT})\s+)?(?P<end_year>20\d{{2}}|19\d{{2}}|present|current|now)",
+    re.IGNORECASE,
+)
+_PDF_CALENDAR_POINT = rf"(?:(?:{_MONTH_PAT})\.?\s+)?(?:19|20)\d{{2}}"
+_PDF_SIDE_DATE = re.compile(
+    rf"(?:{_PDF_CALENDAR_POINT})(?:\s*(?:[-\u2013\u2014]|to)\s*(?:{_PDF_CALENDAR_POINT}|present|current|now))?"
+    rf"|(?:present|current|now)",
     re.IGNORECASE,
 )
 _MONTHS = {name: index for index, name in enumerate(

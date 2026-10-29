@@ -1285,6 +1285,18 @@ def analyze_job_match_mega_llm(
     return json.loads(cleaned)
 
 
+def analyze_job_match_complete_llm(context: dict) -> dict:
+    """New complete funded contract; legacy match-mega-v2 remains unchanged."""
+    from . import matching_contract
+
+    raw = _chat(matching_contract.messages(context))
+    try:
+        parsed = _extract_json_object(raw)
+    except (ValueError, TypeError, AttributeError):
+        raise matching_contract.MatchingOutputUnavailable("The comparison did not return a complete JSON result.") from None
+    return matching_contract.validate(parsed, context)
+
+
 def generate_learning_strategy_llm(
     *,
     job_title: str,

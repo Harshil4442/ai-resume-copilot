@@ -10,6 +10,7 @@ import pytest
 from infra.gcp import document_candidate as candidate
 from infra.gcp import document_refresh_probe as probe
 from infra.gcp import document_renderer_profiles as profile
+from infra.gcp import document_source_candidate as source_profile
 from infra.gcp import document_worker as worker
 
 from scripts import document_refresh as refresh
@@ -17,15 +18,17 @@ from scripts import document_test_image as engines
 
 
 def test_candidate_exact_inventory_includes_installed_fonts_and_notices():
-    contents, hashes, policy = refresh.full_source_snapshot()
+    contents, hashes, policy = refresh.full_source_snapshot(source_revision=True)
     assert len(candidate.SOURCES) == 21 and len(candidate.RUNTIME) == 20
     assert set(hashes) == candidate.SOURCES == set(engines.SOURCES)
     assert candidate.RUNTIME == engines.RUNTIME
-    assert policy == candidate.POLICY_SHA256 == worker.CANDIDATE_POLICY_SHA256
+    assert candidate.POLICY_SHA256 == worker.CANDIDATE_POLICY_SHA256
+    assert policy == source_profile.POLICY_SHA256 != candidate.POLICY_SHA256
     assert policy != worker.POLICY_SHA256 == probe.POLICY == profile.BUILD["policy_sha256"]
-    assert probe.candidate_runtime_hashes() == {
-        destination: hashlib.sha256(contents[source]).hexdigest()
-        for source, destination in candidate.RUNTIME.items()}
+    assert len({destination: hashlib.sha256(contents[source]).hexdigest()
+        for source, destination in candidate.RUNTIME.items()}) == 20
+    with pytest.raises(RuntimeError, match="^document_source_policy_changed$"):
+        probe.candidate_runtime_hashes()  # The historical draft cannot qualify the new source.
     for source, destination in candidate.RUNTIME.items():
         if source.endswith(".ttf"):
             assert destination.startswith("/usr/share/fonts/truetype/hirewiz-courier-prime/")

@@ -148,7 +148,7 @@ Traffic rollback is application recovery evidence only. It does not qualify a
 database restore, regional disaster recovery, a general RTO/RPO, commercial
 hosting, the seven-day shadow-accounting gate or human AI-quality approval.
 
-## Verification checklist within Stage 7
+## Verification checklist within Stage 7: completed v1 baseline
 
 - [x] Distinct app-only plan and fixed native write scope; old migration guards untouched.
 - [x] Bidirectional actual prior8cb/candidate PostgreSQL17 compatibility rehearsal.
@@ -156,9 +156,159 @@ hosting, the seven-day shadow-accounting gate or human AI-quality approval.
 - [x] Pilot flags and existing native resources preserved; mutable pilot balances permitted.
 - [x] Unknown provider holds preserved, new wallet/active AI/catalog drift refused.
 - [x] One-send interruption/reconciliation and traffic-only rollback tests.
-- [ ] Candidate merged with successful exact five-job CI and immutable build proof.
-- [ ] Private native plan captured/reviewed and source/resource/financial observations pass.
-- [ ] Candidate staged, HTTP health checked and promoted; fresh production acceptance recorded.
+- [x] Baseline candidate merged with successful exact five-job CI and immutable build proof.
+- [x] Baseline private native plan captured/reviewed and source/resource/financial observations pass.
+- [x] Baseline candidate staged, HTTP health checked and promoted; fresh production acceptance recorded.
 
-The checked items describe tested implementation. The unchecked items need
-their own retained runtime evidence; this document does not authorize a cloud action.
+On 29 October 2026, the v1 application rollout completed for source
+`ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2`, merged as
+`7b63ba67a19c6ec00a659082d1ad8487515e037b`. Exact five-job CI `40896668321`
+and Git-source Build `3da6ce3e-b592-4955-9027-f1e64663d259` qualified image
+`sha256:acfb2c50c96cdcd8cc1823217e030128b92ae809c3b33eabc9b60fcc264b7645`.
+Native production readback at 17:50 UTC observed 100% of each service's traffic
+on that source, with schema25 and the existing pilot/closed launch flags retained:
+
+| Service | Observed generation | Serving revision |
+| --- | ---: | --- |
+| API | 352 | `ai-resume-parser-r-ab2deadd1b1c-a2ef354c` |
+| Analysis worker | 75 | `hirewiz-analysis-worker-r-ab2deadd1b1c-a2ef354c` |
+| Employer worker | 37 | `hirewiz-employer-worker-r-ab2deadd1b1c-a2ef354c` |
+
+The temporary Tasks-service-account health-token grant was removed and its
+absence verified at 17:47:40 UTC. A subsequent signed-in synthetic PDF upload,
+original preview and byte-identical original download succeeded. This is a
+single functional acceptance, not a capacity or AI-quality qualification.
+Retained zero-percent 8cb tags still need the separately qualified cleanup below.
+
+These checked runtime items apply only to the completed v1 baseline. The next v2
+release and the overall Stage 7, financial, quality and launch gates remain
+incomplete. This document does not authorize a cloud action.
+
+## Prepared v2 extension for the next reviewed application
+
+The v1 contract and its original PostgreSQL test remain byte-identical. Exact
+schema-contract dispatch selects v1/v2; v1 serialization, marker names, request
+hashes, one-send and rollback rules remain. Shared helpers receive an explicit
+prior/profile; no global source pin is reassigned.
+
+V2 pins actual prior `ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2`, Build
+`3da6ce3e-b592-4955-9027-f1e64663d259`, CI `40896668321`, image
+`sha256:acfb2c50c96cdcd8cc1823217e030128b92ae809c3b33eabc9b60fcc264b7645`.
+Its actual 262-file app digest is
+`5d09318281793a9d9f46827ca19194164579f1c45e78b36d2d48b4655b326b89`.
+Capture requires fresh native observation that ab2 actually serves. No future
+candidate source/Build/CI/image is invented; each needs its own reviewed proof.
+
+The v2 fingerprint binds the complete reviewed candidate app, exactly eight
+optional response additions, qualified transport sources, locked SDKs, tests and
+workflow commands. Other native persisted/session/witness/replay/document/task
+protocols keep their bytes. Dependency upgrades and unlisted schema changes
+refuse. The reviewed owned-bootstrap GET, projection and BFF/client sources are
+bound separately: exactly `/api/auth/bootstrap` and its two response components
+are additive to the prior HTTP contract. It grants no paid or model rights.
+Both new Stage5 flags remain absent/false. Deploying code does not enable
+pacing/List. Existing pilot flags, closed money/model/free-core/checkout/submit
+gates, numeric secrets, IAM and native resource/document pins remain protected.
+
+### V2 promotion aliases and V4 worker validation
+
+Only the qualified v2 document-resource observer can select the existing V4
+worker discriminator. It selects that discriminator from the exact observed
+policy, after the unchanged fresh native Build/Job acceptance check. Unknown
+policies and missing native acceptance still refuse. The fixed historical base
+image cannot claim V4 merely by changing its policy literal. V1 and other release
+observers keep their previous policy checks. Both shared validation and traffic
+helpers are included in the v2 qualification fingerprint.
+
+V2 promotion moves every already captured prior tag to the candidate revision
+in the same promotion traffic PATCH. Each tag/type is preserved at zero percent;
+the candidate's reviewed tag receives 100 percent. No tag can be invented or
+changed, and no revision or image is deleted. This leaves the application aliases
+homogeneous for document maintenance once all three app services are promoted.
+Staging keeps the exact original allocations; maintenance continues to refuse
+that temporary mixed state. The actual candidate CI/Build/image tuple must also
+be reviewed in the maintenance registry on main before maintenance can accept
+that application source. No future tuple is predicted here.
+
+The captured prior traffic and serialized plan are unchanged. Ordinary v2
+rollback restores those original ab allocations with its existing single PATCH,
+generation and journal rules; no separate post-promotion alias retirement or
+recovery plan is needed. Default/v1 promotion continues to retain its prior
+tagged revisions exactly as before. The separately qualified zero-percent 8cb
+cleanup is still required before the first V4 maintenance transition from the
+current mixed 8cb/ab state. These are source rules, not deployment acceptance.
+
+### Actual qualification contexts
+
+CI runs the unchanged v1 test in an owned detached actual-ab2 checkout. Current
+default collection excludes only that retained-scope file; its original isolated
+`--noconftest` command actually runs there. No rewritten test presents this new
+application as byte-identical. Mandatory v2 steps instead prove actual
+ab2↔candidate PostgreSQL17 resume/search/outbox/ownership/liability exchange,
+plus exact installed SDKs, real GAPIC message construction, an owned Firestore
+data emulator and corrected Redis wire tests. Missing dependencies, required
+services, failures or skips refuse qualification. These tests cannot prove
+production UID/IAM/retention/durability, invoice/quality gates or 10,000-user capacity.
+
+The wire test starts its own loopback TLS/RESP2 Redis process with fresh data,
+port, PID and short-lived localhost certificate; it cannot adopt a shared Redis
+URI. CI prepares official Redis 7.2.7 source at archive SHA256
+`fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9`,
+verifies the download before extraction, and bounds the TLS build to 300 seconds
+under a private `RUNNER_TEMP` directory. Missing OpenSSL headers or binary stops
+the mandatory qualification. Cleanup removes only that exact owned source;
+the fixture terminates only its verified owned child, never another listener.
+
+The existing payment status poll can still issue 24 requests at 2.5-second
+intervals, requiring 48 List operations per minute for that journey alone.
+This exceeds the proposed 40-call pacing budget; real journey/load acceptance
+and an appropriate bounded polling change remain activation blockers. No
+compatibility receipt converts this arithmetic into qualified capacity.
+
+### Finite old-tag retirement
+
+After the actual rollout observation, zero-percent 8cb tags can prevent a
+homogeneous next prior and document maintenance. The separate finite alias plan
+requires 100% active ab2 and an existing ab2 health tag. It freshly verifies both
+source/Build/CI tuples, operator source/five-job CI, native identity,
+funding/catalog/liabilities, secrets, IAM, resources/documents, revision UIDs,
+templates and traffic. Its only write removes exactly captured zero-percent 8cb
+tag allocations by etag-fenced traffic PATCH. All ab2 allocations, revisions,
+images, templates and resources remain. No future CI ID is prefilled.
+
+The existing CLI adds `aliases-capture`, `aliases-observe`, `aliases-send` and
+`aliases-reconcile`. Capture takes actual operator source/CI, a fresh nonce,
+existing numeric observer/retired-secret references and document source. Keep
+the private plan SHA and separate owned journal. Intent/etag/request hashes
+precede one send. Unknown outcomes require read-only exact reconciliation,
+which never resends or starts the next action. Native drift or failed ab2
+health stops further writes.
+
+Before any settled-service proof or further action, reconciliation validates
+all retained intents, acknowledgements and completion records for the three
+services, then reads only their exact retained operations. A pending operation
+on any service is reported without health or completion authority, including
+when an earlier service already completed. Missing acknowledgements never
+authorize operation discovery, adoption or a repeated PATCH; terminal results
+still require the full fresh settled/native/health proof.
+
+Any cleanup generation change makes the completed original app plan historical;
+never replay it. Capture fresh homogeneous ab2 metadata for the next release:
+`capture --contract hirewiz_schema25_app_rolling_v2`, then existing
+observe/stage/advance/reconcile/rollback on its exact new plan. Production
+cleanup/promotion, Stage5 activation and native acceptance remain pending.
+
+### Paired frontend dependency
+
+The new frontend needs the additive bootstrap GET. Deploy and verify the API
+first, then deploy the reviewed frontend. Existing frontend calls remain
+supported by the new API. A new frontend against old ab2/8cb fails closed with
+404; there is no silent HTTP fanout fallback or shared authority cache.
+
+Before API rollback after frontend publication, first promote the actual
+retained compatible frontend deployment and verify it. Then restore API traffic
+using the exact app plan. Record real frontend source/deployment artifacts when
+they exist; none are fabricated or prefilled here. V2 operator receipts cover
+only API/worker traffic and explicitly leave frontend/end-to-end recovery
+unqualified. This is an ordinary paired runbook dependency, with no new
+cross-provider orchestration framework.

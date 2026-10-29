@@ -8,6 +8,11 @@ from backend.app.services.model_cost_policy import freeze_run_quote
 from backend.tests.expense_policy_fixtures import synthetic_expense_policy
 from backend.tests.model_cost_fixtures import synthetic_policy
 
+# This byte-identical V1 rehearsal belongs to the actual8cb→ab2 checkout.
+# CI runs it there with its original --noconftest command before mandatory V2
+# qualification. It must never be relabeled as current additive-app evidence.
+collect_ignore = ["test_schema25_app_compatibility_postgres.py"]
+
 
 @pytest.fixture(autouse=True)
 def model_cost_test_policy(monkeypatch):

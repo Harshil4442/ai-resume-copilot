@@ -696,7 +696,8 @@ def test_final_transition_refuses_changed_artifact_before_native_http(monkeypatc
 
 
 @pytest.mark.parametrize("recovery", ["", "$(touch SHOULD_NOT_EXIST) ; exact job data"])
-def test_full_source_workflow_sends_only_reviewed_full_pipeline_argv(tmp_path, recovery):
+@pytest.mark.parametrize("source_revision", [False, True])
+def test_full_source_workflow_sends_only_reviewed_full_pipeline_argv(tmp_path, recovery, source_revision):
     import json
     import os
     import subprocess
@@ -716,11 +717,14 @@ def test_full_source_workflow_sends_only_reviewed_full_pipeline_argv(tmp_path, r
     directory = "private output $(touch SHOULD_NOT_EXIST)"
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "OUTPUT_DIRECTORY": directory, "HISTORY_DIRECTORY": "private history",
-             "RECOVER_FAILED_NATIVE_JOB": recovery, "CAPTURE_ARGS": str(capture)},
+             "RECOVER_FAILED_NATIVE_JOB": recovery, "CAPTURE_ARGS": str(capture),
+             "SOURCE_REVISION": "true" if source_revision else "false", "CONSUMED_BUNDLE": "private exact bundle"},
         capture_output=True, timeout=5)
     assert result.returncode == 0 and not (tmp_path / "SHOULD_NOT_EXIST").exists()
     expected = ["backend/scripts/document_refresh.py", "--mode", "full-source-refresh", "--publish-candidate",
                 "--prior-history-directory", "private history", "--output-directory", directory]
+    if source_revision:
+        expected += ["--source-revision", "--reviewed-application-context", "--consumed-history-bundle", "private exact bundle"]
     assert json.loads(capture.read_bytes()) == expected + (["--recover-failed-native-job", recovery] if recovery else [])
 
 

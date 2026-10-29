@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { createHmac } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { expect, test, request as requestFactory } from "@playwright/test";
+import { parseUnifiedPurchaseQuote, sameUnifiedPurchaseQuote } from "../lib/unifiedCredits";
 
 test("unified pass and reviewed native discovery use actual BFF API SQL with zero AI", async ({ page, context, baseURL }) => {
   test.skip(process.env.COLD_BROWSER_SCENARIO !== "unified", "Run through the isolated synthetic Python orchestrator");
@@ -59,10 +60,27 @@ test("unified pass and reviewed native discovery use actual BFF API SQL with zer
     notes: { hirewiz_order_id: order.order_id, sku: "starter_pass", billing_country: "IN" } } } } };
   const raw = JSON.stringify(capture), signature = createHmac("sha256", "synthetic-browser-webhook-secret").update(raw).digest("hex");
   const provider = await requestFactory.newContext({ ignoreHTTPSErrors: true });
-  try { for (let index = 0; index < 2; index++) expect((await provider.post(`${process.env.COLD_BROWSER_BACKEND_URL}/api/billing/webhooks/razorpay`, {
+  try { for (let index = 0; index < 2; index++) {
+    const webhook = await provider.post(`${process.env.COLD_BROWSER_BACKEND_URL}/api/billing/webhooks/razorpay`, {
     data: raw, headers: { "content-type": "application/json", "x-razorpay-signature": signature, "x-razorpay-event-id": "evt_synthetic_unified" },
-  })).ok()).toBeTruthy(); } finally { await provider.dispose(); }
-  await expect(page.getByText("Payment confirmed. Your purchased credits have been delivered.", { exact: true })).toBeVisible();
+    });
+    expect(webhook.ok()).toBeTruthy();
+    expect(await webhook.json()).toEqual({ ok: true, status: index === 0 ? "processed" : "duplicate" });
+  } } finally { await provider.dispose(); }
+  const deliveredOrderResponse = await request.get(`${baseURL}/api/backend/v1/credits/orders/${encodeURIComponent(order.order_id)}`);
+  expect(deliveredOrderResponse.ok()).toBeTruthy();
+  const deliveredOrder = await deliveredOrderResponse.json();
+  expect(deliveredOrder).toMatchObject({
+    order_id: order.order_id, provider_order_id: order.provider_order_id, status: "paid", fulfilled: true,
+  });
+  const deliveredQuote = parseUnifiedPurchaseQuote(deliveredOrder.accepted_quote);
+  const acceptedQuote = parseUnifiedPurchaseQuote(order.accepted_quote);
+  expect(deliveredQuote).not.toBeNull(); expect(acceptedQuote).not.toBeNull();
+  // Only the read-time server clock changes; every accepted purchase term stays exact.
+  expect(sameUnifiedPurchaseQuote(deliveredQuote!, acceptedQuote!)).toBe(true);
+  expect((await wallet()).available_credits).toBe(40);
+  // The automatic loop waits five seconds after its initial pending read.
+  await expect(page.getByText("Payment confirmed. Your purchased credits have been delivered.", { exact: true })).toBeVisible({ timeout: 15_000 });
   expect((await wallet()).available_credits).toBe(40);
   await page.goto("/employer-jobs");
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));

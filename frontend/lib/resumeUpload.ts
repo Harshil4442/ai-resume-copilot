@@ -1,26 +1,27 @@
 import { accountApiPath } from "./accountTransportClient";
 import { apiPostForm } from "./api";
+import { pageVisible, retryAfterMilliseconds, waitUntilPageVisible } from "./boundedStatusPolling";
+import { MAX_PROGRESS_READS, progressPollDelay } from "./readQueryPolicy";
 import type { ResumeParseResponse, ResumeSourceFormat } from "./types";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 export const MAX_LEGACY_RESUME_BYTES = 4 * 1024 * 1024; // leave multipart headroom below Vercel's 4.5 MB limit
 const MAX_WAIT_MS = 240_000;
 const CONTROL_TIMEOUT_MS = 10_000;
-const POLL_MS = 2000;
-const RATE_LIMIT_POLL_MS = 5000;
-const MAX_RATE_LIMIT_POLL_MS = 10_000;
+const POLL_MS = 5000;
 const PDF = "application/pdf";
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MEDIA: Record<ResumeSourceFormat, string> = { pdf: PDF, docx: DOCX, tex: "application/x-tex", texzip: "application/zip" };
 const STATES = new Set(["awaiting_upload", "queued", "inspecting", "released", "rejected", "failed", "cancelled", "expired"]);
 const FORMATS = new Set([PDF, DOCX, "application/x-tex", "text/x-tex", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream", ""]);
 
-export type UploadPhase = "validating" | "hashing" | "creating" | "uploading" | "reconciling" | "queued" | "inspecting" | "completed" | "cancelling";
+export type UploadPhase = "validating" | "hashing" | "creating" | "uploading" | "reconciling" | "queued" | "inspecting" | "paused" | "completed" | "cancelling";
 export type UploadProgress = { phase: UploadPhase; mode: "direct" | "legacy" };
 export const uploadPhaseLabels: Record<UploadPhase, string> = {
   validating: "Checking your file…", hashing: "Preparing a secure upload…", creating: "Reserving private upload space…",
   uploading: "Uploading your original file…", reconciling: "Checking whether your upload arrived…",
   queued: "Waiting for resume safety checks…", inspecting: "Checking and extracting your resume…",
+  paused: "Automatic status checks are paused. You can cancel and check your saved resumes; waiting ends after four minutes.",
   completed: "Resume saved", cancelling: "Cancelling this upload…",
 };
 
@@ -100,7 +101,8 @@ async function control(path: string, method: string, signal: AbortSignal, body?:
       const error = await jsonResponse(response);
       if (record(error) && record(error.detail) && typeof error.detail.code === "string" && /^[a-z_]{1,64}$/.test(error.detail.code)) code = error.detail.code;
     } catch { /* Discard error bodies; never display source content or URLs. */ }
-    throw new ControlFailure(response.status, code, response.status === 429 ? retryAfterDelay(response.headers.get("Retry-After")) : null);
+    throw new ControlFailure(response.status, code, response.status === 429 || response.status === 503
+      ? retryAfterMilliseconds(response.headers.get("Retry-After"), response.status) : null);
   }
   return jsonResponse(response);
 }
@@ -144,19 +146,9 @@ function canReconcile(error: unknown): boolean {
     || (error instanceof DOMException && ["TimeoutError", "AbortError"].includes(error.name));
 }
 
-function retryAfterDelay(value: string | null): number {
-  const header = value?.trim() ?? "";
-  let milliseconds = RATE_LIMIT_POLL_MS;
-  if (/^[0-9]{1,10}$/.test(header)) milliseconds = Number(header) * 1000;
-  else if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(header)) {
-    const parsed = Date.parse(header);
-    if (Number.isFinite(parsed)) milliseconds = parsed - Date.now();
-  }
-  return Math.min(MAX_RATE_LIMIT_POLL_MS, Math.max(RATE_LIMIT_POLL_MS, milliseconds));
-}
-
 function reconciliationDelay(error: unknown): number {
-  return error instanceof ControlFailure && error.status === 429 ? error.retryAfterMs ?? RATE_LIMIT_POLL_MS : POLL_MS;
+  return error instanceof ControlFailure && error.status >= 500 ? error.retryAfterMs ?? 30_000
+    : error instanceof ControlFailure && error.status === 429 ? error.retryAfterMs ?? 60_000 : POLL_MS;
 }
 
 async function delay(signal: AbortSignal, milliseconds = POLL_MS): Promise<void> {
@@ -198,7 +190,9 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
   validateResumeFile(file);
   const direct = usesDirectResumeUpload(file);
   const signal = AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(MAX_WAIT_MS)]);
-  const progress = (phase: UploadPhase) => { stopped(signal); options.onProgress?.({ phase, mode: direct ? "direct" : "legacy" }); stopped(signal); };
+  const deadline = Date.now() + MAX_WAIT_MS;
+  const waiting = () => { stopped(signal); if (Date.now() >= deadline) throw new DOMException("Upload deadline exceeded", "TimeoutError"); };
+  const progress = (phase: UploadPhase) => { waiting(); options.onProgress?.({ phase, mode: direct ? "direct" : "legacy" }); waiting(); };
   progress("validating");
   if (!direct) {
     const result = await legacyUpload(file, options, signal); stopped(signal); progress("completed"); return result;
@@ -232,14 +226,17 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
     // owner-bound server verdict; no blind PUT retry or legacy fallback occurs.
     let completionAttempts = 0;
     let completionAllowed = true;
-    let waitMs = POLL_MS;
+    let waitMs = 0;
+    let reads = 0;
     let current: Status | null = null;
     while (true) {
-      stopped(signal);
+      waiting();
       if (completionAllowed) {
+        await waitUntilPageVisible(signal);
+        waiting();
         completionAllowed = false;
         if (++completionAttempts > 3) throw new Error("Your upload could not be queued. Check your saved resumes before trying again.");
-        try { current = validateStatus(await control(`/resume/uploads/${id}/complete`, "POST", signal), id, sourceFormat); waitMs = POLL_MS; }
+        try { current = validateStatus(await control(`/resume/uploads/${id}/complete`, "POST", signal), id, sourceFormat); waitMs = 0; }
         catch (error) { stopped(signal); if (!canReconcile(error)) throw error; waitMs = reconciliationDelay(error); }
       }
       if (current?.state === "released") { progress("completed"); return current.resume!; }
@@ -248,18 +245,35 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
           : "Your resume could not be saved. No analysis units were charged. Temporary upload cleanup is scheduled.");
       }
       progress(current?.state === "inspecting" ? "inspecting" : "queued");
-      await delay(signal, waitMs);
+      if (reads >= MAX_PROGRESS_READS) {
+        progress("paused");
+        await delay(signal, Math.max(1, deadline - Date.now()));
+        waiting();
+        throw new Error("Automatic checks stopped. Check your saved resumes before starting another upload.");
+      }
+      const nextDelay = progressPollDelay(Math.min(reads + 1, MAX_PROGRESS_READS - 1)) || POLL_MS;
+      await delay(signal, Math.min(Math.max(waitMs, nextDelay), Math.max(1, deadline - Date.now())));
+      while (!pageVisible()) {
+        progress("paused");
+        await waitUntilPageVisible(signal);
+        waiting();
+        // Resume one future check, with a fresh delay; never catch up missed polls.
+        await delay(signal, Math.min(nextDelay, Math.max(1, deadline - Date.now())));
+        waiting();
+      }
+      waiting();
       try {
+        reads += 1;
         current = validateStatus(await control(`/resume/uploads/${id}`, "GET", signal), id, sourceFormat);
         // Only a verified owner-bound status can authorize another completion.
         completionAllowed = current.state === "awaiting_upload";
-        waitMs = POLL_MS;
+        waitMs = 0;
       } catch (error) { stopped(signal); if (!canReconcile(error)) throw error; waitMs = reconciliationDelay(error); }
     }
   } catch (error) {
     const cleanup = id ? await cancelIntent(id) : "not_started";
     if (options.signal?.aborted) throw new ResumeUploadCancelled(cleanup);
-    if (signal.aborted) throw new Error(cleanup === "requested"
+    if (signal.aborted || Date.now() >= deadline) throw new Error(cleanup === "requested"
       ? "Resume checks took too long. Temporary upload cleanup was requested; check your saved resumes before trying again."
       : cleanup === "already_saved" ? "Resume checks took too long. Your resume finished saving before cleanup. Review your saved resumes."
       : cleanup === "not_started" ? "Resume checks took too long before a file was sent. Try again."

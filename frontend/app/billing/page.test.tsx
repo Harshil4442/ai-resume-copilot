@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 const eligibleServices = [{ operation: "resume_tailor", credits: 8, deliverable: "Tailored resume with preserved source layout.", supported_limits: { max_pages: 2 }, source_formats: ["pdf", "docx"], route_version: "reviewed-v1" }];
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,7 @@ const legacyCheckout = { order_id: "order_legacy", provider: "razorpay", provide
 const openCheckout = vi.fn();
 const hostedCheckout = vi.fn(function (options: RazorpayOptions) { void options; return { open: openCheckout, on: vi.fn() }; });
 function read(url: string): Promise<unknown> {
+  if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet }));
   if (url === "/v1/credits/canary-enrollment") return Promise.resolve({ status: "NOT_AVAILABLE" });
   if (url === "/v1/credits/catalog") return Promise.resolve(catalog);
   if (url === "/v1/credits/wallet") return Promise.resolve(wallet);
@@ -73,7 +75,7 @@ describe("unified billing account", () => {
     expect(screen.queryByText("20 credits")).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
   });
   it.each([undefined, null, -1, "3", 1.5])("does not invent a wallet balance for malformed data %j", async (available_credits) => {
-    state.get.mockImplementation((url: string) => url === "/v1/credits/wallet" ? Promise.resolve({ ...wallet, available_credits }) : read(url));
+    state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: { ...wallet, available_credits } })) : read(url));
     render(<BillingPage />); await screen.findByText(/Your credit balance is unavailable/); expect(screen.queryByText("Available credits")).not.toBeInTheDocument();
   });
   it("never falls back to selling old packs when unified pricing is unavailable", async () => {
@@ -256,7 +258,8 @@ it("refreshes only the pass eligibility after an explicitly confirmed participat
   fireEvent.click(screen.getByRole("button", { name: "Confirm participation" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
   expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/catalog")).toHaveLength(2);
-  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/wallet")).toHaveLength(1);
+  expect(state.get.mock.calls.some(([url]) => url === "/v1/credits/wallet")).toBe(false);
+  expect(state.get.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(1);
   expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(1);
   expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/canary-enrollment"]);
   noCheckout();
@@ -286,4 +289,56 @@ it("does not let an earlier slow eligible catalog overwrite the refreshed stoppe
   await act(async () => finishOld(catalog));
   expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
   expect(catalogCalls).toBe(2); noCheckout();
+});
+
+it.each(["unified", "legacy"])("bounds %s checkout callback checks to8 and ignores duplicate callbacks", async (kind) => {
+  if (kind === "legacy") {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder()) : read(url));
+    state.post.mockImplementation((url: string) => url === "/billing/orders" ? Promise.resolve(legacyCheckout) : Promise.resolve({}));
+    render(<BillingPage />); await screen.findByRole("button", { name: "Resume original checkout" }); await confirmIndia();
+    fireEvent.click(screen.getByRole("button", { name: "Resume original checkout" }));
+  } else {
+    const proceed = await review(); await confirmIndia(); fireEvent.click(proceed);
+  }
+  await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+  const options = hostedCheckout.mock.calls[0][0];
+  const callback = { razorpay_payment_id: "fixture-payment", razorpay_order_id: `provider_${kind}`, razorpay_signature: "fixture-signature" };
+  const path = kind === "legacy" ? "/billing/orders/order_legacy" : "/v1/credits/orders/order_unified";
+  // Unified checkout retains its mandatory status/terms verification after the
+  // explicit Pay action. It is separate from the automatic callback checks.
+  const beforeCallback = state.get.mock.calls.filter(([url]) => url === path).length;
+  expect(beforeCallback).toBe(kind === "unified" ? 1 : 0);
+  vi.useFakeTimers();
+  await act(async () => { options.handler(callback); await vi.advanceTimersByTimeAsync(155_000); });
+  expect(state.get.mock.calls.filter(([url]) => url === path)).toHaveLength(beforeCallback + 8);
+  await act(async () => { options.handler(callback); await vi.advanceTimersByTimeAsync(300_000); });
+  expect(state.get.mock.calls.filter(([url]) => url === path)).toHaveLength(beforeCallback + 8);
+  expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Check payment status" })).toBeEnabled();
+});
+
+it.each([429, 503])("does not send an early manual payment refresh after HTTP%s Retry-After", async (status) => {
+  state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order())
+    : url === "/v1/credits/orders/order_unified" ? Promise.reject(Object.assign(new ApiError("Capacity paused", status, {}), { retryAfterMs: 120_000 })) : read(url));
+  render(<BillingPage />); const check = await screen.findByRole("button", { name: "Check payment status" });
+  vi.useFakeTimers();
+  await act(async () => { fireEvent.click(check); await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Capacity paused");
+  await act(async () => { await vi.advanceTimersByTimeAsync(119_998); fireEvent.click(check); });
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified")).toHaveLength(1);
+  state.get.mockImplementation(read);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); fireEvent.click(check); });
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified")).toHaveLength(2);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("aborts owner-unmounted payment status and ignores its late terminal result without balance/cache fanout", async () => {
+  let resolve!: (value: unknown) => void; let statusSignal: AbortSignal | undefined;
+  state.get.mockImplementation((url: string, signal?: AbortSignal) => url === "/v1/credits/recent-order" ? Promise.resolve(order())
+    : url === "/v1/credits/orders/order_unified" ? new Promise((done) => { resolve = done; statusSignal = signal; }) : read(url));
+  const rendered = render(<BillingPage />); fireEvent.click(await screen.findByRole("button", { name: "Check payment status" }));
+  await waitFor(() => expect(statusSignal).toBeDefined());
+  const before = state.get.mock.calls.length; rendered.unmount(); expect(statusSignal!.aborted).toBe(true);
+  await act(async () => { resolve(order({ status: "paid", fulfilled: true })); });
+  expect(state.get).toHaveBeenCalledTimes(before); expect(state.post).not.toHaveBeenCalled();
 });

@@ -130,7 +130,9 @@ def get_current_user(
         )
     from .domains.candidate_accounts.access import context_from_claims
     from .domains.candidate_accounts.service import mapped_account, production_candidate_accounts
+    from .domains.recovery.native_metadata_admission import MetadataAdmissionError
     from .domains.recovery.store import GuardDenied, GuardUnavailable
+    from .routers.native_metadata_http import metadata_http_error
 
     account = mapped_account(db, user_id)
     if account is None and int(user.credential_epoch or 0) > 0:
@@ -149,6 +151,8 @@ def get_current_user(
             context, generation = context_from_claims(payload, candidate_id=user_id)
             db.rollback()  # Independent current authority IO does not hold a SQL transaction.
             production_candidate_accounts().validate(context, auth_generation=generation)
+        except MetadataAdmissionError as exc:
+            raise metadata_http_error(exc) from None
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Not authenticated") from None
         except GuardUnavailable:

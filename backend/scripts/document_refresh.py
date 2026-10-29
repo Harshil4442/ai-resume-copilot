@@ -492,10 +492,15 @@ def monitor(*, now: datetime) -> dict[str, Any]:
 
 def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, now: datetime,
                    historical_v1: bool = False, image: str | None = None,
-                   build_identity: dict[str, Any] | None = None) -> dict[str, Any]:
-    need(type(historical_v1) is bool, "document_refresh_contract_version_invalid")
+                   build_identity: dict[str, Any] | None = None, source_revision: bool = False) -> dict[str, Any]:
+    need(type(historical_v1) is bool and type(source_revision) is bool and not (historical_v1 and source_revision),
+         "document_refresh_contract_version_invalid")
     policy = contract.POLICY_SHA256
     renderer_version, font_manifest = contract.ACCEPTED_RENDERER, contract.ACCEPTED_FONT_MANIFEST
+    if source_revision:
+        candidate = infra("document_candidate")
+        policy = infra("document_source_candidate").POLICY_SHA256
+        renderer_version, font_manifest = candidate.RENDERER, candidate.FONT
     profile = infra("document_renderer_profiles") if image is not None or build_identity is not None else None
     need(build_identity is None or type(build_identity) is dict
          and image == build_identity.get("immutable_image"), "document_refresh_renderer_build_profile_changed")
@@ -536,8 +541,9 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
                  if row["case"] in {"eicar_tex_source", "eicar_texzip_member"}),
          "document_refresh_native_source_corpus_incomplete")
     layouts = proof.get("docx_layout_corpus", [])
-    need(type(layouts) is list and len(layouts) == 2
-         and {row.get("case") for row in layouts} == {"styled_multipage_fit", "rendered_reflow_refusal"}
+    need(type(layouts) is list and len(layouts) == (3 if source_revision else 2)
+         and {row.get("case") for row in layouts} == ({"styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal"}
+             if source_revision else {"styled_multipage_fit", "rendered_reflow_refusal"})
          and all(row.get("passed") is True for row in layouts), "document_refresh_layout_incomplete")
     fit = next(row for row in layouts if row["case"] == "styled_multipage_fit")
     renderer = fit.get("layout", {}).get("renderer", {})
@@ -547,6 +553,12 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
          and renderer.get("image_digest") == "local-document-image@" + proof["image_id"]
          and re.fullmatch(r"[a-f0-9]{64}", fit.get("layout", {}).get("rendered_fonts_sha256", "")),
          "document_refresh_renderer_changed_review_required")
+    if source_revision:
+        from infra.gcp.document_source_payload import EXTRA_CASES
+        reading = proof.get("pdf_reading_order_corpus", [])
+        need(type(reading) is list and len(reading) == len(EXTRA_CASES)
+             and tuple(row.get("case") for row in reading) == EXTRA_CASES
+             and all(row.get("passed") is True for row in reading), "document_refresh_reading_order_incomplete")
     clamd = proof.get("request_clamd_corpus", [])
     need(type(clamd) is list and len(clamd) == 11
          and len({row.get("case") for row in clamd}) == 11
@@ -564,7 +576,7 @@ def proof_contract(proof: Any, contract: Any, source_hashes: dict[str, str], *, 
         raise RefreshDenied("document_refresh_definition_header_invalid") from None
     need(timedelta(0) <= age < CANDIDATE_MAX_AGE, "document_refresh_candidate_not_fresh")
     return {"issued_at_utc": timestamp.isoformat(), "expires_at_utc": (timestamp + AGE_LIMIT).isoformat(),
-            "definition_number": number, "local_cases": 21 if historical_v1 else 25,
+            "definition_number": number, "local_cases": 21 if historical_v1 else 31 if source_revision else 25,
             "renderer_version": renderer_version,
             "rendered_fonts_sha256": fit["layout"]["rendered_fonts_sha256"]}
 
@@ -590,17 +602,20 @@ FULL_SOURCE_DOCKERFILE = "infra/document-processing/Dockerfile"
 FULL_SOURCE_MAX_BYTES = 4 * 1024 * 1024
 
 
-def full_source_snapshot() -> tuple[dict[str, bytes], dict[str, str], str]:
+def full_source_snapshot(*, source_revision: bool = False) -> tuple[dict[str, bytes], dict[str, str], str]:
     """Exactly the source-only candidate inventory and its separately pinned policy."""
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
+    need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
     candidate = infra("document_candidate")
     need(set(engines.SOURCES) == candidate.SOURCES
          and len(engines.SOURCES) == len(candidate.SOURCES)
          and engines.RUNTIME == candidate.RUNTIME
          and len(set(engines.RUNTIME.values())) == len(engines.RUNTIME),
          "document_source_manifest_invalid")
+    if source_revision:
+        return infra("document_source_candidate").working_snapshot(ROOT)
     contents = {}
     for name in (*engines.SOURCES, FULL_SOURCE_POLICY):
         path = ROOT
@@ -635,8 +650,18 @@ def accepted_source_hashes() -> dict[str, str]:
     return dict(profile.SOURCES)
 
 
-def _full_source_tar() -> bytes:
-    contents, _, _ = full_source_snapshot()
+def _full_source_tar(*, source_revision: bool = False, source_commit: str | None = None, frozen_v3: bool = False) -> bytes:
+    if frozen_v3:
+        need(not source_revision and source_commit is None, "document_refresh_contract_version_invalid")
+        contents = infra("document_source_candidate").historical_v3_contents(ROOT)
+    elif source_commit is not None:
+        need(source_revision, "document_refresh_contract_version_invalid")
+        profile = infra("document_source_candidate")
+        current = profile.committed(source_commit, root=ROOT)
+        contents = {name: profile.git(ROOT, "show", source_commit + ":" + name) for name in current.sources}
+        contents[profile.POLICY_PATH] = current.policy_raw
+    else:
+        contents, _, _ = full_source_snapshot(source_revision=source_revision)
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         for name, content in sorted(contents.items()):
@@ -648,24 +673,24 @@ def _full_source_tar() -> bytes:
     return raw
 
 
-def full_source_archive() -> bytes:
+def full_source_archive(*, source_revision: bool = False, source_commit: str | None = None) -> bytes:
     import gzip
 
     output = io.BytesIO()
     with gzip.GzipFile(fileobj=output, mode="wb", mtime=0) as zipped:
-        zipped.write(_full_source_tar())
+        zipped.write(_full_source_tar(source_revision=source_revision, source_commit=source_commit))
     raw = output.getvalue()
     need(len(raw) <= FULL_SOURCE_MAX_BYTES, "document_source_archive_bound")
     return raw
 
 
-def archive_full_source(raw: bytes) -> str:
+def archive_full_source(raw: bytes, *, source_revision: bool = False, source_commit: str | None = None, frozen_v3: bool = False) -> str:
     """Compare bounded bytes with canonical source; never parse untrusted tar."""
     import zlib
 
     need(type(raw) is bytes and 0 < len(raw) <= FULL_SOURCE_MAX_BYTES,
          "document_source_archive_bound")
-    expected = _full_source_tar()
+    expected = _full_source_tar(source_revision=source_revision, source_commit=source_commit, frozen_v3=frozen_v3)
     try:
         decoder = zlib.decompressobj(wbits=31)
         actual = decoder.decompress(raw, len(expected) + 1)
@@ -676,31 +701,64 @@ def archive_full_source(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def full_source_build_request(nonce: str, source: dict[str, str], *, historical_profile: bool = False) -> dict[str, Any]:
+def full_source_build_request(nonce: str, source: dict[str, str], *, historical_profile: bool = False,
+                              source_revision: bool = False, source_commit: str | None = None, frozen_v3: bool = False) -> dict[str, Any]:
     need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce),
          "document_refresh_build_nonce_invalid")
     need(type(historical_profile) is bool, "document_refresh_contract_version_invalid")
-    if historical_profile:
+    need(type(source_revision) is bool and type(frozen_v3) is bool
+         and sum((historical_profile, source_revision, frozen_v3)) <= 1, "document_refresh_contract_version_invalid")
+    current = None
+    if source_revision:
+        current = infra("document_source_candidate").committed(source_commit, root=ROOT, clean=source_commit is None)
+        hashes = current.sources
+    elif frozen_v3:
+        candidate_release = infra("document_candidate_release")
+        need(nonce == candidate_release.BUILD_NONCE, "document_refresh_renderer_build_profile_changed")
+        hashes = infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"]
+    elif historical_profile:
         profile = infra("document_renderer_profiles")
         need(nonce == profile.BUILD["nonce"], "document_refresh_renderer_build_profile_changed")
         hashes = profile.SOURCES
     else:
         _, hashes, _ = full_source_snapshot()
-    tag = REPOSITORY + ":source-" + nonce
+    tag = REPOSITORY + (":source-revision-" if source_revision else ":source-") + nonce
     body = build_request(nonce, source)
     arguments = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
                  "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--file", FULL_SOURCE_DOCKERFILE]
     for name, digest in sorted(hashes.items()):
         arguments.extend(("--label", "hirewiz.document-test.source." + name + "=" + digest))
+    if current is not None:
+        arguments.extend(("--label", "hirewiz.document-source.commit=" + current.commit,
+                          "--label", "hirewiz.document-source.qualification=" + current.qualification_sha256))
+        body["tags"] = [infra("document_source_candidate").KIND, current.commit, current.qualification_sha256]
     arguments.extend(("--tag", tag, "."))
     body.update(steps=[{"name": DOCKER_BUILDER, "args": arguments},
                        {"name": DOCKER_BUILDER, "args": ["push", tag]}], images=[tag])
     return body
 
 
+def source_definitions_build_request(nonce: str, source: dict[str, str], commit: str | None, parent: str | None) -> dict[str, Any]:
+    need(type(commit) is str and type(parent) is str, "document_source_recipe_changed")
+    assert isinstance(parent, str)
+    current = infra("document_source_candidate").committed(commit, root=ROOT)
+    infra("document_source_candidate").definition_recipe(parent, ROOT)
+    body = build_request(nonce, source)
+    tag = REPOSITORY + ":source-definitions-" + nonce
+    body.update(steps=[{"name": DOCKER_BUILDER, "args": ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
+        "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--label", "hirewiz.document-source.commit=" + current.commit,
+        "--label", "hirewiz.document-source.qualification=" + current.qualification_sha256, "--tag", tag, "."]},
+        {"name": DOCKER_BUILDER, "args": ["push", tag]}], images=[tag],
+        tags=[infra("document_source_candidate").DEFINITIONS_KIND, current.commit, current.qualification_sha256,
+              parent.split("@sha256:", 1)[1]])
+    return body
+
+
 def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bool = False,
                    full_source: bool = False, historical_profile: bool = False,
-                   candidate_v3: bool = False) -> dict[str, Any]:
+                   candidate_v3: bool = False, source_revision: bool = False,
+                   source_commit: str | None = None, frozen_v3: bool = False,
+                   source_definitions: bool = False, source_parent: str | None = None) -> dict[str, Any]:
     """Check actual native Build fields; a caller-supplied summary is insufficient."""
     need(type(value) is dict and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_refresh_native_build_invalid")
     build_id = value.get("id", "")
@@ -715,12 +773,27 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
          "document_refresh_contract_version_invalid")
     need(type(candidate_v3) is bool and (not candidate_v3 or not (historical_v1 or full_source or historical_profile)),
          "document_refresh_contract_version_invalid")
-    tag = REPOSITORY + (":source-" if full_source else ":refresh-") + nonce
+    need(type(source_revision) is bool and type(frozen_v3) is bool
+         and (not source_revision or full_source and not (historical_v1 or historical_profile or candidate_v3 or frozen_v3))
+         and (not frozen_v3 or full_source and not (historical_v1 or historical_profile or candidate_v3)),
+         "document_refresh_contract_version_invalid")
+    need(type(source_definitions) is bool and (not source_definitions or not (full_source or source_revision
+         or candidate_v3 or historical_v1 or historical_profile or frozen_v3)), "document_refresh_contract_version_invalid")
+    tag = REPOSITORY + (":source-definitions-" if source_definitions else ":source-revision-" if source_revision
+                        else ":source-" if full_source else ":refresh-") + nonce
     expected = [["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
         "DOCUMENT_DEFINITIONS_NONCE=" + nonce, "--tag", tag, "."], ["push", tag]]
     if full_source:
         expected = [row["args"] for row in full_source_build_request(
-            nonce, {}, historical_profile=historical_profile)["steps"]]
+            nonce, {}, historical_profile=historical_profile, source_revision=source_revision,
+            source_commit=source_commit, frozen_v3=frozen_v3)["steps"]]
+        if source_revision:
+            need(value.get("tags") == full_source_build_request(nonce, {}, source_revision=True,
+                 source_commit=source_commit)["tags"], "document_refresh_native_build_steps_changed")
+    if source_definitions:
+        wanted = source_definitions_build_request(nonce, {}, source_commit, source_parent)
+        expected = [row["args"] for row in wanted["steps"]]
+        need(value.get("tags") == wanted["tags"], "document_refresh_native_build_steps_changed")
     steps = value.get("steps")
     need(type(steps) is list and len(steps) == 2 and all(
         row.get("name") == DOCKER_BUILDER and row.get("args") == args
@@ -755,11 +828,18 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
         from document_refresh_probe import LEGACY_BASE_IMAGE
 
         renderer_base = LEGACY_BASE_IMAGE
-    result = {"version": 1, "kind": FULL_SOURCE_KIND if full_source else "native_cloud_build", "nonce": nonce, "build_id": build_id,
+    result = {"version": 1, "kind": infra("document_source_candidate").DEFINITIONS_KIND if source_definitions else infra("document_source_candidate").KIND if source_revision else FULL_SOURCE_KIND if full_source else "native_cloud_build", "nonce": nonce, "build_id": build_id,
         "build_resource": value.get("name"), "builder_service_account": BUILDER,
         "source_bucket": source["bucket"], "source_object": source["object"],
         "source_generation": str(source["generation"]), "refresh_dockerfile_sha256": recipe_sha,
         "fixed_renderer_base": renderer_base, "immutable_image": REPOSITORY + "@" + images[0]["digest"]}
+    if source_definitions:
+        source_profile = infra("document_source_candidate")
+        current = source_profile.committed(source_commit, root=ROOT)
+        need(recipe_sha == hashlib.sha256(source_profile.definition_recipe(source_parent, ROOT)).hexdigest(),
+             "document_source_recipe_changed")
+        result.update(fixed_renderer_base=source_parent, policy_sha256=current.policy,
+            source_commit=current.commit, qualification_sha256=current.qualification_sha256)
     if candidate_v3:
         need(recipe_sha == hashlib.sha256((ROOT / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes()).hexdigest(),
              "document_source_recipe_changed")
@@ -769,6 +849,15 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
             profile = infra("document_renderer_profiles")
             policy = profile.BUILD["policy_sha256"]
             need(recipe_sha == profile.BUILD["refresh_dockerfile_sha256"], "document_source_recipe_changed")
+        elif frozen_v3:
+            _, frozen = infra("document_source_candidate").frozen_v3(ROOT)
+            policy = infra("document_candidate").POLICY_SHA256
+            need(recipe_sha == frozen["source_sha256"][FULL_SOURCE_DOCKERFILE], "document_source_recipe_changed")
+        elif source_revision:
+            current = infra("document_source_candidate").committed(source_commit, root=ROOT)
+            policy = current.policy
+            need(recipe_sha == current.sources[FULL_SOURCE_DOCKERFILE], "document_source_recipe_changed")
+            result.update(source_commit=current.commit, qualification_sha256=current.qualification_sha256)
         else:
             contents, _, policy = full_source_snapshot()
             need(recipe_sha == hashlib.sha256(contents[FULL_SOURCE_DOCKERFILE]).hexdigest(),
@@ -847,7 +936,8 @@ def build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
 
 
 def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, full_source: bool = False,
-                 candidate_v3: bool = False) -> dict[str, Any]:
+                 candidate_v3: bool = False, source_revision: bool = False, source_definitions: bool = False,
+                 source_parent: str | None = None) -> dict[str, Any]:
     from urllib.parse import urlencode
 
     nonce = uuid.uuid4().hex if nonce is None else nonce
@@ -858,12 +948,24 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
         need(recipe == (ROOT / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes(),
              "document_source_recipe_changed")
         need(hashlib.sha256(recipe).hexdigest() == infra("document_candidate").REFRESH_SHA256, "document_source_recipe_changed")
+    need(type(source_revision) is bool and (not source_revision or full_source and not candidate_v3),
+         "document_refresh_contract_version_invalid")
+    need(type(source_definitions) is bool and (not source_definitions or not (full_source or candidate_v3 or source_revision)),
+         "document_refresh_contract_version_invalid")
+    current = infra("document_source_candidate").committed(root=ROOT, clean=True) if source_revision or source_definitions else None
+    source_commit = current.commit if current is not None else None
+    if source_definitions:
+        need(recipe == infra("document_source_candidate").definition_recipe(source_parent, ROOT), "document_source_recipe_changed")
+        infra("document_source_release").parent_before_build(source_parent, current)
     recipe_sha = hashlib.sha256(recipe).hexdigest()
     if full_source:
-        contents, _, _ = full_source_snapshot()
+        contents, _, _ = full_source_snapshot(source_revision=source_revision)
         need(recipe == contents[FULL_SOURCE_DOCKERFILE], "document_source_recipe_changed")
-    archive = full_source_archive() if full_source else source_archive(recipe)
-    archive_sha = archive_full_source(archive) if full_source else archive_recipe(archive, recipe_sha)
+    archive = full_source_archive(source_revision=source_revision, source_commit=source_commit) if full_source else source_archive(recipe)
+    archive_sha = archive_full_source(archive, source_revision=source_revision, source_commit=source_commit) if full_source else archive_recipe(archive, recipe_sha)
+    if current is not None:
+        need(infra("document_source_candidate").committed(root=ROOT, clean=True).identity == current.identity,
+             "document_refresh_source_changed")
     source_name = (FULL_SOURCE_PREFIX if full_source else "hirewiz-document-refresh-source/") + nonce + "/source.tar.gz"
     write_new(directory / "build-started.json", {"nonce": nonce, "recipe_sha256": recipe_sha,
         "source_archive_sha256": archive_sha, "automatic_replay": False,
@@ -881,7 +983,8 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
              "document_refresh_source_upload_identity_unverified")
         source = {"bucket": obj["bucket"], "object": obj["name"], "generation": str(obj["generation"])}
         write_new(directory / "source-upload-acknowledged.json", source)
-        body = full_source_build_request(nonce, source) if full_source else build_request(nonce, source)
+        body = (full_source_build_request(nonce, source, source_revision=source_revision, source_commit=source_commit) if full_source
+                else source_definitions_build_request(nonce, source, source_commit, source_parent) if source_definitions else build_request(nonce, source))
         write_new(directory / "build-create-started.json", {"nonce": nonce,
             "request_sha256": hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
             "automatic_replay": False})
@@ -899,14 +1002,18 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
             need(value.get("status") in {"PENDING", "QUEUED", "WORKING"}, "document_refresh_build_failed_reconcile_only")
             need(time.monotonic() < deadline, "document_refresh_build_deadline_reconcile_only")
             time.sleep(min(10, max(0, deadline - time.monotonic())))
-        identity = (build_contract(value, nonce, recipe_sha, full_source=True) if full_source
-                    else build_contract(value, nonce, recipe_sha, candidate_v3=candidate_v3))
+        identity = (build_contract(value, nonce, recipe_sha, full_source=True, source_revision=source_revision, source_commit=source_commit) if full_source
+                    else build_contract(value, nonce, recipe_sha, candidate_v3=candidate_v3,
+                         source_definitions=source_definitions, source_parent=source_parent, source_commit=source_commit))
         stored_source = read_native_source(http, identity)
-        native_archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
+        native_archive_sha = archive_full_source(stored_source, source_revision=source_revision, source_commit=source_commit) if full_source else archive_recipe(stored_source, recipe_sha)
         need(native_archive_sha == archive_sha, "document_refresh_native_source_changed")
         identity["source_archive_sha256"] = native_archive_sha
-        if candidate_v3:
-            identity["source_sha256"] = full_source_snapshot()[1]
+        if source_revision or source_definitions:
+            assert current is not None
+            identity["source_sha256"] = current.sources
+        elif candidate_v3:
+            identity["source_sha256"] = infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"]
         write_new(directory / "native-build-identity.json", identity)
         return identity
     finally:
@@ -919,12 +1026,15 @@ def verify_native_build(identity: dict[str, Any], *, historical_v1: bool = False
         "source_bucket", "source_object", "source_generation", "source_archive_sha256",
         "refresh_dockerfile_sha256", "fixed_renderer_base", "immutable_image",
         "source_sha256", "local_native_proof_sha256"}
-    full_source = type(identity) is dict and identity.get("kind") == FULL_SOURCE_KIND
+    source_revision = type(identity) is dict and identity.get("kind") in {infra("document_source_candidate").KIND, infra("document_source_candidate").DEFINITIONS_KIND}
+    full_source = type(identity) is dict and identity.get("kind") in {FULL_SOURCE_KIND, infra("document_source_candidate").KIND, infra("document_source_candidate").DEFINITIONS_KIND}
+    if source_revision:
+        keys.update({"source_commit", "qualification_sha256"})
     if full_source:
         need(not historical_v1, "document_source_historical_profile_refused")
         keys.add("policy_sha256")
     need(type(identity) is dict and set(identity) == keys and type(identity.get("version")) is int
-         and identity["version"] == 1 and identity.get("kind") in {"native_cloud_build", FULL_SOURCE_KIND}
+         and identity["version"] == 1 and identity.get("kind") in {"native_cloud_build", FULL_SOURCE_KIND, infra("document_source_candidate").KIND, infra("document_source_candidate").DEFINITIONS_KIND}
          and type(identity.get("build_id")) is str and re.fullmatch(r"[a-f0-9-]{36}", identity["build_id"])
          and type(identity.get("nonce")) is str and re.fullmatch(r"[a-f0-9]{32}", identity["nonce"]),
          "document_refresh_native_build_identity_unverified")
@@ -984,17 +1094,38 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
     try:
         value = native_json(http, "GET", f"https://cloudbuild.googleapis.com/v1/projects/{PROJECT}/locations/{REGION}/builds/{build_id}")
         images = value.get("results", {}).get("images", [])
-        full_source = (type(images) is list and len(images) == 1 and type(images[0]) is dict
+        source_definitions = (type(images) is list and len(images) == 1 and type(images[0]) is dict
+                              and images[0].get("name") == REPOSITORY + ":source-definitions-" + nonce)
+        source_parent = None
+        source_revision = (type(images) is list and len(images) == 1 and type(images[0]) is dict
+                           and images[0].get("name") == REPOSITORY + ":source-revision-" + nonce)
+        full_source = (source_revision or type(images) is list and len(images) == 1 and type(images[0]) is dict
                        and images[0].get("name") == REPOSITORY + ":source-" + nonce)
+        frozen_v3 = full_source and not source_revision and image == infra("document_candidate").IMAGE
+        source_commit = None
+        if source_revision or source_definitions:
+            tags = value.get("tags", [])
+            need(type(tags) is list and len(tags) == (4 if source_definitions else 3)
+                 and tags[0] == (infra("document_source_candidate").DEFINITIONS_KIND if source_definitions else infra("document_source_candidate").KIND)
+                 and type(tags[1]) is str and re.fullmatch(r"[a-f0-9]{40}", tags[1]),
+                 "document_refresh_native_build_identity_unverified")
+            source_commit = tags[1]
+            if source_definitions:
+                need(type(tags[3]) is str and re.fullmatch(r"[a-f0-9]{64}", tags[3]), "document_source_recipe_changed")
+                source_parent = REPOSITORY + "@sha256:" + tags[3]
+                recipe_sha = hashlib.sha256(infra("document_source_candidate").definition_recipe(source_parent, ROOT)).hexdigest()
         need(not (full_source and historical_v1), "document_source_historical_profile_refused")
         need(not (candidate_v3 and full_source), "document_source_historical_profile_refused")
         need(not historical_profile or full_source, "document_refresh_renderer_build_profile_changed")
         if full_source:
             recipe_sha = (profile.BUILD["refresh_dockerfile_sha256"] if historical_profile else
-                          hashlib.sha256((ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()).hexdigest())
-            actual = build_contract(value, nonce, recipe_sha, full_source=True, historical_profile=historical_profile)
+                          infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"][FULL_SOURCE_DOCKERFILE]
+                          if frozen_v3 else hashlib.sha256((ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()).hexdigest())
+            actual = build_contract(value, nonce, recipe_sha, full_source=True, historical_profile=historical_profile,
+                source_revision=source_revision, source_commit=source_commit, frozen_v3=frozen_v3)
         else:
-            actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1, candidate_v3=candidate_v3)
+            actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1, candidate_v3=candidate_v3,
+                source_definitions=source_definitions, source_parent=source_parent, source_commit=source_commit)
         need(actual["immutable_image"] == image, "document_refresh_native_build_readback_changed")
         stored_source = read_native_source(http, actual)
         if historical_profile:
@@ -1003,13 +1134,18 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
                  "document_source_archive_changed")
             archive_sha = profile.BUILD["source_archive_sha256"]
         else:
-            archive_sha = archive_full_source(stored_source) if full_source else archive_recipe(stored_source, recipe_sha)
+            archive_sha = archive_full_source(stored_source, source_revision=source_revision, source_commit=source_commit,
+                frozen_v3=frozen_v3) if full_source else archive_recipe(stored_source, recipe_sha)
     finally:
         http.close()
     if historical_v1:
         source_hashes = json.loads(legacy_source("policy.json"))["source_sha256"]
+    elif source_revision or source_definitions:
+        source_hashes = infra("document_source_candidate").committed(source_commit, root=ROOT).sources
+    elif frozen_v3:
+        source_hashes = infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"]
     elif candidate_v3:
-        source_hashes = full_source_snapshot()[1]
+        source_hashes = infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"]
     elif historical_profile or not full_source:
         source_hashes = accepted_source_hashes()
     else:
@@ -1066,26 +1202,29 @@ def candidate(directory: Path, *, publish: bool, now: datetime, nonce: str | Non
 
 
 def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
-                          nonce: str | None = None) -> dict[str, Any]:
+                          nonce: str | None = None, source_revision: bool = False) -> dict[str, Any]:
     """Publish/check exact source only; no Job, deployment, IAM or promotion."""
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
     need(publish, "document_refresh_explicit_native_build_required")
-    contents, before, policy = full_source_snapshot()
-    identity = (native_build(directory, contents[FULL_SOURCE_DOCKERFILE], full_source=True)
-                if nonce is None else native_build(directory, contents[FULL_SOURCE_DOCKERFILE],
-                                                   nonce=nonce, full_source=True))
+    need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
+    contents, before, policy = full_source_snapshot(source_revision=True) if source_revision else full_source_snapshot()
+    options: dict[str, Any] = {"full_source": True, **({"source_revision": True} if source_revision else {})}
+    identity = (native_build(directory, contents[FULL_SOURCE_DOCKERFILE], **options)
+                if nonce is None else native_build(directory, contents[FULL_SOURCE_DOCKERFILE], nonce=nonce, **options))
     digest = identity["immutable_image"]
     docker = engines.docker_command()
     command(docker + ["pull", digest], seconds=180)
     installed = decode(command(docker + ["image", "inspect", digest], seconds=15))
     need(type(installed) is list and len(installed) == 1 and digest in installed[0].get("RepoDigests", []),
          "document_refresh_pulled_digest_unverified")
-    proof = engines.check("linux/amd64", image=installed[0]["Id"])
+    proof = (engines.check("linux/amd64", image=installed[0]["Id"], source_revision=True) if source_revision
+             else engines.check("linux/amd64", image=installed[0]["Id"]))
     facts = proof_contract(proof, accepted(), before, now=datetime.now(UTC), image=digest,
-                           build_identity={**identity, "source_sha256": before})
-    need(full_source_snapshot()[1:] == (before, policy), "document_refresh_source_changed")
+                           build_identity={**identity, "source_sha256": before}, source_revision=source_revision)
+    after = full_source_snapshot(source_revision=True) if source_revision else full_source_snapshot()
+    need(after[1:] == (before, policy), "document_refresh_source_changed")
     proof_sha = write_new(directory / "local-native-proof.json", proof)
     observed = definition(header(docker, proof["image_id"]), now=datetime.now(UTC))
     need(observed["issued_at_utc"] == facts["issued_at_utc"] and observed["status"] == "fresh",
@@ -1098,12 +1237,45 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
             "native_corpus_proven": False, "promotion_performed": False}
 
 
+def source_definitions_candidate(directory: Path, *, publish: bool, now: datetime,
+                                 parent: str, nonce: str | None = None) -> dict[str, Any]:
+    sys.path.insert(0, str(ROOT / "backend"))
+    from scripts import document_test_image as engines
+
+    need(publish, "document_refresh_explicit_native_build_required")
+    source_profile = infra("document_source_candidate")
+    _, before, policy = full_source_snapshot(source_revision=True)
+    recipe = source_profile.definition_recipe(parent, ROOT)
+    identity = native_build(directory, recipe, nonce=nonce, source_definitions=True, source_parent=parent)
+    image = identity["immutable_image"]
+    docker = engines.docker_command()
+    command(docker + ["pull", image], seconds=180)
+    installed = decode(command(docker + ["image", "inspect", image], seconds=15))
+    need(type(installed) is list and len(installed) == 1 and image in installed[0].get("RepoDigests", []),
+         "document_refresh_pulled_digest_unverified")
+    proof = engines.check("linux/amd64", image=installed[0]["Id"], source_revision=True)
+    facts = proof_contract(proof, accepted(), before, now=datetime.now(UTC), image=image,
+        build_identity=identity, source_revision=True)
+    need(full_source_snapshot(source_revision=True)[1:] == (before, policy), "document_refresh_source_changed")
+    proof_sha = write_new(directory / "local-native-proof.json", proof)
+    observed = definition(header(docker, proof["image_id"]), now=datetime.now(UTC))
+    need(observed["issued_at_utc"] == facts["issued_at_utc"] and observed["status"] == "fresh",
+         "document_refresh_built_header_mismatch")
+    identity.update(local_native_proof_sha256=proof_sha)
+    return {"status": "candidate_requires_native_acceptance", "candidate_registry_digest": image,
+        "build_identity": identity, "policy_sha256": policy, "source_sha256": before,
+        "native_isolation_proven": False, "native_corpus_proven": False, "promotion_performed": False}
+
+
 def infra(name: str) -> Any:
     need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery", "document_candidate_release",
                   "document_renderer_profiles", "document_refresh_resume", "document_candidate",
                   "document_refresh_partial", "document_refresh_final", "document_refresh_final_readback",
-                  "document_consumed_native"},
+                  "document_consumed_native", "document_source_candidate", "document_source_release"},
          "document_refresh_module_refused")
+    if name in {"document_source_candidate", "document_source_release"}:
+        sys.path.insert(0, str(ROOT))
+        return importlib.import_module("infra.gcp." + name)
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
     assert spec is not None and spec.loader is not None
@@ -1154,9 +1326,12 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             rescue_expired_v2: bool = False,
             upgrade_current_v2_to_v3: bool = False, reviewed_application_context: bool = False,
             consumed_history_bundle: Path | None = None, application_context: Any = None,
-            consumed_history: Any = None) -> dict[str, Any]:
+            consumed_history: Any = None, source_revision: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
+    need(type(source_revision) is bool and (not source_revision or full_source and publish
+         and not (retire_expired_v2 or rescue_expired_v2 or upgrade_current_v2_to_v3)),
+         "document_refresh_source_revision_mode_required")
     need(type(full_source) is bool and type(retire_expired_v2) is bool
          and type(rescue_expired_v2) is bool and type(upgrade_current_v2_to_v3) is bool
          and sum((retire_expired_v2, rescue_expired_v2, upgrade_current_v2_to_v3)) <= 1,
@@ -1170,7 +1345,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
          "document_refresh_fresh_v2_upgrade_requires_explicit_refresh")
     probe = infra("document_refresh_probe")
     if reviewed_application_context:
-        need(not (full_source or rescue_expired_v2 or retire_expired_v2 or upgrade_current_v2_to_v3)
+        need(not ((full_source and not source_revision) or rescue_expired_v2 or retire_expired_v2 or upgrade_current_v2_to_v3)
              and application_context is None and consumed_history is None,
              "document_refresh_reviewed_app_context_mode_required")
         boundary_module = infra("document_consumed_native")
@@ -1196,12 +1371,15 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
                      "document_refresh_current_app_context_changed")
             return refresh(directory, publish=publish, now=now, prior_journal=prior_journal,
                 history=history, recover_failed_native_job=recover_failed_native_job,
-                application_context=boundary.applications, consumed_history=disposition)
+                application_context=boundary.applications, consumed_history=disposition,
+                full_source=full_source, source_revision=source_revision)
         finally:
             clients.close()
             if delegate is not None:
                 delegate.close()
     need(consumed_history_bundle is None, "document_refresh_reviewed_app_context_mode_required")
+    need(not source_revision or application_context is not None,
+         "document_refresh_source_revision_app_context_required")
     if rescue_expired_v2:
         clients = probe.Clients()
         try:
@@ -1239,6 +1417,16 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
              "document_refresh_expired_v2_predecessor_required")
         return infra("document_candidate_release").refresh(directory, publish=publish,
             now=now, nonce=nonce, retire_expired_v2=True)
+    from infra.gcp.document_source_candidate import POLICY_SHA256 as source_policy
+    if current_policy == source_policy and not source_revision:
+        need(not full_source and application_context is not None, "document_refresh_source_revision_app_context_required")
+        value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce, parent=current_image)
+        return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
+            directory / "transition", application_context=application_context)
+    if source_revision:
+        value = full_source_candidate(directory, publish=publish, now=now, nonce=nonce, source_revision=True)
+        return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
+            directory / "transition", application_context=application_context)
     if current_policy == infra("document_candidate").POLICY_SHA256:
         need(not full_source, "document_refresh_candidate_full_source_review_required")
         return infra("document_candidate_release").refresh(directory, publish=publish, now=now, nonce=nonce)
@@ -1529,6 +1717,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition", "audit-consumed-v2-history", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
+    parser.add_argument("--source-revision", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
@@ -1542,9 +1731,13 @@ def main() -> None:
     parser.add_argument("--resume-manifest-sha256")
     parser.add_argument("--resume-transition-directory", type=Path)
     args = parser.parse_args()
-    need(args.consumed_history_bundle is None or args.mode in {"refresh", "audit-consumed-v2-history"},
+    need(not args.source_revision or args.mode in {"full-source-candidate", "full-source-refresh"},
+         "document_refresh_source_revision_mode_required")
+    need(args.consumed_history_bundle is None or args.mode in {"refresh", "audit-consumed-v2-history"}
+         or args.source_revision and args.mode == "full-source-refresh",
          "document_refresh_consumed_audit_mode_required")
-    need(not args.reviewed_application_context or args.mode == "refresh",
+    need(not args.reviewed_application_context or args.mode == "refresh"
+         or args.source_revision and args.mode == "full-source-refresh",
          "document_refresh_reviewed_app_context_mode_required")
     need(args.mode == "resume-full-source-refresh" or args.resume_candidate_directory is None
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
@@ -1632,6 +1825,8 @@ def main() -> None:
                      "recover_failed_native_job": args.recover_failed_native_job}
         if args.mode == "full-source-refresh":
             arguments["full_source"] = True
+        if args.source_revision:
+            arguments["source_revision"] = True
         if args.retire_expired_v2:
             arguments["retire_expired_v2"] = True
         if args.rescue_expired_v2:
@@ -1645,7 +1840,8 @@ def main() -> None:
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":
-        result = full_source_candidate(args.output_directory, publish=args.publish_candidate, now=datetime.now(UTC))
+        result = full_source_candidate(args.output_directory, publish=args.publish_candidate, now=datetime.now(UTC),
+                                       source_revision=args.source_revision)
     elif args.mode == "reconcile":
         need(args.transition_journal is not None, "document_refresh_transition_journal_required")
         http = native_http()

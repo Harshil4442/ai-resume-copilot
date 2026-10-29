@@ -36,8 +36,8 @@ def test_reviewed_profile_preserves_all_legacy_default_and_runtime_source_pins()
     assert probe.renderer_identity(native.IMAGE) == (probe.RENDERER, probe.FONT)
     assert probe.renderer_identity(native.IMAGE, historical_v1=True) == (probe.LEGACY_RENDERER, probe.LEGACY_FONT)
     assert refresh.accepted_source_hashes() == profile.SOURCES
-    assert refresh.full_source_snapshot()[1] != profile.SOURCES
-    assert refresh.full_source_snapshot()[2] != profile.BUILD["policy_sha256"]
+    assert refresh.full_source_snapshot(source_revision=True)[1] != profile.SOURCES
+    assert refresh.full_source_snapshot(source_revision=True)[2] != profile.BUILD["policy_sha256"]
     assert len(profile.SOURCES) == 13
     with pytest.raises(probe.NativeProofDenied, match="historical_renderer_profile_refused"):
         probe.renderer_identity(profile.IMAGE, historical_v1=True)
@@ -103,6 +103,10 @@ def test_native_ten_case_receipt_and_acceptance_carry_the_exact_profile(monkeypa
 
 
 def test_full_source_provenance_does_not_adopt_future_daily_renderer_parent(monkeypatch):
+    from infra.gcp import document_source_candidate as current
+    contents = current.historical_v3_contents(refresh.ROOT)
+    _, policy = current.frozen_v3(refresh.ROOT)
+    monkeypatch.setattr(refresh, "full_source_snapshot", lambda: (contents, policy["source_sha256"], current.courier.POLICY_SHA256))
     value = full.build()
     recipe = refresh.full_source_snapshot()[1][refresh.FULL_SOURCE_DOCKERFILE]
     before = refresh.build_contract(value, native.NONCE, recipe, full_source=True)

@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owned Bootstrap */
+        get: operations["get_owned_bootstrap_api_auth_bootstrap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/candidate/v1/availability": {
         parameters: {
             query?: never;
@@ -3142,6 +3159,10 @@ export interface components {
         };
         /** DimensionScore */
         DimensionScore: {
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            /** Evidence Quote */
+            evidence_quote?: string | null;
             /** Feedback */
             feedback: string;
             /** Name */
@@ -3354,6 +3375,27 @@ export interface components {
             /** Package Digest */
             package_digest: string;
         };
+        /** FeatureView */
+        FeatureView: {
+            /** Bucket */
+            bucket: number;
+            /** Enabled */
+            enabled: boolean;
+            /** Key */
+            key: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "kill_switch" | "internal" | "invited" | "percentage";
+            /** Rollout Percent */
+            rollout_percent: number;
+            /**
+             * Variant
+             * @enum {string}
+             */
+            variant: "on" | "off";
+        };
         /** FreeCoreLimitView */
         FreeCoreLimitView: {
             /** Max Input Bytes */
@@ -3487,10 +3529,16 @@ export interface components {
         JobMatchResponse: {
             /** Dimensions */
             dimensions: components["schemas"]["DimensionScore"][];
+            /** Evidence Links */
+            evidence_links?: {
+                [key: string]: unknown;
+            };
             /** Fit Summary */
             fit_summary: string;
             /** Full Matches */
             full_matches: string[];
+            /** Gap Semantics */
+            gap_semantics?: string | null;
             /** Grade */
             grade: string;
             /** Improvement Tips */
@@ -3499,6 +3547,8 @@ export interface components {
             match_id: number;
             /** Match Score */
             match_score: number;
+            /** Missing Evidence */
+            missing_evidence?: string[];
             /** Mode */
             mode?: ("basic" | "enhanced") | null;
             /** Partial Matches */
@@ -3507,12 +3557,22 @@ export interface components {
             provenance?: string | null;
             /** Required Skills */
             required_skills: string[];
+            /** Score Basis */
+            score_basis?: string | null;
             /** Scoring Version */
             scoring_version?: string | null;
+            /** Skill Analysis */
+            skill_analysis?: {
+                [key: string]: unknown;
+            }[];
             /** Skill Verification Rate */
             skill_verification_rate: number;
             /** True Gaps */
             true_gaps: string[];
+            /** Unassessed Dimensions */
+            unassessed_dimensions?: {
+                [key: string]: unknown;
+            }[];
             /** Uncertainties */
             uncertainties?: string[];
         };
@@ -4139,6 +4199,24 @@ export interface components {
             provenance: string;
             /** Recommended Bullet */
             recommended_bullet: string;
+        };
+        /** OwnedBootstrapView */
+        OwnedBootstrapView: {
+            credit_availability: components["schemas"]["CreditAvailabilityView"] | null;
+            credit_wallet: components["schemas"]["CreditWalletView"] | null;
+            /** Features */
+            features: {
+                [key: string]: components["schemas"]["FeatureView"];
+            } | null;
+            profile: components["schemas"]["UserProfileResponse"] | null;
+            /**
+             * Schema Version
+             * @default owned-bootstrap-v1
+             * @constant
+             */
+            schema_version: "owned-bootstrap-v1";
+            /** Unavailable */
+            unavailable: ("profile" | "features" | "credit_availability" | "credit_wallet")[];
         };
         /** PackageUpdate */
         PackageUpdate: {
@@ -5331,6 +5409,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_owned_bootstrap_api_auth_bootstrap_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnedBootstrapView"];
                 };
             };
         };

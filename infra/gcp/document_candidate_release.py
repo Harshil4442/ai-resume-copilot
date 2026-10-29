@@ -227,16 +227,19 @@ def verify_expired_current_v2_for_retirement(image: str, metadata: dict[str, Any
     prior.verify_expired_current_v2_for_retirement(image, metadata, read_only_release=False)
 
 
-def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None) -> None:
+def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None,
+                       caller_serving_validator: Any = None) -> None:
     if policy_sha256 not in (None, POLICY):
         need(image != profile.IMAGE, "cross_profile_pins")
-        return prior.verify_caller_pins(clients, image, policy_sha256=policy_sha256)
+        return prior.verify_caller_pins(clients, image, policy_sha256=policy_sha256,
+                                        caller_serving_validator=caller_serving_validator)
     need(type(image) is str and prior.IMAGE.fullmatch(image), "cross_profile_pins")
     for name in transition.CALLERS:
         service = clients.service(prior.PARENT + "/services/" + name)
         containers = service.get("template", {}).get("containers", [])
         need(type(containers) is list and len(containers) == 1, "caller_configuration_changed")
-        revision = prior.validate_serving(clients, service, containers[0].get("image"), name)
+        serving = caller_serving_validator or prior.validate_serving
+        revision = serving(clients, service, containers[0].get("image"), name)
         for row in (containers[0], revision["containers"][0]):
             env = row.get("env", [])
             need(type(env) is list and all(
@@ -244,35 +247,40 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
                 for key, value in environment(image).items()), "caller_pins_changed")
 
 
-def run_successor(build: dict[str, Any], journal: Path) -> prior.NativeAcceptance:
+def run_successor(build: dict[str, Any], journal: Path, *, adapter: Any = None) -> prior.NativeAcceptance:
     """Two fresh zero-retry Jobs, one create/run each; unknown outcomes stop."""
+    target = sys.modules[__name__] if adapter is None else adapter
+    version = 3 if adapter is None else 4
+    if adapter is not None:
+        from infra.gcp.document_source_release import SourceProbe
+        need(isinstance(adapter, SourceProbe) and adapter.build == build, "source_adapter_changed")
     image = build["immutable_image"]
-    need(image != profile.IMAGE and journal.is_absolute() and not journal.exists(), "fresh_journal_required")
-    runtime = source_contract()
-    need(build_identity(read_only_release=False, build_id=build["build_id"], nonce=build["nonce"], image=image) == build,
+    need(image != target.profile.IMAGE and journal.is_absolute() and not journal.exists(), "fresh_journal_required")
+    runtime = target.source_contract()
+    need(target.build_identity(read_only_release=False, build_id=build["build_id"], nonce=build["nonce"], image=image) == build,
          "build_changed")
     journal.mkdir(mode=0o700)
     write = prior.build_module().write_new
-    write(journal / "binding.json", {"version": 3, "image": image, "build_identity": build})
+    write(journal / "binding.json", {"version": version, "image": image, "build_identity": build})
     clients = prior.Clients()
     try:
-        for mode, handle in handles(build).items():
+        for mode, handle in target.handles(build).items():
             clients.preflight()
-            body = candidate.desired(image, handle["nonce"], mode)
+            body = target.candidate.desired(image, handle["nonce"], mode)
             try:
                 clients.job(body["name"])
             except clients.errors.HttpError as error:
                 need(error.status_code == 404, "fresh_job_absence_unverified")
             else:
                 raise prior.NativeProofDenied("document_candidate_release_job_exists_reconcile_only")
-            write(journal / (mode + ".create.started.json"), {"body_sha256": candidate.sha(body), "automatic_replay": False})
+            write(journal / (mode + ".create.started.json"), {"body_sha256": target.candidate.sha(body), "automatic_replay": False})
             created = clients.create(body)
             write(journal / (mode + ".create.acknowledged.json"), {"name": created.get("name")})
             deadline = time.monotonic() + 900
             prior.wait_operation(clients, created, "Job", deadline)
             job = clients.job(body["name"])
             plan = {"image": image, "mode": mode, "job_nonce": handle["nonce"]}
-            candidate.validate_job(job, plan)
+            target.candidate.validate_job(job, plan)
             need(prior.integer(job.get("executionCount", 0), 0)
                  and job.get("latestCreatedExecution") in (None, {}), "job_previously_executed")
             write(journal / (mode + ".run.started.json"), {"name": job["name"], "uid": job["uid"],
@@ -280,12 +288,12 @@ def run_successor(build: dict[str, Any], journal: Path) -> prior.NativeAcceptanc
             started = clients.start(job)
             write(journal / (mode + ".run.acknowledged.json"), {"name": started.get("name")})
             prior.wait_operation(clients, started, "Execution", deadline)
-            _, _, observed = _observation(clients, mode, build)
+            _, _, observed = target._observation(clients, mode, build)
             if mode == "inventory":
-                identity = candidate.validate_inventory(observed, image, runtime)
-                need(identity == {"renderer_version": profile.RENDERER, "font_manifest_sha256": profile.FONT},
+                identity = target.candidate.validate_inventory(observed, image, runtime)
+                need(identity == {"renderer_version": target.profile.RENDERER, "font_manifest_sha256": target.profile.FONT},
                      "refresh_renderer_changed")
-        accepted = verify_successor(image, build, journal)
+        accepted = target.verify_successor(image, build, journal)
         from dataclasses import asdict
         write(journal / "acceptance.json", asdict(accepted))
         return accepted

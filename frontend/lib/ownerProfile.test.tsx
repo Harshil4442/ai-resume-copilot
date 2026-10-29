@@ -18,6 +18,7 @@ import Nav from "../components/Nav";
 import SessionProviderWrapper from "../components/SessionProviderWrapper";
 import { ownerProfileQueryOptions } from "./ownerProfile";
 import type { UserProfile } from "./types";
+import { ownedBootstrapFixture } from "./fixtures/ownedBootstrap";
 
 const clients = new Set<QueryClient>();
 function profile(email: string, units: number): UserProfile {
@@ -31,7 +32,7 @@ function Reader({ label }: { label: string }) {
 function tree(extra = false) {
   return <SessionProviderWrapper><Nav /><Reader label="Dashboard" />{extra ? <Reader label="Later consumer" /> : null}</SessionProviderWrapper>;
 }
-const reads = () => state.get.mock.calls.filter(([path]) => path === "/auth/profile");
+const reads = () => state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap");
 
 beforeEach(() => {
   state.pathname = "/dashboard";
@@ -44,8 +45,8 @@ describe("shared owner profile", () => {
   it("deduplicates Nav and page requests, retains fresh data for another consumer, and refetches once per credit event", async () => {
     let resolve!: (value: UserProfile) => void;
     const pending = new Promise<UserProfile>((done) => { resolve = done; });
-    state.get.mockImplementation((path: string) => path === "/auth/profile"
-      ? reads().length === 1 ? pending : Promise.resolve(profile("a@example.test", 9))
+    state.get.mockImplementation((path: string) => path === "/auth/bootstrap"
+      ? reads().length === 1 ? pending.then((profile) => ownedBootstrapFixture({ profile })) : Promise.resolve(ownedBootstrapFixture({ profile: profile("a@example.test", 9) }))
       : Promise.resolve({ features: {} }));
     const view = render(tree());
     await waitFor(() => expect(reads()).toHaveLength(1));
@@ -65,8 +66,8 @@ describe("shared owner profile", () => {
   it("isolates a direct owner switch and rejects a late previous-owner result", async () => {
     let oldReply!: (value: UserProfile) => void;
     const pending = new Promise<UserProfile>((done) => { oldReply = done; });
-    state.get.mockImplementation((path: string) => path === "/auth/profile"
-      ? reads().length === 1 ? pending : Promise.resolve(profile("b@example.test", 3))
+    state.get.mockImplementation((path: string) => path === "/auth/bootstrap"
+      ? reads().length === 1 ? pending.then((profile) => ownedBootstrapFixture({ profile })) : Promise.resolve(ownedBootstrapFixture({ profile: profile("b@example.test", 3) }))
       : Promise.resolve({ features: {} }));
     const view = render(tree());
     await waitFor(() => expect(reads()).toHaveLength(1));
@@ -83,8 +84,8 @@ describe("shared owner profile", () => {
   });
 
   it("removes private profile views on logout/loading and uses a fresh cache for the next login", async () => {
-    state.get.mockImplementation((path: string) => path === "/auth/profile"
-      ? Promise.resolve(profile(state.auth.data!.user.email, 7)) : Promise.resolve({ features: {} }));
+    state.get.mockImplementation((path: string) => path === "/auth/bootstrap"
+      ? Promise.resolve(ownedBootstrapFixture({ profile: profile(state.auth.data!.user.email, 7) })) : Promise.resolve({ features: {} }));
     const view = render(tree());
     await screen.findByText("Dashboard: a@example.test / 7");
     for (const status of ["loading", "unauthenticated"] as const) {

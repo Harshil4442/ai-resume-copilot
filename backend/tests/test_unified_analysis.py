@@ -6,6 +6,7 @@ from backend.app.domains.analysis import schemas, tasks
 from backend.app.domains.analysis import service as analysis_service
 from backend.app.domains.credits import analysis, finance, runtime, service, service_quotes
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
+from backend.app.services.delivery_contracts import current_output_contract
 from backend.app.services.generation_budget import current_budget
 from backend.tests.test_analysis_runs import _native_source
 from backend.tests.test_unified_credits import factory, grant
@@ -20,6 +21,7 @@ def setup(factory, monkeypatch):
     selected = route(attempts=1).model_copy(
         update={
             "operation": "enhanced_job_match",
+            "output_contract_sha256": current_output_contract("enhanced_job_match"),
             "credits": 3,
             "supported_limits": {
                 "context_bytes": 100_000,
@@ -28,6 +30,8 @@ def setup(factory, monkeypatch):
             },
         }
     )
+    selected = selected.model_copy(update={"model_quotes": tuple(
+        quote.model_copy(update={"max_input_tokens": 8192}) for quote in selected.model_quotes)})
     config = runtime.RuntimeConfig(policy=financial_policy(), budgets=budgets(), routes=(selected,))
     from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
     reviewed_runtime(monkeypatch, config)
@@ -42,11 +46,16 @@ def setup(factory, monkeypatch):
             id=1,
             user_id=1,
             raw_text="Experienced Python developer",
+            source_document=_native_source(), source_format="docx",
             skills=["Python"],
             sections={},
             contact_info={},
         )
         db.add(resume)
+        db.flush()
+        db.add(models.EvidenceItem(id="matching-proof", user_id=1, resume_id=1, category="synthetic",
+            title="Reviewed test fact", evidence_text="Experienced Python developer", skills=["Python"],
+            metrics={}, provenance="synthetic_fixture", approval_state="approved"))
         db.commit()
     return factory, config
 
@@ -475,3 +484,87 @@ def test_pause_preserves_persistent_contract_without_legacy_debit(setup, monkeyp
         assert caught.value.detail["code"] == "credit_service_quote_rejected"
         assert db.get(models.User, 1).ai_credits == 17
         assert db.query(models.AnalysisRun).count() == 1
+
+
+def test_complete_matching_preflight_requires_approved_facts_before_quote_or_spend(setup, monkeypatch):
+    from backend.app.domains.credits.models import CreditServiceQuote
+
+    factory, _ = setup
+    monkeypatch.setattr(tasks, "execute_operation", lambda *_: pytest.fail("No model execution"))
+    with factory() as db:
+        db.query(models.EvidenceItem).update({"approval_state": "pending"})
+        db.commit()
+        with pytest.raises(finance.FundingUnavailable, match="Approve at least one"):
+            analysis.prepare_quote_context(db, user_id=1, payload=request())
+        assert db.query(CreditServiceQuote).count() == db.query(CreditReservation).count() == 0
+        assert db.query(models.ModelCostLiability).count() == 0
+        assert service.wallet(db, user_id=1).available_credits == 40
+
+
+def test_actual_funded_matching_uses_complete_contract_and_canonical_aliases(setup, monkeypatch):
+    import json
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from backend.app.services import llm_client, matching_contract
+    from backend.tests.test_complete_matching import comparison_output
+    from docx import Document
+
+    factory, _ = setup
+    fact = "Developed Postgres APIs for internal services."
+    source = fact + '\nprivate@example.invalid\nNotes: "quoted" C:\\portfolio\\draft\nAge: 33\nKeep this final source sentinel.'
+    document = Document()
+    document.add_paragraph(source)
+    binary = BytesIO()
+    document.save(binary)
+    with factory() as db:
+        resume = db.get(models.Resume, 1)
+        resume.raw_text, resume.sections, resume.skills = source, {"experience": source}, ["PostgreSQL"]
+        resume.source_document = binary.getvalue()
+        db.query(models.EvidenceItem).one().evidence_text = fact
+        db.commit()
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "synthetic-model")
+    monkeypatch.setattr(llm_client, "LLM_API_BASE", "https://generativelanguage.googleapis.com")
+    monkeypatch.setattr(llm_client, "_api_key", lambda: "synthetic-never-network")
+    payload = request().model_copy(update={"input": {"resume_id": 1, "mode": "enhanced",
+        "job_description": "Develop reliable PostgreSQL APIs for internal services."}})
+    with factory() as db:
+        _, fingerprint, config, selected = analysis.prepare_quote_context(db, user_id=1, payload=payload)
+        quote = service_quotes.issue_service_quote(db, user_id=1, input_fingerprint=fingerprint,
+            idempotency_key="complete-alias-quote", route=selected, policy=config.policy)
+        db.commit()
+        run, _ = analysis_service.create_run(db, user_id=1,
+            payload=payload.model_copy(update={"accepted_service_quote_id": quote.id}), header_idempotency_key=None)
+        identity = run.id
+    calls = []
+    def transport(messages, budget):
+        context = json.loads(messages[-1]["content"].split("COMPLETE SOURCE DATA:\n", 1)[1])
+        record = budget.admit("google", "synthetic-model", messages, api_base=llm_client.LLM_API_BASE)
+        budget.finish(record, latency_ms=1, response=SimpleNamespace(usage_metadata=SimpleNamespace(
+            prompt_token_count=100, candidates_token_count=80, total_token_count=200, thoughts_token_count=20)))
+        result = comparison_output(context)
+        row = next(item for item in result["skill_analysis"] if item["jd_skill"] == "PostgreSQL")
+        row["via_skill"] = "Postgres"  # Legal canonical alias, never a false gap.
+        from backend.app.services.prompt_privacy import REDACTED, redact_prompt_text
+        assert context["resume"]["raw_text"] == redact_prompt_text(source)
+        assert "private@example.invalid" not in context["resume"]["raw_text"]
+        assert "33" not in context["resume"]["raw_text"] and REDACTED in context["resume"]["raw_text"]
+        assert '"quoted" C:\\portfolio\\draft' in context["resume"]["raw_text"]
+        assert "final source sentinel" in context["resume"]["raw_text"]
+        calls.append(context)
+        return json.dumps(result)
+    monkeypatch.setattr(llm_client, "_chat_with_budget", transport)
+    assert tasks.process_analysis_run(identity) == "succeeded"
+    assert tasks.process_analysis_run(identity) == "succeeded" and len(calls) == 1
+    with factory() as db:
+        run = db.get(models.AnalysisRun, identity)
+        assert run.committed_units == 3 and run.usage_state == "committed"
+        assert run.result_payload["mode"] == "enhanced"
+        assert "postgresql" in run.result_payload["full_matches"]
+        assert "postgresql" not in run.result_payload["true_gaps"]
+        assert run.result_payload["output_contract_sha256"] == current_output_contract("enhanced_job_match")
+        assert run.prompt_version == matching_contract.PROMPT_VERSION
+        assert db.query(models.JobMatch).count() == 1
+        assert db.get(models.Resume, 1).source_document == binary.getvalue()
+        assert service.wallet(db, user_id=1).available_credits == 37
+        assert db.query(CreditExecutionHold).one().native_settled_minor is None

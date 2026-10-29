@@ -1,0 +1,408 @@
+{
+  "$defs": {
+    "Artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "Artifact",
+      "type": "object"
+    },
+    "DatabasePin": {
+      "additionalProperties": false,
+      "properties": {
+        "database": {
+          "const": "hirewiz_quality_evaluation_v2",
+          "title": "Database",
+          "type": "string"
+        },
+        "database_oid": {
+          "exclusiveMinimum": 0,
+          "title": "Database Oid",
+          "type": "integer"
+        },
+        "host": {
+          "const": "127.0.0.1",
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1024,
+          "title": "Port",
+          "type": "integer"
+        },
+        "system_identifier": {
+          "pattern": "^[0-9]{1,20}$",
+          "title": "System Identifier",
+          "type": "string"
+        },
+        "username": {
+          "pattern": "^[a-z_][a-z0-9_]{0,62}$",
+          "title": "Username",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "port",
+        "database",
+        "username",
+        "system_identifier",
+        "database_oid"
+      ],
+      "title": "DatabasePin",
+      "type": "object"
+    },
+    "ModelPriceQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "api_base": {
+          "title": "Api Base",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "input_rate_micros_per_million": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000,
+          "title": "Input Rate Micros Per Million",
+          "type": "integer"
+        },
+        "max_input_tokens": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Max Input Tokens",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
+        "model": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:/-]+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "output_limit_parameter": {
+          "enum": [
+            "max_output_tokens",
+            "max_completion_tokens",
+            "max_tokens"
+          ],
+          "title": "Output Limit Parameter",
+          "type": "string"
+        },
+        "output_limit_source_url": {
+          "title": "Output Limit Source Url",
+          "type": "string"
+        },
+        "output_rate_micros_per_million": {
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000,
+          "title": "Output Rate Micros Per Million",
+          "type": "integer"
+        },
+        "price_source_url": {
+          "title": "Price Source Url",
+          "type": "string"
+        },
+        "provider": {
+          "enum": [
+            "google",
+            "openai",
+            "openai_compatible"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "token_estimator": {
+          "const": "utf8-json-bytes-framing-v1",
+          "title": "Token Estimator",
+          "type": "string"
+        },
+        "usage_source_url": {
+          "title": "Usage Source Url",
+          "type": "string"
+        },
+        "valid_from": {
+          "format": "date-time",
+          "title": "Valid From",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:/-]+$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "api_base",
+        "version",
+        "price_source_url",
+        "output_limit_source_url",
+        "usage_source_url",
+        "valid_from",
+        "expires_at",
+        "input_rate_micros_per_million",
+        "output_rate_micros_per_million",
+        "max_input_tokens",
+        "max_output_tokens",
+        "output_limit_parameter",
+        "token_estimator"
+      ],
+      "title": "ModelPriceQuote",
+      "type": "object"
+    },
+    "Route": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Contract Sha256",
+          "type": "string"
+        },
+        "price": {
+          "$ref": "#/$defs/ModelPriceQuote"
+        },
+        "prompt_version": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Prompt Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_version",
+        "contract_sha256",
+        "price"
+      ],
+      "title": "Route",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "authorized_by": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Authorized By",
+      "type": "string"
+    },
+    "compiler_image": {
+      "pattern": "^us-central1-docker\\.pkg\\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:[a-f0-9]{64}$",
+      "title": "Compiler Image",
+      "type": "string"
+    },
+    "compiler_policy_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Compiler Policy Sha256",
+      "type": "string"
+    },
+    "database": {
+      "$ref": "#/$defs/DatabasePin"
+    },
+    "expense_policy_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Expense Policy Sha256",
+      "type": "string"
+    },
+    "experiment_id": {
+      "pattern": "^[a-z0-9][a-z0-9-]{7,79}$",
+      "title": "Experiment Id",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "funding_evidence": {
+      "$ref": "#/$defs/Artifact"
+    },
+    "held_out_lock": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Artifact"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "maximum_native_reserved_minor": {
+      "exclusiveMinimum": 0,
+      "title": "Maximum Native Reserved Minor",
+      "type": "integer"
+    },
+    "maximum_provider_cost_micros": {
+      "exclusiveMinimum": 0,
+      "title": "Maximum Provider Cost Micros",
+      "type": "integer"
+    },
+    "model_policy_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Model Policy Sha256",
+      "type": "string"
+    },
+    "native_capture_registry": {
+      "$ref": "#/$defs/Artifact"
+    },
+    "native_currency": {
+      "const": "INR",
+      "title": "Native Currency",
+      "type": "string"
+    },
+    "native_manifest_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Native Manifest Sha256",
+      "type": "string"
+    },
+    "native_receipts_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Native Receipts Sha256",
+      "type": "string"
+    },
+    "native_reserve_minor_per_run": {
+      "exclusiveMinimum": 0,
+      "title": "Native Reserve Minor Per Run",
+      "type": "integer"
+    },
+    "native_runtime_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Native Runtime Sha256",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "interview_questions",
+        "resume_tailor",
+        "job_match",
+        "resume_enrichment",
+        "bullet_rewrite",
+        "enhanced_qa",
+        "learning_strategy"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "provider_balance_checked_at": {
+      "format": "date-time",
+      "title": "Provider Balance Checked At",
+      "type": "string"
+    },
+    "provider_balance_evidence": {
+      "$ref": "#/$defs/Artifact"
+    },
+    "purpose": {
+      "const": "internal_quality_evaluation_not_retail_qualification",
+      "title": "Purpose",
+      "type": "string"
+    },
+    "routes": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Route"
+      },
+      "propertyNames": {
+        "enum": [
+          "reference",
+          "candidate"
+        ]
+      },
+      "title": "Routes",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "supported-quality-evaluation-v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "enum": [
+        "development",
+        "held_out"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "draft",
+        "authorized"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "valid_from": {
+      "format": "date-time",
+      "title": "Valid From",
+      "type": "string"
+    },
+    "worker_image": {
+      "pattern": "^us-central1-docker\\.pkg\\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:[a-f0-9]{64}$",
+      "title": "Worker Image",
+      "type": "string"
+    },
+    "worker_policy_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Worker Policy Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "experiment_id",
+    "purpose",
+    "state",
+    "authorized_by",
+    "valid_from",
+    "expires_at",
+    "provider_balance_checked_at",
+    "funding_evidence",
+    "provider_balance_evidence",
+    "maximum_provider_cost_micros",
+    "model_policy_sha256",
+    "expense_policy_sha256",
+    "native_manifest_sha256",
+    "native_receipts_sha256",
+    "routes",
+    "operation",
+    "split",
+    "database",
+    "native_capture_registry",
+    "native_reserve_minor_per_run",
+    "maximum_native_reserved_minor",
+    "native_currency",
+    "native_runtime_sha256",
+    "worker_image",
+    "worker_policy_sha256",
+    "compiler_image",
+    "compiler_policy_sha256"
+  ],
+  "title": "Authorization",
+  "type": "object"
+}

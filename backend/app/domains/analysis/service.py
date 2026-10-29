@@ -64,7 +64,7 @@ def _dependency_snapshot(
             "sections": resume.sections, "skills": resume.skills,
             "experience": resume.experience_years,
         }
-    if operation in {"interview_questions", "resume_tailor"}:
+    if operation in {"interview_questions", "resume_tailor"} or (operation == "job_match" and paid_context):
         evidence_query = db.query(models.EvidenceItem).filter(
             models.EvidenceItem.user_id == user_id,
             models.EvidenceItem.approval_state == "approved",
@@ -77,7 +77,7 @@ def _dependency_snapshot(
              **({"correction_version": item.updated_at.isoformat() if item.updated_at else None,
                  "provenance": item.provenance, "source_ref": item.source_ref,
                  "category": item.category, "confidence": item.confidence}
-                if operation == "interview_questions" else {})}
+                if operation == "interview_questions" or (operation == "job_match" and paid_context) else {})}
             for item in evidence_query.order_by(models.EvidenceItem.id).all()
         ]
     if payload.get("mode") == "enhanced" or operation == "resume_tailor":
@@ -97,6 +97,11 @@ def _dependency_snapshot(
             "fallback_policy": GEMINI_FALLBACK_MODELS,
             "privacy_policy": PROMPT_PRIVACY_VERSION,
         }
+        if operation == "job_match" and paid_context:
+            from ...services import matching_contract
+
+            dependencies["generation"].update({"prompt": matching_contract.PROMPT_VERSION,
+                "validator": matching_contract.VALIDATOR_VERSION, "context_selection": "complete-owned-approved-evidence-v1"})
         if operation == "interview_questions":
             from ...services.llm_client import LLM_API_BASE, LLM_MODEL
 
@@ -106,11 +111,24 @@ def _dependency_snapshot(
         if operation == "resume_tailor":
             dependencies["generation"].update({"validator": VALIDATOR_VERSION,
                                                 "personal_claims": PERSONAL_CLAIM_VERSION})
-        if operation in {"resume_tailor", "interview_questions"}:
+        if operation in {"resume_tailor", "interview_questions"} or (operation == "job_match" and paid_context):
             from ...services.delivery_contracts import current_output_contract
 
             dependencies["generation"]["output_contract_sha256"] = current_output_contract(operation)
     return dependencies
+
+
+def _current_input_fingerprint(db, run, semantic, *, paid_context=False):
+    # Only an internal semantic expectation is normalized to its reviewed side.
+    # This creates no provider authority; the exact v2 scope/budget still checks
+    # actual model/endpoint at dispatch. Retail uses actual server configuration.
+    if run.id.startswith("qev2_") and (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2":
+        from .supported_evaluation import _fingerprint
+
+        return _fingerprint(db, run)
+    return payload_fingerprint({"operation": run.operation, "opportunity_id": run.opportunity_id,
+        "input": semantic, "dependencies": _dependency_snapshot(db, run.user_id, run.operation,
+            run.opportunity_id, semantic, paid_context=paid_context)})
 
 
 def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payload: dict) -> None:
@@ -121,11 +139,7 @@ def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payloa
     # source rows so the session identity map cannot mask a concurrent edit.
     db.expire_all()
     semantic_input = {key: value for key, value in payload.items() if key != "_accepted_analysis_quote"}
-    current = payload_fingerprint({
-        "operation": run.operation, "opportunity_id": run.opportunity_id,
-        "input": semantic_input,
-        "dependencies": _dependency_snapshot(db, run.user_id, run.operation, run.opportunity_id, semantic_input),
-    })
+    current = _current_input_fingerprint(db, run, semantic_input)
     if current != run.input_fingerprint:
         raise InterviewInputsChanged(
             "The selected resume, approved evidence, job or interview contract changed. "
@@ -137,6 +151,16 @@ class TailoringInputsChanged(ValueError):
     retryable = False
 
 
+def ensure_matching_inputs_current(db: Session, run: models.AnalysisRun, payload: dict) -> None:
+    from ...services.matching_contract import MatchingContextUnavailable
+
+    db.expire_all()
+    semantic = {key: value for key, value in payload.items() if key != "_accepted_analysis_quote"}
+    current = _current_input_fingerprint(db, run, semantic, paid_context=True)
+    if current != run.input_fingerprint:
+        raise MatchingContextUnavailable("The selected resume, approved facts or job changed. Review a new comparison quote; this attempt is not charged.")
+
+
 def ensure_tailoring_inputs_current(
     db: Session, run: models.AnalysisRun, payload: dict,
 ) -> None:
@@ -146,15 +170,7 @@ def ensure_tailoring_inputs_current(
         key: value for key, value in payload.items()
         if key != "_accepted_analysis_quote"
     }
-    current = payload_fingerprint({
-        "operation": run.operation,
-        "opportunity_id": run.opportunity_id,
-        "input": semantic_input,
-        "dependencies": _dependency_snapshot(
-            db, run.user_id, run.operation, run.opportunity_id,
-            semantic_input, paid_context=True,
-        ),
-    })
+    current = _current_input_fingerprint(db, run, semantic_input, paid_context=True)
     if current != run.input_fingerprint:
         raise TailoringInputsChanged(
             "The selected job, resume, approved evidence or tailoring contract changed. "

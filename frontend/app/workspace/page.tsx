@@ -25,12 +25,12 @@ import { StatusBadge } from "../../components/ui/StatusBadge";
 import { apiGet, apiPostJson } from "../../lib/api";
 import {
   type Opportunity,
-  type OpportunityList,
   stageLabels,
   stageTone,
   stages,
 } from "../../lib/career";
 import { trackEvent } from "../../lib/analytics";
+import { opportunitiesOptions } from "../../lib/opportunityQueries";
 
 type ResumeList = { resumes: { id: number; filename: string; created_at: string }[] };
 
@@ -81,10 +81,7 @@ export default function WorkspacePage() {
   const dialogTrigger = useRef<HTMLButtonElement | null>(null);
   const [stage, setStage] = useState("all");
   const [search, setSearch] = useState("");
-  const opportunities = useQuery({
-    queryKey: ["opportunities"],
-    queryFn: () => apiGet<OpportunityList>("/v1/opportunities?limit=200"),
-  });
+  const opportunities = useQuery(opportunitiesOptions({ limit: 200 }));
   const resumes = useQuery({
     queryKey: ["resumes"],
     queryFn: () => apiGet<ResumeList>("/resume/list"),

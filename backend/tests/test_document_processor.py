@@ -799,6 +799,18 @@ def test_unexpected_parser_failure_is_unavailable_not_permanent(processor, monke
     assert caught.value.__cause__ is None and "private-marker" not in str(caught.value)
 
 
+def test_recognized_pdf_reading_order_refusal_is_permanent_and_private(processor, monkeypatch):
+    from app.services import parsing
+
+    monkeypatch.setattr(processor, "scan_original", lambda _: {"engine": "ClamAV", "version": "synthetic", "definitions": "synthetic"})
+    def refuse(*_a, **_k):
+        raise parsing.PDFReadingOrderError("private-marker")
+    monkeypatch.setattr(parsing, "parse_resume_file", refuse)
+    with pytest.raises(processor.InspectionDenied, match="^document_inspection_refused$") as caught:
+        processor.inspect(payload(pdf()))
+    assert caught.value.__cause__ is None and "private-marker" not in str(caught.value)
+
+
 def private_outcome(content, code):
     return {
         "version": 1,

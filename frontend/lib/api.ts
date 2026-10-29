@@ -1,10 +1,12 @@
 import { accountApiPath, accountMutationHeaders } from "./accountTransportClient";
+import { retryAfterMilliseconds } from "./boundedStatusPolling";
 
 export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
     public readonly detail: unknown,
+    public readonly retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = "ApiError";
@@ -52,6 +54,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       errorMessage(data, `${init.method || "GET"} ${path} failed (${res.status})`),
       res.status,
       data,
+      res.status === 429 || res.status === 503 ? retryAfterMilliseconds(res.headers.get("Retry-After"), res.status) : null,
     );
   }
   return data as T;

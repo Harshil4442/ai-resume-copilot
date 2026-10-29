@@ -118,7 +118,12 @@ jobs:
           tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
           tests/test_unified_schema25_release.py tests/test_unified_schema25_step_postgres.py
           tests/test_schema25_app_rolling_release.py tests/test_schema25_app_compatibility_postgres.py
-          ../infra/gcp/schema25_app_rolling_release.py
+          tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
+          tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_protocol_v2.py
+          tests/test_firestore_identity_list.py tests/test_candidate_validation_identity_list.py
+          tests/test_native_metadata_admission.py tests/test_native_metadata_admission_redis.py
+          app/routers/native_metadata_http.py
+          ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py
           tests/test_schema25_coordinator_pause.py tests/test_schema25_maintenance.py
           tests/test_schema25_migration_metadata.py tests/test_schema25_migration_recovery.py
           ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
@@ -194,7 +199,9 @@ jobs:
           scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
-          scripts/schema25_app_release_contract.py ../infra/gcp/schema25_app_rolling_release.py
+          scripts/schema25_app_release_contract.py scripts/schema25_app_release_contract_v2.py
+          scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
+          ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py
           scripts/credit_shadow_report.py
           scripts/unified_quality_packet.py
           scripts/materialize_quality_sources.py
@@ -237,7 +244,7 @@ jobs:
           export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
           document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           backend/.venv/bin/python backend/scripts/document_test_image.py \
-            --platform linux/amd64 --output "$document_test_report_path"
+            --platform linux/amd64 --source-revision --output "$document_test_report_path"
           printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
       - name: Save sanitized native document engine proof
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
@@ -320,12 +327,47 @@ jobs:
           .venv/bin/python scripts/ci_database_transfer_clients.py
           --service-container "$CI_POSTGRES_CONTAINER_ID"
           --root "$RUNNER_TEMP/hirewiz-transfer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-      - name: Qualify schema25 app compatibility
+      - name: Qualify retained actual-source schema25 app v1
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_postgres.py
+        run: .venv/bin/python scripts/qualify_schema25_retained_v1.py
+      - name: Qualify schema25 app v2 compatibility
+        working-directory: backend
+        env:
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
+      - name: Prepare pinned owned TLS Redis wire binary
+        id: native-metadata-redis
+        timeout-minutes: 7
+        run: |
+          test -f /usr/include/openssl/ssl.h
+          owned_redis_root="$(mktemp -d "$RUNNER_TEMP/hirewiz-native-wire-redis-XXXXXX")"
+          chmod 700 "$owned_redis_root"
+          printf 'root=%s\n' "$owned_redis_root" >> "$GITHUB_OUTPUT"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --max-time 60 --max-filesize 20971520 \
+            https://codeload.github.com/redis/redis/tar.gz/refs/tags/7.2.7 \
+            --output "$owned_redis_root/source.tgz"
+          printf '%s  %s\n' fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9 \
+            "$owned_redis_root/source.tgz" | sha256sum --check --status
+          mkdir "$owned_redis_root/source"
+          tar --no-same-owner --no-same-permissions --strip-components=1 \
+            -xzf "$owned_redis_root/source.tgz" -C "$owned_redis_root/source"
+          timeout 300s make -C "$owned_redis_root/source" -j2 BUILD_TLS=yes MALLOC=libc redis-server \
+            > "$owned_redis_root/build.log" 2>&1
+          test -x "$owned_redis_root/source/src/redis-server"
+          printf 'binary=%s\n' "$owned_redis_root/source/src/redis-server" >> "$GITHUB_OUTPUT"
+      - name: Qualify schema25 app v2 native protocol
+        working-directory: backend
+        env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v2.py
       - name: Run backend tests
         working-directory: backend
         env:
@@ -336,6 +378,7 @@ jobs:
           PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
           HIREWIZ_CI_LOCK_DIAGNOSTICS: "1"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
@@ -382,6 +425,24 @@ jobs:
           if [[ -n "$AUTHORITY_EMULATOR_CONTAINER_ID" ]]; then
             timeout 15s docker rm --force "$AUTHORITY_EMULATOR_CONTAINER_ID"
           fi
+      - name: Remove only owned TLS Redis build source
+        if: always()
+        timeout-minutes: 1
+        env:
+          NATIVE_WIRE_REDIS_ROOT: ${{ steps.native-metadata-redis.outputs.root }}
+        run: |
+          python3 - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          raw = os.environ.get("NATIVE_WIRE_REDIS_ROOT", "")
+          if raw:
+              root = Path(raw)
+              assert root.parent == Path(os.environ["RUNNER_TEMP"]).resolve()
+              assert root.name.startswith("hirewiz-native-wire-redis-")
+              assert root.resolve() == root and not root.is_symlink()
+              assert root.stat().st_uid == os.getuid()
+              shutil.rmtree(root)
+          PY
       - name: Check OpenAPI artifact drift
         working-directory: backend
         env:

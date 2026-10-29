@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
 import React, { Suspense, lazy } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -56,7 +57,7 @@ beforeEach(() => {
         signal.addEventListener("abort", () => { abortedCatalogReads += 1; reject(new DOMException("Aborted", "AbortError")); }, { once: true });
       });
     }
-    if (path === "/api/account/profile") return Promise.resolve(json({ email: "one@example.invalid", tier: "free", ai_credits: 7, job_service_credits: 50 }));
+    if (path === "/api/account/bootstrap") return Promise.resolve(json(ownedBootstrapFixture({ profile: { email: "one@example.invalid" } })));
     if (path === "/api/backend/v1/features") return Promise.resolve(json({ features: {} }));
     if (path === "/api/backend/v1/credits/availability") return Promise.resolve(json({ catalog_enabled: false, execution_enabled: false, supported_operations: [] }));
     if (path === "/api/backend/resume/list") return Promise.resolve(json({ resumes: [{ id: 10, filename: "synthetic.pdf", source_available: true }] }));
@@ -110,7 +111,7 @@ it.each(["search", "batch"] as const)("refreshes the %s catalog once without abo
   await act(async () => { catalogReads[0].resolve(json({ ...catalog, balance: 44 })); });
   await waitFor(() => expect(client.getQueryData<{ balance: number }>(["employer-jobs", "catalog"])?.balance).toBe(44));
   expect(requests.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(2); // initial + one refresh
-  expect(requests.mock.calls.filter(([path]) => path === "/api/account/profile")).toHaveLength(2);
+  expect(requests.mock.calls.filter(([path]) => path === "/api/account/bootstrap")).toHaveLength(2);
   expect(requests.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   events.mockRestore();
 });

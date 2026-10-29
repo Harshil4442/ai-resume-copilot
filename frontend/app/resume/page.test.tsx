@@ -1,3 +1,4 @@
+import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -15,7 +16,7 @@ vi.mock("../../lib/api", () => ({ apiGet: api.get, apiPostJson: api.post, apiPat
 const resume: ResumeParseResponse = { resume_id: 42, skills: ["Python"], experience_years: 1, sections: {}, contact_info: {}, source_available: true, source_format: "pdf", extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [] };
 const clients: QueryClient[]=[];
 
-beforeEach(()=>{vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue({catalog_enabled:false,execution_enabled:false,supported_operations:[]});});
+beforeEach(()=>{vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue(ownedBootstrapFixture());});
 afterEach(()=>{cleanup();clients.forEach((client)=>client.clear());clients.length=0;vi.restoreAllMocks();vi.unstubAllEnvs();});
 function display(){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});clients.push(client);return render(<QueryClientProvider client={client}><ResumePage/></QueryClientProvider>);}
 function select(){fireEvent.change(screen.getByLabelText("Choose your source resume"),{target:{files:[new File(["synthetic file"],"resume.pdf",{type:"application/pdf"})]}});}
@@ -63,8 +64,8 @@ it("refuses the large disabled-route file before starting an upload",async()=>{
 
 
 it("uploads without AI first and exposes a separate enrichment review for unified credits", async () => {
-  api.get.mockResolvedValue({ catalog_enabled: true, execution_enabled: true, supported_operations: ["resume_enrichment"],
-    free_core_operations: ["resume_parse"], free_core_limits: { resume_parse: { per_account_30_days: 1, max_input_bytes: 5000000, max_source_records: 1 } } });
+  api.get.mockResolvedValue(ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: true, supported_operations: ["resume_enrichment"],
+    free_core_operations: ["resume_parse"], free_core_limits: { resume_parse: { per_account_30_days: 1, max_input_bytes: 5000000, max_source_records: 1 } } } }));
   const upload = vi.spyOn(uploads, "uploadResumeFile").mockResolvedValue(resume);
   display(); select(); await screen.findByText(/After the source is saved/);
   expect(screen.queryByRole("checkbox")).toBeNull(); fireEvent.click(screen.getByRole("button", { name: /Parse resume/ }));

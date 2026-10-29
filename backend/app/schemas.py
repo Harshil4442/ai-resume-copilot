@@ -128,6 +128,8 @@ class DimensionScore(BaseModel):
     name:     str
     score:    float
     feedback: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_quote: str | None = None
 
 class JobMatchResponse(BaseModel):
     match_id:                int
@@ -145,6 +147,12 @@ class JobMatchResponse(BaseModel):
     provenance: str | None = None
     scoring_version: str | None = None
     uncertainties: List[str] = Field(default_factory=list)
+    skill_analysis: list[dict] = Field(default_factory=list)
+    unassessed_dimensions: list[dict] = Field(default_factory=list)
+    evidence_links: dict = Field(default_factory=dict)
+    missing_evidence: list[str] = Field(default_factory=list)
+    gap_semantics: str | None = None
+    score_basis: str | None = None
 
 class JobMatchHistoryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)

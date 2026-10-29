@@ -68,7 +68,8 @@ def normalized_request(payload: SynchronousServiceRequest) -> dict:
     return normalized
 
 
-def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceRequest) -> PreparedSynchronous:
+def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
+                  trusted_generation_configuration: dict | None = None) -> PreparedSynchronous:
     from ...services import llm_client
 
     normalized = normalized_request(payload)
@@ -98,8 +99,13 @@ def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceReque
             "category": item.category, "confidence": item.confidence,
             "provenance": item.provenance, "updated_at": item.updated_at.isoformat() if item.updated_at else None} for item in facts],
         "versions": dict(contracts.VERSIONS),
-        "generation_configuration": {"model": llm_client.LLM_MODEL, "api_base": llm_client.LLM_API_BASE,
-                                     "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)},
+        # Internal paired evaluation prepares both sides before execution. Its
+        # independently validated caller can bind the declared side here; this
+        # is prompt input, never a statement about observed provider usage.
+        # Retail callers always use the actual server configuration below.
+        "generation_configuration": trusted_generation_configuration if trusted_generation_configuration is not None else {
+            "model": llm_client.LLM_MODEL, "api_base": llm_client.LLM_API_BASE,
+            "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)},
     }
     from ...services.delivery_contracts import current_output_contract
 
@@ -143,6 +149,44 @@ def prepare_quote_context(db: Session, *, user_id: int, payload: SynchronousServ
     if not route.model_quotes or input_token_estimate(prepared.messages) > route.model_quotes[0].max_input_tokens:
         raise _reject("The complete prompt does not fit this qualified provider envelope. No content was shortened; review a supported scope.", 422)
     return prepared, prepared.fingerprint, config, route
+
+
+def require_current_resources(prepared: PreparedSynchronous) -> None:
+    """Fresh resource evidence is necessary before any learning generation."""
+    if prepared.operation == "learning_strategy" and not any(
+        contracts.reviewed_learning_resources(list(prepared.context["reviewed_resources"])).values()
+    ):
+        raise contracts.SynchronousOutputUnavailable(
+            "Learning resources need a current review before generating a personalized plan."
+        )
+
+
+def generate_prepared(prepared: PreparedSynchronous) -> dict:
+    """The complete paid-service executor, also used by funded internal evaluation.
+
+    Funding and immutable-input authority belong to the caller. The provider
+    client still requires its existing persistent budget; this helper grants
+    neither model-call authority nor retail qualification.
+    """
+    from ...services.generation_gate import require_generation
+    from ...services.llm_client import chat_json
+
+    require_generation()
+    require_current_resources(prepared)
+    return contracts.validate(prepared.operation, chat_json(prepared.messages), prepared.context)
+
+
+def require_current_inputs(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
+                           prepared: PreparedSynchronous,
+                           trusted_generation_configuration: dict | None = None) -> PreparedSynchronous:
+    fresh = owned_context(db, user_id=user_id, payload=payload,
+                          trusted_generation_configuration=trusted_generation_configuration)
+    if fresh.fingerprint != prepared.fingerprint:
+        raise contracts.SynchronousOutputUnavailable(
+            "The selected inputs changed during generation. Review a new quote; this attempt is not charged."
+        )
+    require_current_resources(fresh)
+    return fresh
 
 
 def _replay(run, fingerprint):
@@ -272,19 +316,13 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
         db.rollback()
         raise _reject(str(exc)) from None
     try:
-        from ...services.llm_client import chat_json
         from .analysis import settle_analysis
 
         with execution.persistent_execution_budget(sessionmaker(bind=db.get_bind()), user_id=user_id,
                 hold_id=hold_id, route=route, policy=config.policy, analysis_run_id=identity):
-            raw = chat_json(prepared.messages)
-            result = contracts.validate(payload.operation, raw, prepared.context)
+            result = generate_prepared(prepared)
         begin_result_commit(db, user_id, identity)
-        fresh = owned_context(db, user_id=user_id, payload=payload)
-        if fresh.fingerprint != prepared.fingerprint:
-            raise contracts.SynchronousOutputUnavailable("The selected inputs changed during generation. Review a new quote; this attempt is not charged.")
-        if payload.operation == "learning_strategy" and not any(contracts.reviewed_learning_resources(list(fresh.context["reviewed_resources"])).values()):
-            raise contracts.SynchronousOutputUnavailable("The resource freshness review expired during generation; this attempt is not charged.")
+        require_current_inputs(db, user_id=user_id, payload=payload, prepared=prepared)
         current = db.get(models.AnalysisRun, identity, populate_existing=True)
         if payload.operation == "resume_enrichment":
             resume = db.query(models.Resume).filter_by(id=result["resume_id"], user_id=user_id).with_for_update().one()

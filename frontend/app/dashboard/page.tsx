@@ -21,13 +21,14 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { apiGet } from "../../lib/api";
 import { ownerProfileQueryOptions } from "../../lib/ownerProfile";
+import { featureDecisionsOptions } from "../../lib/ownedBootstrapClient";
+import { opportunitiesOptions } from "../../lib/opportunityQueries";
 import { trackEvent } from "../../lib/analytics";
 import { creditAvailabilityOptions, creditWalletOptions, unifiedCatalogOptions } from "../../lib/unifiedCreditClient";
-import type { OpportunityList, Reminder } from "../../lib/career";
+import type { Reminder } from "../../lib/career";
 import { stageLabels, stageTone } from "../../lib/career";
 import type { AnalyticsSummary, UserProfile } from "../../lib/types";
 
-type FeatureResponse = { features: Record<string, { enabled: boolean }> };
 
 function firstName(profile: UserProfile | undefined) {
   return profile?.full_name?.trim().split(/\s+/)[0] || "there";
@@ -40,10 +41,10 @@ function formatDue(value: string) {
 export default function DashboardPage() {
   const profile = useQuery(ownerProfileQueryOptions());
   const analytics = useQuery({ queryKey: ["analytics-summary"], queryFn: () => apiGet<AnalyticsSummary>("/analytics/summary") });
-  const features = useQuery({ queryKey: ["feature-decisions"], queryFn: () => apiGet<FeatureResponse>("/v1/features"), staleTime: 60_000 });
+  const features = useQuery(featureDecisionsOptions());
   const upgradeTracked = useRef(false);
   const workspaceEnabled = features.data?.features.career_workspace?.enabled !== false;
-  const opportunities = useQuery({ queryKey: ["opportunities"], queryFn: () => apiGet<OpportunityList>("/v1/opportunities?limit=8"), enabled: features.isSuccess && workspaceEnabled });
+  const opportunities = useQuery({ ...opportunitiesOptions({ limit: 8 }), enabled: features.isSuccess && workspaceEnabled });
   const reminders = useQuery({ queryKey: ["reminders", "scheduled"], queryFn: () => apiGet<Reminder[]>("/v1/reminders?status=scheduled"), enabled: features.isSuccess && workspaceEnabled });
   const creditAvailability = useQuery(creditAvailabilityOptions());
   const unifiedWalletEnabled = creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;

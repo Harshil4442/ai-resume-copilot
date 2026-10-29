@@ -274,6 +274,9 @@ def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -
         "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f": (3, 11),
     }
     expected = contracts.get(policy) if type(policy) is str else None
+    from infra.gcp.document_source_release import SourceProbe
+    if isinstance(probe, SourceProbe) and policy == probe.POLICY:
+        expected = (probe.CONTRACT_VERSION, probe.REQUIRED_CASE_COUNT)
     courier = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
                "hirewiz-document-inspector@sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94")
     need(type(image) is str and getattr(acceptance, "image", None) == image

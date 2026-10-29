@@ -32,6 +32,7 @@ from .gcp_publication import record
 from .gcp_publication_scan import NativeAuthorityScanner, ScannedAuthorityRecord
 from .gcp_rpc import FirestoreRpc
 from .native_diagnostics import native_phase
+from .native_metadata_admission import MetadataAdmissionError
 from .store import GuardDenied, GuardUnavailable
 
 
@@ -97,6 +98,8 @@ class PartitionedPublicationCoordinator:
                     raise ValueError("V3 immutable database identity changed")
             _exact_bytes(self.bucket, resource.path, canonical(resource.pin.model_dump(mode="json")).encode(),
                 generation=resource.generation, timeout=2.0)
+        except MetadataAdmissionError:
+            raise
         except Exception:
             raise GuardUnavailable("Fresh protected V3 identity/resource is unavailable") from None
 

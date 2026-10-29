@@ -6,6 +6,8 @@ import { encode } from "next-auth/jwt";
 import { batchApplication, batchCatalog, quotedBatch } from "../lib/fixtures/employerBatch";
 import type { EmployerApplicationBatch } from "../lib/employerJobs";
 import type { EmployerSearchSummaryPage } from "../lib/employerJobs";
+import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
 
 const base = "/v1/employer-jobs";
 const errors = new WeakMap<Page, string[]>();
@@ -27,12 +29,16 @@ function fixture() {
       await route.continue();
     });
     await context.route("**/api/auth/session", async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ user: { id: owner === "a" ? "424242" : "424243", email: `${owner}@fixture.example`, name: "Taylor Fixture" }, expires: "2099-01-01T00:00:00Z" }) }));
-    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
-      const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", ""), method = request.method();
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|bootstrap)$/.test(url.pathname), async (route) => {
+      const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", ""), method = request.method();
       const body = request.postData() ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, owner });
       let value: unknown, status = 200;
       if (owner === "b" && (path.includes("/applications/") || path.includes("/application-batches/"))) { status = 404; value = { detail: "Not found" }; }
+      else if (path === "/auth/bootstrap" && method === "GET") {
+        value = ownedBootstrapFixture({ profile: { email: owner === "a" ? "fixture@example.com" : "b@fixture.example", tier: "free", ai_credits: 40, full_name: "Taylor Fixture" } });
+        expect(parseOwnedBootstrap(value)).not.toBeNull();
+      }
       else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "free", ai_credits: 40, job_service_credits: catalog.balance, full_name: "Taylor Fixture" };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
       else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };

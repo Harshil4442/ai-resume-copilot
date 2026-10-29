@@ -546,9 +546,24 @@ def test_actual_seven_mib_stdin_and_stdout_backpressure_preserves_count_and_hash
     _assert_child_reaped_and_pipes_closed(children[0])
 
 
-def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds() -> None:
-    path = ROOT / "infra/document-processing/policy.json"
-    raw = path.read_bytes()
+@pytest.mark.parametrize("profile", ["retained_v3", "source_revision"])
+def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(profile: str) -> None:
+    from infra.gcp import document_candidate as legacy
+    from infra.gcp import document_source_candidate as source
+
+    if profile == "retained_v3":
+        # The immutable old policy binds its retained Git bytes, not today's
+        # separately reviewed parser. Its exact source checks remain mandatory.
+        contents = source.historical_v3_contents(ROOT)
+        policy_path, policy_digest = legacy.POLICY_PATH, legacy.POLICY_SHA256
+    else:
+        # The prospective source policy must bind the actual working files;
+        # historical content cannot substitute for this current-source check.
+        contents, _, policy_digest = source.working_snapshot(ROOT)
+        policy_path = source.POLICY_PATH
+        assert policy_digest == source.POLICY_SHA256
+    raw = contents[policy_path]
+    assert hashlib.sha256(raw).hexdigest() == policy_digest
     value = json.loads(raw)
     assert raw == (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode()
     assert value["required_native_deployment_controls"]["launcher_phase_seconds"] == {"do": 55, "delete": 5}
@@ -574,4 +589,4 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds()
     assert value["docx_layout"]["max_success_response_bytes"] == 32768
     assert value["docx_layout"]["release"]["download_rerender"] is False
     for name, expected in value["source_sha256"].items():
-        assert hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected
+        assert hashlib.sha256(contents[name]).hexdigest() == expected

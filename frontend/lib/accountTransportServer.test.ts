@@ -4,6 +4,7 @@ import { encode } from "next-auth/jwt";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleAccount } from "./accountTransportServer";
+import { ownedBootstrapFixture } from "./fixtures/ownedBootstrap";
 const origin="https://account.example.com", secret="synthetic-dedicated-account-secret";
 const csrf="a".repeat(64);
 const profile={email:"synthetic@example.com",full_name:"Synthetic Candidate",profile_completeness:20,missing_fields:[],tier:"free",ai_credits:2,premium_until:null};
@@ -53,5 +54,53 @@ describe("dedicated safe account operations",()=>{
  });
  it("forwards only empty delete intent and returns exact retained deletion status",async()=>{
   vi.stubGlobal("fetch",vi.fn(async()=>Response.json({status:"deleted"})));const res=await handleAccount(await req("delete","POST"),"delete");expect(await res.json()).toEqual({status:"deleted"});
+ });
+});
+
+describe("finite owned bootstrap read", () => {
+ it("forwards one exact empty owned GET with bearer and no replay/clock fan-out", async () => {
+  const value = ownedBootstrapFixture();
+  const fetch = vi.fn(async () => Response.json(value)); vi.stubGlobal("fetch", fetch);
+  const response = await handleAccount(await req("bootstrap"), "bootstrap");
+  expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url).toBe("https://backend.example.com/api/auth/bootstrap"); expect(init.method).toBe("GET");
+  expect(init.body).toBeUndefined(); expect(new Headers(init.headers).get("authorization")).toBe("Bearer synthetic-private-bearer");
+  expect(new Headers(init.headers).has("x-hirewiz-candidate-ingress")).toBe(false);
+ });
+ it("preserves independently unavailable components without creating a balance", async () => {
+  const value = ownedBootstrapFixture({ wallet: null });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(value)));
+  const response = await handleAccount(await req("bootstrap"), "bootstrap");
+  expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
+ });
+ it.each(["POST", "PUT", "DELETE", "PATCH"])("does not expand bootstrap to %s", async (method) => {
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  expect((await handleAccount(await req("bootstrap", method), "bootstrap")).status).toBe(405);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it("requires the existing signed account and rejects client-selected URL/query scope", async () => {
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  expect((await handleAccount(await req("bootstrap", "GET", { anonymous: true }), "bootstrap")).status).toBe(401);
+  expect((await handleAccount(new NextRequest(`${origin}/api/account/bootstrap?user_id=999`), "bootstrap")).status).toBe(404);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it.each(["content-length", "transfer-encoding", "content-encoding"])("rejects a body or encoded transport before forwarding: %s", async (header) => {
+  const extraHeaders = { [header]: header === "content-length" ? "1" : header === "transfer-encoding" ? "chunked" : "gzip" };
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  expect((await handleAccount(await req("bootstrap", "GET", { extraHeaders }), "bootstrap")).status).toBe(422);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it.each([
+  { ...ownedBootstrapFixture(), candidate_lifetime: { private: "synthetic-secret" } },
+  { ...ownedBootstrapFixture(), unavailable: ["credit_wallet"] },
+  { ...ownedBootstrapFixture(), profile: { ...ownedBootstrapFixture().profile, password_hash: "synthetic-secret" } },
+  { ...ownedBootstrapFixture(), features: { injected: { enabled: true, access_token: "synthetic-secret" } } },
+ ])("rejects malformed/private nested data without credential export", async (value) => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(value)));
+  const response = await handleAccount(await req("bootstrap"), "bootstrap");
+  expect(response.status).toBe(503); expect(await response.text()).not.toContain("synthetic-secret");
  });
 });

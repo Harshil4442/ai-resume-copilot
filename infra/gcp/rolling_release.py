@@ -194,6 +194,10 @@ class RollingPlan:
     def disabled_flags(self) -> tuple[str, ...]:
         return OFF
 
+    def promoted_aliases(self, pin: ServicePin, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Default release contracts retain their original tagged revisions."""
+        return rows
+
     @property
     def image(self) -> str:
         return f"{release.REGION}-docker.pkg.dev/{release.PROJECT}/cloud-run-source-deploy/hirewiz@{self.image_digest}"
@@ -402,6 +406,7 @@ def _traffic_for(plan: RollingPlan, pin: ServicePin, promote: bool, *, rollback:
         for row in rows:
             row.pop("percent", None)
         rows = [row for row in rows if row.get("tag")]
+        rows = plan.promoted_aliases(pin, rows)
     rows.append({"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
                  "revision": plan.revision(pin.service), "tag": plan.tag,
                  **({"percent": 100} if promote else {})})

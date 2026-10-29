@@ -11,7 +11,7 @@ export function ResumeUploadProgress({ progress, onCancel }: { progress: UploadP
         {progress.mode === "direct" ? "Cancel upload" : "Stop waiting"}
       </Button>
       <p className="max-w-lg text-xs leading-5 text-muted-foreground">{progress.mode === "direct"
-        ? "Your original file stays private. Cancellation requests cleanup of this temporary upload; a file already saved may remain."
+        ? "Your original file stays private. At most 8 automatic status reads use increasing delays and pause in a hidden tab. Cancellation requests cleanup; a file already saved may remain."
         : "This upload uses the current source route. Stopping waits does not undo a file that was already saved."}</p>
     </div>
   </div>;

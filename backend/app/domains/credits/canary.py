@@ -462,6 +462,17 @@ def require_accepted_hold(db: Session, hold) -> None:
 
 def require_accepted_provider_run(db: Session, run: AnalysisRun) -> None:
     """Existing frozen work survives pauses; new unreviewed legacy calls do not."""
+    # Internal v2 evaluation never borrows a public canary exemption, including
+    # when that canary is disabled. A stored label requires exact process scope.
+    if run.id.startswith("qev2_") or (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2":
+        from ..analysis.supported_evaluation import (
+            require_provider_authority as require_v2_authority,
+        )
+        try:
+            require_v2_authority(db, run)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise FundingUnavailable("Internal v2 work requires its validated local runner authority") from exc
+        return
     if not requested(db):
         return
     if (run.model_cost_quote or {}).get("billing_currency") == "credits":

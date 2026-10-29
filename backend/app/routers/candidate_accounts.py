@@ -20,6 +20,7 @@ from ..domains.candidate_accounts.legacy_recovery import (
     RecoveryUnavailable,
 )
 from ..domains.candidate_accounts.service import production_candidate_accounts
+from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
 from ..domains.recovery.pairing_contracts import PairingContract
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
 from ..models import User
@@ -32,6 +33,7 @@ from ..security import (
     get_current_user,
     oauth2_scheme,
 )
+from .native_metadata_http import metadata_http_error
 from .sensitive_auth import SensitiveAuthRoute
 
 
@@ -135,6 +137,9 @@ def _google_bearer(token: str) -> GoogleBearerProof:
 
 
 def _recovery_failure(error: Exception) -> JSONResponse:
+    if isinstance(error, MetadataAdmissionError):
+        refusal = metadata_http_error(error)
+        return JSONResponse(status_code=refusal.status_code, content={"detail": refusal.detail}, headers=refusal.headers)
     status, code = (401, "RECOVERY_AUTHENTICATION_FAILED") if isinstance(error, RecoveryAuthenticationFailed) else (
         (403, "RECOVERY_EMAIL_PROOF_REQUIRED") if isinstance(error, RecoveryEmailProofRequired) else (
             (409, "RECOVERY_UNAVAILABLE") if isinstance(error, RecoveryUnavailable) else (503, "RECOVERY_UNAVAILABLE")))
@@ -221,6 +226,8 @@ def enroll_password(request: Request, payload: PasswordEnrollment, current_user:
 
 
 def _failure(error: Exception) -> HTTPException:
+    if isinstance(error, MetadataAdmissionError):
+        return metadata_http_error(error)
     if isinstance(error, GuardDenied):
         return HTTPException(status_code=401, detail="Candidate password authentication failed")
     return HTTPException(status_code=503, detail="Candidate account lifetime is unavailable")

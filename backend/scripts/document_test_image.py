@@ -23,7 +23,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -965,7 +965,7 @@ def corpus() -> list[tuple[str, str, bytes, str]]:
             ("eicar_texzip_member", "texzip", infected_texzip.getvalue(), "detected")]
 
 
-def docx_layout_corpus(image: str, *, family: str = "Cambria") -> list[tuple[str, bytes, dict]]:
+def docx_layout_corpus(image: str, *, family: str = "Cambria", policy: str | None = None) -> list[tuple[str, bytes, dict]]:
     """One genuine styled two-page fit and one genuine reflow refusal.
 
     The fixture is synthetic; the expected candidate is the exact source-pinned
@@ -1025,7 +1025,7 @@ def docx_layout_corpus(image: str, *, family: str = "Cambria") -> list[tuple[str
     document.save(stream)
     source = stream.getvalue()
     unit = next(unit for unit in layout.extract_source_units(source, "docx") if unit["text"] == original)
-    policy = hashlib.sha256((ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest()
+    policy = policy or hashlib.sha256((ROOT / "infra/document-processing/policy.json").read_bytes()).hexdigest()
     rows = []
     for name, replacement in (("styled_multipage_fit", "Built systems with Python and SQL."),
                               ("rendered_reflow_refusal", original + " reusable systems" * 40)):
@@ -1043,14 +1043,14 @@ def docx_layout_corpus(image: str, *, family: str = "Cambria") -> list[tuple[str
     return rows
 
 
-def candidate_docx_layout_corpus(image: str) -> list[tuple[str, bytes, dict]]:
+def candidate_docx_layout_corpus(image: str, *, policy: str | None = None) -> list[tuple[str, bytes, dict]]:
     """Keep the historical Cambria source as an explicit fallback refusal.
 
     The candidate's successful layout control requests the actual bundled
     Courier Prime family. The frozen quality corpus is independent/unchanged.
     """
-    rows = docx_layout_corpus(image, family="Courier Prime")
-    _name, request, binding = docx_layout_corpus(image)[0]
+    rows = docx_layout_corpus(image, family="Courier Prime", policy=policy)
+    _name, request, binding = docx_layout_corpus(image, policy=policy)[0]
     return rows + [("unsupported_source_font_refusal", request, binding)]
 
 
@@ -1266,7 +1266,63 @@ def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
     _validate_clamd_protocol(value, scans, payload, outcome)
 
 
-def check(platform: str, *, image: str | None = None) -> dict:
+
+def reading_order_corpus():
+    """Fixed independently authored PDFs shared with the native source probe."""
+    import ast
+    sys.path.insert(0, str(ROOT))
+    from infra.gcp.document_source_payload import EXTRA_CASES, EXTRA_PROGRAM
+
+    tree = ast.parse(EXTRA_PROGRAM)
+    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "reading_pdf")
+    module = ast.Module(body=[function], type_ignores=[])
+    namespace: dict[str, Any] = {"io": io}
+    exec(compile(ast.fix_missing_locations(module), "<owned-reading-order-fixtures>", "exec"), namespace)
+    return [(name, namespace["reading_pdf"](name)) for name in EXTRA_CASES]
+
+
+def validate_reading_order_result(name, content, code, result):
+    binding = {"version": 1, "sha256": hashlib.sha256(content).hexdigest(),
+               "size_bytes": len(content), "source_format": "pdf"}
+    if name.endswith("_refused"):
+        if code != 1 or result != binding | {"error": "document_inspection_refused"}:
+            raise DocumentImageError()
+        return
+    parsed = result.get("parsed", {})
+    sections = parsed.get("sections", {})
+    if name == "pdf_font_relative_spacing":
+        if (code != 0 or any(result.get(key) != expected for key, expected in binding.items())
+                or result.get("scan", {}).get("engine") != "ClamAV"
+                or sections.get("experience", "").splitlines() != ["Delivered 14 API checks.", "API checks"]
+                or parsed.get("contact_info", {}).get("email") != "casey@example.test"):
+            raise DocumentImageError()
+        return
+    if (code != 0 or any(result.get(key) != expected for key, expected in binding.items())
+            or result.get("scan", {}).get("engine") != "ClamAV"
+            or parsed.get("experience_years") != 2
+            or "Harbor Labs" not in sections.get("experience", "")
+            or "2020 - 2022" not in sections.get("experience", "")
+            or "North College" not in sections.get("education", "")
+            or "North College" in sections.get("experience", "")
+            or parsed.get("contact_info", {}).get("email") != "casey@example.test"):
+        raise DocumentImageError()
+    if name == "pdf_independent_columns":
+        raw = parsed.get("raw_text", "")
+        if ("billing API" not in sections.get("projects", "") or "billing API" in sections.get("experience", "")
+                or "EXPERIENCE" not in raw or "PROJECTS" not in raw or raw.index("EXPERIENCE") >= raw.index("PROJECTS")):
+            raise DocumentImageError()
+    if name == "pdf_earlier_unaligned_sections":
+        raw = parsed.get("raw_text", "")
+        if (sections.get("education", "").splitlines() != ["North College 2015 - 2019", "Degree in Computing"]
+                or sections.get("experience", "").splitlines() != ["Harbor Labs 2020 - 2022", "Built 3 Python APIs"]
+                or sections.get("projects", "") != "Built 2 billing checks"
+                or sections.get("skills", "") != "Python, SQL, Docker"
+                or not all(heading in raw for heading in ("EDUCATION", "PROJECTS", "EXPERIENCE", "SKILLS"))
+                or not raw.index("EDUCATION") < raw.index("PROJECTS") < raw.index("EXPERIENCE") < raw.index("SKILLS")):
+            raise DocumentImageError()
+
+
+def check(platform: str, *, image: str | None = None, source_revision: bool = False) -> dict:
     _progress("daemon", completed_cases=0)
     docker = docker_command()
     _progress("source_hashes")
@@ -1280,7 +1336,10 @@ def check(platform: str, *, image: str | None = None) -> dict:
     _progress("runtime_sources", exit_code=code)
     if code or json.loads(raw) != {path: hashes[path] for path in RUNTIME}:
         raise DocumentImageError()
+    if type(source_revision) is not bool:
+        raise DocumentImageError()
     observations = []
+    reading_observations = []
     layout_observations = []
     clamd_observations = []
     _progress("corpus")
@@ -1341,7 +1400,13 @@ def check(platform: str, *, image: str | None = None) -> dict:
             validate_clamd_native(value, name, expected_outcome, resident, payload, platform)
             clamd_observations.append(value)
         _progress("layout_corpus")
-        for name, payload, binding in candidate_docx_layout_corpus(image):
+        if source_revision:
+            sys.path.insert(0, str(ROOT))
+            from infra.gcp.document_source_candidate import POLICY_SHA256 as source_policy
+            layout_cases = candidate_docx_layout_corpus(image, policy=source_policy)
+        else:
+            layout_cases = candidate_docx_layout_corpus(image)
+        for name, payload, binding in layout_cases:
             _progress("case_request", case=name)
             request = directory / (name + ".json")
             request.write_bytes(payload)
@@ -1378,6 +1443,17 @@ def check(platform: str, *, image: str | None = None) -> dict:
                 layout_observations.append({"case": name, "passed": True, "reason": result["reason"]})
             _progress("case_validation", case=name, exit_code=code,
                       completed_cases=len(observations) + len(layout_observations))
+        if source_revision:
+            for name, content in reading_order_corpus():
+                envelope = {"version": 1, "source_format": "pdf", "content_base64": base64.b64encode(content).decode(),
+                            "sha256": hashlib.sha256(content).hexdigest()}
+                request = directory / (name + ".json")
+                request.write_text(json.dumps(envelope))
+                request.chmod(0o444)
+                code, raw = container(docker, image, platform, ["/opt/document/processor.py", "/tmp/request.json"],
+                                      [(request, "/tmp/request.json")])
+                validate_reading_order_result(name, content, code, json.loads(raw))
+                reading_observations.append({"case": name, "passed": True})
     _progress("source_recheck")
     if source_hashes() != hashes:
         raise DocumentImageError()
@@ -1385,19 +1461,21 @@ def check(platform: str, *, image: str | None = None) -> dict:
             "image_id": image, "platform": platform, "source_sha256": hashes,
             "runtime_source_bytes_verified": True, "restricted_container_metadata_verified": True,
             "corpus": observations, "docx_layout_corpus": layout_observations,
-            "request_clamd_corpus": clamd_observations}
+            "request_clamd_corpus": clamd_observations,
+            **({"pdf_reading_order_corpus": reading_observations} if source_revision else {})}
 
 
 def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux/amd64", "linux/arm64"), required=True)
+    parser.add_argument("--source-revision", action="store_true", help="Require the source-profile PDF reading-order corpus.")
     parser.add_argument("--image-id", help="Reuse only an immutable ID with exact current source labels/bytes.")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     token = _FAILURE.set({"stage": "setup", "completed_cases": 0})
     try:
-        report = json.dumps(check(args.platform, image=args.image_id), sort_keys=True, indent=2) + "\n"
+        report = json.dumps(check(args.platform, image=args.image_id, source_revision=args.source_revision), sort_keys=True, indent=2) + "\n"
         _progress("report_write")
         if args.output:
             with args.output.open("x", encoding="utf-8") as stream:
