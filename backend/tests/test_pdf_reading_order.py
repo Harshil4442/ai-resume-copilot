@@ -195,3 +195,37 @@ def test_shared_contact_and_single_spanning_section_before_columns_remain_readab
     assert "Engineer focused on clear records, accountable work and reliable delivery." in raw
     assert contact["name"] == "Morgan River" and contact["email"] == "morgan@example.test"
     assert "Harbor Labs" in sections["experience"] and years == 2
+
+
+@pytest.mark.parametrize("font", ["Helvetica", "Times-Roman"])
+@pytest.mark.parametrize("size", [6, 10, 24, 40])
+def test_relative_word_spacing_preserves_small_spaces_and_large_font_kerning(font, size):
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    text = "Delivered 14 API checks."
+    def draw(canvas):
+        _line(canvas, 48, 750, "EXPERIENCE", "Helvetica-Bold", 14)
+        x = 48.0
+        for character in text:
+            if character == " ":
+                x += size * .24
+            else:
+                _line(canvas, x, 680, character, font, size)
+                x += stringWidth(character, font, size) + size * .04
+    source = _document(draw)
+    before = sha256(source).hexdigest()
+    raw, sections = parsing.extract_text_and_sections_from_pdf(source)
+    assert sections["experience"] == text
+    assert "Delivered 14 API checks." in raw
+    assert sha256(source).hexdigest() == before
+
+
+def test_visible_compound_and_line_end_hyphens_are_not_dictionary_reconstructed():
+    def draw(canvas):
+        _line(canvas, 48, 750, "EXPERIENCE", "Helvetica-Bold", 14)
+        _line(canvas, 48, 720, "Built event-driven API-14 tools.", size=10)
+        _line(canvas, 48, 700, "docu-", size=10)
+        _line(canvas, 48, 686, "mented result", size=10)
+    raw, sections = parsing.extract_text_and_sections_from_pdf(_document(draw))
+    assert sections["experience"].splitlines() == ["Built event-driven API-14 tools.", "docu-", "mented result"]
+    assert "documented" not in raw

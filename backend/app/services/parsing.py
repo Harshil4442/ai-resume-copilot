@@ -70,6 +70,12 @@ def classify_section_header(header_text: str) -> str:
 # PDF extraction with layout-aware header detection
 # ---------------------------------------------------------------------------
 
+# Geometry only: native typesetting may encode word spaces as ~0.3em gaps,
+# below pdfplumber's default absolute3pt threshold at small body sizes. A
+# font-relative threshold keeps positive letter kerning within large-font words.
+PDF_WORD_X_TOLERANCE_RATIO = 0.15
+
+
 class PDFReadingOrderError(ValueError):
     """A recognized independent-column layout cannot be read without mixing facts."""
 
@@ -182,7 +188,7 @@ def extract_text_and_sections_from_pdf(file_bytes: bytes) -> tuple[str, dict[str
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             try:
-                words = page.extract_words(extra_attrs=["size", "fontname"])
+                words = page.extract_words(x_tolerance_ratio=PDF_WORD_X_TOLERANCE_RATIO, extra_attrs=["size", "fontname"])
                 if not words:
                     raise ValueError("no words")
 
@@ -205,7 +211,7 @@ def extract_text_and_sections_from_pdf(file_bytes: bytes) -> tuple[str, dict[str
                 raise  # A known ambiguous flow must never become mixed plaintext.
             except Exception:
                 # Fallback: plain text, use ALL-CAPS heuristic
-                for line in (page.extract_text() or "").splitlines():
+                for line in (page.extract_text(x_tolerance_ratio=PDF_WORD_X_TOLERANCE_RATIO) or "").splitlines():
                     s = line.strip()
                     if s:
                         tagged_lines.append((s, s.isupper() and len(s.split()) <= 6))
