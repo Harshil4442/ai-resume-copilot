@@ -816,6 +816,44 @@ def run_successor(image: str, build_identity: dict[str, Any], journal: Path) -> 
 
 def verify_successor(image: str, build_identity: dict[str, Any], journal: Path) -> NativeAcceptance:
     """Fresh genuine Build/Job/Execution/log reads; no mutation or saved-result adoption."""
+    return _read_only_native_retry(
+        lambda: _verify_successor_once(image, build_identity, journal),
+        unavailable="document_native_readonly_verification_unavailable",
+        transient="document_native_readonly_transient_exhausted")
+
+
+def _known_transient_read(error: Exception) -> bool:
+    # The dedicated transport returns this fixed code only after bounded
+    # retries of one allowed read. SDK HTTP errors retain only their status.
+    status = getattr(error, "status_code", None)
+    return (type(error).__name__ == "IdentityDenied"
+            and str(error) in {
+                "document_refresh_read_only_transient_exhausted_reconcile_only",
+                "document_refresh_identity_transient_exhausted_reconcile_only",
+            } or type(status) is int and status in {429, 502, 503, 504})
+
+
+def _read_only_native_retry(check: Callable[[], Any], *, unavailable: str,
+                            transient: str) -> Any:
+    deadline = time.monotonic() + 75
+    attempts = 0
+    while True:
+        try:
+            return check()
+        except NativeProofDenied:
+            # A proof mismatch is never an availability signal.
+            raise
+        except Exception as error:  # noqa: BLE001 - never surface vendor text.
+            if not _known_transient_read(error):
+                raise NativeProofDenied(unavailable) from None
+            attempts += 1
+            if attempts >= 3 or time.monotonic() >= deadline:
+                raise NativeProofDenied(transient) from None
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+
+
+def _verify_successor_once(image: str, build_identity: dict[str, Any], journal: Path) -> NativeAcceptance:
+    """One read-only verification attempt; caller retries only classified reads."""
     clients = None
     try:
         build = json.loads(canonical(build_identity))
@@ -829,10 +867,6 @@ def verify_successor(image: str, build_identity: dict[str, Any], journal: Path) 
         job = owned_job(clients, owner, image, build["nonce"])
         execution = owned_execution(clients, owner, job, image, build["nonce"])
         return acceptance(clients, image, build, job, execution)
-    except NativeProofDenied:
-        raise
-    except Exception:  # noqa: BLE001 - vendor errors may contain credential-bearing request details.
-        raise NativeProofDenied("document_native_readonly_verification_unavailable") from None
     finally:
         if clients is not None:
             clients.close()
@@ -855,6 +889,15 @@ def verify_current_successor_for_release(image: str, service_metadata: dict[str,
 def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, read_only_release: bool,
                               retirement_only: bool = False) -> NativeAcceptance | None:
     """Both fixed native identity routes execute the identical proof checks."""
+    return _read_only_native_retry(
+        lambda: _verify_current_successor_once(image, service_metadata,
+            read_only_release=read_only_release, retirement_only=retirement_only),
+        unavailable="document_native_current_verification_unavailable",
+        transient="document_native_current_transient_exhausted")
+
+
+def _verify_current_successor_once(image: str, service_metadata: dict[str, Any], *, read_only_release: bool,
+                                   retirement_only: bool = False) -> NativeAcceptance | None:
     clients = None
     try:
         metadata = json.loads(canonical(service_metadata))
@@ -895,10 +938,6 @@ def _verify_current_successor(image: str, service_metadata: dict[str, Any], *, r
             verify_expired_v2_identity(clients, image, build, job, execution)
             return None
         return acceptance(clients, image, build, job, execution, historical_v1=historical_v1)
-    except NativeProofDenied:
-        raise
-    except Exception:  # noqa: BLE001 - vendor errors may contain credential-bearing request details.
-        raise NativeProofDenied("document_native_current_verification_unavailable") from None
     finally:
         if clients is not None:
             clients.close()

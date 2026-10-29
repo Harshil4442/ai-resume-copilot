@@ -66,3 +66,28 @@ and journal. Do not restore API admission from a failed continuation artifact.
 If any check or send is uncertain, keep the API closed and reconcile the exact
 claim, operation and live revision read-only. Never dispatch this mode again
 after its third claim is consumed.
+
+## Read-only stop on 2026-10-29
+
+The first dispatch of this final mode, run `40795893079` at merged head
+`ddb4f88207fa32af5bf9086ca9cea46cf959dc19`, stopped during preclaim
+verification. Its retained artifact `12863897046` has digest
+`sha256:07667206955bdfcc69ef5d13a6b32f8f4225df1cd15e172e348758c00f462fcd`
+and contains only the same 40 source JSON files/tree hash above. No
+`final-claim.started` or coordinator `open.started` marker exists. The exact
+third GCS claim still returned 404; API, analysis, coordinator and document
+worker generations and serving revisions were unchanged. Independent fresh
+read-only proof of the native successor, current worker and all caller pins
+passed. The runner emitted only a generic unavailable code, so the precise
+transient read was not observable; this is a suspected availability stop, not
+a proven Cloud Run mismatch.
+
+The repair bounds retries to recognized transport failures and HTTP
+429/502/503/504 on the finite GET and read-only IAM/logging POST routes. It
+never retries a Build/Job write, GCS create-only claim or service PATCH, and
+permanent proof mismatches still fail immediately. A future failure writes
+only a source-owned fixed code to private `failure.json` and the workflow
+output; vendor text is not retained. Before any manually reviewed new attempt,
+recheck the exact third claim is absent and all four service preimages match.
+The source artifact remains `12860975525` from failed run `40788512340`;
+the preclaim-stop artifact is diagnostic evidence only.

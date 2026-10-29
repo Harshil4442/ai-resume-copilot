@@ -343,6 +343,55 @@ def test_readonly_verification_never_adopts_saved_acceptance(native, tmp_path):
         p.verify_successor(IMAGE, build(), target)
 
 
+def test_readonly_successor_retries_only_known_transient_then_verifies(monkeypatch, tmp_path):
+    calls = []
+    sentinel = object()
+    def check(*args):
+        calls.append("read")
+        if len(calls) == 1:
+            raise HttpError(503)
+        return sentinel
+    monkeypatch.setattr(p, "_verify_successor_once", check)
+    monkeypatch.setattr(p.time, "sleep", lambda _: None)
+    assert p.verify_successor(IMAGE, build(), tmp_path) is sentinel
+    assert calls == ["read", "read"]
+
+
+def test_current_successor_retries_known_identity_transport_only(monkeypatch):
+    from infra.gcp.document_refresh_auth import IdentityDenied
+
+    calls = []
+    def check(*args, **kwargs):
+        calls.append("read")
+        if len(calls) == 1:
+            raise IdentityDenied("document_refresh_identity_transient_exhausted_reconcile_only")
+        return None
+    monkeypatch.setattr(p, "_verify_current_successor_once", check)
+    monkeypatch.setattr(p.time, "sleep", lambda _: None)
+    assert p._verify_current_successor(IMAGE, {}, read_only_release=False, retirement_only=True) is None
+    assert calls == ["read", "read"]
+
+
+@pytest.mark.parametrize(("failure", "code", "attempts"), [
+    (HttpError(503), "document_native_readonly_transient_exhausted", 3),
+    (HttpError(403), "document_native_readonly_verification_unavailable", 1),
+    (p.NativeProofDenied("document_native_worker_configuration_changed"),
+     "document_native_worker_configuration_changed", 1),
+    (RuntimeError("private vendor body"), "document_native_readonly_verification_unavailable", 1),
+])
+def test_readonly_successor_stops_at_permanent_or_bounded_transient_failure(
+        monkeypatch, tmp_path, failure, code, attempts):
+    calls = []
+    def check(*args):
+        calls.append("read")
+        raise failure
+    monkeypatch.setattr(p, "_verify_successor_once", check)
+    monkeypatch.setattr(p.time, "sleep", lambda _: None)
+    with pytest.raises(p.NativeProofDenied, match="^" + code + "$") as caught:
+        p.verify_successor(IMAGE, build(), tmp_path)
+    assert len(calls) == attempts and "private" not in str(caught.value)
+
+
 @pytest.mark.parametrize("phase", ["create", "run"])
 def test_unknown_external_mutation_is_once_only_and_redacted(native, tmp_path, phase):
     setattr(native, "fail_" + phase, True)
