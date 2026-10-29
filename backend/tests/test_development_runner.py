@@ -90,6 +90,60 @@ def calibration(tmp_path, monkeypatch):
             "authorization_root": evidence_dir, "native_receipts": evidence_dir / "native-map.json"}
 
 
+@pytest.fixture
+def common_canary_funding(monkeypatch):
+    """Synthetic shared fleet funding, never canary consent/route activation."""
+    from app.domains.credits.runtime import RuntimeConfig
+    from tests.test_unified_execution import budgets, financial_policy, route
+
+    config = RuntimeConfig.model_validate({
+        "policy": financial_policy().model_dump(mode="json"),
+        "budgets": budgets().model_dump(mode="json"),
+        "routes": [route(native=True).model_dump(mode="json")],
+    })
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
+    return config
+
+
+def test_canary_generation_keeps_missing_and_exhausted_common_funding_closed(
+    calibration, common_canary_funding, monkeypatch,
+):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.billing import cost_policy
+    from app.database import Base
+    from app.domains.credits import legacy_funding
+    from app.domains.credits.finance import FundingUnavailable
+
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    monkeypatch.delenv("FREE_CORE_ENABLED", raising=False)
+    monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON")
+    with pytest.raises(FundingUnavailable, match="common execution funding policy"):
+        legacy_funding.common_authority(datetime.now(UTC))
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", common_canary_funding.model_dump_json())
+    assert legacy_funding.common_authority(datetime.now(UTC)) == (common_canary_funding.policy, common_canary_funding.budgets)
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as db:
+            monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON")
+            with pytest.raises(cost_policy.CostPolicyUnavailable, match="common execution funding policy"):
+                cost_policy.assert_model_funding(db, operation="interview_questions", operation_ceiling=1000,
+                    reservation=1000, funding="promotion")
+            monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", common_canary_funding.model_dump_json())
+            cost_policy.assert_model_funding(db, operation="interview_questions", operation_ceiling=1000,
+                reservation=1000, funding="promotion")
+            closed = common_canary_funding.model_copy(update={"budgets": common_canary_funding.budgets.model_copy(
+                update={"daily_global_minor": 1})})
+            monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", closed.model_dump_json())
+            with pytest.raises(cost_policy.CostPolicyUnavailable, match="common execution budget"):
+                cost_policy.assert_model_funding(db, operation="interview_questions", operation_ceiling=100_000,
+                    reservation=100_000, funding="promotion")
+    finally:
+        engine.dispose()
+
+
 def test_dry_run_complete_twenty_bounded_attempts_without_db(calibration):
     result = runner.preflight(**calibration)
     assert result["state"] == "ready_for_internal_calibration"

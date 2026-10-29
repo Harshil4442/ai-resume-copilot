@@ -13,7 +13,11 @@ from app import models
 from app.domains.analysis import development_runner as runner
 from app.domains.analysis import quality_packet as packet
 from app.services import interview_contract, llm_client
-from tests.test_development_runner import calibration, write_json  # noqa: F401
+from tests.test_development_runner import (  # noqa: F401
+    calibration,
+    common_canary_funding,
+    write_json,
+)
 
 
 @pytest.fixture
@@ -273,7 +277,9 @@ def test_implementation_change_stops_before_another_run_claim(prepared, monkeypa
         assert db.query(models.ModelCallEvent).count() == db.query(models.ModelCostLiability).count() == 1
 
 
-def test_current_canary_allows_only_the_validated_local_runner_scope(prepared, monkeypatch):
+def test_current_canary_allows_only_the_validated_local_runner_scope(
+    prepared, common_canary_funding, monkeypatch,  # noqa: F811 -- Imported pytest fixture dependency.
+):
     from app.domains.credits import canary
     from app.domains.credits.finance import FundingUnavailable
 
@@ -282,7 +288,11 @@ def test_current_canary_allows_only_the_validated_local_runner_scope(prepared, m
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
     calls = provider(monkeypatch)
     outcome = runner.execute(factory, **values, side="candidate", maximum_operations=1)
-    assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
+    with factory() as db:
+        diagnostics = {identity: {"error_code": db.get(models.AnalysisRun, identity).error_code,
+            "events": [(event.status, event.cost_state) for event in db.query(models.ModelCallEvent).filter_by(analysis_run_id=identity)]}
+            for identity in outcome["outcomes"]}
+    assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1, diagnostics
     with factory() as db:
         saved = db.query(models.AnalysisRun).filter_by(status="succeeded").one()
         with pytest.raises(FundingUnavailable, match="validated local runner"):
