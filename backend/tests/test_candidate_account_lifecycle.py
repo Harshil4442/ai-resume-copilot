@@ -120,11 +120,25 @@ def test_real_registration_and_password_login_issue_native_session_without_ident
     with service.sessions() as db:
         user, row = db.get(User, uid), db.get(CandidatePasswordAccount, uid)
         assert user.password_hash != PASSWORD and row.state == "ACTIVE"
+        assert user.ai_credits == 0 and user.job_service_credits == 0
         assert row.credential_sha256 == credential_digest(user.password_hash)
         assert native.registry.read("subjects", row.subject_uuid)["active"] is True
         assert native.registry.read("pairing_account_bindings", row.account_binding_id)["candidate_id"] == uid
     service.validate(result.context, auth_generation=1)
     assert len(protected.calls) == 2
+
+
+def test_native_login_preserves_existing_legacy_balances(lifecycle):
+    service, _, _ = lifecycle
+    uid = register(service)
+    with service.sessions() as db:
+        user = db.get(User, uid)
+        user.ai_credits, user.job_service_credits = 17, 13
+        db.commit()
+    service.login(email="candidate@example.com", password=PASSWORD)
+    with service.sessions() as db:
+        user = db.get(User, uid)
+        assert (user.ai_credits, user.job_service_credits) == (17, 13)
 
 
 @pytest.mark.parametrize("failure", ["native_unknown", "activation_unknown"])
@@ -248,7 +262,7 @@ def test_http_registration_login_bearer_and_logout_use_genuine_credential_native
             return client.post(path, content=raw, headers=signed_headers(ingress, path, raw, authorization=authorization))
         registered = post("/api/auth/register", {"email": "candidate@example.com",
             "password": PASSWORD, "accepted_terms": True, "confirmed_age_18": True})
-        assert registered.status_code == 200 and registered.json()["ai_credits"] == 50
+        assert registered.status_code == 200 and registered.json()["ai_credits"] == 0
         authenticated = post("/api/auth/login", {"email": "candidate@example.com", "password": PASSWORD})
         assert authenticated.status_code == 200
         body = authenticated.json()

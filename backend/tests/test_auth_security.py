@@ -1,3 +1,7 @@
+from backend.app.database import Base, get_db
+from backend.app.models import User
+from backend.app.rate_limiter import limiter
+from backend.app.routers import auth
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from slowapi import _rate_limit_exceeded_handler
@@ -5,11 +9,6 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from backend.app.database import Base, get_db
-from backend.app.models import User
-from backend.app.rate_limiter import limiter
-from backend.app.routers import auth
 
 
 def _client():
@@ -37,7 +36,7 @@ def _client():
     return engine, factory, TestClient(app)
 
 
-def test_password_registration_grants_free_analysis_units():
+def test_password_registration_does_not_create_unfunded_legacy_ai_units():
     limiter._storage.reset()
     engine, factory, client = _client()
     try:
@@ -51,7 +50,8 @@ def test_password_registration_grants_free_analysis_units():
             },
         )
         assert response.status_code == 200, response.text
-        assert response.json()["ai_credits"] == 50
+        assert response.json()["ai_credits"] == 0
+        assert response.json()["job_service_credits"] == 0
         login = client.post(
             "/api/auth/login",
             json={"email": "new.user@example.com", "password": "strong-password-123"},
@@ -60,7 +60,7 @@ def test_password_registration_grants_free_analysis_units():
         assert login.json()["user_id"] == response.json()["id"]
         with factory() as db:
             user = db.query(User).one()
-            assert user.ai_credits == 50
+            assert user.ai_credits == 0
     finally:
         client.close()
         engine.dispose()
@@ -98,9 +98,45 @@ def test_google_login_derives_identity_from_verified_token(monkeypatch):
             user = db.query(User).one()
             assert user.email == "verified.user@example.com"
             assert user.password_hash == ""
-            assert user.ai_credits == 50
+            assert user.ai_credits == 0
             assert user.terms_version == "2026-10-08"
             assert user.terms_accepted_at is not None
+            # A retained balance is independent of the prospective signup
+            # benefit. A later login must neither reset it nor add a grant.
+            user.ai_credits = 17
+            user.job_service_credits = 13
+            db.commit()
+        again = client.post("/api/auth/google-login", json={"id_token": "x" * 200})
+        assert again.status_code == 200
+        assert again.json()["user_id"] == response.json()["user_id"]
+        with factory() as db:
+            retained = db.query(User).one()
+            assert (retained.ai_credits, retained.job_service_credits) == (17, 13)
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def test_existing_password_balances_are_not_changed_by_login_or_duplicate_registration():
+    limiter._storage.reset()
+    engine, factory, client = _client()
+    try:
+        with factory() as db:
+            db.add(User(email="retained@example.com", password_hash=auth.hash_password("synthetic-retained-password"),
+                        ai_credits=17, job_service_credits=13))
+            db.commit()
+        login = client.post("/api/auth/login", json={"email": "retained@example.com",
+                                                     "password": "synthetic-retained-password"})
+        assert login.status_code == 200
+        me = client.get("/api/auth/me", headers={"Authorization": "Bearer " + login.json()["access_token"]})
+        assert me.status_code == 200
+        assert (me.json()["ai_credits"], me.json()["job_service_credits"]) == (17, 13)
+        duplicate = client.post("/api/auth/register", json={"email": "retained@example.com",
+            "password": "synthetic-retained-password", "accepted_terms": True, "confirmed_age_18": True})
+        assert duplicate.status_code == 409
+        with factory() as db:
+            retained = db.query(User).one()
+            assert (retained.ai_credits, retained.job_service_credits) == (17, 13)
     finally:
         client.close()
         engine.dispose()

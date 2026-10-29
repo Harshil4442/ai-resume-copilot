@@ -6,11 +6,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from ..billing.signup import NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS, NEW_ACCOUNT_LEGACY_SERVICE_CREDITS
 from ..database import get_db
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
 from ..domains.notifications import enqueue_notification
 from ..models import (
-    FREE_SIGNUP_ANALYSIS_UNITS,
     AdminAuditEvent,
     AnalysisRun,
     ApplicationEvent,
@@ -160,7 +160,8 @@ def register(request: Request, payload: AuthRegisterRequest, db: Session = Depen
     u = User(
         email=email,
         password_hash=hash_password(payload.password),
-        ai_credits=FREE_SIGNUP_ANALYSIS_UNITS,
+        ai_credits=NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS,
+        job_service_credits=NEW_ACCOUNT_LEGACY_SERVICE_CREDITS,
         terms_accepted_at=accepted_at,
         terms_version=CURRENT_POLICY_VERSION,
         privacy_version=CURRENT_POLICY_VERSION,
@@ -269,7 +270,8 @@ def google_login(request: Request, payload: AuthGoogleLoginRequest, db: Session 
         u = User(
             email=email,
             password_hash="",
-            ai_credits=FREE_SIGNUP_ANALYSIS_UNITS,
+            ai_credits=NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS,
+            job_service_credits=NEW_ACCOUNT_LEGACY_SERVICE_CREDITS,
             terms_accepted_at=accepted_at,
             terms_version=CURRENT_POLICY_VERSION,
             privacy_version=CURRENT_POLICY_VERSION,
