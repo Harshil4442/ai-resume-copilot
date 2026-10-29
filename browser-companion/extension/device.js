@@ -28,7 +28,7 @@ async function openDatabase() {
   });
 }
 
-function retainedIdentity(database, candidate = null) {
+function retainedIdentity(database, candidate = null, slot = "device") {
   return new Promise((resolve, reject) => {
     let value = null, settled = false, timedOut = false, tx;
     try { tx = database.transaction("keys", candidate ? "readwrite" : "readonly"); }
@@ -36,10 +36,10 @@ function retainedIdentity(database, candidate = null) {
     const fail = (phase) => { if (!settled) { settled = true; clearTimeout(timer); reject(unavailable(phase)); } };
     const timer = setTimeout(() => { timedOut = true; try { tx.abort(); } catch { /* already terminal */ } fail("TX-TIMEOUT"); }, 3000);
     tx.onabort = () => fail(timedOut ? "TX-TIMEOUT" : "TX-ABORT"); tx.onerror = () => fail("TX-ERROR");
-    const store = tx.objectStore("keys"), read = store.get("device");
+    const store = tx.objectStore("keys"), read = store.get(slot);
     read.onsuccess = () => {
       value = read.result ?? null;
-      if (value === null && candidate !== null) { value = candidate; store.add(candidate, "device"); }
+      if (value === null && candidate !== null) { value = candidate; store.add(candidate, slot); }
     };
     tx.oncomplete = () => {
       if (!settled) { settled = true; clearTimeout(timer); resolve(value); }
@@ -79,23 +79,27 @@ async function validate(identity) {
   } catch (failure) { throw deviceFailurePhase(failure) ? failure : unavailable(phase); }
 }
 
-export async function deviceIdentity({ requireRetained = false } = {}) {
-  if (typeof requireRetained !== "boolean") throw unavailable("OPTIONS");
+export async function createLocalIdentity() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+  const public_key = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const key_sha256 = await digest(canonical({ kty: public_key.kty, crv: public_key.crv, x: public_key.x, y: public_key.y }));
+  return { device_id: crypto.randomUUID(), key_sha256, public_key, private_key: pair.privateKey };
+}
+
+export async function deviceIdentity({ requireRetained = false, slot = "device" } = {}) {
+  if (typeof requireRetained !== "boolean" || !(slot === "device" || typeof slot === "string" && /^device-recovery:[a-f0-9-]{36}$/.test(slot) && UUID.test(slot.slice(16)))
+      || slot !== "device" && !requireRetained) throw unavailable("OPTIONS");
   const database = await openDatabase();
   let phase = "TX-UNAVAILABLE";
   try {
-    let identity = await retainedIdentity(database);
+    let identity = await retainedIdentity(database, null, slot);
     if (identity === null) {
       if (requireRetained) throw unavailable("MISSING-RETAINED");
       // Crypto awaits occur outside the IDB transaction. The second read and add
       // share one serialized readwrite transaction, so concurrent callers keep
       // the same retained owner instead of overwriting each other's private key.
       phase = "CREATE";
-      const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
-      const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
-      const key_sha256 = await digest(canonical({ kty: publicKey.kty, crv: publicKey.crv, x: publicKey.x, y: publicKey.y }));
-      identity = await retainedIdentity(database, { device_id: crypto.randomUUID(), key_sha256,
-        public_key: publicKey, private_key: pair.privateKey });
+      identity = await retainedIdentity(database, await createLocalIdentity());
     }
     const retained = await validate(identity);
     return { ...retained, sign: (payload) => sign(payload, retained.private_key, retained.device_id) };

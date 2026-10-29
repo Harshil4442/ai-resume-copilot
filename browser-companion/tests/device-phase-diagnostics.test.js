@@ -173,7 +173,7 @@ test("plain or forged errors cannot supply trusted device phase metadata", () =>
   }
 });
 
-test("actual worker status error returns fixed phase only to the exact existing popup sender", async (t) => {
+test("actual worker refuses an unavailable recovery journal only to the exact existing popup sender", async (t) => {
   const counts = idbFixture(t, { openFailure: "blocked" });
   let listener, localReads = 0;
   const previous = Object.getOwnPropertyDescriptor(globalThis, "chrome");
@@ -186,11 +186,11 @@ test("actual worker status error returns fixed phase only to the exact existing 
   const popup = { id: CONFIG.extensionId, url: `chrome-extension://${CONFIG.extensionId}/popup.html` };
   assert.equal(listener({ type: "status" }, { ...popup, url: popup.url + "?other" }, () => assert.fail("Wrong sender must not be answered")), false);
   const reply = await new Promise((resolve) => { assert.equal(listener({ type: "status" }, popup, resolve), true); });
-  assert.deepEqual(reply, { ok: false, error: generic, device_phase: "OPEN-BLOCKED" });
-  assert.equal(localReads, 1); assert.equal(counts.opens, 1); assert.equal(counts.reads, 0); assert.equal(counts.writes, 0);
+  assert.deepEqual(reply, { ok: false, error: "Local lost-key recovery needs inspection. No application action is enabled." });
+  assert.equal(localReads, 0); assert.equal(counts.opens, 1); assert.equal(counts.reads, 0); assert.equal(counts.writes, 0);
   const otherReply = await new Promise((resolve) => listener({ type: "pairing_status" }, popup, resolve));
-  assert.deepEqual(otherReply, { ok: false, error: generic });
-  assert.equal(localReads, 1); assert.equal(counts.opens, 1);
+  assert.deepEqual(otherReply, { ok: false, error: "Local lost-key recovery needs inspection. No application action is enabled." });
+  assert.equal(localReads, 0); assert.equal(counts.opens, 2);
   const invalidReply = await new Promise((resolve) => listener(null, popup, resolve));
   assert.deepEqual(invalidReply, { ok: false, error: "Unsupported assistance operation" });
 });

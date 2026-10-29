@@ -12,6 +12,7 @@ const REASONS = Object.freeze({
   WORKER: "The companion's background worker did not respond. Inspect the extension's error details without reinstalling it.",
   TIMEOUT: "The initial connection check timed out. Keep this extension installed; no request was automatically repeated.",
   UNKNOWN: "Startup could not be verified. Keep this extension installed and inspect its error details before choosing a recovery action.",
+  RECOVERY: "Local identity recovery is incomplete or changed. All application actions stay locked. Inspect its retained record; automatic retry and another identity are unsupported.",
 });
 const MESSAGES = new Map([
   ["Reviewed browser connection configuration is unavailable", "CONFIG"],
@@ -24,6 +25,7 @@ const MESSAGES = new Map([
   ["Stored assistance state needs inspection. No field action is enabled.", "CHECKPOINT"],
   ["Retained native evidence needs inspection.", "CHECKPOINT"],
   ["Connection storage is unavailable", "STORAGE"],
+  ["Local lost-key recovery needs inspection. No application action is enabled.", "RECOVERY"],
   ["Companion worker unavailable. Inspect the portal before retrying.", "WORKER"],
   ["Could not establish connection. Receiving end does not exist.", "WORKER"],
   ["The message port closed before a response was received.", "WORKER"],
@@ -68,7 +70,7 @@ export function showStartupFailure(document, failure, version) {
   const mode = document.getElementById("mode"), alert = document.getElementById("error");
   if (mode) mode.textContent = "Browser connection unavailable. No application action is enabled.";
   for (const control of document.querySelectorAll("button, input, select, textarea")) control.disabled = true;
-  for (const id of ["fixture-connection", "fixture-prepare", "native-connection", "assistance", "review"]) {
+  for (const id of ["fixture-connection", "fixture-prepare", "native-connection", "assistance", "review", "lost-key-recovery"]) {
     const region = document.getElementById(id); if (region) region.hidden = true;
   }
   if (alert) {
