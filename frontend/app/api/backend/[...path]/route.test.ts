@@ -280,3 +280,63 @@ describe("resume upload deadline", () => {
     expect(maxDuration).toBe(150);
   });
 });
+
+describe("exact owned canary participation transport", () => {
+  const endpoint = ["v1", "credits", "canary-enrollment"];
+  const payload = { review_id: "fixture-canary-v1", review_sha256: "a".repeat(64), notice_sha256: "b".repeat(64),
+    choice: "opt_in", expected_sequence: 0, confirmed_notice: true, idempotency_key: "explicit-fixture-choice" };
+  function canaryRequest(method: string, body: unknown = payload, query = "", headers: Record<string, string> = {}) {
+    return new NextRequest(`${site}/api/backend/v1/credits/canary-enrollment${query}`, {
+      method, headers: { origin: site, "content-type": "application/json", ...headers },
+      ...(method === "GET" ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+  it("forwards the exact choice with authenticated bearer and private response", async () => {
+    const response = await POST(canaryRequest("POST"), context(endpoint));
+    expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(fetchBackend).toHaveBeenCalledOnce();
+    const [target, init] = fetchBackend.mock.calls[0];
+    expect(String(target)).toBe("https://backend.example.test/api/v1/credits/canary-enrollment");
+    expect(init.headers.get("authorization")).toBe("Bearer fixture-backend-token");
+    expect(JSON.parse(new TextDecoder().decode(init.body))).toEqual(payload);
+  });
+  it("preserves exact retained-review selectors without adding an owner ID", async () => {
+    const query = `?review_id=${payload.review_id}&review_sha256=${payload.review_sha256}`;
+    expect((await GET(canaryRequest("GET", null, query), context(endpoint))).status).toBe(200);
+    expect(String(fetchBackend.mock.calls[0][0])).toBe(`https://backend.example.test/api/v1/credits/canary-enrollment${query}`);
+  });
+  it.each([
+    { ...payload, expected_sequence: undefined }, { ...payload, expected_sequence: -1 },
+    { ...payload, expected_sequence: true }, { ...payload, expected_sequence: "0" }, { ...payload, expected_sequence: 0.5 },
+    { ...payload, user_id: 2 }, { ...payload, choice: "approve" }, { ...payload, confirmed_notice: false },
+    { ...payload, review_sha256: "invalid" }, { ...payload, idempotency_key: "tiny" },
+    { ...payload, notice: "unreviewed" }, { ...payload, idempotency_key: "a".repeat(3000) },
+  ])("rejects malformed, unconfirmed or cross-owner bodies before backend work", async (body) => {
+    expect((await POST(canaryRequest("POST", body), context(endpoint))).status).toBe(422);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each(["?user_id=2", "?review_id=fixture-canary-v1", `?review_id=${payload.review_id}&review_sha256=${payload.review_sha256}&review_sha256=${payload.review_sha256}`])("rejects an unbounded selector %s", async (query) => {
+    expect((await GET(canaryRequest("GET", null, query), context(endpoint))).status).toBe(422);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each([["PUT", PUT], ["PATCH", PATCH], ["DELETE", DELETE]] as const)("does not widen participation methods to %s", async (method, handler) => {
+    expect((await handler(canaryRequest(method), context(endpoint))).status).toBe(405);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it("requires existing auth and rejects foreign-origin consent before forwarding", async () => {
+    expect((await POST(canaryRequest("POST", payload, "", { origin: "https://foreign.example" }), context(endpoint))).status).toBe(403);
+    expect(getToken).not.toHaveBeenCalled(); expect(fetchBackend).not.toHaveBeenCalled();
+    getToken.mockResolvedValue(null);
+    expect((await POST(canaryRequest("POST"), context(endpoint))).status).toBe(401);
+    expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it("bounds an untrusted streamed body without relying on Content-Length", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(2049)); }, cancel() { cancelled = true; } });
+    const incoming = new NextRequest(`${site}/api/backend/v1/credits/canary-enrollment`, {
+      method: "POST", headers: { origin: site, "content-type": "application/json" }, body: stream, duplex: "half",
+    } as NonNullable<ConstructorParameters<typeof NextRequest>[1]> & { duplex: "half" });
+    expect((await POST(incoming, context(endpoint))).status).toBe(422);
+    expect(cancelled).toBe(true); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+});

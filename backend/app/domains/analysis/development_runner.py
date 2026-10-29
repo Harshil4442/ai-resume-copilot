@@ -5,6 +5,8 @@ Only the pinned ten development PDFs can enter this isolated local runner.
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import hashlib
 import inspect
 import json
@@ -43,7 +45,7 @@ class Artifact(Closed):
 class Route(Closed):
     # Retained authorizations are still readable after a prompt revision.
     # Execution separately requires the current prompt and implementation.
-    prompt_version: Literal["interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7", "interview-evidence-v8"]
+    prompt_version: Literal["interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7", "interview-evidence-v8", "interview-evidence-v9"]
     contract_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     price: model_cost_policy.ModelPriceQuote
 
@@ -175,6 +177,58 @@ def _funding(authorization: Authorization, root: Path, *, active: bool) -> None:
     for route in authorization.routes.values():
         if route.price not in model.pricing_quotes or not route.price.valid_from <= now < route.price.expires_at:
             raise ValueError("The exact provider quote is not currently authorized")
+
+
+# Process-only authority is established by execute after complete native/funding
+# preflight. A persisted label, environment flag or caller-supplied run ID alone
+# can never open a production provider request.
+_provider_authority: contextvars.ContextVar[tuple | None] = contextvars.ContextVar(
+    "validated_internal_evaluation_provider_authority", default=None)
+
+
+@contextlib.contextmanager
+def _provider_scope(factory, authorization: Authorization, authorization_root: Path, identity: str):
+    _check_local(factory, authorization)
+    _current_contract(authorization)
+    _funding(authorization, authorization_root, active=True)
+    url = factory.kw["bind"].url
+    database = (url.host, url.port, url.database, url.username, _schema(authorization))
+    token = _provider_authority.set((identity, authorization, authorization_root, database))
+    try:
+        yield
+    finally:
+        _provider_authority.reset(token)
+
+
+def require_provider_authority(db, run) -> None:
+    """Recheck exact local runner/funding authority before counting or generation."""
+    authority = _provider_authority.get()
+    if authority is None:
+        raise ValueError("Internal evaluation requires its validated runner scope")
+    identity, authorization, root, expected_database = authority
+    engine = db.get_bind()
+    url = engine.url
+    database = (url.host, url.port, url.database, url.username,
+                db.execute(text("SHOW search_path")).scalar() if engine.dialect.name == "postgresql" else None)
+    if (engine.dialect.name != "postgresql" or url.host != "127.0.0.1"
+            or url.port not in {55433, 55434}
+            or url.database not in {"hirewiz_quality_development", "hirewiz_admission_test"}
+            or database != expected_database or run.id != identity
+            or run.operation != "interview_questions" or run.generation_attempt_limit != 1
+            or run.estimated_units != 0 or run.usage_state != "waived"):
+        raise ValueError("Internal evaluation cannot authorize a customer/provider operation")
+    _current_contract(authorization)
+    _funding(authorization, root, active=True)
+    payload = run.input_payload or {}
+    side = payload.get("side")
+    case = payload.get("case", {})
+    owner = _owner(db, authorization)
+    if (side not in SIDES or owner.id != run.user_id or payload.get("schema_version") != VERSION
+            or payload.get("authorization") != authorization.model_dump(mode="json")
+            or run.input_fingerprint != digest(payload)
+            or run.id != _run_id(authorization, side, case.get("case_id"))
+            or payload.get("request_sha256") != digest(_case_context(case))):
+        raise ValueError("The validated internal evaluation inputs changed")
 
 
 def _scope(root: Path) -> list[dict]:
@@ -360,7 +414,7 @@ def execute(factory, packet_root: Path, native_root: Path, authorization: Author
             run.status, run.started_at, run.attempt_count = "running", utcnow(), 1
             db.commit()  # Lost process/response never makes this queued again.
         try:
-            with generation_budget.persistent_run_budget(factory, identity):
+            with _provider_scope(factory, authorization, authorization_root, identity), generation_budget.persistent_run_budget(factory, identity):
                 questions = llm_client.generate_interview_questions(**context)
             result = {"questions": questions, "mode": "enhanced", "provenance": "generated",
                       "contract_versions": interview_contract.contract_versions()}

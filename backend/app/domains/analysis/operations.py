@@ -119,13 +119,18 @@ def _ensure_prompt_version(
     version: str,
     callable_object,
     linked_callables: tuple = (),
+    contract_identity: dict | None = None,
 ) -> models.PromptVersion:
     try:
         source = inspect.getsource(callable_object)
         if linked_callables:
             source += "".join(inspect.getsource(item) for item in linked_callables)
     except (OSError, TypeError):
+        if linked_callables or contract_identity is not None:
+            raise RuntimeError("The complete prompt contract source could not be verified") from None
         source = f"{operation}:{version}"
+    if contract_identity is not None:
+        source += json.dumps(contract_identity, sort_keys=True, separators=(",", ":"))
     checksum = hashlib.sha256(source.encode("utf-8")).hexdigest()
     prompt = (
         db.query(models.PromptVersion)
@@ -430,6 +435,7 @@ def execute_interview_questions(
     from ...services.interview_contract import (
         PROMPT_VERSION,
         QUESTION_COUNT,
+        build_interview_messages,
         contract_versions,
         load_approved_evidence,
     )
@@ -456,11 +462,15 @@ def execute_interview_questions(
             "mode": "curated", "provenance": "curated", "catalog_version": CATALOG_VERSION,
         }
 
+    from ...services.delivery_contracts import current_output_contract
+
     _ensure_prompt_version(
         db,
         operation="interview_questions",
         version=PROMPT_VERSION,
         callable_object=generate_interview_questions,
+        linked_callables=(build_interview_messages,),
+        contract_identity={"output_contract_sha256": current_output_contract("interview_questions")},
     )
     db.commit()
     started = time.perf_counter()
@@ -630,10 +640,14 @@ def execute_resume_tailor(
     if not source_units:
         raise ResumeLayoutError("No source text can be edited while preserving this layout. Keep the original/custom resume or upload editable DOCX/TeX source; protected fonts, macros or image-only text need manual editing.")
 
-    prompt_version = "resume-source-v7" if paid_context else "resume-source-v6"
+    from ...services.tailoring_contract import COMPLETE_PROMPT_VERSION, LEGACY_PROMPT_VERSION
+
+    prompt_version = COMPLETE_PROMPT_VERSION if paid_context else LEGACY_PROMPT_VERSION
     generator = (
         tailor_resume_from_evidence_full if paid_context else tailor_resume_from_evidence
     )
+    from ...services.delivery_contracts import current_output_contract
+
     _ensure_prompt_version(
         db,
         operation="resume_tailor",
@@ -641,6 +655,7 @@ def execute_resume_tailor(
         callable_object=generator,
         linked_callables=(build_tailoring_messages, tailor_resume_from_evidence)
         if paid_context else (),
+        contract_identity={"output_contract_sha256": current_output_contract("resume_tailor")},
     )
     source_bytes = resume.source_document
     source_format = resume.source_format

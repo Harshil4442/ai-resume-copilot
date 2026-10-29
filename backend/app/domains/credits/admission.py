@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ...database import Base
 from ...models import ModelCostLiability
 from ...services.model_cost_policy import quoted_cost
-from ..common import public_id
+from ..common import payload_fingerprint, public_id
 from ..dispatch.service import enqueue
 from ..employer.models import ServiceCreditReservation
 from . import finance, pricing, service
@@ -222,6 +222,10 @@ def assert_headroom(
     if route_id not in budgets.monthly_route_minor:
         raise finance.FundingUnavailable("This route has no funded execution budget")
     lock_money(db)
+    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
+        raise finance.FundingUnavailable(
+            "This route is paused while its actual expense overrun is reviewed"
+        )
     outcomes = [
         row[0]
         for row in db.query(CreditExecutionHold.delivery_state)
@@ -329,6 +333,27 @@ def admit(
     required = require_route(route, policy, now=stamp, commercial=commercial)
     if required != quote.snapshot["execution_required_minor"]:
         raise pricing.CreditContractError("The execution envelope needs reconciliation")
+    from . import canary, runtime
+
+    canary_proof = None
+    public_proof = None
+    import os
+    if os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower() == "reviewed_public":
+        configured = runtime.current_runtime(user_id, db=db, now=stamp)
+        if configured.policy != policy or configured.budgets != budgets or route not in configured.routes:
+            raise finance.FundingUnavailable("The public runtime changed; review a new quote")
+        public_proof = {"version": "reviewed-public-admission-v1",
+            "runtime_sha256": payload_fingerprint(configured.model_dump(mode="json")),
+            "user_id": user_id, "source_id": source_id, "input_fingerprint": input_fingerprint,
+            "route_sha256": payload_fingerprint(route.model_dump(mode="json")),
+            "policy_sha256": payload_fingerprint(policy.model_dump(mode="json")),
+            "budgets_sha256": payload_fingerprint(budgets.model_dump(mode="json"))}
+    elif canary.requested(db):
+        configured = runtime.current_runtime(user_id, db=db, now=stamp)
+        if configured.policy != policy or configured.budgets != budgets or route not in configured.routes:
+            raise finance.FundingUnavailable("The canary runtime changed; review a new quote")
+        canary_proof = canary.accept(db, user_id=user_id, runtime=configured,
+            operation=route.operation, source_id=source_id, input_fingerprint=input_fingerprint, now=stamp)
     assert_headroom(
         db,
         user_id=user_id,
@@ -380,6 +405,8 @@ def admit(
             "policy": policy.model_dump(mode="json"),
             "budgets": budgets.model_dump(mode="json"),
             "execution_mode": "inline" if inline else "worker",
+            **({"canary": canary_proof} if canary_proof is not None else {}),
+            **({"public_admission": public_proof} if public_proof is not None else {}),
         },
         created_at=stamp,
     )

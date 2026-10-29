@@ -1,0 +1,5 @@
+"""Versions shared by quote fingerprints, generation telemetry and validation."""
+LEGACY_PROMPT_VERSION = "resume-source-v8"
+COMPLETE_PROMPT_VERSION = "resume-source-v9"
+VALIDATOR_VERSION = "resume-personal-facts-v2"
+CONTEXT_VERSION = "full-editable-source-v1"

@@ -4,13 +4,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from backend.app.billing.razorpay import RazorpayAdapter, RazorpayProviderError
 from backend.app.billing.reconciliation import OriginalOrder
-from backend.app.domains.credits import release, service
+from backend.app.domains.credits import canary, release, service
 from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavailable
 from backend.app.domains.credits.models import CreditCampaign, CreditGrant, CreditPurchaseQuote
 from backend.app.domains.credits.pricing import CATALOG_VERSION
 from backend.app.domains.credits.runtime import RuntimeConfig
 from backend.app.models import EntitlementLedger, PaymentOrder, User
 from backend.app.routers import credits
+from backend.app.services.delivery_contracts import current_output_contract
 from test_razorpay_billing import (  # Reuse verified-signature test transport only.
     _capture_payload,
     _post_event,
@@ -36,6 +37,20 @@ def review_payload():
     )
 
 
+def reviewed_canary(monkeypatch, factory, configuration, identity):
+    # Explicit simulated owner choice in this isolated financial HTTP test;
+    # never inferred from Terms, granted credits, or operator review.
+    from test_canary_admission import prepare
+    with factory() as db:
+        now = datetime.now(UTC)
+        _, review, digest = prepare(db, monkeypatch, selected=(1,), now=now,
+            config=configuration, review_id=identity)
+        canary.choose(db, user_id=1, review_id=review.id, review_sha256=digest,
+            notice_sha256=review.notice_sha256, choice="opt_in", idempotency_key="simulated-buy-consent", expected_sequence=0,
+            runtime=configuration, now=now)
+        db.commit()
+
+
 @pytest.fixture
 def unified(client, enabled_checkout, monkeypatch, session_factory):
     client.app.include_router(credits.router, prefix="/api")
@@ -45,10 +60,8 @@ def unified(client, enabled_checkout, monkeypatch, session_factory):
     monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", review.model_dump_json())
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", RuntimeConfig(
-        policy=review.policy, budgets=budgets(), routes=(route(attempts=1),),
-    ).model_dump_json())
+    configuration = RuntimeConfig(policy=review.policy, budgets=budgets(), routes=(route(attempts=1),))
+    reviewed_canary(monkeypatch, session_factory, configuration, "fixture-buy-canary-v1")
     with session_factory() as db:
         now = datetime.now(UTC)
         db.add(CreditCampaign(id="launch", version="launch-v1", catalog_version=CATALOG_VERSION,
@@ -106,14 +119,16 @@ def test_public_catalog_and_quote_gate_are_not_old_billing_flags(unified, monkey
     assert calls == []
 
 
-def test_only_eligible_accounts_with_matching_funding_can_buy(unified, monkeypatch):
+def test_only_eligible_accounts_with_matching_funding_can_buy(unified, monkeypatch, session_factory):
     client, calls = unified
     assert not client.get("/api/public/credits/catalog").json()["checkout_enabled"]
     assert client.get("/api/v1/credits/catalog").json()["checkout_enabled"]
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "2")
+    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256", "0" * 64)
     assert not client.get("/api/v1/credits/catalog").json()["checkout_enabled"]
     assert client.post("/api/v1/credits/purchase-quotes", json={"sku": "starter_pass", "idempotency_key": "not-in-canary"}).status_code == 503
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
+    with session_factory() as db:
+        saved = db.query(canary.AdminAuditEvent).filter_by(action=canary.REVIEW_ACTION).one()
+        monkeypatch.setenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256", saved.after_state["sha256"])
     review = review_payload()
     review = review.model_copy(update={"policy": review.policy.model_copy(update={"version": "changed-financial-policy"})})
     monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", review.model_dump_json())
@@ -153,11 +168,12 @@ def test_discovery_kill_switch_also_closes_its_purchase_offer(unified, monkeypat
 def test_changed_service_list_requires_new_purchase_quote_without_provider_call(unified, monkeypatch, session_factory):
     client, calls = unified
     first = route(attempts=1)
-    second = first.model_copy(update={"id": "bullet-route", "operation": "bullet_rewrite", "credits": 2})
+    second = first.model_copy(update={"id": "bullet-route", "operation": "bullet_rewrite", "credits": 2,
+                                      "output_contract_sha256": current_output_contract("bullet_rewrite")})
     limits = budgets()
     limits = limits.model_copy(update={"monthly_route_minor": limits.monthly_route_minor | {second.id: 10_000}})
     configuration = RuntimeConfig(policy=release.current_review().policy, budgets=limits, routes=(first, second))
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", configuration.model_dump_json())
+    reviewed_canary(monkeypatch, session_factory, configuration, "fixture-buy-canary-two-routes")
     quoted = client.post("/api/v1/credits/purchase-quotes", json={
         "sku": "starter_pass", "idempotency_key": "two-reviewed-services"})
     assert quoted.status_code == 200, quoted.text
@@ -171,6 +187,44 @@ def test_changed_service_list_requires_new_purchase_quote_without_provider_call(
     with session_factory() as db:
         assert db.query(PaymentOrder).count() == 0
         assert db.query(CreditPurchaseQuote).one().accepted_order_id is None
+
+
+def test_route_with_another_services_output_contract_cannot_create_a_purchase(unified, monkeypatch, session_factory):
+    client, calls = unified
+    original_quote = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "before-contract-drift"})
+    assert original_quote.status_code == 200, original_quote.text
+    first = route(attempts=1)
+    # A changed service needs its own reviewed output contract. Relabeling a
+    # qualified tailoring route must never make bullet delivery purchasable.
+    wrong = first.model_copy(update={"id": "wrong-bullet-route", "operation": "bullet_rewrite", "credits": 2})
+    assert wrong.output_contract_sha256 != current_output_contract("bullet_rewrite")
+    limits = budgets()
+    limits = limits.model_copy(update={"monthly_route_minor": limits.monthly_route_minor | {wrong.id: 10_000}})
+    config = RuntimeConfig(policy=release.current_review().policy, budgets=limits, routes=(first, wrong))
+    # Keep the reviewed audience bound to this exact changed configuration so
+    # the refusal proves output qualification, rather than stale canary scope.
+    from backend.app.domains.common import payload_fingerprint
+    reviewed = release.current_review()
+    reviewed = reviewed.model_copy(update={"evidence": reviewed.evidence | {
+        "delivery_routes": payload_fingerprint(config.model_dump(mode="json"))}})
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
+    monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", reviewed.model_dump_json())
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
+    catalog = client.get("/api/v1/credits/catalog")
+    assert catalog.status_code == 200
+    assert catalog.json()["eligible_services"] == [] and not catalog.json()["checkout_enabled"]
+    quote = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "wrong-service-contract"})
+    assert quote.status_code == 503 and calls == []
+    order = client.post("/api/v1/credits/orders", json={
+        "quote_id": original_quote.json()["quote_id"], "billing_country": "IN",
+        "idempotency_key": "before-contract-drift"})
+    assert order.status_code == 503 and calls == []
+    with session_factory() as db:
+        assert db.query(CreditPurchaseQuote).count() == 1
+        assert db.query(CreditPurchaseQuote).one().accepted_order_id is None
+        assert db.query(PaymentOrder).count() == 0
 
 
 def test_payment_recovery_remains_readable_but_not_payable_while_service_paused(unified, monkeypatch):
@@ -211,8 +265,8 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
     with session_factory() as db:
         assert db.query(CreditGrant).count() == 1
         assert db.query(EntitlementLedger).one().entitlement_kind == "credit_pass"
-        assert db.query(User).one().ai_credits == 20
-        assert db.query(User).one().job_service_credits == 0
+        assert db.get(User, 1).ai_credits == 20
+        assert db.get(User, 1).job_service_credits == 0
     assert client.get("/api/v1/credits/wallet").json()["available_credits"] == 40
     status = client.get(f"/api/v1/credits/orders/{created['order_id']}").json()
     assert status["fulfilled"] and status["status"] == "paid" and status["pass_expires_at"]
@@ -235,7 +289,7 @@ def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified
     assert client.get("/api/v1/credits/wallet").json()["available_credits"] == 0
     with session_factory() as db:
         assert db.query(EntitlementLedger).one().status == "refunded"
-        assert db.query(User).one().ai_credits == 20
+        assert db.get(User, 1).ai_credits == 20
 
 
 def test_refund_before_capture_and_late_capture_do_not_regrant(unified, session_factory):
@@ -306,7 +360,7 @@ def test_quote_expiry_owner_and_client_amount_tampering_never_dispatch(unified, 
 def test_history_is_owned_and_keyset_paginated(unified, session_factory):
     client, _ = unified
     with session_factory() as db:
-        user = db.query(User).one()
+        user = db.get(User, 1)
         other = User(email="other@example.test")
         db.add(other)
         db.flush()
@@ -334,7 +388,7 @@ def test_account_erasure_detaches_financial_history_without_deleting_it(unified,
         capture = _capture_payload(db.query(PaymentOrder).one())
     assert _post_event(client, "evt_capture_delete", capture).status_code == 200
     with session_factory() as db:
-        owner = db.query(User).one().id
+        owner = db.get(User, 1).id
         service.reserve_credits(db, user_id=owner, operation="resume_tailor", source_id="run-owned",
             idempotency_key="before-erasure", credits=8, input_fingerprint="a"*64,
             quote_snapshot={"credits": 8}, execution_allowance_minor=360)

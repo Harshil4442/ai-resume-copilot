@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-29T11:19:38.825099+00:00",
+  "scope": "Existing credit/cost/quality Stages 2,4,6,7; combined candidate, not a production or commercial acceptance claim",
+  "production": {
+    "backend_source": "8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a",
+    "frontend_source": "b0c4581fe66b88369fca0219cabca8d1229684ba",
+    "ai_generation": "closed",
+    "unified_credits": "closed",
+    "free_core": "closed",
+    "checkout": "closed",
+    "final_submission": "closed"
+  },
+  "candidate_changes": [
+    {
+      "area": "native expense reconciliation",
+      "result": "Privileged receipt-based one-operation capture/review/apply; exact native database/TLS identity; detached-owner settlement; first receipt retained; actual overrun pauses affected route. Unknown supplier liabilities remain held.",
+      "runbook": "docs/delivery/NATIVE_EXPENSE_RECONCILIATION.md"
+    },
+    {
+      "area": "factuality and qualified output contracts",
+      "result": "Conservative scoped personal-claim validation and actual validator/prompt contract binding. Rejects unsupported output without rewriting or shortening; requires renewed qualification.",
+      "runbook": "docs/delivery/PERSONAL_CLAIM_QUALITY_GUARDS.md"
+    },
+    {
+      "area": "prospective signup funding",
+      "result": "Three public account-creation paths explicitly start both legacy balances at0; retained balances and historical schema/defaults unchanged.",
+      "runbook": "docs/delivery/FUNDED_SIGNUP_POLICY.md"
+    },
+    {
+      "area": "same-schema application deployment",
+      "result": "Distinct bounded first app25 release/rollback operator; actual prior8cb bidirectional compatibility; exact source/build/CI/native proof and original pilot/resources preserved.",
+      "runbook": "docs/delivery/SCHEMA25_APP_ROLLING_RELEASE.md"
+    },
+    {
+      "area": "recurring CI financial lock timeout",
+      "result": "Unresolved; next exact-source run captures encrypted bounded holder diagnostics. Financial deadlines/assertions unchanged.",
+      "runbook": "docs/delivery/CI_POSTGRES_LOCK_DIAGNOSTICS.md"
+    }
+  ],
+  "verification": {
+    "combined_focused_tests_passed": 320,
+    "combined_focused_tests_skipped": 2,
+    "skip_reason": "owned diagnostic PG17 unavailable in this focused run; agent independently tested its owned server",
+    "non_emulator_signup_security_tests_passed": 57,
+    "native_signup_emulator_local": "unavailable, must pass exact-source CI",
+    "independent_reviews": "finance, factuality, signup, diagnostic privacy and bounded app25 operator reviewed",
+    "combined_ci": "new corrected exact-source run pending",
+    "immutable_candidate_build": "pending",
+    "production_candidate_deployment": "pending",
+    "combined_postgresql17_tests_passed": 23,
+    "combined_postgresql17_skips": 0,
+    "combined_postgresql17_scope": {
+      "actual_prior_candidate_bidirectional_and_invariants": 14,
+      "native_expense_reconciliation": 9
+    },
+    "owned_postgresql_servers": "stopped, original CI ports untouched",
+    "full_ci_ruff": "passed locally",
+    "full_ci_mypy_linux": "passed locally,247 source files",
+    "gitleaks_pinned_8_24_2": "zero findings across reachable code history at4072f0a; final documentation scan required",
+    "diagnostic_private_key_custody": "owned0600 inside owned0700; derived public key matches committed PEM",
+    "fresh_user_and_cold_runner_tests_passed": 54,
+    "cold_journey_expectations": "Corrected real new-account baseline0 and explicit legacy-bundle grant2; retained-account rights fixtures unchanged. Immediate browser profile assertions added.",
+    "first_combined_ci_attempt": {
+      "run_id": 40865167342,
+      "head": "854db9fdb71b97179e8b4710bb50227ead454b22",
+      "known_failure": "Cold browser retained old expected52; early genuine-tailoring smoke retained old prompt version resume-source-v6 instead of current v8. Full backend suite did not run. No production or lock-resolution claim.",
+      "disposition": "Correct both fresh-account balance and current prompt-version assertions; validate a new exact source. Failed attempt never counts as release acceptance."
+    },
+    "frontend_journey_typecheck_eslint": "passed locally"
+  },
+  "remaining_gates": [
+    "Exact combined-source full CI and native document checks",
+    "Immutable build and app25 capture/staging/promotion/acceptance",
+    "Manual signed-in owner and companion acceptance",
+    "Two blinded reviewers/adjudication and qualified representative outputs",
+    "Actual supplier invoice/tax/payment reconciliation",
+    "At least seven-day/200-operation representative shadow evidence and bounded opted-in canary",
+    "Representative capacity and commercial hosting/launch decision"
+  ],
+  "cloud_mutations_from_candidate_work": 0,
+  "provider_model_calls_from_candidate_work": 0,
+  "goal_complete": false
+}

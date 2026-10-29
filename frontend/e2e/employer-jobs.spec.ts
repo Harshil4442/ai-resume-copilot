@@ -129,6 +129,7 @@ function fixture() {
       else if (path === "/resume/parse") value = { resume_id: 2, skills: ["Python"], experience_years: 3, sections: {}, extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [], source_available: true, source_format: "docx", parsed_json: {} };
       else if (path === "/v1/opportunities" && method === "POST") value = { id: "opp_job_fixture", ...body };
       else if (path === "/public/billing/catalog") value = { catalog_version: "fixture-v1", market: "IN", checkout_enabled: true, provider: "razorpay", products };
+      else if (path === "/v1/credits/canary-enrollment" && method === "GET") value = { status: "NOT_AVAILABLE" };
       else if (path === "/v1/credits/catalog") value = { schema_version: "unified-credits-v1", eligible_services: eligibleServices, catalog_version: "unified-fixture-v1", server_time: now, market: "IN", currency: "INR", checkout_enabled: true, products: unifiedProducts };
       else if (path === "/v1/credits/wallet") value = { schema_version: "unified-credits-v1", server_time: now, available_credits: 7, reserved_credits: 0, debt_credits: 0, lots: [] };
       else if (path === "/v1/credits/history") value = { schema_version: "unified-credits-v1", items: [], next_cursor: null };
@@ -355,6 +356,7 @@ test("service credit checkout links preserve explicit pass review before purchas
   const buy = page.getByRole("link", { name: "Buy credits", exact: true });
   await expect(buy).toHaveAttribute("href", "/billing"); await buy.click(); await expect(page).toHaveURL(/\/billing$/);
   await expect(page.getByRole("button", { name: "Review Starter pass" })).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Reviewed service pilot", exact: true })).toHaveCount(0);
   expect(f.requests.some((r) => r.path === "/v1/credits/orders" || r.path === "/v1/credits/purchase-quotes")).toBe(false);
   await page.getByRole("button", { name: "Review Starter pass" }).click();
   await expect(page.getByRole("button", { name: "Continue with ₹59 payment" })).toBeDisabled();

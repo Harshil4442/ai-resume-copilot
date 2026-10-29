@@ -40,6 +40,7 @@ PILOT_FLAGS = frozenset({
     "BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED",
     "BROWSER_PAIRING_NATIVE_ENABLED",
     "CANDIDATE_INGRESS_NATIVE_ENABLED",
+    "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",
 })
 FORBIDDEN = frozenset(schema25.OFF) - PILOT_FLAGS
 assert not PILOT_FLAGS.intersection({
@@ -114,6 +115,80 @@ class PilotPlan:
         return service + "-p25-" + self.nonce[:12]
 
 
+@dataclass(frozen=True)
+class AccountPilotPlan(PilotPlan):
+    """One additive account repair, bound to the completed original pilot.
+
+    Keep PilotPlan's serialized shape unchanged: its existing plans and journal
+    digests remain authoritative and must never be edited or replayed.
+    """
+    prior_pilot: PilotPlan
+
+    def validate(self):
+        super().validate()
+        need(type(self.prior_pilot) is PilotPlan, "account_prior_plan_invalid")
+        self.prior_pilot.validate()
+        need(self.requested_flags == ("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",)
+             and "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED" not in self.prior_pilot.requested_flags
+             and self.nonce != self.prior_pilot.nonce
+             and all(getattr(self, key) == getattr(self.prior_pilot, key) for key in (
+                 "deployment_sha256", "maintenance_sha256", "coordinator_sha256",
+                 "source_release", "image")), "account_continuation_invalid")
+        for pin, prior in zip(self.services, self.prior_pilot.services, strict=True):
+            expected_revision = (self.prior_pilot.revision(pin.service)
+                                 if prior.reopen_flags else prior.active_revision)
+            expected_traffic = copy.deepcopy(list(prior.traffic))
+            for row in expected_traffic:
+                if row.get("percent") == 100:
+                    row["revision"] = expected_revision
+                    row["tag"] = prior.active_tag
+            need(pin.uid == prior.uid and pin.static_sha256 == prior.static_sha256
+                 and pin.template_keys == prior.template_keys
+                 and pin.active_revision == expected_revision
+                 and pin.active_tag == prior.active_tag
+                 and pin.generation == prior.generation + bool(prior.reopen_flags)
+                 and list(pin.traffic) == sorted(expected_traffic, key=rolling.canonical),
+                 "account_predecessor_pin_changed")
+
+
+def _retained_flags(plan, service):
+    if type(plan) is AccountPilotPlan:
+        return next(pin.reopen_flags for pin in plan.prior_pilot.services
+                    if pin.service == service)
+    return ()
+
+
+def _closed_except(template, retained):
+    env = rolling.environment(template)
+    need(all(env.get(flag, {"value": "false"}).get("value")
+             == ("true" if flag in retained else "false")
+             for flag in schema25.OFF), "candidate_not_closed")
+
+
+def _prior_pilot_verified(prior, journal, maintenance_plan, run, *, current=None,
+                          current_journal=None):
+    need(type(prior) is PilotPlan
+         and journal is not None and journal.plan_hash == rolling.sha(asdict(prior)),
+         "account_prior_journal_invalid")
+    prior.validate()
+    _verify_reopen_flags(prior, maintenance_plan, run)
+    for pin in prior.services:
+        if not pin.reopen_flags:
+            continue
+        marker = "pilot." + pin.service
+        started = journal.read(marker + ".started")
+        need(started is not None and journal.read(marker + ".checked") is not None,
+             "account_prior_pilot_incomplete")
+        # Once the new operation has started, its own exact preimage and readback
+        # control that service. The original completed journal stays untouched.
+        changed = current is not None and next(
+            row.reopen_flags for row in current.services if row.service == pin.service)
+        if changed and current_journal is not None \
+                and current_journal.read(marker + ".started") is not None:
+            continue
+        _readback(prior, pin, run, started, lambda *args: None)
+
+
 def _original_flags(run, maintenance_plan, service):
     pin = next(item for item in maintenance_plan.services if item.name == service)
     try:
@@ -167,7 +242,7 @@ def _restored(maintenance_plan, maintenance_journal, coordinator_plan, coordinat
     coordinator.readback(coordinator_plan, coordinator_run, "restore", started)
 
 
-def _deployed(deployment_plan, deployment_journal, boundary):
+def _deployment_evidence(deployment_plan, deployment_journal, boundary):
     schema25._release_phase(deployment_plan, boundary, deployment_journal)
     need(deployment_plan.database_schema == schema25.contract.SCHEMA,
          "schema25_required")
@@ -178,11 +253,17 @@ def _deployed(deployment_plan, deployment_journal, boundary):
         need(started is not None
              and deployment_journal.read("promote." + service + ".checked") is not None,
              "deployment_not_complete")
-        rolling._readback(deployment_plan, boundary, deployment_plan.pin(service), started)
     boundary.observer.verify_source_image(
         release=deployment_plan.release, image_digest=deployment_plan.image_digest,
         build_id=deployment_plan.build_id, ci_run_id=deployment_plan.ci_run_id)
     boundary.observer.verify_policy_configuration(deployment_plan.target_policies())
+
+
+def _deployed(deployment_plan, deployment_journal, boundary):
+    _deployment_evidence(deployment_plan, deployment_journal, boundary)
+    for service in SERVICES:
+        rolling._readback(deployment_plan, boundary, deployment_plan.pin(service),
+                         deployment_journal.read("promote." + service + ".started"))
 
 
 def _coordinator_revision(clients, plan, name):
@@ -340,13 +421,20 @@ def verify_document_pins(plan, pilot_journal, coordinator_plan):
 
 def capture(deployment_plan, deployment_journal, maintenance_plan, maintenance_journal,
             coordinator_plan, coordinator_journal, boundary, controls, coordinator_run,
-            requested_flags, nonce):
+            requested_flags, nonce, *, prior_pilot=None, prior_journal=None):
     requested = tuple(sorted(set(requested_flags)))
     need(bool(requested) and set(requested) <= PILOT_FLAGS
          and len(requested) == len(requested_flags), "requested_flags_refused")
     _restored(maintenance_plan, maintenance_journal, coordinator_plan,
               coordinator_journal, controls, coordinator_run)
-    _deployed(deployment_plan, deployment_journal, boundary)
+    if prior_pilot is None:
+        need(prior_journal is None, "account_prior_plan_required")
+        _deployed(deployment_plan, deployment_journal, boundary)
+    else:
+        need(requested == ("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",),
+             "account_continuation_flags_refused")
+        _deployment_evidence(deployment_plan, deployment_journal, boundary)
+        _prior_pilot_verified(prior_pilot, prior_journal, maintenance_plan, boundary)
     pins = []
     for service in SERVICES:
         current = boundary.service(service)
@@ -357,10 +445,12 @@ def capture(deployment_plan, deployment_journal, maintenance_plan, maintenance_j
              "premaintenance_deployment_mismatch")
         env, original = rolling.environment(current["template"]), _original_flags(
             boundary, maintenance_plan, service)
+        retained = (() if prior_pilot is None else next(
+            row.reopen_flags for row in prior_pilot.services if row.service == service))
+        _closed_except(current["template"], retained)
         need(current["template"]["containers"][0].get("image") == deployment_plan.image
-             and env.get("APP_RELEASE", {}).get("value") == deployment_plan.release
-             and all(env.get(flag, {"value": "false"}).get("value") == "false"
-                     for flag in schema25.OFF), "candidate_not_closed")
+             and env.get("APP_RELEASE", {}).get("value") == deployment_plan.release,
+             "candidate_not_closed")
         flags = tuple(flag for flag in requested
                       if original.get(flag) == {"name": flag, "value": "true"})
         for flag in requested:
@@ -368,7 +458,12 @@ def capture(deployment_plan, deployment_journal, maintenance_plan, maintenance_j
                  in {"true", "false"}, "prior_flag_invalid")
         active = next(item for item in rolling.pinned_traffic(service, current)
                       if item.get("percent") == 100)
-        need(active["revision"] == deployment_plan.revision(service),
+        expected_revision = deployment_plan.revision(service)
+        if prior_pilot is not None:
+            old_pin = next(row for row in prior_pilot.services if row.service == service)
+            expected_revision = (prior_pilot.revision(service) if old_pin.reopen_flags
+                                 else old_pin.active_revision)
+        need(active["revision"] == expected_revision,
              "candidate_not_serving")
         tag = active.get("tag", "pilot-" + nonce[:12])
         pins.append(PilotPin(service, current["uid"], int(current["generation"]),
@@ -381,6 +476,10 @@ def capture(deployment_plan, deployment_journal, maintenance_plan, maintenance_j
     plan = PilotPlan(nonce, rolling.sha(asdict(deployment_plan)),
         rolling.sha(asdict(maintenance_plan)), rolling.sha(asdict(coordinator_plan)),
         deployment_plan.release, deployment_plan.image, requested, tuple(pins))
+    if prior_pilot is not None:
+        plan = AccountPilotPlan(nonce, plan.deployment_sha256, plan.maintenance_sha256,
+            plan.coordinator_sha256, plan.source_release, plan.image, requested,
+            tuple(pins), prior_pilot)
     plan.validate()
     need(all(boundary.revision(pin.service, plan.revision(pin.service)) is None
              for pin in plan.services if pin.reopen_flags), "reopen_revision_exists")
@@ -391,8 +490,7 @@ def desired(plan, pin, current):
     need(pin.reopen_flags, "empty_service_refused")
     template = copy.deepcopy(current["template"])
     env = rolling.environment(template)
-    need(all(env.get(flag, {"value": "false"}).get("value") == "false"
-             for flag in schema25.OFF), "candidate_not_closed")
+    _closed_except(template, _retained_flags(plan, pin.service))
     for flag in pin.reopen_flags:
         env[flag] = {"name": flag, "value": "true"}
     template["containers"][0]["env"] = list(env.values())
@@ -515,7 +613,12 @@ def load(raw):
         pins.append(PilotPin(**item))
     value["services"] = tuple(pins)
     value["requested_flags"] = tuple(value["requested_flags"])
-    plan = PilotPlan(**value)
+    plan: PilotPlan
+    if "prior_pilot" in value:
+        value["prior_pilot"] = load(rolling.canonical(value["prior_pilot"]))
+        plan = AccountPilotPlan(**value)
+    else:
+        plan = PilotPlan(**value)
     plan.validate()
     return plan
 
@@ -533,11 +636,23 @@ def main():
     parser.add_argument("--journal", type=Path)
     parser.add_argument("--nonce")
     parser.add_argument("--flags", help="Explicit comma-separated subset of the reviewed pilot flags")
+    parser.add_argument("--prior-pilot-plan", type=Path)
+    parser.add_argument("--prior-pilot-sha256")
+    parser.add_argument("--prior-pilot-journal", type=Path)
     for name in ("deployment", "maintenance", "coordinator"):
         parser.add_argument("--" + name + "-plan", type=Path)
         parser.add_argument("--" + name + "-sha256")
         parser.add_argument("--" + name + "-journal", type=Path)
     args = parser.parse_args()
+    prior_arguments = (args.prior_pilot_plan, args.prior_pilot_sha256,
+                       args.prior_pilot_journal)
+    need(all(value is None for value in prior_arguments)
+         or all(value is not None for value in prior_arguments),
+         "account_prior_arguments_required")
+    prior_pilot = (_pinned(args.prior_pilot_plan, args.prior_pilot_sha256, load)
+                   if args.prior_pilot_plan is not None else None)
+    prior_journal = (rolling.Journal(args.prior_pilot_journal, prior_pilot)
+                     if prior_pilot is not None else None)
     if args.phase == "capture":
         need(args.nonce is not None and args.flags is not None
              and all(getattr(args, name + suffix) is not None
@@ -558,10 +673,12 @@ def main():
         boundary = schema25.NativeSchema25Boundary(args.root,
                                                     schema25.contract.SCHEMA,
                                                     deployment.prior_sources)
+        continuation = ({"prior_pilot": prior_pilot, "prior_journal": prior_journal}
+                        if prior_pilot is not None else {})
         plan = capture(deployment, deployment_journal, maintenance_plan,
             maintenance_journal, coordinator_plan, coordinator_journal, boundary,
             maintenance.NativeControls(), coordinator.NativeCoordinatorRun(),
-            tuple(args.flags.split(",")), args.nonce)
+            tuple(args.flags.split(",")), args.nonce, **continuation)
         raw = rolling.canonical(asdict(plan)) + b"\n"
         fd = os.open(args.plan, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "wb") as stream:
@@ -573,6 +690,12 @@ def main():
                           "provider_mutations": 0}))
         return
     plan = _pinned(args.plan, args.plan_sha256, load)
+    if type(plan) is AccountPilotPlan:
+        need(prior_pilot is not None
+             and rolling.sha(asdict(prior_pilot)) == rolling.sha(asdict(plan.prior_pilot)),
+             "account_prior_proof_changed")
+    else:
+        need(prior_pilot is None, "account_prior_plan_refused")
     need(args.journal is not None, "journal_required")
     need(all(getattr(args, name + suffix) is not None
              for name in ("deployment", "maintenance", "coordinator")
@@ -604,7 +727,11 @@ def main():
         need(all(rolling.sha(boundary.iam(service))
                  == deployment.pin(service).iam_sha256 for service in SERVICES),
              "service_iam_changed")
-        if first:
+        if type(plan) is AccountPilotPlan:
+            _deployment_evidence(deployment, deployment_journal, boundary)
+            _prior_pilot_verified(plan.prior_pilot, prior_journal, maintenance_plan,
+                                  run, current=plan, current_journal=journal)
+        elif first:
             _deployed(deployment, deployment_journal, boundary)
         else:
             schema25._release_phase(deployment, boundary, deployment_journal)

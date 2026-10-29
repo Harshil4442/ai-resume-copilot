@@ -446,7 +446,7 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
            unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False,
-           rescue_expired_v2: bool = False) -> None:
+           rescue_expired_v2: bool = False, application_context: Any = None) -> None:
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
                and not (retire_expired_v2 and rescue_expired_v2),
                "document_refresh_recovery_mode_invalid")
@@ -467,14 +467,16 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
             # A failed Job's receipt can never establish that serving authority.
             probe.verify_current_successor(image, service)
     transition = build.infra("document_refresh_transition")
-    controller = transition.Controller(clients.http, probe, None, rescue_expired_v2=rescue_expired_v2)
+    controller = transition.Controller(clients.http, probe, None, rescue_expired_v2=rescue_expired_v2,
+                                       application_context=application_context)
     for name in ("hirewiz-document-inspector", "ai-resume-parser", "hirewiz-analysis-worker", "hirewiz-resume-coordinator"):
         value = clients.service(probe.PARENT + "/services/" + name)
         controller.ready(name, value, uid=probe.SERVICE_UID if name == "hirewiz-document-inspector" else None)
     if rescue_expired_v2:
         transition.verify_rescue_caller_pins(clients, probe, image)
     else:
-        probe.verify_caller_pins(clients, image, policy_sha256=policy)
+        options = {"caller_serving_validator": application_context.serving} if application_context is not None else {}
+        probe.verify_caller_pins(clients, image, policy_sha256=policy, **options)
 
 
 def object_name(uid: str) -> str:
@@ -499,7 +501,8 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
 def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
             resuming_original: Path | None = None, retire_expired_v2: bool = False,
             rescue_expired_v2: bool = False,
-            rescue_prior_journal: Path | None = None) -> str | None:
+            rescue_prior_journal: Path | None = None, consumed_history: Any = None,
+            application_context: Any = None) -> str | None:
     build = refresh_module
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
                and not (retire_expired_v2 and rescue_expired_v2)
@@ -510,6 +513,11 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                 not rescue_expired_v2 and rescue_prior_journal is None),
                "document_rescue_prior_completed_journal_required")
     build.need(selected is None or type(selected) is str and JOB.fullmatch(selected), "document_refresh_recovery_exact_job_required")
+    if consumed_history is not None:
+        from document_consumed_history import AuditedDisposition
+        build.need(type(consumed_history) is AuditedDisposition
+                   and not (rescue_expired_v2 or retire_expired_v2 or resuming_original),
+                   "document_refresh_consumed_history_audit_required")
     if history is None:
         build.need(selected is None and not rescue_expired_v2, "document_refresh_recovery_history_required")
         return None
@@ -541,6 +549,14 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if root.exists():
             record_roots.append(root)
         result = run / "result.json"
+        if consumed_history is not None and consumed_history.matches(run):
+            # This exact artifact was already consumed by three spent claims
+            # and the separately completed original API restore. The opaque
+            # proof is freshly native-verified; a saved report cannot enter here.
+            successor = build.decode(read(run / "native-proof/binding.json", build))["build_identity"]["nonce"]
+            for prior, original, receipt in pre_native_reconciliations(run, build):
+                pre_native_receipts.append((successor, prior, original, receipt))
+            continue
         if result.exists():
             previous = build.decode(read(result, build))
             build.need(type(previous) is dict and previous.get("status") == "document_refresh_serving"
@@ -652,8 +668,10 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if chosen is not None:
             assert selected is not None
             failed_jobs.add(selected)
-        mode = ({"retire_expired_v2": True} if retire_expired_v2 else
+        mode: dict[str, Any] = ({"retire_expired_v2": True} if retire_expired_v2 else
                 {"rescue_expired_v2": True} if rescue_expired_v2 else {})
+        if application_context is not None:
+            mode["application_context"] = application_context
         if verified_pre_native:
             failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in verified_pre_native)
             joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native},

@@ -35,6 +35,9 @@ class QualifiedRoute(finance.Closed):
     supported_source_formats: tuple[Literal["pdf", "docx", "tex", "texzip"], ...] = ()
     qualification_id: Identifier
     qualification_evidence_sha256: Digest
+    # Optional for historical snapshot parsing. New affected AI work requires
+    # an explicit current digest; old evidence is never filled in automatically.
+    output_contract_sha256: Digest | None = None
     qualified_from: datetime
     qualified_until: datetime
     native_cost_evidence_sha256: Digest
@@ -88,6 +91,17 @@ class QualifiedRoute(finance.Closed):
         )
 
 
+def require_current_output_contract(route: QualifiedRoute) -> None:
+    from ...services.delivery_contracts import OutputContractUnavailable, current_output_contract
+
+    try:
+        expected = current_output_contract(route.operation)
+    except OutputContractUnavailable:
+        raise finance.FundingUnavailable("The current output contract needs a new qualification") from None
+    if expected is not None and route.output_contract_sha256 != expected:
+        raise finance.FundingUnavailable("This delivery route was qualified for a different output contract")
+
+
 def require_route(
     route: QualifiedRoute,
     policy: finance.FinancialPolicy,
@@ -95,6 +109,7 @@ def require_route(
     now: datetime,
     commercial: bool = False,
 ) -> int:
+    require_current_output_contract(route)
     if not route.qualified_from <= now < route.qualified_until:
         raise finance.FundingUnavailable(
             "The selected delivery route needs a current qualification"

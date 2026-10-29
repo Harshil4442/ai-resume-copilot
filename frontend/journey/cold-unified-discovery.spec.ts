@@ -29,6 +29,9 @@ test("unified pass and reviewed native discovery use actual BFF API SQL with zer
   await expect(page).toHaveURL(/\/resume$/);
   const session = (await context.cookies()).filter((cookie) => cookie.name === "__Secure-next-auth.session-token");
   expect(session).toHaveLength(1); expect(session[0]).toMatchObject({ secure: true, httpOnly: true });
+  const initialProfile = await request.get(`${baseURL}/api/account/profile`);
+  expect(initialProfile.ok()).toBeTruthy();
+  expect((await initialProfile.json()).ai_credits).toBe(0);
   await page.locator('input[type="file"]').setInputFiles(process.env.COLD_BROWSER_ORIGINAL!);
   const parseResponse = page.waitForResponse((response) => response.url().endsWith("/api/backend/resume/parse") && response.request().method() === "POST");
   await page.getByRole("button", { name: /Parse resume/ }).click();
@@ -91,7 +94,7 @@ test("unified pass and reviewed native discovery use actual BFF API SQL with zer
     expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze()).violations).toEqual([]);
   }
   const profile = await (await request.get(`${baseURL}/api/account/profile`)).json();
-  expect(profile.ai_credits).toBe(50);
+  expect(profile.ai_credits).toBe(0);
   expect((await (await request.get(`${baseURL}/api/backend/v1/employer-jobs/applications`)).json()).items).toEqual([]);
   expect(errors).toEqual([]); expect(serverErrors).toEqual([]); expect(external).toEqual(["synthetic_checkout_script"]);
   await writeFile(process.env.COLD_BROWSER_BROWSER_PROOF!, JSON.stringify({ scenario: "unified", real_nextauth: true, no_bff_interception: true,
@@ -99,7 +102,7 @@ test("unified pass and reviewed native discovery use actual BFF API SQL with zer
     new_pass_reviewed_via_ui: true, payment_granted_only_after_webhook: true, duplicate_capture_granted_once: true,
     bought_credits: 40, remaining_credits: 39, native_partial_batch: { requested: 5, delivered: 2, charged: 1 },
     native_empty_batch: { delivered: 0, charged: 0, restored: 1 }, same_intent_replay_no_charge: true,
-    explicit_second_batch_review: true, legacy_analysis_units_unchanged: 50, applications_created: 0,
+    explicit_second_batch_review: true, legacy_analysis_units_unchanged: 0, applications_created: 0,
     model_calls: 0, external, page_errors: errors.length, server_errors: serverErrors.length,
     reviewed_widths: [390, 1440], axe_violations: 0 }, null, 2) + "\n");
 });

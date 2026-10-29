@@ -13,8 +13,8 @@ export default function EmployerBatchPage() {
   const router = useRouter();
   const client = useQueryClient();
   return <main className="app-page"><div className="page-container"><h1 className="font-display text-3xl">Your exact application batch</h1><BatchPanel key={id} id={id} onClose={() => router.push("/employer-jobs")} onChange={() => {
-    void client.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
     void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] });
+    // Nav owns the profile/catalog refresh for this shared owner client.
     window.dispatchEvent(new Event("refresh_analysis_units"));
   }} /></div></main>;
 }

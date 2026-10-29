@@ -26,7 +26,6 @@ def _no_live_gemini_count(monkeypatch):
 @pytest.fixture
 def setup(factory, monkeypatch):
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
     monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("FREE_CORE_ENABLED", "false")
@@ -45,11 +44,16 @@ def setup(factory, monkeypatch):
 
 
 def configure(monkeypatch, operation):
+    from backend.app.services.delivery_contracts import current_output_contract
+
     chosen = route(attempts=1)
     chosen = chosen.model_copy(update={"operation": operation, "credits": pricing.SERVICE_CREDITS[operation],
+        "output_contract_sha256": current_output_contract(operation),
         "model_quotes": tuple(item.model_copy(update={"max_input_tokens": 20_000}) for item in chosen.model_quotes),
         "supported_limits": {"context_bytes": 40_000, "evidence_items": 100}})
     config = runtime.RuntimeConfig(policy=financial_policy(), budgets=budgets(), routes=(chosen,))
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, config)
     monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
     return config
 
@@ -278,6 +282,35 @@ def test_no_useful_enrichment_restores_credits_and_keeps_original_source(setup):
         assert service.wallet(db, user_id=1).available_credits == 40
 
 
+@pytest.mark.parametrize("operation", ["enhanced_qa", "learning_strategy", "bullet_rewrite"])
+def test_unsupported_personal_claim_refunds_once_and_retains_real_supplier_accounting(setup, operation):
+    factory, monkeypatch = setup
+    configure(monkeypatch, operation)
+    raw = output(operation)
+    if operation == "enhanced_qa":
+        raw["answer"] = "You have 10 years of Java experience."
+    elif operation == "learning_strategy":
+        raw["timeline"][0]["deliverable"] = "You led Python platform."
+    else:
+        raw["bullets"][0]["replacement_text"] = "Led 2 Python APIs and Docker services."
+    calls = provider(monkeypatch, operation, raw=raw)
+    with factory() as db:
+        request = payload(operation)
+        quote_id = quote(db, request)
+        with pytest.raises(HTTPException) as failure:
+            invoke(db, request, quote_id)
+        assert failure.value.detail["credits_charged"] == 0
+        run = db.query(models.AnalysisRun).one()
+        assert run.status == "failed" and run.result_payload is None
+        assert service.wallet(db, user_id=1).available_credits == 40
+        liability = db.query(models.ModelCostLiability).one()
+        assert liability.cost_state == "settled" and liability.settled_cost_micros > 0
+        assert db.query(CreditExecutionHold).one().delivery_state == "failed"
+        with pytest.raises(HTTPException):
+            invoke(db, request, quote_id)
+        assert len(calls) == 1 and service.wallet(db, user_id=1).available_credits == 40
+
+
 def test_reused_new_key_is_durably_bound_to_original_result(setup):
     factory, monkeypatch = setup
     configure(monkeypatch, "enhanced_qa")
@@ -376,7 +409,10 @@ def test_actual_provider_client_uses_inline_budget_and_usage(setup):
     factory, monkeypatch = setup
     config = configure(monkeypatch, "enhanced_qa")
     chosen = config.routes[0].model_copy(update={"model_quotes": (config.routes[0].model_quotes[0].model_copy(update={"model": "gemini-3.6-flash"}),)})
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(update={"routes": (chosen,)}).model_dump_json())
+    changed = config.model_copy(update={"routes": (chosen,)})
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, changed)
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", changed.model_dump_json())
     monkeypatch.setenv("LLM_API_KEY", "synthetic-local-test-only")
     monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
     calls = []
@@ -407,9 +443,10 @@ def test_count_preflight_failure_refunds_unified_service_without_provider_attemp
             config.routes[0].model_quotes[0].model_copy(update={"model": "gemini-3.6-flash"}),
         ),
     })
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(
-        update={"routes": (chosen,)}
-    ).model_dump_json())
+    changed = config.model_copy(update={"routes": (chosen,)})
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, changed)
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", changed.model_dump_json())
     monkeypatch.setenv("LLM_API_KEY", "synthetic-local-test-only")
     monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
 
@@ -441,9 +478,10 @@ def test_expired_route_preflight_sends_no_prompt_or_provider_request(setup):
             config.routes[0].model_quotes[0].model_copy(update={"model": "gemini-3.6-flash"}),
         ),
     })
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(
-        update={"routes": (chosen,)}
-    ).model_dump_json())
+    changed = config.model_copy(update={"routes": (chosen,)})
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, changed)
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", changed.model_dump_json())
     monkeypatch.setenv("LLM_API_KEY", "synthetic-local-test-only")
     monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
     original_require_route = execution.require_route
@@ -491,7 +529,10 @@ def test_complete_prompt_refused_before_quote_when_provider_envelope_too_small(s
     factory, monkeypatch = setup
     config = configure(monkeypatch, "enhanced_qa")
     chosen = config.routes[0].model_copy(update={"model_quotes": (config.routes[0].model_quotes[0].model_copy(update={"max_input_tokens": 1}),)})
-    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_copy(update={"routes": (chosen,)}).model_dump_json())
+    changed = config.model_copy(update={"routes": (chosen,)})
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, changed)
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", changed.model_dump_json())
     with factory() as db:
         with pytest.raises(HTTPException) as caught:
             synchronous.prepare_quote_context(db, user_id=1, payload=payload("enhanced_qa"))
@@ -546,4 +587,37 @@ def test_exact_accepted_key_recovers_original_result_after_evidence_changed(setu
         assert synchronous.lookup_result(db, user_id=1, payload=request)["reused_run"] is None
         repeated = invoke(db, request, quote_id)
         assert repeated["credit_execution"]["charged_this_request"] == 0
+        assert len(calls) == 1
+
+
+def test_already_accepted_public_work_keeps_frozen_authority_when_canary_pointer_is_cleared(setup):
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    from backend.tests.test_canary_admission import prepare
+
+    factory, monkeypatch = setup
+    config = configure(monkeypatch, "enhanced_qa")
+    with factory() as db:
+        prepare(db, monkeypatch, config=config)
+        db.commit()
+    reviewed_runtime(monkeypatch, config)
+    calls = provider(monkeypatch, "enhanced_qa")
+    transport = llm_client.chat_json
+    def paused_after_acceptance(messages):
+        monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "false")
+        monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+        monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_ID")
+        monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256")
+        return transport(messages)
+    monkeypatch.setattr(llm_client, "chat_json", paused_after_acceptance)
+    with factory() as db:
+        request = payload("enhanced_qa")
+        quote_id = quote(db, request)
+        result = invoke(db, request, quote_id)
+        assert result["credit_execution"]["charged_this_request"] == 2 and len(calls) == 1
+        hold = db.query(CreditExecutionHold).one()
+        reservation = db.query(CreditReservation).one()
+        assert hold.snapshot["public_admission"]["source_id"] == reservation.source_id
+        assert hold.delivery_state == "delivered"
+        assert service.wallet(db, user_id=1).available_credits == 38
+        assert invoke(db, request, quote_id)["credit_execution"]["reused"]
         assert len(calls) == 1

@@ -307,7 +307,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     factory, client, reached, calls, emails, supplier_orders = journey
     assert client.get("/api/resume/list").status_code == 401
     user, owner = _signup_login(client, CANDIDATE)
-    assert user["ai_credits"] == 50
+    assert user["ai_credits"] == 0
     with factory() as db:
         assert db.get(core.User, user["id"]).job_service_credits == 0
         summary = notifications.deliver_pending_notifications(db)
@@ -465,7 +465,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
     _body(client.post("/api/billing/webhooks/razorpay", content=raw, headers=signature))
     assert _body(client.get("/api/v1/employer-jobs/credits", headers=owner))["balance"] == 100
     with factory() as db:
-        assert db.get(core.User, user["id"]).ai_credits == 52
+        assert db.get(core.User, user["id"]).ai_credits == 2
 
     search_input = {
         "resume_id": parsed["resume_id"],
@@ -688,7 +688,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
             run.generation_attempt_count == 0 and run.model_cost_quote is None for run in runs
         )
         assert all(run.usage_state == "committed" and run.committed_units == 1 for run in runs)
-        assert db.get(core.User, user["id"]).ai_credits == 50
+        assert db.get(core.User, user["id"]).ai_credits == 0
         assert (
             sum(item.amount for item in db.query(core.UsageEvent).filter_by(
                 user_id=user["id"], source_type="analysis_run"

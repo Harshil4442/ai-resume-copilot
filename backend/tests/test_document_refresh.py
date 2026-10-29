@@ -563,6 +563,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
         f"FINAL_DIRECTORY={runner_temp}/document-refresh-original-40788512340",
         f"READBACK_DIRECTORY={runner_temp}/document-refresh-original-40805300453",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
+        f"CONSUMED_BUNDLE={runner_temp}/document-refresh-consumed-audit",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
     assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
@@ -578,7 +579,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
         "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh",
         "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition",
-        "reconcile-final-v2-transition"]
+        "reconcile-final-v2-transition", "audit-consumed-v2-history"]
     job = workflow["jobs"]["maintenance"]
     assert job["if"] == (
         "github.repository == 'Harshil4442/ai-resume-copilot' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)")

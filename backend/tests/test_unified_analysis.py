@@ -29,8 +29,9 @@ def setup(factory, monkeypatch):
         }
     )
     config = runtime.RuntimeConfig(policy=financial_policy(), budgets=budgets(), routes=(selected,))
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, config)
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
     monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
     monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "test")
@@ -260,6 +261,8 @@ def test_tailoring_change_between_budget_check_and_generation_refunds(setup, mon
     config = runtime.RuntimeConfig(
         policy=financial_policy(), budgets=budgets(), routes=(selected,),
     )
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, config)
     monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
     with factory() as db:
         resume = db.get(models.Resume, 1)

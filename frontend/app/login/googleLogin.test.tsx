@@ -41,6 +41,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Google sign-in redirect failures", () => {
+  it("explains an unlinked Google account and offers password recovery without starting another sign-in", async () => {
+    window.history.replaceState({}, "", "/login?error=OAuthAccountNotLinked");
+    render(<LoginPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Google is not linked to this account. Sign in with your HireWiz password, or reset it using the link below.");
+    expect(screen.getByRole("link", { name: "Forgot your HireWiz password?" })).toHaveAttribute("href", "/forgot-password");
+    expect(mocked.signIn).not.toHaveBeenCalled();
+  });
+
   it("shows backend callback failure after returning to login and retains consent gating", async () => {
     window.history.replaceState({}, "", "/login?error=Callback&callbackUrl=%2Fdashboard");
     render(<LoginPage />);

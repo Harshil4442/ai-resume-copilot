@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from ...billing.signup import NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS, NEW_ACCOUNT_LEGACY_SERVICE_CREDITS
 from ...models import (
     CandidateGoogleIdentity,
     CandidateLifetimeHistory,
@@ -149,6 +150,8 @@ class CandidateAccountService:
             from datetime import datetime
             accepted = datetime.now(UTC)
             user = User(email=email.strip().lower(), password_hash=encoded,
+                ai_credits=NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS,
+                job_service_credits=NEW_ACCOUNT_LEGACY_SERVICE_CREDITS,
                 terms_accepted_at=accepted, terms_version=policy_version, privacy_version=policy_version,
                 age_confirmed_at=accepted)
             db.add(user)

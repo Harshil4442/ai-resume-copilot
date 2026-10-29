@@ -77,8 +77,8 @@ export default function EmployerJobsPage() {
   const displayedUnitPrice = retainedQuote?.unit_price ?? catalog.data?.search_credits_per_job;
 
   const refreshBalances = useCallback(() => {
+    // Nav owns the profile/catalog refresh for this shared owner client.
     window.dispatchEvent(new Event("refresh_analysis_units"));
-    void client.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
     void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] });
   }, [client]);
   const search = useMutation({

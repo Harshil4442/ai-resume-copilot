@@ -13,7 +13,11 @@ from app import models
 from app.domains.analysis import development_runner as runner
 from app.domains.analysis import quality_packet as packet
 from app.services import interview_contract, llm_client
-from tests.test_development_runner import calibration, write_json  # noqa: F401
+from tests.test_development_runner import (  # noqa: F401
+    calibration,
+    common_canary_funding,
+    write_json,
+)
 
 
 @pytest.fixture
@@ -216,8 +220,8 @@ def test_historical_export_survives_new_prompt_and_implementation(
             outcome = runner.execute(factory, **values, side="reference", maximum_operations=1)
             assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
 
-        assert interview_contract.PROMPT_VERSION == "interview-evidence-v8"
-        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
+        assert interview_contract.PROMPT_VERSION == "interview-evidence-v9"
+        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v4"
         assert runner.contract_digest() != auth.routes["reference"].contract_sha256
         with factory() as db:
             saved = {run.id: packet.canonical({"input": run.input_payload, "output": run.result_payload,
@@ -271,3 +275,27 @@ def test_implementation_change_stops_before_another_run_claim(prepared, monkeypa
         assert db.query(models.AnalysisRun).filter_by(status="succeeded").count() == 1
         assert db.query(models.AnalysisRun).filter_by(status="queued").count() == 19
         assert db.query(models.ModelCallEvent).count() == db.query(models.ModelCostLiability).count() == 1
+
+
+def test_current_canary_allows_only_the_validated_local_runner_scope(
+    prepared, common_canary_funding, monkeypatch,  # noqa: F811 -- Imported pytest fixture dependency.
+):
+    from app.domains.credits import canary
+    from app.domains.credits.finance import FundingUnavailable
+
+    factory, values = prepared
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+    calls = provider(monkeypatch)
+    outcome = runner.execute(factory, **values, side="candidate", maximum_operations=1)
+    with factory() as db:
+        diagnostics = {identity: {"error_code": db.get(models.AnalysisRun, identity).error_code,
+            "events": [(event.status, event.cost_state) for event in db.query(models.ModelCallEvent).filter_by(analysis_run_id=identity)]}
+            for identity in outcome["outcomes"]}
+    assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1, diagnostics
+    with factory() as db:
+        saved = db.query(models.AnalysisRun).filter_by(status="succeeded").one()
+        with pytest.raises(FundingUnavailable, match="validated local runner"):
+            canary.require_accepted_provider_run(db, saved)
+        assert db.query(models.User).one().ai_credits == 0
+        assert db.query(models.ModelCostLiability).one().settled_cost_micros > 0

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-29T09:43:26.867242+00:00",
+  "scope": "Schema25 base deployment and public-page acceptance; account/companion acceptance and paid qualification remain pending.",
+  "backend": {
+    "source": "8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a",
+    "image_digest": "sha256:956735cd476c1159397ef21143b497f0b4d40df4d47f6b5d54cd8818a544eafa",
+    "build_id": "45473be6-d177-49e1-a8a3-7970df8271db",
+    "ci_run_id": 40784200833,
+    "schema": "20261028_0025",
+    "services": [
+      "ai-resume-parser",
+      "hirewiz-analysis-worker",
+      "hirewiz-employer-worker"
+    ],
+    "migration": "Committed and freshly observed; all 14 new tables verified; retained data, financial digests and ACL unchanged."
+  },
+  "frontend": {
+    "source": "b0c4581fe66b88369fca0219cabca8d1229684ba",
+    "deployment_id": "dpl_CBiaNHpwCJHGbWcBeD3t7z9Kx3t3",
+    "canonical_alias": "www.hirewizhq.com",
+    "state": "READY",
+    "ci_run_id": 40840161705
+  },
+  "document_worker": {
+    "configuration_source": "b281118da4ff810cadff196dbe8bc4cade3cecf3",
+    "inspector_image": "sha256:5811233d8dd35b1fadc73f4c1a43783c83edde47c5e90142a1e96c1428312db9",
+    "native_acceptance": "Fresh ten-case corpus; completed V2 to V3 transition reconciled read-only.",
+    "reconciliation_run_id": 40811330747
+  },
+  "resources": {
+    "worker_queues_running": 3,
+    "application_queue": "PAUSED",
+    "schedules_enabled": 3,
+    "coordinator_restored": true
+  },
+  "availability": {
+    "pilot_api_flags_reopened": 6,
+    "native_account_lifecycle": "Restored on API generation350 through the separately linked account-only continuation; authenticated health and website availability passed. Workers retain their original lifecyclefalse setting.",
+    "owner_account_acceptance": "not yet complete on current release",
+    "ai_generation": false,
+    "unified_credits": false,
+    "free_core": false,
+    "checkout": false,
+    "employer_final_submission": false
+  },
+  "public_qa": {
+    "mobile_width": 390,
+    "desktop_width": 1440,
+    "horizontal_overflow": false,
+    "console_or_page_errors": false,
+    "images_loaded": true,
+    "purchase_actions_closed": true,
+    "catalog_http_status": 404,
+    "canonical_metadata_robots_sitemap": "passed",
+    "cls": 0,
+    "home_mobile_lcp_initial_seconds": 7.388,
+    "home_mobile_lcp_focused_diagnostic_seconds": 1.452,
+    "pricing_mobile_lcp_seconds": 1.76,
+    "limitation": "Original slow sample retained; no proven cause. Neither sample establishes fieldp75 or representativecapacity."
+  },
+  "provider_spend_control": {
+    "gemini_monthly_inr": 450,
+    "provider_enforcement": "experimental; Approximately ten minutes of enforcement delay are possible.",
+    "screenshot_sha256": "9bf32c877cedbbf2245236a7b8b8428fe04522ddc755a3197252f52ee6dbd517",
+    "financial_qualification": false
+  },
+  "temporary_health_iam": {
+    "removed": true,
+    "verified_absent": true,
+    "record_sha256": "13f9ba6d7fa461b09aae17644e5b7c8d393159538c282dce35a03e01a8a96870",
+    "account_repair_removed": true,
+    "account_repair_verified_absent": true
+  },
+  "evidence": {
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/schema25-release-after-scanner/final-metadata.json": "d96b5aea8283cecc18ba6c08f0b4ac68169281b13c8daea337317405bd44d32c",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/public-production-b0c-qa/assessment.json": "18d10d7383a0e8f5cbff51e5d836dd3d37defe1aceca677872f2629a66b4852c",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/public-production-b0c-qa/results.json": "db05149a79bccf46b1353b1852b8d01986fd606b84bfb75d9496f31dd4a0c9c5",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/public-production-b0c-qa/home-diagnostic.json": "74932a9e51d3545c5654a44b5dc7118fb56f6c3f08d687d9256aab2a1404fd67",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/scanner-final-reconciled-40811330747/readback/complete.json": "17c72972869d0275b8e8c5046ceb513e9ad86dc36442c460150c3e9ba9889f18",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/schema25-release-after-scanner/account-pilot.json": "1e8fcde6a12c4f3f2e961bb996aa09a09e1aab316c676768cdea5c0e97e4215d",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/schema25-release-after-scanner/account-pilot-journal/pilot.ai-resume-parser.checked.json": "aa27c93d4ceed42e6b94e4373e141c2330b512efffa15dd3f5c7583a198fdc68",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/schema25-release-after-scanner/account-repair-availability.json": "d54c919735fef8c15364589b8e8b345e66b9639d238f99603a07ac3c0e58b9f0",
+    "/Users/harshil/.codex/hirewiz-evidence/20261029/schema25-release-after-scanner/account-repair-health-grant.json": "dd8ae2c1a70d4563e685321eba6a56f8600d8d78bef83aad0fdd6663f07c7325"
+  },
+  "remaining_gates": [
+    "Current owner account and companion acceptance after account lifecycle repair",
+    "Two independent blinded human reviewers and qualified model/cohort results",
+    "At least seven days and 200 representative paid-equivalent shadow operations",
+    "Reconciled provider invoices, tax and margins",
+    "Commercial hosting and payment acceptance",
+    "Representative capacity and field performance"
+  ],
+  "effort": {
+    "estimated_effort": null,
+    "actual_effort": null,
+    "explanation": "No reliable original totals retained. Test runs and elapsed calendar time are not effort estimates."
+  },
+  "account_repair": {
+    "plan_sha256": "1e8fcde6a12c4f3f2e961bb996aa09a09e1aab316c676768cdea5c0e97e4215d",
+    "api_generation": 350,
+    "api_revision": "ai-resume-parser-p25-99c900edb465",
+    "same_image": true,
+    "authenticated_health": "passed",
+    "availability": {
+      "fresh_registration": true,
+      "legacy_enrollment": true
+    },
+    "temporary_health_permission_removed": true,
+    "old_journals_unchanged": true,
+    "current_owner_journey": "pending manual password sign-in and Mac unlock"
+  }
+}

@@ -578,3 +578,11 @@ refresh base are unchanged. A fresh native image/renderer receipt and reviewed
 promotion are required before deployment. Native rendering was not executed
 locally for this change. Times New Roman is not installed or substituted, and
 this addition does not enable XeLaTeX or change the frozen quality corpus.
+
+## Consumed history reconciliation
+
+The exact V2 rescue/continuation chain has a separate read-only historical
+disposition. See [the consumed-history runbook](../../docs/runbooks/document-consumed-history.md)
+for its pinned artifacts, native current-application proof, homogeneous traffic
+bound, and the separate audit/refresh/schedule acceptance steps. It grants no
+authority to replay any old Build, Job, claim or PATCH.

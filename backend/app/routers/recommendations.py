@@ -190,6 +190,9 @@ async def match_learning_strategy(
         }, create=build_curated)
 
     warnings = ["Suggested projects are future work. Add resume claims only after completing the work and approving its evidence."]
+    facts = db.query(models.EvidenceItem).filter_by(
+        user_id=current_user.id, resume_id=match.resume_id, approval_state="approved").all()
+    approved_evidence = [{"id": item.id, "text": item.evidence_text} for item in facts]
     generated_by = "curated"
     try:
         with billable_operation(
@@ -209,9 +212,16 @@ async def match_learning_strategy(
                     partial_matches=partial_matches, required_skills=required_skills,
                     match_score=float(match.match_score or 0.0), fit_summary=match.fit_summary or "",
                     dimension_scores=dimension_scores, improvement_tips=improvement_tips,
+                    approved_evidence=approved_evidence,
                 )
                 if not isinstance(strategy, dict) or not str(strategy.get("readiness_summary", "")).strip():
                     raise ValueError("Learning generation did not return a usable strategy")
+                from ..services.synchronous_contracts import _supported_personal_prose
+
+                _supported_personal_prose(strategy, approved_evidence)
+                if any(project.get("resume_bullets") for project in _as_list(
+                        strategy.get("project_recommendations")) if isinstance(project, dict)):
+                    raise ValueError("Future projects cannot be delivered as completed resume claims")
                 generated_by = "llm"
             else:
                 strategy = build_fallback_learning_strategy(

@@ -68,7 +68,7 @@ class Controls:
                 "state": "RUNNING" if kind == "queue" else "ENABLED"}
 
 
-def context(tmp_path, monkeypatch, *, document_pins=None):
+def context(tmp_path, monkeypatch, *, document_pins=None, account_was_open=False):
     run = FixtureBoundary()
     requested = ("EMPLOYER_DISCOVERY_ENABLED", "RESUME_DIRECT_UPLOAD_ENABLED")
     originals = {pilot.SERVICES[0]: "RESUME_DIRECT_UPLOAD_ENABLED",
@@ -77,6 +77,12 @@ def context(tmp_path, monkeypatch, *, document_pins=None):
         prior = run.plan.pin(service).prior_revision
         for row in (run.states[service]["template"], run.revisions[(service, prior)]):
             row["containers"][0]["env"].append({"name": flag, "value": "true"})
+    if account_was_open:
+        service = pilot.SERVICES[0]
+        prior = run.plan.pin(service).prior_revision
+        for row in (run.states[service]["template"], run.revisions[(service, prior)]):
+            row["containers"][0]["env"].append({
+                "name": "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED", "value": "true"})
     if document_pins is not None:
         for service in pilot.SERVICES[:2]:
             prior = run.plan.pin(service).prior_revision
@@ -90,7 +96,7 @@ def context(tmp_path, monkeypatch, *, document_pins=None):
         template["containers"][0]["image"] = run.plan.image
         env = pilot.rolling.environment(template)
         env["APP_RELEASE"]["value"] = run.plan.release
-        for flag in requested:
+        for flag in pilot.schema25.OFF:
             env[flag] = {"name": flag, "value": "false"}
         template["containers"][0]["env"] = list(env.values())
         revision = run.plan.revision(service)
@@ -115,6 +121,143 @@ def context(tmp_path, monkeypatch, *, document_pins=None):
     tmp_path.chmod(0o700)
     journal = pilot.rolling.Journal(tmp_path, plan)
     return run, before, plan, journal, gates
+
+
+def account_context(tmp_path, monkeypatch, *, account_was_open=True):
+    old_directory = tmp_path / "original"
+    old_directory.mkdir(mode=0o700)
+    run, before, original, original_journal, gates = context(
+        old_directory, monkeypatch, account_was_open=account_was_open)
+    assert pilot.advance(original, original_journal, run, lambda *args: None,
+                         lambda first: None, before)["status"] == "pilot_reopen_observed"
+    old_records = {path.name: path.read_bytes()
+                   for path in old_directory.glob("*.json")}
+    monkeypatch.setattr(pilot, "_deployment_evidence",
+                        lambda *args: gates.append("deployment_evidence"))
+    continuation = pilot.capture(run.plan, None, before, None, before, None,
+        run, None, None, ("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",), "c" * 32,
+        prior_pilot=original, prior_journal=original_journal)
+    new_directory = tmp_path / "account"
+    new_directory.mkdir(mode=0o700)
+    journal = pilot.rolling.Journal(new_directory, continuation)
+    run.writes.clear()
+    return run, before, original, original_journal, old_records, continuation, journal
+
+
+def test_account_continuation_preserves_original_plan_journal_and_only_changes_api(tmp_path, monkeypatch):
+    run, before, old, old_journal, old_records, plan, journal = account_context(tmp_path, monkeypatch)
+    assert type(plan) is pilot.AccountPilotPlan
+    assert type(old) is pilot.PilotPlan and "prior_pilot" not in asdict(old)
+    assert plan.prior_pilot == old
+    assert pilot.load(pilot.rolling.canonical(asdict(plan))) == plan
+    assert [pin.reopen_flags for pin in plan.services] == [
+        ("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",), (), ()]
+    before_states = copy.deepcopy(run.states)
+    health = []
+
+    def gate(first):
+        pilot._prior_pilot_verified(old, old_journal, before, run,
+                                   current=plan, current_journal=journal)
+
+    assert pilot.advance(plan, journal, run, lambda *args: health.append(args),
+                         gate, before)["status"] == "pilot_reopen_observed"
+    assert len(run.writes) == len(health) == 1
+    service, body, mask = run.writes[0]
+    assert service == pilot.SERVICES[0] and mask == "template,traffic"
+    original_env = pilot.rolling.environment(before_states[service]["template"])
+    updated_env = pilot.rolling.environment(body["template"])
+    assert {key for key in original_env if original_env[key] != updated_env[key]} == {
+        "CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED"}
+    assert updated_env["CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED"]["value"] == "true"
+    assert all(updated_env[flag]["value"] == "false" for flag in pilot.FORBIDDEN)
+    assert body["template"]["containers"][0]["image"] == plan.image
+    assert all(run.states[worker] == before_states[worker] for worker in pilot.SERVICES[1:])
+    assert {path.name: path.read_bytes() for path in old_journal.directory.glob("*.json")} == old_records
+    assert all("synthetic-sensitive" not in path.read_text()
+               for path in journal.directory.glob("*.json"))
+
+
+def test_account_continuation_refuses_closed_original_account_flag(tmp_path, monkeypatch):
+    with pytest.raises(pilot.rolling.RollingDenied, match="requested_flag_was_not_running"):
+        account_context(tmp_path, monkeypatch, account_was_open=False)
+
+
+@pytest.mark.parametrize("drift", ["prior_journal", "current_pilot", "prior_plan", "other_flag"])
+def test_account_continuation_refuses_unverified_prior_or_other_openings(tmp_path, monkeypatch, drift):
+    run, before, old, old_journal, _, _, _ = account_context(tmp_path, monkeypatch)
+    if drift == "prior_journal":
+        (old_journal.directory / ("pilot." + pilot.SERVICES[0] + ".checked.json")).unlink()
+    elif drift == "current_pilot":
+        pilot.rolling.environment(run.states[pilot.SERVICES[0]]["template"])[
+            "RAZORPAY_CHECKOUT_ENABLED"]["value"] = "true"
+    elif drift == "prior_plan":
+        old = replace(old, nonce="d" * 32)
+    flags = (("EMPLOYER_DISCOVERY_ENABLED",) if drift == "other_flag"
+             else ("CANDIDATE_ACCOUNT_LIFECYCLE_ENABLED",))
+    with pytest.raises(pilot.rolling.RollingDenied):
+        pilot.capture(run.plan, None, before, None, before, None, run, None, None,
+            flags, "e" * 32, prior_pilot=old, prior_journal=old_journal)
+    assert run.writes == []
+
+
+def test_account_continuation_unknown_ack_reconciles_without_a_second_patch(tmp_path, monkeypatch):
+    run, before, old, old_journal, old_records, plan, journal = account_context(tmp_path, monkeypatch)
+
+    def gate(first):
+        pilot._prior_pilot_verified(old, old_journal, before, run,
+                                   current=plan, current_journal=journal)
+
+    run.lose_ack = True
+    with pytest.raises(RuntimeError, match="synthetic-sensitive"):
+        pilot.advance(plan, journal, run, lambda *args: None, gate, before)
+    with pytest.raises(pilot.rolling.RollingDenied, match="unknown_write_reconcile_only"):
+        pilot.advance(plan, journal, run, lambda *args: None, gate, before)
+    assert pilot.advance(plan, journal, run, lambda *args: None, gate, before,
+                         reconcile=True)["status"] == "pilot_reopen_observed"
+    assert len(run.writes) == 1
+    assert {path.name: path.read_bytes() for path in old_journal.directory.glob("*.json")} == old_records
+
+
+def test_account_continuation_cannot_nest_or_expand_its_bound_flags(tmp_path, monkeypatch):
+    *_, plan, _ = account_context(tmp_path, monkeypatch)
+    for modified in (replace(plan, prior_pilot=plan),
+                     replace(plan, requested_flags=("OPTIONAL_AI_GENERATION_ENABLED",)),
+                     replace(plan, nonce=plan.prior_pilot.nonce),
+                     replace(plan, source_release="f" * 40)):
+        with pytest.raises(pilot.rolling.RollingDenied):
+            modified.validate()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("uid", "00000000-0000-4000-8000-000000000099"),
+    ("static_sha256", "f" * 64),
+    ("template_keys", ("containers",)),
+    ("active_revision", "ai-resume-parser-unrelated"),
+    ("active_tag", "unrelated-tag"),
+    ("generation", 900),
+])
+def test_account_continuation_binds_each_new_pin_to_completed_predecessor(
+        tmp_path, monkeypatch, field, value):
+    *_, plan, _ = account_context(tmp_path, monkeypatch)
+    pins = (replace(plan.services[0], **{field: value}), *plan.services[1:])
+    with pytest.raises(pilot.rolling.RollingDenied):
+        replace(plan, services=pins).validate()
+
+
+def test_account_continuation_requires_changed_api_health_before_completion(tmp_path, monkeypatch):
+    run, before, old, old_journal, _, plan, journal = account_context(tmp_path, monkeypatch)
+
+    def gate(first):
+        pilot._prior_pilot_verified(old, old_journal, before, run,
+                                   current=plan, current_journal=journal)
+
+    def health(*args):
+        raise pilot.rolling.RollingDenied("synthetic_health_failed")
+
+    with pytest.raises(pilot.rolling.RollingDenied, match="synthetic_health_failed"):
+        pilot.advance(plan, journal, run, health, gate, before)
+    assert len(run.writes) == 1
+    assert journal.read("pilot." + pilot.SERVICES[0] + ".checked") is None
 
 
 def test_capture_requires_prior_true_and_exact_supported_flags(tmp_path, monkeypatch):

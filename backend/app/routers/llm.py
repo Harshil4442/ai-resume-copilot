@@ -31,6 +31,11 @@ async def rewrite_bullets_endpoint(
             accepted_service_quote_id=payload.accepted_service_quote_id,
             idempotency_key=payload.idempotency_key)
 
+    facts = db.query(models.EvidenceItem).filter_by(
+        user_id=current_user.id, resume_id=resume.id, approval_state="approved").all()
+    if not facts:
+        raise HTTPException(422, "Approve supporting resume facts before rewriting bullets")
+    evidence = [{"id": item.id, "text": item.evidence_text, "skills": item.skills or []} for item in facts]
     with billable_operation(
         user_id=current_user.id,
         db=db,
@@ -38,10 +43,12 @@ async def rewrite_bullets_endpoint(
         amount=1,
         input_payload={"resume_id": resume.id, "tone": payload.tone},
     ):
-        data = rewrite_bullets(resume.raw_text, payload.job_description, payload.tone)
+        data = rewrite_bullets(resume.raw_text, payload.job_description, payload.tone,
+                               approved_evidence=evidence)
     return schemas.RewriteBulletsResponse(
         rewritten_bullets=data.get("bullets", []),
         summary=data.get("summary", ""),
+        evidence_links=data.get("evidence_links", []),
     )
 
 @router.post("/interview_questions", response_model=schemas.InterviewQuestionsResponse)

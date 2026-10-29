@@ -299,30 +299,19 @@ def chat_json(messages: list[dict]) -> dict:
     """Run a chat-completions request and parse a JSON object response."""
     return _extract_json_object(_chat(messages))
 
-def rewrite_bullets(resume_text: str, jd_text: str, tone: str) -> dict:
-    system_prompt = (
-        "You are an evidence-preserving resume editor. Rewrite only facts explicitly present in "
-        "the candidate's resume. Never add or infer metrics, employers, dates, tools, skills, scope, "
-        "ownership, or outcomes. If a fact needed for STAR is missing, keep the claim modest and "
-        "state the missing detail in the summary instead of fabricating it. Align wording with the "
-        "job description only when the resume already supports that wording. "
-        f"Tone: {tone}. Output JSON with keys 'bullets' (list of strings) and 'summary' (string)."
-    )
-    user_content = f"RESUME:\n{resume_text}\n\nJOB DESCRIPTION:\n{jd_text}"
-    content = _chat(
-        [{"role": "system", "content": system_prompt},
-         {"role": "user", "content": user_content}]
-    )
+def rewrite_bullets(resume_text: str, jd_text: str, tone: str,
+                    approved_evidence: list[dict] | None = None) -> dict:
+    from . import synchronous_contracts as contracts
 
     try:
-        data = _extract_json_object(content)
-        if (
-            not isinstance(data, dict) or not isinstance(data.get("bullets"), list)
-            or not data["bullets"] or any(not isinstance(item, str) or not item.strip() for item in data["bullets"])
-            or not isinstance(data.get("summary"), str)
-        ):
-            raise ValueError("Invalid bullet rewrite contract")
-        return data
+        if not approved_evidence:
+            raise ValueError("Approve matching facts before rewriting")
+        context = {"resume": {"raw_text": resume_text}, "approved_evidence": approved_evidence,
+                   "request": {"job_description": jd_text, "tone": tone}, "versions": contracts.VERSIONS}
+        data = chat_json(contracts.messages("bullet_rewrite", context))
+        result = contracts.validate("bullet_rewrite", data, context)
+        return {"bullets": result["rewritten_bullets"], "summary": result["summary"],
+                "evidence_links": result["evidence_links"]}
     except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
         raise TailoringOutputError("The rewrite could not be validated. Keep the original wording and use evidence-backed resume editing.") from exc
 
@@ -607,6 +596,14 @@ def _validate_factual_terms(original: str, replacement: str, cited_evidence: lis
             raise TailoringOutputError(
                 "Every factual skill or named term must be supported by the original text or cited evidence"
             )
+    from .personal_claims import UnsupportedPersonalClaim, require_supported_claims
+
+    try:
+        require_supported_claims(replacement, cited_evidence, original=original)
+    except UnsupportedPersonalClaim:
+        raise TailoringOutputError(
+            "Changed personal responsibilities or achievements need matching approved evidence"
+        ) from None
 
 
 def _validate_tailoring_edit(item: object, units: dict, allowed: dict, repeated: set[str]) -> dict:
@@ -746,6 +743,12 @@ def _validate_tailoring_edit(item: object, units: dict, allowed: dict, repeated:
         )
     try:
         _validate_factual_terms(original, replacement, [allowed[value] for value in ids])
+        from .personal_claims import UnsupportedPersonalClaim, require_supported_claims
+
+        try:
+            require_supported_claims(reason, [allowed[value] for value in ids])
+        except UnsupportedPersonalClaim:
+            raise TailoringOutputError("An editing rationale contains an unsupported personal claim") from None
     except TailoringOutputError as exc:
         exc.unit_id = unit_id
         exc.reason_code = "unsupported_factual_term"
@@ -930,6 +933,15 @@ def tailor_resume_from_evidence(
             (error for error in errors if error.unit_id is not None), errors[0]
         )
     raw_needed = data.get("evidence_needed", [])
+    if isinstance(raw_needed, list):
+        from .personal_claims import UnsupportedPersonalClaim, require_supported_claims
+
+        try:
+            for item in raw_needed:
+                if isinstance(item, str):
+                    require_supported_claims(item, list(allowed.values()))
+        except UnsupportedPersonalClaim:
+            raise TailoringOutputError("Evidence guidance contains an unsupported personal claim") from None
     return {
         "target_job_title": job_title,
         "source_edits": edits,
@@ -958,7 +970,7 @@ def tailor_resume_from_evidence_full(
     source_units: list[dict],
     repair_note: str = "",
 ) -> dict:
-    """Paid v7 route: use the full owned job, evidence and editable source."""
+    """Complete paid route: use the full owned job, evidence and editable source."""
     token = _FULL_TAILORING_CONTEXT.set(True)
     try:
         return tailor_resume_from_evidence(
@@ -1287,6 +1299,7 @@ def generate_learning_strategy_llm(
     fit_summary: str,
     dimension_scores: list[dict],
     improvement_tips: list[str],
+    approved_evidence: list[dict] | None = None,
 ) -> dict:
     """
     Generate a match-specific learning strategy. This intentionally focuses on
@@ -1316,7 +1329,7 @@ def generate_learning_strategy_llm(
                 "covers_gaps": ["docker", "postgresql", "ci/cd"],
                 "description": "Build a small but realistic backend service that proves the missing hiring signals.",
                 "implementation_steps": ["Define the API and schema", "Containerize it", "Deploy it", "Document tradeoffs"],
-                "resume_bullets": ["Built and deployed a containerized backend API with persistent storage and automated checks."],
+                "resume_bullets": [],
                 "interview_talking_points": ["Why you chose the deployment target", "How you handled configuration and secrets"]
             }
         ],
@@ -1338,7 +1351,9 @@ def generate_learning_strategy_llm(
         "Rules:\n"
         "- Prioritize 3-6 skills or hiring signals at most.\n"
         "- Prefer projects that cover multiple gaps at once.\n"
-        "- Make resume bullets concrete and achievement-oriented.\n"
+        "- Suggested projects are future work: keep resume_bullets empty, never turn plans into completed achievements.\n"
+        "- Personal history, leadership, tenure, credentials and employment require matching APPROVED EVIDENCE. "
+        "Missing evidence does not establish lack of experience; keep suggestions neutral or conditional.\n"
         "- Keep implementation steps specific enough to act on.\n"
         "- Severity and priority must be one of: high, medium, low.\n"
         "- current_status should be true_gap, partial_coverage, weak_evidence, or improvement.\n"
@@ -1358,6 +1373,7 @@ def generate_learning_strategy_llm(
         f"FIT SUMMARY:\n{fit_summary}\n\n"
         f"DIMENSION SCORES:\n{json.dumps(dimension_scores)}\n\n"
         f"EXISTING IMPROVEMENT TIPS:\n{json.dumps(improvement_tips)}"
+        f"\nAPPROVED EVIDENCE:\n{json.dumps(approved_evidence or [])}"
     )
 
     raw = _chat([

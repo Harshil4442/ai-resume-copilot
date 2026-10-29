@@ -17,8 +17,9 @@ import { loadHostedCheckout } from "./hostedCheckout";
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pending" || (order?.status === "paid" && !order.fulfilled);
 
-export function UnifiedBillingPanel({ legacyPending, requestedSku }: { legacyPending: boolean; requestedSku: string | null }) {
+export function UnifiedBillingPanel({ legacyPending, requestedSku, participationRevision = 0 }: { legacyPending: boolean; requestedSku: string | null; participationRevision?: number }) {
   const mounted = useRef(true), actionPending = useRef(false), pollId = useRef(0);
+  const catalogRead = useRef(0);
   const quoteIntent = useRef<{ sku: UnifiedPassSku; key: string } | null>(null);
   const orderIntent = useRef<{ quoteId: string; key: string } | null>(null);
   const [catalog, setCatalog] = useState<UnifiedCreditCatalog | null>(null), [catalogLoading, setCatalogLoading] = useState(true);
@@ -31,12 +32,15 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku }: { legacyPen
   const [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null);
   const quoteSection = useRef<HTMLDivElement>(null);
 
-  const refreshCatalog = useCallback(() => apiGet<unknown>("/v1/credits/catalog").then((raw) => {
+  const refreshCatalog = useCallback(() => {
+    const read = ++catalogRead.current;
+    return apiGet<unknown>("/v1/credits/catalog").then((raw) => {
     const value = parseUnifiedCreditCatalog(raw);
     if (!value) throw new Error("Current pass prices could not be verified.");
-    if (mounted.current) setCatalog(value);
-  }).catch(() => { if (mounted.current) setCatalog(null); })
-    .finally(() => { if (mounted.current) setCatalogLoading(false); }), []);
+    if (mounted.current && read === catalogRead.current) setCatalog(value);
+  }).catch(() => { if (mounted.current && read === catalogRead.current) setCatalog(null); })
+    .finally(() => { if (mounted.current && read === catalogRead.current) setCatalogLoading(false); });
+  }, []);
   const refreshWallet = useCallback(() => apiGet<unknown>("/v1/credits/wallet").then((raw) => {
     if (mounted.current) setWallet(parseUnifiedCreditWallet(raw));
   }).catch(() => { if (mounted.current) setWallet(null); })
@@ -79,9 +83,10 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku }: { legacyPen
 
   useEffect(() => {
     mounted.current = true;
-    void Promise.allSettled([refreshCatalog(), refreshWallet(), refreshHistory(), readRecent()]);
+    void Promise.allSettled([refreshWallet(), refreshHistory(), readRecent()]);
     return () => { mounted.current = false; pollId.current += 1; };
-  }, [readRecent, refreshCatalog, refreshHistory, refreshWallet]);
+  }, [readRecent, refreshHistory, refreshWallet]);
+  useEffect(() => { void refreshCatalog(); }, [refreshCatalog, participationRevision]);
   useEffect(() => { if (quote) quoteSection.current?.focus(); }, [quote]);
 
   const purchaseHeld = legacyPending || recentRead !== "ready" || unsettled(order) || unknownAttempt;

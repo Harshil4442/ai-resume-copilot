@@ -235,6 +235,9 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   expect(sessionCookies).toHaveLength(1);
   expect(sessionCookies[0].secure).toBe(true);
   expect(sessionCookies[0].httpOnly).toBe(true);
+  const initialProfile = await request.get(`${baseURL}/api/account/profile`);
+  expect(initialProfile.ok()).toBeTruthy();
+  expect((await initialProfile.json()).ai_credits).toBe(0);
   await expect(page.getByRole("checkbox", { name: /Optional AI skill enrichment/ })).not.toBeChecked();
   await page.locator('input[type="file"]').setInputFiles(process.env.COLD_BROWSER_ORIGINAL!);
   const parseResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/resume/parse") && r.request().method() === "POST");
@@ -316,7 +319,7 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   } } finally { await provider.dispose(); }
   await expect(page.getByRole("heading", { name: "Payment confirmed", exact: true })).toBeVisible();
   const paidProfile = await request.get(`${baseURL}/api/account/profile`);
-  expect((await paidProfile.json()).ai_credits).toBe(52);
+  expect((await paidProfile.json()).ai_credits).toBe(2);
   await page.goto("/employer-jobs");
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));
   await page.getByLabel("Target role", { exact: true }).fill("Python Engineer");
@@ -389,7 +392,7 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
     }
   }
   const noAiProfile = await request.get(`${baseURL}/api/account/profile`);
-  expect((await noAiProfile.json()).ai_credits).toBe(52);
+  expect((await noAiProfile.json()).ai_credits).toBe(2);
   // Independent second real browser identity must not retrieve the first owner's file/package.
   const outsider = await context.browser()!.newContext({ ignoreHTTPSErrors: true });
   await outsider.route((url) => url.origin !== baseURL, guardExternal);
@@ -415,7 +418,7 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
     source_bytes_exact: true, custom_bytes_exact: true, original_sha256: createHash("sha256").update(original).digest("hex"),
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
     real_nextauth: true, no_bff_interception: true, no_credits_before_webhook: true,
-    finite_bundle_sku: "starter_bundle", purchased_analysis_units: 2, analysis_units_after_no_ai_work: 52,
+    finite_bundle_sku: "starter_bundle", purchased_analysis_units: 2, analysis_units_after_no_ai_work: 2,
     legacy_order_created_by_fixture_api: true, legacy_order_recovery_via_ui: true, new_unified_purchase_proof: false,
     https_loopback_transport: true, secure_http_only_session_cookie: true,
     public_registration_projection: true, generic_auth_proxy_denied: true,

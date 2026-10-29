@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "release": "8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a",
+      "image_digest": "sha256:956735cd476c1159397ef21143b497f0b4d40df4d47f6b5d54cd8818a544eafa",
+      "build_id": "45473be6-d177-49e1-a8a3-7970df8271db",
+      "ci_run_id": 40784200833
+    },
+    {
+      "release": "7a00839dc90a93caebb0b3b5f2e9e03c51e941e9",
+      "image_digest": "sha256:c1ce5b3294096dd622eb5a0ca5827d307779ddecbc658e5318f17f6406916429",
+      "build_id": "d7bf9d07-f7ed-41c3-ad5e-a02ade4f3084",
+      "ci_run_id": 39993736443
+    }
+  ]
+}

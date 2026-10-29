@@ -9,7 +9,7 @@ on:
       mode:
         description: Audit expiry or execute reviewed definition/full-source maintenance
         type: choice
-        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition]
+        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition, audit-consumed-v2-history]
         default: monitor
       recover_failed_native_job:
         description: Exact failed synthetic Job to reconcile once before a fresh full refresh
@@ -53,6 +53,7 @@ jobs:
       RETIRE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.retire_expired_v2 || false }}
       RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
       UPGRADE_CURRENT_V2_TO_V3: ${{ github.event_name == 'workflow_dispatch' && inputs.upgrade_current_v2_to_v3 || false }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Initialize private maintenance paths
         run: |
@@ -63,8 +64,11 @@ jobs:
           printf '%s\n' "FINAL_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40788512340" >> "$GITHUB_ENV"
           printf '%s\n' "READBACK_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40805300453" >> "$GITHUB_ENV"
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
+          printf '%s\n' "CONSUMED_BUNDLE=$RUNNER_TEMP/document-refresh-consumed-audit" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
       - name: Require explicitly provisioned maintenance identity
         env:
           PROVIDER: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -129,6 +133,19 @@ jobs:
           fi
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Retrieve exact consumed history for read-only audit when needed
+        if: env.REFRESH_MODE == 'audit-consumed-v2-history' || (env.REFRESH_MODE == 'refresh' && env.RETIRE_EXPIRED_V2 != 'true' && env.RESCUE_EXPIRED_V2 != 'true' && env.UPGRADE_CURRENT_V2_TO_V3 != 'true')
+        run: |
+          args=(--output-directory "$CONSUMED_BUNDLE")
+          if [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then
+            args+=(--force-audit)
+          else
+            args+=(--prior-history-directory "$HISTORY_DIRECTORY")
+          fi
+          backend/.venv/bin/python backend/scripts/retrieve_consumed_document_history.py "${args[@]}"
+      - name: Audit consumed V2 history without mutation or heartbeat
+        if: env.REFRESH_MODE == 'audit-consumed-v2-history'
+        run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode audit-consumed-v2-history --consumed-history-bundle "$CONSUMED_BUNDLE" --output-directory "$OUTPUT_DIRECTORY"
       - name: Retrieve the exact retained already-built candidate
         if: env.REFRESH_MODE == 'resume-full-source-refresh'
         env:
@@ -271,6 +288,9 @@ jobs:
           if [[ "$UPGRADE_CURRENT_V2_TO_V3" = true ]]; then
             args+=(--upgrade-current-v2-to-v3)
           fi
+          if [[ "$RETIRE_EXPIRED_V2" != true && "$RESCUE_EXPIRED_V2" != true && "$UPGRADE_CURRENT_V2_TO_V3" != true ]]; then
+            args+=(--reviewed-application-context --consumed-history-bundle "$CONSUMED_BUNDLE")
+          fi
           backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
       - name: Build full-source inspector, prove native cases and transition exact pins
         if: env.REFRESH_MODE == 'full-source-refresh'
@@ -296,6 +316,8 @@ jobs:
             echo 'The exact failed second continuation, both consumed claims, completed analysis open and API maintenance close are reconciled. A third create-only claim permits only one coordinator open. The original maintenance journal owns API restoration; any unknown outcome requires read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = reconcile-final-v2-transition ]]; then
             echo 'This run only reads the exact failed final artifact, third consumed claim, acknowledged coordinator LRO, native proof and live service state. It sends no claim or PATCH. Restore the API only through the original emergency maintenance journal after the retained complete result is independently reviewed.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then
+            echo 'This read-only historical audit verifies the exact five-artifact consumed chain, spent claims, original API restoration and fresh current application/document authority. It emits no heartbeat and creates no Build, Job, claim or PATCH. Audit success does not establish refresh completion or natural schedule reliability; inspect the retained result for the actual outcome.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = resume-partial-v2-transition ]]; then
             echo 'The exact failed continuation and consumed first claim are read back. A second create-only claim permits only the analysis and coordinator opens once, after verifying the API emergency maintenance close. API restoration remains separately owned by the original schema25 maintenance journal. A failed or unknown step requires read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = resume-expired-v2-transition ]]; then
@@ -305,7 +327,7 @@ jobs:
           elif [[ "$REFRESH_MODE" = full-source-refresh ]]; then
             echo 'Full-source refresh publishes 13 source inputs plus the policy file and requires verification of 12 copied runtime files, 25 synthetic local cases and native V2 ten-case acceptance before the bounded worker/three-caller pin transition. Inspect the retained result and native journals for the actual outcome; this summary alone proves no completion. No new IAM, sales or employer submission is enabled. Unknown outcomes require read-only reconciliation, never another send.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = refresh ]]; then
-            echo 'Refresh selects the serving document policy: V2 requires ten native cases; V3 requires eleven. Manual expired-V2 rescue requires the exact closed-upload API hotfix and an owned prior journal before fresh ten-case V2 proof. Manual V3 retirement closes callers and requires fresh eleven-case V3 proof. Manual fresh-V2-to-V3 upgrade verifies V2 serving authority before fresh V3 inventory and eleven-case native proof. Daily refresh never upgrades profiles. Unknown native Job or PATCH outcomes require exact read-only reconciliation, never replay. Inspect retained journals for the actual outcome.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Ordinary daily refresh uses the reviewed application context for V2 definitions maintenance and requires ten native cases; mixed caller templates and unknown application sources are refused before Build. This context does not authorize ordinary V3 refresh. Explicit manual expired-V2 rescue, V3 retirement and fresh-V2-to-V3 upgrade retain their separate original guards. Daily refresh never upgrades profiles. Unknown native Job or PATCH outcomes require exact read-only reconciliation, never replay. Inspect retained journals for the actual outcome.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'Monitor reads the serving worker expiry and emits a heartbeat for the configured Cloud Monitoring alert. This audit does not build, prove, or promote a document image.' >> "$GITHUB_STEP_SUMMARY"
           fi

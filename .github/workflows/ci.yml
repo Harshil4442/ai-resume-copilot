@@ -99,7 +99,12 @@ jobs:
           tests/test_gcp_password_reset_emulator.py
           tests/test_monetary_cutover_schema11_postgres.py
           tests/test_monetary_cutover_schema13_postgres.py
-          app/billing/cost_policy.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          app/billing/cost_policy.py app/billing/signup.py tests/expense_policy_fixtures.py tests/test_expense_policy.py
+          tests/test_auth_security.py
+          tests/test_native_expense_reconciliation.py tests/test_native_expense_reconciliation_postgres.py
+          tests/test_native_expense_operator_startup.py
+          app/services/personal_claims.py app/services/delivery_contracts.py app/services/tailoring_contract.py
+          tests/test_personal_claims.py tests/test_delivery_contract_freeze.py
           app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           tests/test_unified_credit_finance.py tests/test_unified_credit_http.py tests/test_unified_credit_migrations.py
           tests/test_unified_credit_migrations_postgres.py tests/test_unified_credit_payments.py
@@ -112,6 +117,8 @@ jobs:
           tests/test_quality_materialization.py
           tests/test_unified_schema25_source.py tests/test_unified_schema25_contract_postgres.py
           tests/test_unified_schema25_release.py tests/test_unified_schema25_step_postgres.py
+          tests/test_schema25_app_rolling_release.py tests/test_schema25_app_compatibility_postgres.py
+          ../infra/gcp/schema25_app_rolling_release.py
           tests/test_schema25_coordinator_pause.py tests/test_schema25_maintenance.py
           tests/test_schema25_migration_metadata.py tests/test_schema25_migration_recovery.py
           ../infra/gcp/unified_credit_schema25_release.py ../infra/gcp/schema25_coordinator_pause.py ../infra/gcp/schema25_maintenance.py
@@ -125,6 +132,7 @@ jobs:
           tests/test_nologin_role_source_pin.py
           tests/test_model_key_revocation_observer.py tests/test_legacy_credential_inventory.py
           tests/test_ci_registry_cache.py
+          tests/test_ci_postgres_lock_diagnostics.py
           app/services/document_ingestion.py ../infra/document-processing
           app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
           tests/test_docx_font_resolution.py tests/test_docx_failure_guidance.py tests/test_document_font_bundle.py
@@ -163,13 +171,16 @@ jobs:
           app/services/model_cost_policy.py app/services/generation_budget.py app/services/llm_client.py app/services/result_commit.py
           app/services/generation_gate.py
           scripts/monetary_cutover_preflight.py scripts/native_tex_test_image.py
-          app/billing/cost_policy.py
+          app/billing/cost_policy.py app/billing/signup.py
+          app/services/personal_claims.py app/services/delivery_contracts.py app/services/tailoring_contract.py
+          scripts/reconcile_native_expenses.py
           app/routers/credits.py app/services/interview_contract.py app/services/synchronous_contracts.py
           app/routers/candidate_accounts.py app/routers/sensitive_auth.py app/routers/candidate_ingress.py
           app/routers/password_reset.py
           ../infra/gcp/release_preflight.py ../infra/gcp/monetary_release.py scripts/monetary_schema_step.py
           scripts/model_key_revocation_observer.py scripts/legacy_credential_inventory.py
           scripts/ci_registry_cache.py
+          scripts/ci_postgres_lock_diagnostics.py
           app/services/document_ingestion.py scripts/document_test_image.py
           app/services/docx_fonts.py app/services/docx_layout_validation.py app/services/docx_artifact.py
           scripts/document_refresh.py ../infra/gcp/document_candidate.py ../infra/gcp/document_candidate_release.py
@@ -183,6 +194,7 @@ jobs:
           scripts/browser_schema19_contract.py scripts/browser_schema19_step.py
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
+          scripts/schema25_app_release_contract.py ../infra/gcp/schema25_app_rolling_release.py
           scripts/credit_shadow_report.py
           scripts/unified_quality_packet.py
           scripts/materialize_quality_sources.py
@@ -308,6 +320,12 @@ jobs:
           .venv/bin/python scripts/ci_database_transfer_clients.py
           --service-container "$CI_POSTGRES_CONTAINER_ID"
           --root "$RUNNER_TEMP/hirewiz-transfer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+      - name: Qualify schema25 app compatibility
+        working-directory: backend
+        env:
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_postgres.py
       - name: Run backend tests
         working-directory: backend
         env:
@@ -318,6 +336,7 @@ jobs:
           PAIRING_PASSWORD_TEST_POSTGRES_REQUIRED: "true"
           EMPLOYER_PACING_TEST_REDIS_URL: redis://127.0.0.1:56379/0
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_CI_LOCK_DIAGNOSTICS: "1"
         run: |
           .venv/bin/python scripts/run_prompt_evals.py
           .venv/bin/python -I -B isolated_checks/test_document_service_reap.py
@@ -325,8 +344,16 @@ jobs:
             --worker ../infra/native-tex/cloud_service.py \
             --owned ../infra/document-processing/service.py
           # Catch the native delivery/application contract before the full suite.
-          .venv/bin/pytest -q tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
-          .venv/bin/pytest -q
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics
+      - name: Save encrypted PostgreSQL failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
+        with:
+          name: encrypted-postgres-lock-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 3
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/hirewiz-ci-pg-lock-${{ github.run_id }}-${{ github.run_attempt }}/failure.enc
       - name: Remove only owned transfer client containers
         if: ${{ always() && contains(fromJSON('["success","failure","cancelled"]'), steps.transfer_clients.outcome) }}
         working-directory: backend

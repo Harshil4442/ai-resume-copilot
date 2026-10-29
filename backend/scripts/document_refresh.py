@@ -1101,7 +1101,8 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 def infra(name: str) -> Any:
     need(name in {"document_refresh_probe", "document_refresh_transition", "document_refresh_recovery", "document_candidate_release",
                   "document_renderer_profiles", "document_refresh_resume", "document_candidate",
-                  "document_refresh_partial", "document_refresh_final", "document_refresh_final_readback"},
+                  "document_refresh_partial", "document_refresh_final", "document_refresh_final_readback",
+                  "document_consumed_native"},
          "document_refresh_module_refused")
     spec = importlib.util.spec_from_file_location("hirewiz_" + name, ROOT / "infra/gcp" / (name + ".py"))
     need(spec is not None and spec.loader is not None, "document_refresh_module_unavailable")
@@ -1151,7 +1152,9 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             history: Path | None = None, recover_failed_native_job: str | None = None,
             full_source: bool = False, retire_expired_v2: bool = False,
             rescue_expired_v2: bool = False,
-            upgrade_current_v2_to_v3: bool = False) -> dict[str, Any]:
+            upgrade_current_v2_to_v3: bool = False, reviewed_application_context: bool = False,
+            consumed_history_bundle: Path | None = None, application_context: Any = None,
+            consumed_history: Any = None) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
     need(type(full_source) is bool and type(retire_expired_v2) is bool
@@ -1166,6 +1169,39 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     need(not upgrade_current_v2_to_v3 or (publish and not full_source and recover_failed_native_job is None),
          "document_refresh_fresh_v2_upgrade_requires_explicit_refresh")
     probe = infra("document_refresh_probe")
+    if reviewed_application_context:
+        need(not (full_source or rescue_expired_v2 or retire_expired_v2 or upgrade_current_v2_to_v3)
+             and application_context is None and consumed_history is None,
+             "document_refresh_reviewed_app_context_mode_required")
+        boundary_module = infra("document_consumed_native")
+        required = boundary_module.history.required(history)
+        need(not required or consumed_history_bundle is not None and consumed_history_bundle.is_dir(),
+             "document_refresh_exact_consumed_history_bundle_required")
+        if required:
+            boundary_module.history.load_bundle(consumed_history_bundle)
+        clients, delegate = probe.Clients(), None
+        try:
+            delegate = native_http()
+            boundary = boundary_module.NativeAudit(ROOT, consumed_history_bundle if required else None,
+                                                   clients, delegate, probe)
+            if required:
+                assert consumed_history_bundle is not None
+                disposition = boundary_module.history.audit(consumed_history_bundle, boundary)
+                write_new(directory / "consumed-history-audit.json", disposition.report())
+            else:
+                disposition = None
+                original = boundary.verify_current_applications()
+                boundary.verify_current_document(None)
+                need(boundary.verify_current_applications() == original,
+                     "document_refresh_current_app_context_changed")
+            return refresh(directory, publish=publish, now=now, prior_journal=prior_journal,
+                history=history, recover_failed_native_job=recover_failed_native_job,
+                application_context=boundary.applications, consumed_history=disposition)
+        finally:
+            clients.close()
+            if delegate is not None:
+                delegate.close()
+    need(consumed_history_bundle is None, "document_refresh_reviewed_app_context_mode_required")
     if rescue_expired_v2:
         clients = probe.Clients()
         try:
@@ -1177,10 +1213,12 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             prior_journal = rescue_prior_journal(history, service, clients, probe)
         finally:
             clients.close()
+    context = ({"consumed_history": consumed_history, "application_context": application_context}
+               if application_context is not None else {})
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
         retire_expired_v2=retire_expired_v2, rescue_expired_v2=rescue_expired_v2,
-        rescue_prior_journal=prior_journal if rescue_expired_v2 else None)
+        rescue_prior_journal=prior_journal if rescue_expired_v2 else None, **context)
     preflight = probe.Clients()
     try:
         serving = preflight.preflight()["service"]
@@ -1207,8 +1245,9 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     selected = full_source_candidate if full_source else candidate
     value = (selected(directory, publish=publish, now=now) if nonce is None else
              selected(directory, publish=publish, now=now, nonce=nonce))
+    finish_context = {"application_context": application_context} if application_context is not None else {}
     return finish_refresh(directory, value, prior_journal=prior_journal, history=history,
-                          rescue_expired_v2=rescue_expired_v2)
+                          rescue_expired_v2=rescue_expired_v2, **finish_context)
 
 
 def resume_refresh(directory: Path, original: Path, *, manifest_sha256: str, publish: bool,
@@ -1384,7 +1423,8 @@ def reconcile_final_v2_transition(directory: Path, original: Path) -> dict[str, 
 
 
 def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Path | None = None,
-                   history: Path | None = None, rescue_expired_v2: bool = False) -> dict[str, Any]:
+                   history: Path | None = None, rescue_expired_v2: bool = False,
+                   application_context: Any = None) -> dict[str, Any]:
     """Shared native one-send, transition and actual-prior retirement ordering."""
     probe = infra("document_refresh_probe")
     image, build = value["candidate_registry_digest"], value["build_identity"]
@@ -1398,7 +1438,8 @@ def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Pat
             result = controller.transition(image, build, native, directory / "transition", http=http,
                                            probe=probe, rescue_expired_v2=True)
         else:
-            result = controller.transition(image, build, native, directory / "transition", http=http, probe=probe)
+            options = {"application_context": application_context} if application_context is not None else {}
+            result = controller.transition(image, build, native, directory / "transition", http=http, probe=probe, **options)
     finally:
         http.close()
     result["definition_expires_at"] = acceptance.definition_expires_at
@@ -1423,7 +1464,10 @@ def finish_refresh(directory: Path, value: dict[str, Any], *, prior_journal: Pat
              and info.st_uid == os.getuid(), "document_refresh_prior_journal_refused")
         retained = retain_prior_journal(prior_journal, directory / "prior-native-retirement")
         binding = decode((retained / "binding.json").read_bytes())
-        result["prior_cleanup"] = probe.cleanup_successor(binding["image"], binding["build_identity"], retained)
+        cleanup_options = ({"caller_serving_validator": application_context.serving}
+                           if application_context is not None else {})
+        result["prior_cleanup"] = probe.cleanup_successor(binding["image"], binding["build_identity"], retained,
+                                                         **cleanup_options)
     return result
 
 
@@ -1482,12 +1526,14 @@ def emit_status(result: dict[str, Any]) -> None:
 def main() -> None:
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
-    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition", "reconcile"), required=True)
+    parser.add_argument("--mode", choices=("monitor", "candidate", "full-source-candidate", "refresh", "full-source-refresh", "resume-full-source-refresh", "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition", "audit-consumed-v2-history", "reconcile"), required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true")
     parser.add_argument("--prior-native-journal", type=Path)
     parser.add_argument("--transition-journal", type=Path)
     parser.add_argument("--prior-history-directory", type=Path)
+    parser.add_argument("--consumed-history-bundle", type=Path)
+    parser.add_argument("--reviewed-application-context", action="store_true")
     parser.add_argument("--recover-failed-native-job")
     parser.add_argument("--retire-expired-v2", action="store_true")
     parser.add_argument("--rescue-expired-v2", action="store_true")
@@ -1496,6 +1542,10 @@ def main() -> None:
     parser.add_argument("--resume-manifest-sha256")
     parser.add_argument("--resume-transition-directory", type=Path)
     args = parser.parse_args()
+    need(args.consumed_history_bundle is None or args.mode in {"refresh", "audit-consumed-v2-history"},
+         "document_refresh_consumed_audit_mode_required")
+    need(not args.reviewed_application_context or args.mode == "refresh",
+         "document_refresh_reviewed_app_context_mode_required")
     need(args.mode == "resume-full-source-refresh" or args.resume_candidate_directory is None
          and args.resume_manifest_sha256 is None, "document_resume_arguments_mode_required")
     need(args.mode in {"resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition", "reconcile-final-v2-transition"}
@@ -1519,7 +1569,25 @@ def main() -> None:
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
-    if args.mode == "monitor":
+    if args.mode == "audit-consumed-v2-history":
+        need(args.consumed_history_bundle is not None and not args.publish_candidate
+             and args.prior_native_journal is None and args.prior_history_directory is None
+             and args.transition_journal is None and args.recover_failed_native_job is None
+             and not (args.retire_expired_v2 or args.rescue_expired_v2 or args.upgrade_current_v2_to_v3),
+             "document_refresh_consumed_audit_mode_required")
+        module = infra("document_consumed_native")
+        module.history.load_bundle(args.consumed_history_bundle)
+        probe = infra("document_refresh_probe")
+        clients, delegate = probe.Clients(), None
+        try:
+            delegate = native_http()
+            boundary = module.NativeAudit(ROOT, args.consumed_history_bundle, clients, delegate, probe)
+            result = module.history.audit(args.consumed_history_bundle, boundary).report()
+        finally:
+            clients.close()
+            if delegate is not None:
+                delegate.close()
+    elif args.mode == "monitor":
         result = monitor(now=datetime.now(UTC))
         emit_status(result)
     elif args.mode == "resume-full-source-refresh":
@@ -1570,6 +1638,10 @@ def main() -> None:
             arguments["rescue_expired_v2"] = True
         if args.upgrade_current_v2_to_v3:
             arguments["upgrade_current_v2_to_v3"] = True
+        if args.reviewed_application_context:
+            arguments["reviewed_application_context"] = True
+        if args.consumed_history_bundle is not None:
+            arguments["consumed_history_bundle"] = args.consumed_history_bundle
         result = refresh(args.output_directory, **arguments)
         emit_status(result)
     elif args.mode == "full-source-candidate":
@@ -1632,8 +1704,8 @@ def run_cli() -> int:
         return 0
     except Exception as error:
         mode = _cli_option("--mode") or ""
-        readback_requested = any(argument == "reconcile-final-v2-transition"
-                                 or argument.endswith("=reconcile-final-v2-transition")
+        readback_requested = any(argument in {"reconcile-final-v2-transition", "audit-consumed-v2-history"}
+                                 or argument.endswith(("=reconcile-final-v2-transition", "=audit-consumed-v2-history"))
                                  for argument in sys.argv)
         # Reporting is an independent bounded write, never a retry of the failed
         # Build/Job/PATCH. The exact read-only reconciliation mode must not
@@ -1646,6 +1718,12 @@ def run_cli() -> int:
         final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
         code = (_final_failure_code(error) if final_mode else
                 str(error) if type(error) is RefreshDenied else "document_refresh_unavailable")
+        if mode == "audit-consumed-v2-history":
+            classes = [(sys.modules.get("document_consumed_history"), "HistoryDenied"),
+                       (sys.modules.get("document_application_context"), "ApplicationDenied")]
+            if (any(type(error) is getattr(module, name, None) for module, name in classes)
+                    and re.fullmatch(r"document_(?:consumed_history|application)_[a-z_]{1,100}", str(error))):
+                code = str(error)
         if final_mode:
             try:
                 _record_final_failure(code)

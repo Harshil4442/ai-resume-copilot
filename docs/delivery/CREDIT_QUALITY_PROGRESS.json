@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-28T18:02:00+00:00",
+  "updated_at": "2026-10-29T14:55:01.133288+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -16,10 +16,11 @@
       "actual_effort": null,
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
       ],
-      "local_result": "Measured local 10,000-user baseline and read current project accrued GCP costs. Production load, other vendors and final financial reconciliation remain pending.",
-      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
+      "local_result": "Current five-service production configuration and public pilot disclosures were observed after schema25 deployment. Current account acceptance, representative workload and final vendor allocation remain pending.",
+      "status_observed_at": "2026-10-29T09:27:17.956790+00:00"
     },
     {
       "number": 2,
@@ -32,10 +33,13 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
-        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "local_result": "Current GCP accrued usage observed; no invoice reconciliation or payment activation. Existing billing and financial gates remain.",
-      "status_observed_at": "2026-10-27T20:58:25.696983+00:00"
+      "local_result": "Gemini provider cap remains INR450. Reviewed expense reconciliation and prospective zero legacy signup grants are integrated; existing balances preserved. Private primary receipts were located, but actual usage invoices, project allocation, tax/gateway reconciliation and release acceptance remain pending.",
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00"
     },
     {
       "number": 3,
@@ -68,10 +72,13 @@
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
         "docs/delivery/evidence/2026-10-28-interview-v7-exploratory.json",
-        "docs/delivery/evidence/2026-10-28-interview-v8-exploratory.json"
+        "docs/delivery/evidence/2026-10-28-interview-v8-exploratory.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-28T18:02:00+00:00",
-      "local_result": "The V3 Courier DOCX historical native 11-case corpus passed, but scanner freshness expired before promotion and the document route remains unqualified. The v7 synthetic interview round attempted 20 and delivered 18, with two safety-validator failures. Prompt v8 was separately exercised under an INR30 hard modeled cap: 18 one-shot Gemini attempts, 16 delivered, two personal-claim validator failures and two reference slots never started by the cost guard. Neither batch has human scores. Reviewer 1 is the owner; Reviewer 2 and adjudicator remain unassigned. No AI route or major stage is qualified."
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
+      "local_result": "Current native inspector remains accepted. Scoped factuality/output-contract changes are reviewed; full-v2 evaluation still needs native input receipts, complex-layout reading-order correction, representative model outputs and independent human scoring. No model route is qualified by these guards; generation remains closed."
     },
     {
       "number": 5,
@@ -84,10 +91,12 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
-        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json"
+        "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-27T20:58:25.696983+00:00",
-      "local_result": "Skill ROI reduced 502 SQL queries to 3 with identical results. On the local 500-opportunity account, p95 at concurrency 10 improved from 2470 to 176 ms, and at concurrency 25 from 2200 to 168 ms. Cloud, browser and privacy qualification remain pending."
+      "status_observed_at": "2026-10-29T13:28:48.083922+00:00",
+      "local_result": "Duplicate employer catalog invalidations are removed in the reviewed candidate. Public responsive/SEO samples remain retained. Four distinct fresh Firestore metadata identity calls per ordinary authenticated read still exceed the native60/min quota at the one-million-request workload; provider determination or a separately reviewed equivalent design and actual capacity evidence remain pending."
     },
     {
       "number": 6,
@@ -100,10 +109,13 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
-        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "status_observed_at": "2026-10-28T16:16:29.964137+00:00",
-      "local_result": "A bounded schema25 maintenance operator passed focused local checks and performed one read-only live capture. Re-capture it and the coordinator plan after document promotion, then prove live drain, migration and seven-day shadow accounting."
+      "status_observed_at": "2026-10-29T13:52:42.658954+00:00",
+      "local_result": "Schema25 remains deployed. Reviewed canary server and Billing controls require explicit owner consent, reject delayed stale choices and atomically cap actual eligible accepted traffic at5%. No twenty-account minimum is invented. No production activation or real consent is created by tests. Deployed opted-in acceptance and seven-day/200-operation representative shadow evidence remain pending."
     },
     {
       "number": 7,
@@ -117,10 +129,13 @@
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
-        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json"
+        "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
       ],
-      "local_result": "Production still serves V2 document worker with expired scanner definitions. Candidate V3 native corpus passed, but freshness expired before promotion. The latest candidate CI had one fixed locally test-fixture defect; next exact-source CI, fresh document proof, guarded migration and all commercial gates remain.",
-      "status_observed_at": "2026-10-28T16:16:29.964137+00:00"
+      "local_result": "Production remains backend8cb/frontendb0c. Reviewed app25 release/recovery, canary consent/CAS, finance/factuality/signup, sign-in and consumed-history changes are integrated. CI108 finished with8202 backend passes and2 test-configuration failures; browser mocks also lacked the enrollment GET. Reviewed test-only corrections preserve runtime guards; corrected exact-source CI and immutable build remain pending. Native app/resource/database/ACL preflight passed; no app promotion or new paid/AI/submit admission occurred. Owner/companion acceptance and actual refresh recovery remain pending.",
+      "status_observed_at": "2026-10-29T14:55:01.133288+00:00"
     },
     {
       "number": 8,
@@ -145,8 +160,10 @@
     {
       "id": "S02",
       "requirement": "Existing product boundary. Retain GCP, Vercel, PostgreSQL on Neon and Upstash. The documented release context is the bounded employer-origin pilot with 20 reviewed origins and Razorpay or Greenhouse browser assistance. Recheck deployed capabilities in Stage 1; historical documents are not fresh production evidence.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+      ]
     },
     {
       "id": "S03",
@@ -224,7 +241,7 @@
     },
     {
       "id": "P02",
-      "requirement": "First launch display. Until P01 is met, show Introductory price ₹59 with 40 credits, and the real offer end date; optionally state Planned standard price ₹79 from the disclosed date. Apply the same wording to the other packs. Omit strikethrough, was pricing and savings claims until substantiated.",
+      "requirement": "First launch display. Until P01 is met, show Introductory price \u20b959 with 40 credits, and the real offer end date; optionally state Planned standard price \u20b979 from the disclosed date. Apply the same wording to the other packs. Omit strikethrough, was pricing and savings claims until substantiated.",
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
@@ -439,8 +456,10 @@
     {
       "id": "V04",
       "requirement": "Release and ongoing review. Progress through offline evaluation, shadow accounting, an opted-in canary and wider rollout. A confirmed critical factual, privacy or document-corruption defect disables the affected optimized route immediately. Baseline fallback is allowed only when funded. Keep customer corrections and refunds visible by route and cohort.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+      ]
     },
     {
       "id": "C01",
@@ -501,8 +520,10 @@
     {
       "id": "C08",
       "requirement": "Provider protection. Use eligible provider spend controls and service quotas as a second layer. Leave headroom for in-flight work and fixed resources. Google documents delayed spend-cap enforcement and ongoing persistent-resource charges. Never use a billing shutdown as the only application control. [7]",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+      ]
     },
     {
       "id": "A01",
@@ -525,7 +546,8 @@
       "requirement": "APIs and versioning. Define authenticated quote, execute, status, result, wallet and history contracts. Validate ownership on every access. Return explicit unsupported, requote, exhausted-budget and reconciliation states. Synchronize generated frontend contracts and preserve compatible legacy reads during migration.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
       ]
     },
     {
@@ -589,15 +611,18 @@
     {
       "id": "F05",
       "requirement": "Efficient delivery. Cache eligible public pages and static assets, lazy-load secondary UI, paginate lists, reduce duplicate polling and serve signed authorized downloads directly. Reuse validated previews. A cache must not expose private resumes or bypass expired access rights.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+      ]
     },
     {
       "id": "F06",
       "requirement": "Security and retention. Retain TLS, scoped secrets, scanning, authorization, account and device controls, durable audit requirements and backups. Preserve existing locked security-journal retention. Do not log resume bodies, passwords, tokens or full application answers in cost telemetry.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
       ]
     },
     {
@@ -611,7 +636,8 @@
       "requirement": "User communication. Explain basic, curated, reused and AI-generated modes accurately. Show freshness, source coverage, credit price, remaining balance and unsupported cases. Keep financial implementation details out of normal flows unless needed to explain a quote or limitation.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
       ]
     },
     {
@@ -634,19 +660,19 @@
     },
     {
       "id": "G02",
-      "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and ₹35,000 overhead as the approved adverse scenario. It leaves ₹14,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most ₹35,141 for 15% and ₹30,399 for 20%. Include omitted costs before testing either gate.",
+      "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and \u20b935,000 overhead as the approved adverse scenario. It leaves \u20b914,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most \u20b935,141 for 15% and \u20b930,399 for 20%. Include omitted costs before testing either gate.",
       "status": "pending",
       "evidence": []
     },
     {
       "id": "G03",
-      "requirement": "Acquisition discipline. Prioritize useful SEO content, product examples and product-led referrals. Fund referral credits only from an approved allowance after a qualifying paid purchase. At 20% conversion, surplus per monthly buyer is about ₹12.18 with ₹25,000 overhead and ₹7.18 with ₹35,000. The latter has only ₹0.07 per buyer of headroom above the 15% gate. Fund acquisition from genuinely available headroom; do not assume repeat purchases or unproven lifetime value.",
+      "requirement": "Acquisition discipline. Prioritize useful SEO content, product examples and product-led referrals. Fund referral credits only from an approved allowance after a qualifying paid purchase. At 20% conversion, surplus per monthly buyer is about \u20b912.18 with \u20b925,000 overhead and \u20b97.18 with \u20b935,000. The latter has only \u20b90.07 per buyer of headroom above the 15% gate. Fund acquisition from genuinely available headroom; do not assume repeat purchases or unproven lifetime value.",
       "status": "pending",
       "evidence": []
     },
     {
       "id": "G04",
-      "requirement": "Additional expense scenarios. Add founder pay, hired staff, marketing, review labor and incremental agent subscriptions before calling the result business profit. An additional ₹10,000 monthly expense reduces the adverse ₹35,000-overhead and 20% case to ₹4,370, below the minimum margin gate. One-time implementation and evaluation budgets require separate approval.",
+      "requirement": "Additional expense scenarios. Add founder pay, hired staff, marketing, review labor and incremental agent subscriptions before calling the result business profit. An additional \u20b910,000 monthly expense reduces the adverse \u20b935,000-overhead and 20% case to \u20b94,370, below the minimum margin gate. One-time implementation and evaluation budgets require separate approval.",
       "status": "pending",
       "evidence": []
     },
@@ -665,21 +691,26 @@
     {
       "id": "R01",
       "requirement": "Release order. After separate authorization: baseline measurements, offline quality gates, shadow accounting, migration rehearsal, opted-in canary, then bounded wider release. Freeze the tested model and policy versions. Do not combine an untested price change, model change and wallet migration into an unobservable cutover.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+      ]
     },
     {
       "id": "R02",
       "requirement": "Shadow and canary. Propose at least seven days of representative shadow accounting and an initial opted-in cohort no larger than 5% of eligible traffic. Require at least 200 successful paid-equivalent operations across supported cohorts before widening; continue longer if coverage or statistical evidence is inadequate. Shadow calls and human review require a funded testing budget.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+      ]
     },
     {
       "id": "R03",
       "requirement": "Rollback obligations. Preserve immutable sources, ledger history, active quotes and accepted work. Use additive schema changes and route flags. A rollback must not double charge, erase credits, revert customer-approved files or retry unknown applications. A prior expensive route can be restored only with sufficient funding.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
       ]
     },
     {
@@ -691,8 +722,10 @@
     {
       "id": "R05",
       "requirement": "Evidence reporting. Report completion against the stages in Sections 16 and 17. Include outcome, expected versus actual effort where measured, evidence location and unresolved limits. Do not present repeated CI or regression passes as new major development milestones.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+      ]
     }
   ],
   "release_gates": {

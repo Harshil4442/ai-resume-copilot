@@ -12,9 +12,9 @@ import unicodedata
 from .model_cost_policy import input_token_estimate
 
 QUESTION_COUNT = 8
-PROMPT_VERSION = "interview-evidence-v8"
+PROMPT_VERSION = "interview-evidence-v9"
 SCHEMA_VERSION = "interview-eight-preparation-v2"
-VALIDATOR_VERSION = "interview-complete-v3"
+VALIDATOR_VERSION = "interview-complete-v4"
 CONTEXT_VERSION = "interview-complete-units-v1"
 MIN_PREPARATION_STEPS = 2
 MAX_PREPARATION_STEPS = 4
@@ -98,9 +98,12 @@ def unsupported_positive_history(value: str) -> bool:
     actions must not turn a general skill into a particular past accomplishment.
     Technical future actions and a neutral discussion of methods remain valid.
     """
+    from .personal_claims import has_personal_assertion
+
     normalized = _normalized_personal_text(value)
-    return any(not _NONASSERTING_PREFIX.search(normalized[:match.start()])
-               for match in _POSITIVE_HISTORY.finditer(normalized))
+    return has_personal_assertion(value) or any(
+        not _NONASSERTING_PREFIX.search(normalized[:match.start()])
+        for match in _POSITIVE_HISTORY.finditer(normalized))
 
 
 class InterviewContextUnavailable(ValueError):
@@ -128,10 +131,13 @@ def load_approved_evidence(db, user_id: int, resume_id: int | None) -> list[dict
 
 
 def contract_versions() -> dict:
+    from .personal_claims import VERSION as PERSONAL_CLAIM_VERSION
+
     return {
         "prompt": PROMPT_VERSION, "schema": SCHEMA_VERSION,
         "validator": VALIDATOR_VERSION, "context_selection": CONTEXT_VERSION,
         "context_max_estimate": MAX_CONTEXT_ESTIMATE, "question_count": QUESTION_COUNT,
+        "personal_claims": PERSONAL_CLAIM_VERSION,
     }
 
 
@@ -158,7 +164,8 @@ def build_interview_messages(job_title: str, jd_text: str, evidence: list[dict])
             "use a genuine conditional such as 'If you have relevant experience, describe a verified "
             "example; otherwise explain how you would approach the problem.' Generated questions "
             "and preparation steps must not assert personal history, ownership or outcomes, whether "
-            "positive or negative. A skill mention does not establish a particular implementation, "
+            "positive or negative, including tenure, degrees, credentials, employment or seniority. "
+            "A skill mention does not establish a particular implementation, "
             "technique, improvement, leadership role or result. The application displays cited "
             "approved facts verbatim and supplies a separate optional verified-example instruction. "
             "Do not paraphrase those facts into a new personal claim. "

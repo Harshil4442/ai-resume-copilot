@@ -38,8 +38,9 @@ def configure(monkeypatch):
     configuration = runtime.RuntimeConfig(
         policy=financial_policy(), budgets=budgets(), routes=(selected,)
     )
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+    reviewed_runtime(monkeypatch, configuration)
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
-    monkeypatch.setenv("UNIFIED_CREDIT_CANARY_OWNER_IDS", "1")
     monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", configuration.model_dump_json())
     monkeypatch.setenv("EMPLOYER_PAID_HISTORY_MODE", "indexed")
     return configuration

@@ -4,16 +4,19 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { UnifiedBillingPanel } from "../../components/billing/UnifiedBillingPanel";
+import { CanaryParticipation } from "../../components/billing/CanaryParticipation";
 import { LegacyBillingAccount } from "../../components/billing/LegacyBillingAccount";
 
 function BillingContent() {
   const search = useSearchParams();
   const [legacyPending, setLegacyPending] = useState(true);
+  const [participationRevision, setParticipationRevision] = useState(0);
   return <main className="app-page"><div className="page-container space-y-10">
     <header className="border-b border-border pb-7"><p className="eyebrow">Account billing</p>
       <h1 className="font-display mt-2 text-4xl sm:text-5xl">Credits for your next move</h1>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">One credit wallet for eligible services. Review a finite 30-day pass and every service charge before you pay. No automatic renewal.</p></header>
-    <UnifiedBillingPanel legacyPending={legacyPending} requestedSku={search.get("sku")} />
+    <CanaryParticipation onChange={() => setParticipationRevision((value) => value + 1)} />
+    <UnifiedBillingPanel legacyPending={legacyPending} requestedSku={search.get("sku")} participationRevision={participationRevision} />
     <LegacyBillingAccount onPendingChange={setLegacyPending} />
   </div></main>;
 }

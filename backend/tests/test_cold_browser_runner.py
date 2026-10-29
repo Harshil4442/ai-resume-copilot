@@ -336,7 +336,8 @@ def test_unified_cold_policy_is_test_only_and_shares_one_funding_authority(monke
     from backend.tests.fixtures.cold_browser_credit_policy import environment
 
     monkeypatch.setenv("APP_ENV", "test")
-    for name, value in environment().items():
+    configured_environment = environment()
+    for name, value in configured_environment.items():
         monkeypatch.setenv(name, value)
     reviewed = release.current_review()
     paid = runtime.current_runtime(2)
@@ -346,9 +347,32 @@ def test_unified_cold_policy_is_test_only_and_shares_one_funding_authority(monke
     assert paid.routes[0].mode == "native" and paid.routes[0].model_quotes == ()
     assert paid.routes[0].supported_limits["maximum_results"] == 5
     assert paid.routes[0].credits == 1 and free.operations["resume_parse"].per_account_30_days == 1
-    assert not runtime.enabled_for(1)
+    assert runtime.current_runtime(1) == paid  # Explicit synthetic public scope.
+    assert "UNIFIED_CREDIT_CANARY_OWNER_IDS" not in configured_environment
+    # Even a synthetic public review cannot survive a changed runtime hash.
+    changed = json.loads(configured_environment["UNIFIED_CREDIT_RUNTIME_REVIEW_JSON"])
+    changed["budgets"]["version"] = "unreviewed-changed-budget"
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", json.dumps(changed))
+    assert not runtime.enabled_for(2)
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(ValueError):
         release.current_review()
     with pytest.raises(ValueError):
         policy.current_policy()
+
+
+def test_cold_credit_fixture_can_prepare_before_loading_any_application_database():
+    probe = "\n".join([
+        "import sys",
+        "from backend.tests.fixtures.cold_browser_credit_policy import environment",
+        "configured = environment()",
+        "assert configured['UNIFIED_CREDIT_EXECUTION_AUDIENCE'] == 'reviewed_public'",
+        "assert 'backend.app.database' not in sys.modules and 'app.database' not in sys.modules",
+        "print('isolated-fixture-ready')",
+    ])
+    result = subprocess.run([sys.executable, "-I", "-c",
+        f"import sys; sys.path.insert(0, {str(journey_runner.ROOT)!r});\n" + probe],
+        env={"PATH": os.environ.get("PATH", "")}, capture_output=True, text=True,
+        timeout=15, check=False)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "isolated-fixture-ready"
