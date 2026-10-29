@@ -109,6 +109,20 @@ def test_session_ignores_proxy_ca_and_retry_environment(monkeypatch):
     session.close()
 
 
+class _OverriddenAdapter(auth.requests.adapters.HTTPAdapter):
+    def send(self, *args, **kwargs):
+        pytest.fail("unreviewed adapter send must never run")
+
+
+@pytest.mark.parametrize("adapter", [SimpleNamespace(close=lambda: None), _OverriddenAdapter()])
+def test_unexpected_session_adapter_is_refused_before_any_request(adapter):
+    session = auth.requests.Session()
+    session.adapters["https://"] = adapter
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_transport_adapter_refused$"):
+        auth.ServiceHttp._harden(session)
+    session.close()
+
+
 class _ReadResult:
     def __init__(self, status: int):
         self.status_code = status
