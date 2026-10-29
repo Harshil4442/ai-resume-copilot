@@ -109,6 +109,14 @@ def test_session_ignores_proxy_ca_and_retry_environment(monkeypatch):
     session.close()
 
 
+def test_unexpected_session_adapter_is_refused_before_any_request():
+    session = auth.requests.Session()
+    session.adapters["https://"] = SimpleNamespace(close=lambda: None)
+    with pytest.raises(auth.IdentityDenied, match="^document_refresh_transport_adapter_refused$"):
+        auth.ServiceHttp._harden(session)
+    session.close()
+
+
 class _ReadResult:
     def __init__(self, status: int):
         self.status_code = status

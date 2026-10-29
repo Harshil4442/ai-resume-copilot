@@ -147,6 +147,8 @@ class ServiceHttp:
     def _harden(session: requests.Session) -> None:
         session.trust_env, session.max_redirects, session.verify = False, 0, certifi.where()
         for adapter in session.adapters.values():
+            if not isinstance(adapter, requests.adapters.HTTPAdapter):
+                raise IdentityDenied("document_refresh_transport_adapter_refused")
             adapter.max_retries = adapter.max_retries.__class__(total=0, connect=0, read=0, redirect=0, status=0)
 
     def request(self, uri: str, method: str = "GET", body: Any = None, headers: Any = None,
