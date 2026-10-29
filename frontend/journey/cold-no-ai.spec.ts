@@ -80,11 +80,12 @@ async function measurePublicLab(browser: import("@playwright/test").Browser, bas
       const response = await labPage.goto(`${baseURL}${path}`, { waitUntil: "load" });
       responseStatus = response?.status() ?? null;
       expect(response?.status()).toBe(200);
-      await expect(labPage.locator("h1")).toHaveCount(1);
+      const heading = labPage.getByRole("heading", { level: 1 });
+      await expect(heading).toHaveCount(1);
       await labPage.evaluate(() => document.fonts.ready);
       // The CI runner can finish navigation before the font swap and hydration paint.
       // Keep the visible-heading gate, but allow that first paint a bounded interval.
-      await expect(labPage.locator("h1")).toBeVisible({ timeout: 15_000 });
+      await expect(heading).toBeVisible({ timeout: 15_000 });
       // Fixed observation window captures initial rendering/animation after load.
       await labPage.waitForTimeout(5000);
       const beforeInteraction = await labPage.evaluate(() => {
