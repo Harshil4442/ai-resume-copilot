@@ -87,9 +87,8 @@ def quote(db, request):
 
 def provider(monkeypatch, operation, *, raw=None, callback=None, error=False):
     calls = []
-    def chat(messages):
-        budget = current_budget()
-        assert budget is not None
+    def chat(messages, budget):
+        assert budget is current_budget()
         event = budget.admit("google", "synthetic-model", messages, api_base="https://generativelanguage.googleapis.com")
         calls.append(messages)
         if callback:
@@ -99,8 +98,11 @@ def provider(monkeypatch, operation, *, raw=None, callback=None, error=False):
             budget.finish(event, latency_ms=1, error=failure)
             raise failure
         budget.finish(event, latency_ms=1, response=response())
-        return raw if raw is not None else output(operation)
-    monkeypatch.setattr(llm_client, "chat_json", chat)
+        return json.dumps(raw if raw is not None else output(operation))
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "synthetic-model")
+    monkeypatch.setattr(llm_client, "LLM_API_BASE", "https://generativelanguage.googleapis.com")
+    monkeypatch.setattr(llm_client, "_api_key", lambda: "synthetic-never-network")
+    monkeypatch.setattr(llm_client, "_chat_with_budget", chat)
     return calls
 
 
@@ -601,14 +603,14 @@ def test_already_accepted_public_work_keeps_frozen_authority_when_canary_pointer
         db.commit()
     reviewed_runtime(monkeypatch, config)
     calls = provider(monkeypatch, "enhanced_qa")
-    transport = llm_client.chat_json
-    def paused_after_acceptance(messages):
+    transport = llm_client._chat_with_budget
+    def paused_after_acceptance(messages, budget):
         monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "false")
         monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
         monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_ID")
         monkeypatch.delenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256")
-        return transport(messages)
-    monkeypatch.setattr(llm_client, "chat_json", paused_after_acceptance)
+        return transport(messages, budget)
+    monkeypatch.setattr(llm_client, "_chat_with_budget", paused_after_acceptance)
     with factory() as db:
         request = payload("enhanced_qa")
         quote_id = quote(db, request)

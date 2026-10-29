@@ -11,7 +11,8 @@ import json
 from typing import Any
 
 AFFECTED_OPERATIONS = frozenset({"resume_tailor", "resume_tailor_extended", "bullet_rewrite",
-                                 "enhanced_qa", "learning_strategy", "interview_questions"})
+                                 "enhanced_qa", "learning_strategy", "interview_questions",
+                                 "enhanced_job_match", "resume_enrichment"})
 
 
 class OutputContractUnavailable(ValueError):
@@ -29,22 +30,31 @@ def _source(value) -> str:
 
 
 def current_output_contract(operation: str) -> str | None:
+    if operation == "job_match":
+        operation = "enhanced_job_match"
     if operation not in AFFECTED_OPERATIONS:
         return None
     from . import (
         interview_contract,
         llm_client,
         personal_claims,
+        prompt_privacy,
         synchronous_contracts,
         tailoring_contract,
     )
     from .market import skill_taxonomy
 
-    common = (personal_claims.Claim, personal_claims._normalized, personal_claims._anchors, personal_claims._claims,
+    common = (prompt_privacy.redact_messages, prompt_privacy.redact_prompt_text, prompt_privacy.redact_structured,
+              personal_claims.Claim, personal_claims._normalized, personal_claims._anchors, personal_claims._claims,
               personal_claims.has_personal_assertion, personal_claims.require_supported_claims,
               skill_taxonomy.canonical_skill)
     constants: dict[str, Any] = {
         "version": personal_claims.VERSION,
+        "privacy_version": prompt_privacy.PROMPT_PRIVACY_VERSION,
+        "privacy_redacted": prompt_privacy.REDACTED,
+        "privacy_patterns": {name: (getattr(prompt_privacy, name).pattern, getattr(prompt_privacy, name).flags)
+            for name in ("_EMAIL", "_INTERNATIONAL_PHONE", "_SENSITIVE_KEY", "_JSON_LABELED", "_PLAIN_LABELED", "_GOVERNMENT_NUMBER")},
+        "complete_source_prefix": prompt_privacy.COMPLETE_SOURCE_PREFIX,
         "relations": {key: (value.pattern, value.flags) for key, value in personal_claims._RELATIONS.items()},
         "patterns": {key: (getattr(personal_claims, key).pattern, getattr(personal_claims, key).flags) for key in (
             "_PERSON", "_SENTENCE", "_CONDITIONAL", "_FUTURE", "_NEGATED", "_WEAK",
@@ -56,7 +66,23 @@ def current_output_contract(operation: str) -> str | None:
         "skill_aliases": skill_taxonomy.ALIASES, "skill_taxonomy": skill_taxonomy.SKILL_TAXONOMY,
     }
     helpers: tuple[Any, ...]
-    if operation == "interview_questions":
+    if operation == "enhanced_job_match":
+        from . import matching, matching_contract
+
+        helpers = (matching_contract.messages, matching_contract.validate,
+                   matching_contract._facts, matching_contract._prose, matching_contract.source_skill,
+                   matching_contract.score, llm_client.analyze_job_match_complete_llm,
+                   interview_contract.unsupported_experience_inference, interview_contract._normalized_personal_text,
+                   matching.compute_skill_scores, matching.combine_scores, matching.get_dynamic_weights)
+        versions = {"prompt": matching_contract.PROMPT_VERSION, "validator": matching_contract.VALIDATOR_VERSION}
+        constants["matching"] = {"dimensions": matching_contract.DIMENSIONS,
+            "context_max": matching_contract.MAX_CONTEXT_ESTIMATE,
+            "outcome_probability": (matching_contract._OUTCOME_PROBABILITY.pattern, matching_contract._OUTCOME_PROBABILITY.flags),
+            "negative_experience": (interview_contract._NEGATIVE_EXPERIENCE.pattern, interview_contract._NEGATIVE_EXPERIENCE.flags),
+            "nonasserting_prefix": (interview_contract._NONASSERTING_PREFIX.pattern, interview_contract._NONASSERTING_PREFIX.flags),
+            "schema": matching_contract.Output.model_json_schema(),
+            "skill_weights": matching.SKILL_WEIGHTS, "dimension_weights": matching.HOLISTIC_DIMENSION_WEIGHTS}
+    elif operation == "interview_questions":
         helpers = (interview_contract.build_interview_messages, interview_contract.require_complete_context,
                    interview_contract._normalized_personal_text,
                    interview_contract.unsupported_experience_inference,
@@ -81,7 +107,7 @@ def current_output_contract(operation: str) -> str | None:
     else:
         helpers = (synchronous_contracts.messages, synchronous_contracts.validate,
                    synchronous_contracts._supported_personal_prose,
-                   synchronous_contracts._text, synchronous_contracts._texts)
+                   synchronous_contracts._text, synchronous_contracts._texts, llm_client.chat_json)
         versions = dict(synchronous_contracts.VERSIONS)
         constants["synchronous_context_max"] = synchronous_contracts.MAX_CONTEXT_ESTIMATE
         if operation == "bullet_rewrite":
@@ -93,7 +119,7 @@ def current_output_contract(operation: str) -> str | None:
             from .rag import chat, prompts
 
             helpers += (chat.ask_match_ai, prompts.build_ask_ai_messages)
-        else:
+        elif operation == "learning_strategy":
             helpers += (llm_client.generate_learning_strategy_llm,)
     material = {"operation": operation, "versions": versions, "constants": constants,
                 "helpers": [_source(item) for item in (*common, *helpers)]}

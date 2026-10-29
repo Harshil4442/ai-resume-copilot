@@ -359,3 +359,27 @@ def test_both_declared_model_sides_prepare_without_rewriting_actual_client(local
         retail = synchronous.owned_context(db, user_id=1, payload=synchronous.SynchronousServiceRequest(
             operation="resume_enrichment", input={"resume_id": 1}))
         assert retail.context["generation_configuration"]["model"] == candidate["model"]
+
+
+def test_actual_sync_adapter_redacts_complete_structured_source_without_corrupting_json(local, monkeypatch):
+    from app.services.prompt_privacy import REDACTED, redact_prompt_text
+
+    source = SOURCE + '\nprivate@example.invalid\nNotes: "quoted" C:\\portfolio\\draft\nAge: 33\nKeep the final source sentinel.'
+    with local() as db:
+        resume = db.get(models.Resume, 1)
+        resume.raw_text, resume.sections = source, {"Experience": source}
+        db.commit()
+    calls = synthetic_transport(monkeypatch, "enhanced_qa")
+    monkeypatch.setattr(core, "require_provider_authority", lambda *_: None)
+    with local() as db:
+        run = seed(db, "enhanced_qa")
+        with generation_budget.persistent_run_budget(local, run.id):
+            adapter.execute(db, run)
+        assert db.get(models.Resume, 1).raw_text == source
+    context = json.loads(calls[0][-1]["content"].split("COMPLETE SOURCE DATA:\n", 1)[1])
+    assert context["resume"]["raw_text"] == redact_prompt_text(source)
+    assert "private@example.invalid" not in context["resume"]["raw_text"]
+    assert "33" not in context["resume"]["raw_text"] and REDACTED in context["resume"]["raw_text"]
+    assert '"quoted" C:\\portfolio\\draft' in context["resume"]["raw_text"]
+    assert "final source sentinel" in context["resume"]["raw_text"]
+    assert context["approved_evidence"][0]["text"] == SOURCE

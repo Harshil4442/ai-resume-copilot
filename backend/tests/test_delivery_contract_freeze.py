@@ -40,7 +40,7 @@ def test_unversioned_prompt_helper_and_shared_constant_changes_invalidate_qualif
     assert all(delivery_contracts.current_output_contract(name) != digest
                for name, digest in current.items())
     assert delivery_contracts.current_output_contract("job_discovery_batch") is None
-    assert delivery_contracts.current_output_contract("enhanced_job_match") is None
+    assert delivery_contracts.current_output_contract("enhanced_job_match") == delivery_contracts.current_output_contract("job_match")
     service_quotes.require_route(route(native=True), financial_policy(),
                                   now=financial_policy().valid_from)
 

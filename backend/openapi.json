@@ -2347,6 +2347,24 @@
       },
       "DimensionScore": {
         "properties": {
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "evidence_quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Quote"
+          },
           "feedback": {
             "title": "Feedback",
             "type": "string"
@@ -3260,6 +3278,11 @@
             "title": "Dimensions",
             "type": "array"
           },
+          "evidence_links": {
+            "additionalProperties": true,
+            "title": "Evidence Links",
+            "type": "object"
+          },
           "fit_summary": {
             "title": "Fit Summary",
             "type": "string"
@@ -3270,6 +3293,17 @@
             },
             "title": "Full Matches",
             "type": "array"
+          },
+          "gap_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Semantics"
           },
           "grade": {
             "title": "Grade",
@@ -3289,6 +3323,13 @@
           "match_score": {
             "title": "Match Score",
             "type": "number"
+          },
+          "missing_evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Evidence",
+            "type": "array"
           },
           "mode": {
             "anyOf": [
@@ -3330,6 +3371,17 @@
             "title": "Required Skills",
             "type": "array"
           },
+          "score_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Basis"
+          },
           "scoring_version": {
             "anyOf": [
               {
@@ -3341,6 +3393,14 @@
             ],
             "title": "Scoring Version"
           },
+          "skill_analysis": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Skill Analysis",
+            "type": "array"
+          },
           "skill_verification_rate": {
             "title": "Skill Verification Rate",
             "type": "integer"
@@ -3350,6 +3410,14 @@
               "type": "string"
             },
             "title": "True Gaps",
+            "type": "array"
+          },
+          "unassessed_dimensions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Unassessed Dimensions",
             "type": "array"
           },
           "uncertainties": {

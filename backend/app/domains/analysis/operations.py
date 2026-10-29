@@ -227,6 +227,22 @@ def _record_model_call(
     run.prompt_version = prompt_version
 
 
+def complete_matching_context(db: Session, *, user_id: int, resume, payload: dict) -> dict:
+    from ...services import matching_contract
+    from ...services.interview_contract import load_approved_evidence
+
+    if not resume.source_document or not resume.raw_text:
+        raise matching_contract.MatchingContextUnavailable("Upload the original resume and review its extracted facts before enhanced comparison.")
+    value = payload.get("job_description", "")
+    description = value if isinstance(value, str) else "\n".join(map(str, value))
+    context = {"resume": {"raw_text": resume.raw_text, "sections": resume.sections or {},
+        "skills": resume.skills or [], "experience_years": resume.experience_years or 0},
+        "job": {"title": str(payload.get("job_title") or "Target role"), "description": description},
+        "approved_evidence": load_approved_evidence(db, user_id, resume.id)}
+    matching_contract.messages(context)  # Validate complete context before spending.
+    return context
+
+
 def execute_job_match(
     db: Session,
     *,
@@ -291,32 +307,56 @@ def execute_job_match(
             "uncertainties": basic["uncertainties"], "provenance": "local_rules",
         }
 
-    from ...services.llm_client import analyze_job_match_mega_llm
+    from ...services.llm_client import analyze_job_match_complete_llm, analyze_job_match_mega_llm
+
+    complete = run is not None and (run.model_cost_quote or {}).get("billing_currency") == "credits"
+    if run is not None and (run.id.startswith("qev2_") or (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2"):
+        from .supported_evaluation import require_provider_authority
+
+        require_provider_authority(db, run)
+        complete = True
+    context = None
+    prompt_version = "match-mega-v2"
+    if complete:
+        assert run is not None
+        from ...services import matching_contract
+        from ...services.delivery_contracts import current_output_contract
+        from .service import ensure_matching_inputs_current
+
+        ensure_matching_inputs_current(db, run, payload)
+        context = complete_matching_context(db, user_id=user_id, resume=resume, payload=payload)
+        prompt_version = matching_contract.PROMPT_VERSION
 
     if run:
         _ensure_prompt_version(
             db,
             operation="job_match",
-            version="match-mega-v2",
-            callable_object=analyze_job_match_mega_llm,
+            version=prompt_version,
+            callable_object=analyze_job_match_complete_llm if complete else analyze_job_match_mega_llm,
+            linked_callables=(matching_contract.messages, matching_contract.validate) if complete else (),
+            contract_identity={"output_contract_sha256": current_output_contract("job_match")} if complete else None,
         )
         db.commit()  # Release prompt registration before provider admission.
     started = time.perf_counter()
     try:
-        mega_result = analyze_job_match_mega_llm(
-            resume_sections=resume.sections or {},
-            resume_skills=resume.skills or [],
-            experience_years=resume.experience_years or 0.0,
-            jd_text=jd_text,
-            job_title=job_title,
-        )
+        if complete:
+            assert context is not None
+            mega_result = analyze_job_match_complete_llm(context)
+        else:
+            mega_result = analyze_job_match_mega_llm(
+                resume_sections=resume.sections or {},
+                resume_skills=resume.skills or [],
+                experience_years=resume.experience_years or 0.0,
+                jd_text=jd_text,
+                job_title=job_title,
+            )
     except Exception as exc:
         if run:
             begin_result_commit(db, user_id, run.id)
             _record_model_call(
                 db,
                 run=run,
-                prompt_version="match-mega-v2",
+                prompt_version=prompt_version,
                 input_payload=payload,
                 output_payload={},
                 latency_ms=int((time.perf_counter() - started) * 1000),
@@ -327,11 +367,17 @@ def execute_job_match(
         raise
 
     begin_result_commit(db, user_id, run.id if run is not None else None)
-    req_norm = [str(skill).lower() for skill in mega_result.get("extracted_jd_skills", [])]
+    if complete:
+        ensure_matching_inputs_current(db, run, payload)
+    req_norm = [(matching_contract.canonical_skill(str(skill)) if complete else str(skill)).lower()
+                for skill in mega_result.get("extracted_jd_skills", [])]
     coverage_map: dict[tuple[str, str], float] = {}
     for item in mega_result.get("skill_analysis", []):
         resume_skill = str(item.get("via_skill") or "").lower().strip()
         job_skill = str(item.get("jd_skill") or "").lower().strip()
+        if complete:
+            resume_skill = matching_contract.canonical_skill(resume_skill).casefold()
+            job_skill = matching_contract.canonical_skill(job_skill).casefold()
         weight = float(item.get("coverage", 0.0))
         if resume_skill and job_skill:
             coverage_map[(resume_skill, job_skill)] = weight
@@ -346,6 +392,10 @@ def execute_job_match(
                 )
 
     resume_skills = resume.skills or []
+    if complete:
+        assert context is not None
+        resume_skills = [matching_contract.canonical_skill(skill) for skill in resume_skills if any(
+            matching_contract.source_skill(skill, fact["text"]) for fact in context["approved_evidence"])]
     confidence_map = build_skill_confidence_map(resume_skills, resume.sections or {})
     applied, claimed, verification, full, partial, gaps = compute_skill_scores(
         _normalize_skill_list(resume_skills),
@@ -355,7 +405,7 @@ def execute_job_match(
         jd_text,
     )
     dimensions = mega_result.get("dimensions", [])
-    overall = combine_scores(
+    overall = (matching_contract.score if complete else combine_scores)(
         applied,
         claimed,
         verification,
@@ -396,7 +446,7 @@ def execute_job_match(
     result = {
         "match_id": match.id,
         "match_score": overall,
-        "grade": score_to_grade(overall),
+        "grade": "Needs evidence" if complete and mega_result["unassessed_dimensions"] else score_to_grade(overall),
         "required_skills": req_norm,
         "full_matches": full,
         "partial_matches": partial,
@@ -405,15 +455,25 @@ def execute_job_match(
         "dimensions": dimensions,
         "fit_summary": mega_result.get("fit_summary", ""),
         "improvement_tips": mega_result.get("improvement_tips", []),
-        "mode": "enhanced", "scoring_version": "enhanced-mega-v2",
+        "mode": "enhanced", "scoring_version": "enhanced-supported-signals-v1" if complete else "enhanced-mega-v2",
         "provenance": "generated",
     }
+    if complete:
+        result.update({"unassessed_dimensions": mega_result["unassessed_dimensions"],
+            "skill_analysis": mega_result["skill_analysis"],
+            "evidence_links": mega_result["evidence_links"], "missing_evidence": gaps,
+            "gap_semantics": "missing_approved_evidence_not_missing_ability",
+            "score_basis": "documented_supported_signals_not_hiring_probability",
+            "output_contract_sha256": current_output_contract("job_match"),
+            "uncertainties": ["This score compares documented supported signals; it is not capability or hiring probability.",
+                "Missing approved evidence does not establish lack of experience or skill.",
+                *[row["reason"] for row in mega_result["unassessed_dimensions"]]]})
     evaluation = validate_match_output(result)
     if run:
         _record_model_call(
             db,
             run=run,
-            prompt_version="match-mega-v2",
+            prompt_version=prompt_version,
             input_payload=payload,
             output_payload=mega_result,
             latency_ms=int((time.perf_counter() - started) * 1000),

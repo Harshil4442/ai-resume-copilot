@@ -1,7 +1,8 @@
 # Supported-format quality evaluation v2
 
-This operator-only runner prepares and executes genuine production interview and
-resume-tailoring operations against the frozen synthetic v2 packet. It does not
+This operator-only runner prepares and executes genuine production interview,
+resume-tailoring, enhanced comparison, enrichment, bullet rewriting, personal
+Q&A and learning-strategy operations against the frozen synthetic v2 packet. It does not
 qualify a retail route, activate AI, grant customer credits, approve a reference,
 create a human score, or change a native image/protocol. The original ten-PDF v1
 development runner remains unchanged.
@@ -27,9 +28,62 @@ development runner remains unchanged.
   runner. Existing materialization/render observations alone are insufficient.
   The observed two-column reading-order failure remains a blocker. No repair
   reconstructs native text from expected fixture text to hide that failure.
-- The other AI operation families, retail paid-route qualification, statistical
-  noninferiority analysis, reviewer assignment/blinding, invoice reconciliation
-  and production canary activation remain separate existing acceptance work.
+- All seven AI operation families have actual production adapters below. Retail
+  paid-route qualification, statistical noninferiority analysis, reviewer
+  assignment/blinding, invoice reconciliation and production canary activation
+  remain separate existing acceptance work. Standard and high-cost tailoring
+  share an executor, but need separate expense-envelope qualification; one
+  standard result never qualifies the high-cost tariff.
+
+## Actual operation adapters and supported inputs
+
+| Runner operation | Actual production path | Fixed evaluation scenario / limits |
+| --- | --- | --- |
+| `job_match` (catalogue `enhanced_job_match`) | `operations.execute_job_match`, complete `match-evidence-v1` generator, existing score/persistence | Complete native résumé, full job, all approved facts; at least one approved fact; one model attempt. Missing proof is `needs_evidence`, never absent ability. Unknown dimensions have no invented numeric score. |
+| `interview_questions` | Existing production question operation | Eight role questions; same complete source/evidence contract. |
+| `resume_tailor` | Existing complete production tailoring operation | Actual source-preserving proposals/artifacts; at most three funded attempts. Standard/high-cost expense envelopes still need independent acceptance. |
+| `resume_enrichment` | Shared `credits.synchronous.generate_prepared` | Full original native text; returns only additional source-supported skills. Each side keeps its original stored skills, so enrichment cannot alter the other side's input. No additional supported skill is an honest unavailable output. |
+| `bullet_rewrite` | Same shared synchronous executor/validator used by retail | Fixed `concise` tone, full résumé/job and approved evidence; original passage and all numbers must survive. |
+| `enhanced_qa` | Same shared synchronous executor/validator used by retail | Fixed question declared in `plan`: “How does my approved experience fit this role, and which evidence gaps should I address?” Empty prior chat. Actual deterministic basic match is a retained dependency, never an enhanced result. Arbitrary user questions/history are outside this evaluation scenario. |
+| `learning_strategy` | Same shared synchronous executor/validator used by retail | Full owned inputs, actual deterministic basic match and current operator-reviewed curated resources. No model-generated URL or fabricated resource review. Nontechnical/missing-resource cohorts may be unsupported. |
+
+Every operation still plans all 200 cases / 400 slots, with 40 development and
+160 held-out cases. QA/learning derivation persists actual production basic
+matching and rechecks its exact fields. Derived requests, matching IDs, context
+hashes and learning-resource review digest are immutable run inputs. They cannot
+be replaced by an invented enhanced score or a newly stamped review label.
+
+Known supported-input/resource refusals during synchronous preparation retain
+the slot as `failed`, `error_code=evaluation_unsupported_inputs`, with **zero
+model attempts**. Native allocations remain held/unknown. Identity, source,
+configuration, database and unknown errors still stop preparation. No case is
+dropped from an export or a qualification denominator. Unsupported/failed
+development slots still block the existing all-complete held-out lock: supplying
+real resource support and reviewing the complete development population is
+separate work, not a permission to skip difficult cohorts.
+
+Both sides freeze their own reviewed model/endpoint expectation before execution.
+The real process client must match that side before claiming/calling; actual
+provider events retain their observed model and usage. A declared configuration
+is not a usage receipt or provider authority. Retail continues binding its actual
+server configuration. Full-context JSON remains structurally valid through
+sensitive-value redaction, including escaped newlines, quotes and backslashes;
+original stored files/text are never edited by that disclosure boundary.
+
+The complete comparison generator is shared by funded credit requests and this
+exact internal authority. Retail quote preflight refuses missing approved facts,
+oversized full context or a multi-attempt envelope before accepting spend. Basic
+matching stays independently available. Canonical skill aliases use consistent
+scoring keys. New delivery-contract hashes bind both `enhanced_job_match` and its
+`job_match` alias; historical metadata with a missing hash remains readable but
+cannot qualify this new generator. Legacy default `match-mega-v2` is unchanged.
+
+Job discovery, verified submission, indexed market analytics, basic matching,
+Skill ROI and profile calculations are deterministic/native services, not Gemini
+evaluation adapters. Native-cost qualification for these services remains
+separate. Finite factual guards cannot prove arbitrary semantic relevance or
+subjective dimension scores; independent blinded human evaluation remains
+required before selling an optimized route.
 
 ## Trust and funding boundary
 
@@ -53,7 +107,10 @@ is created; there is no production migration or cloud provisioning action.
 Model calls reuse `persistent_run_budget`, current provider request limits and
 detached `ModelCostLiability` rows. Only the side's exact quote is frozen for its
 run, so an unreviewed fallback cannot generate. Interview permits one provider
-attempt; tailoring retains the production maximum of three. Complete split
+attempt; complete comparison and each synchronous service also permit one.
+Tailoring retains the production maximum of three. Explicit model/expense
+ceilings must name each actual operation, including `bullet_rewrite` and
+`enhanced_qa`; legacy `rewrite_bullets`/`match_question` aliases grant no funding. Complete split
 funding covers both sides at these declared bounds before any claim. Estimated
 token/cost admission is not a claim that an invoice cannot exceed an estimate.
 

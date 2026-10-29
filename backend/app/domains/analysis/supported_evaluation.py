@@ -27,12 +27,19 @@ VERSION = inputs.VERSION
 _authority: contextvars.ContextVar[tuple | None] = contextvars.ContextVar("supported_v2_runner_authority", default=None)
 
 
+def _sync():
+    # Metadata planning must remain inert even when the app DSN is invalid.
+    from . import supported_evaluation_synchronous
+
+    return supported_evaluation_synchronous
+
+
 def _schema(auth):
     return "hwqv2_" + inputs.digest(auth.experiment_id)[:20]
 
 
 def attempts(operation):
-    return 1 if operation == "interview_questions" else 3
+    return 3 if operation == "resume_tailor" else 1
 
 
 def contract_digest(operation):
@@ -41,6 +48,7 @@ def contract_digest(operation):
         document_ingestion,
         docx_artifact,
         generation_gate,
+        matching_contract,
         native_tex,
         personal_claims,
         prompt_privacy,
@@ -53,19 +61,23 @@ def contract_digest(operation):
     from . import operations, service
 
     if operation not in inputs.OPERATIONS:
-        raise ValueError("Only the two reviewed production adapters are implemented")
+        raise ValueError("Only the explicitly implemented production adapters are supported")
     modules = (operations, service, generation_budget, model_cost_policy, llm_client,
                interview_contract, tailoring_contract, personal_claims, prompt_privacy,
                resume_artifacts, resume_layout, inputs, canary, document_ingestion,
-               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import)
+               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import, matching_contract)
     return inputs.digest({"operation": operation, "runner": packet.file_digest(Path(__file__)),
-                          "sources": {m.__name__: packet.file_digest(Path(str(m.__file__))) for m in modules}})
+                          "sources": {m.__name__: packet.file_digest(Path(str(m.__file__)))
+                                      for m in (*modules, _sync(), *_sync().contract_sources())}})
 
 
 def _current(auth):
+    from ...services.matching_contract import PROMPT_VERSION as MATCH_PROMPT_VERSION
     from ...services.tailoring_contract import COMPLETE_PROMPT_VERSION
 
-    version = interview_contract.PROMPT_VERSION if auth.operation == "interview_questions" else COMPLETE_PROMPT_VERSION
+    version = _sync().prompt_version(auth.operation) if _sync().supports(auth.operation) else {
+               "interview_questions": interview_contract.PROMPT_VERSION,
+               "resume_tailor": COMPLETE_PROMPT_VERSION, "job_match": MATCH_PROMPT_VERSION}[auth.operation]
     if any(r.prompt_version != version or r.contract_sha256 != contract_digest(auth.operation) for r in auth.routes.values()):
         raise ValueError("The frozen operation, complete-context prompt or runner changed")
 
@@ -123,13 +135,32 @@ def _owner(db, auth):
     return user
 
 
+def declared_generation_configuration(run):
+    """Reviewed evaluation-side expectation, never actual provider-call usage."""
+    metadata = (run.input_payload or {}).get("_quality_evaluation", {})
+    auth = inputs.Authorization.model_validate(metadata["authorization"])
+    if run.operation != auth.operation or metadata["side"] not in inputs.SIDES:
+        raise ValueError("The evaluation-side generation binding changed")
+    route = auth.routes[metadata["side"]]
+    return {"model": route.price.model, "api_base": route.price.api_base,
+            "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)}
+
+
 def _fingerprint(db, run):
     from ..common import payload_fingerprint
     from .service import _dependency_snapshot
 
+    if _sync().supports(run.operation):
+        return _sync().fingerprint(db, run)
+    dependencies = _dependency_snapshot(db, run.user_id, run.operation, run.opportunity_id,
+        run.input_payload, paid_context=run.operation in {"resume_tailor", "job_match"})
+    if "generation" in dependencies:
+        config = declared_generation_configuration(run)
+        dependencies["generation"].update({"model_policy": config["model"], "provider_base": config["api_base"]})
+        if "effective_model" in dependencies["generation"]:
+            dependencies["generation"].update({"effective_model": config["model"], "effective_provider_base": config["api_base"]})
     return payload_fingerprint({"operation": run.operation, "opportunity_id": run.opportunity_id,
-        "input": run.input_payload, "dependencies": _dependency_snapshot(db, run.user_id, run.operation,
-            run.opportunity_id, run.input_payload, paid_context=run.operation == "resume_tailor")})
+                               "input": run.input_payload, "dependencies": dependencies})
 
 
 @contextlib.contextmanager
@@ -167,11 +198,16 @@ def require_provider_authority(db, run):
     owner = _owner(db, auth)
     payload = run.input_payload or {}
     metadata = payload.get("_quality_evaluation", {})
+    expected_keys = {"schema_version", "mode", "num_questions", "resume_id", "opportunity_id", "_quality_evaluation"}
+    if auth.operation == "job_match":
+        expected_keys |= {"job_description", "job_title", "company"}
+    elif _sync().supports(auth.operation):
+        expected_keys.add("synchronous_input")
     case = cases.get(metadata.get("case_id"))
     from ..free_core.models import FreeCoreReservation
     native = db.get(FreeCoreReservation, "qen_" + inputs.digest(run.id)[:55])
     if (run.user_id != owner.id or run.operation != auth.operation or payload.get("schema_version") != VERSION
-            or set(payload) != {"schema_version", "mode", "num_questions", "resume_id", "opportunity_id", "_quality_evaluation"}
+            or set(payload) != expected_keys
             or payload.get("mode") != "enhanced" or payload.get("num_questions") != 8
             or run.generation_attempt_limit != attempts(auth.operation) or run.usage_state != "waived"
             or run.estimated_units != 0 or run.committed_units != 0
@@ -196,6 +232,8 @@ def require_provider_authority(db, run):
                 route.price.model_dump(), route.price.max_input_tokens, route.price.max_output_tokens) * attempts(auth.operation)):
         raise ValueError("The native source or exact funded side changed")
     _frozen_inputs(db, run, auth, root, case, resume)
+    if _sync().supports(auth.operation):
+        _sync().immutable_inputs_current(db, run)
 
 
 def _frozen_inputs(db, run, auth, root, case, resume):
@@ -217,10 +255,16 @@ def _frozen_inputs(db, run, auth, root, case, resume):
     if (opportunity is None or opportunity.user_id != run.user_id or opportunity.resume_id != resume.id
             or opportunity.title != case["job"]["title"] or opportunity.job_description != case["job"]["description"]
             or opportunity.company != "Synthetic evaluation" or opportunity.source != "internal_evaluation"
-            or opportunity.job_snapshot != {"case_sha256": inputs.digest(case)}
+            or {key: value for key, value in (opportunity.job_snapshot or {}).items()
+                if key not in ({"required_skills", "match_mode", "scoring_version"} if auth.operation == "job_match" else set())}
+                != {"case_sha256": inputs.digest(case)}
             or run.input_payload["opportunity_id"] != opportunity.id
             or db.query(models.UserProfile).filter_by(user_id=run.user_id).first() is not None):
         raise ValueError("The frozen synthetic job or preferences changed")
+    if auth.operation == "job_match" and any(run.input_payload.get(key) != expected for key, expected in {
+            "job_title": case["job"]["title"], "job_description": case["job"]["description"],
+            "company": "Synthetic evaluation"}.items()):
+        raise ValueError("The frozen matching request changed")
     approved = db.query(models.EvidenceItem).filter_by(user_id=run.user_id, resume_id=resume.id, approval_state="approved").all()
     observed = {r.id: (r.evidence_text, r.title, r.category, r.metrics, r.skills, r.provenance) for r in approved}
     expected: dict[str, tuple] = {r["id"]: (r["text"], r["id"], "synthetic", {}, [], "synthetic_fixture")
@@ -265,13 +309,26 @@ def _register_prompt(db, auth):
     from .operations import _ensure_prompt_version
 
     linked: tuple
+    function: object
     if auth.operation == "interview_questions":
         function, linked = llm_client.generate_interview_questions, (interview_contract.build_interview_messages,)
         version = interview_contract.PROMPT_VERSION
-    else:
+    elif auth.operation == "resume_tailor":
         function = llm_client.tailor_resume_from_evidence_full
         linked = (llm_client.build_tailoring_messages, llm_client.tailor_resume_from_evidence)
         version = COMPLETE_PROMPT_VERSION
+    elif _sync().supports(auth.operation):
+        from ...services import synchronous_contracts
+        from ..credits import synchronous as executor
+
+        function, linked = executor.generate_prepared, (synchronous_contracts.messages, synchronous_contracts.validate)
+        version = _sync().prompt_version(auth.operation)
+    else:
+        from ...services import matching_contract
+
+        function = llm_client.analyze_job_match_complete_llm
+        linked = (matching_contract.messages, matching_contract.validate)
+        version = matching_contract.PROMPT_VERSION
     _ensure_prompt_version(db, operation=auth.operation, version=version, callable_object=function,
         linked_callables=linked, contract_identity={"output_contract_sha256": current_output_contract(auth.operation)})
 
@@ -341,12 +398,35 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
                     "resume_id": opportunity.resume_id, "opportunity_id": opportunity.id,
                     "_quality_evaluation": {"authorization": auth.model_dump(mode="json"), "side": side,
                         "case_id": case_id, "case_sha256": inputs.digest(case), "source_sha256": row["source_sha256"]}}
+                if auth.operation == "job_match":
+                    payload.update({"job_title": opportunity.title, "job_description": opportunity.job_description,
+                                    "company": opportunity.company})
                 run = models.AnalysisRun(id=identity, user_id=owner.id, opportunity_id=opportunity.id,
                     operation=auth.operation, status="queued", idempotency_key=identity, input_fingerprint="pending",
                     input_payload=payload, estimated_units=0, committed_units=0, usage_state="waived",
                     generation_attempt_limit=attempts(auth.operation), attempt_count=0, generation_attempt_count=0,
                     created_at=utcnow(), updated_at=utcnow())
-                run.input_fingerprint = _fingerprint(db, run)
+                unsupported = False
+                if _sync().supports(auth.operation):
+                    from fastapi import HTTPException
+
+                    from ...services.synchronous_contracts import SynchronousOutputUnavailable
+
+                    try:
+                        _sync().prepare_inputs(db, run)
+                    except (SynchronousOutputUnavailable, HTTPException) as exc:
+                        if isinstance(exc, HTTPException) and not (
+                            exc.status_code in {409, 422} and isinstance(exc.detail, dict)
+                            and exc.detail.get("code") == "synchronous_service_rejected"
+                        ):
+                            raise
+                        # The full population remains visible. Missing current
+                        # resources/support is not fabricated or sent to a model.
+                        unsupported = True
+                        run.status, run.error_code = "failed", "evaluation_unsupported_inputs"
+                        run.error_message = "The fixed complete request lacks approved source support or fresh curated resources; no model attempt was made."
+                        run.completed_at = utcnow()
+                run.input_fingerprint = inputs.digest({"unsupported_input": run.input_payload}) if unsupported else _fingerprint(db, run)
                 model_cost_policy.freeze_run_quote(run)
                 run.model_cost_quote = dict(run.model_cost_quote) | {"pricing_quotes": [route.price.model_dump(mode="json")]}
                 run.model_cost_ceiling_micros = min(run.model_cost_ceiling_micros,
@@ -396,7 +476,7 @@ def execute(factory, packet_root, native_root, auth, authorization_root, native_
                     with factory() as db:
                         run = db.get(models.AnalysisRun, identity)
                         require_provider_authority(db, run)
-                        result = operations.execute_operation(db, run)
+                        result = _sync().execute(db, run) if _sync().supports(auth.operation) else operations.execute_operation(db, run)
                         require_provider_authority(db, run)
                         events = db.query(models.ModelCallEvent).filter_by(analysis_run_id=identity).all()
                         if (not events or any(e.cost_state != "settled" or e.status != "succeeded" for e in events)
@@ -405,7 +485,7 @@ def execute(factory, packet_root, native_root, auth, authorization_root, native_
                         output = result["content"] if auth.operation == "resume_tailor" else result
                         case_id = run.input_payload["_quality_evaluation"]["case_id"]
                         case = next(c for c in inputs.selected_cases(packet_root, auth.split)[1] if c["case_id"] == case_id)
-                        if not packet._output_contract(auth.operation, output, case):
+                        if not packet._output_contract("enhanced_job_match" if auth.operation == "job_match" else auth.operation, output, case):
                             raise ValueError("The production result failed the complete quality contract")
                         run.result_payload, run.status = result, "succeeded"
                         run.completed_at = run.updated_at = utcnow()

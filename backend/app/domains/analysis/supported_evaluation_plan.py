@@ -23,8 +23,9 @@ VERSION = "supported-quality-evaluation-v2"
 MANIFEST_SHA = "9fb7672f0a809d5d0d18dabb515a2afd32054f27411691ac5a85e34cd8d11bc6"
 CORPUS_SHA = "65e8207002a07daa9c7d643b310c1a1dae5177413f3f639809cd76b1b212903e"
 PROTOCOL_SHA = "66eef835ade3dc9417ca58f8ccd7f3cea883090f26f23022dc5a1ad3596177b9"
-OPERATIONS = ("interview_questions", "resume_tailor")
+OPERATIONS = ("interview_questions", "resume_tailor", "job_match", "resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy")
 SIDES = legacy.SIDES
+QA_QUESTION = "How does my approved experience fit this role, and which evidence gaps should I address?"
 
 
 class DatabasePin(legacy.Closed):
@@ -52,7 +53,7 @@ class Route(legacy.Closed):
 class Authorization(legacy.Authorization):
     schema_version: Literal["supported-quality-evaluation-v2"]
     purpose: Literal["internal_quality_evaluation_not_retail_qualification"]
-    operation: Literal["interview_questions", "resume_tailor"]
+    operation: Literal["interview_questions", "resume_tailor", "job_match", "resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"]
     split: Literal["development", "held_out"]
     routes: dict[Literal["reference", "candidate"], Route]
     database: DatabasePin
@@ -243,9 +244,28 @@ def native_inputs(packet_root: Path, native_root: Path, authorization: Authoriza
     return rows, issues
 
 
+def _scenario(operation):
+    """Declare fixed supported requests without exposing any held-out content."""
+    if operation == "job_match":
+        return {"context": "complete_native_resume_full_job_all_approved_facts", "requires_approved_facts": True,
+                "missing_proof": "needs_evidence_not_missing_ability", "model_attempts": 1}
+    if operation in {"enhanced_qa", "learning_strategy"}:
+        return {"matching_dependency": "actual_basic_catalog_overlap_v1_not_enhanced",
+                "question": QA_QUESTION if operation == "enhanced_qa" else None,
+                "recent_messages": [], "fresh_reviewed_learning_resources_required": operation == "learning_strategy"}
+    if operation == "bullet_rewrite":
+        return {"tone": "concise", "context": "complete_native_resume_full_job_all_approved_facts"}
+    if operation == "resume_enrichment":
+        return {"context": "complete_native_resume", "persists_derived_skills": False,
+                "reason": "Both comparison sides retain identical native source skills"}
+    return {"context": "complete_native_resume_full_job_all_approved_facts"}
+
+
 def plan(packet_root: Path, authorization: Authorization) -> dict:
     manifest, cases = selected_cases(packet_root, authorization.split)
-    return {"schema_version": VERSION, "operation": authorization.operation, "case_count": 200,
+    return {"schema_version": VERSION, "operation": authorization.operation,
+            "service_operation": "enhanced_job_match" if authorization.operation == "job_match" else authorization.operation,
+            "scenario": _scenario(authorization.operation), "case_count": 200,
             "split_counts": {"development": 40, "held_out": 160}, "formats": {k: 50 for k in packet.FORMATS},
             "selected_split": authorization.split, "selected_cases": len(cases), "selected_slots": len(cases) * 2,
             "complete_plan_slots": 400, "manifest_sha256": MANIFEST_SHA, "protocol_sha256": PROTOCOL_SHA,

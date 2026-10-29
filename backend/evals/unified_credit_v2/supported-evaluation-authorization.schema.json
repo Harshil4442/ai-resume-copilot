@@ -300,7 +300,12 @@
     "operation": {
       "enum": [
         "interview_questions",
-        "resume_tailor"
+        "resume_tailor",
+        "job_match",
+        "resume_enrichment",
+        "bullet_rewrite",
+        "enhanced_qa",
+        "learning_strategy"
       ],
       "title": "Operation",
       "type": "string"

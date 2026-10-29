@@ -15,10 +15,10 @@ from ... import models
 from ...services import basic_matching, generation_budget, synchronous_contracts
 from ..common import payload_fingerprint
 from ..credits import synchronous
+from .supported_evaluation_plan import QA_QUESTION
 
 OPERATIONS = frozenset({"resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"})
 VERSION = "supported-synchronous-inputs-v1"
-QA_QUESTION = "How does my approved experience fit this role, and which evidence gaps should I address?"
 _KEY = "synchronous_input"
 
 

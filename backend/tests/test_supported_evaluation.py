@@ -40,6 +40,11 @@ def evaluation(tmp_path, monkeypatch):
     from app.billing.cost_policy import current_policy
 
     policy = synthetic_policy()
+    expense = json.loads(os.environ["HIREWIZ_EXPENSE_POLICY_JSON"])
+    for operation in ("bullet_rewrite", "enhanced_qa"):
+        policy["operation_limits_micros"][operation] = 10_000_000
+        expense["operation_model_ceilings_micros"][operation] = 10_000_000
+    monkeypatch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(expense))
     for quote in policy["pricing_quotes"]:
         quote["max_input_tokens"] = 65536
     monkeypatch.setenv("LLM_MODEL_COST_POLICY_JSON", json.dumps(policy))
