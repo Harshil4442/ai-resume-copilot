@@ -27,6 +27,7 @@ import document_network as document_routing
 import document_worker as documents
 import native_tex_worker as native_tex
 import release_preflight as source_guard
+import yaml
 
 PROJECT = "ai-resume-parser-482412"
 REGION = "us-central1"
@@ -1147,7 +1148,7 @@ class NativeBoundary:
 
 
 def verify_ci_checkout_contract(root: Path) -> None:
-    import yaml
+    # Resolve the venv parser before the coordinator SDK prepends bundled modules.
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_bytes())
     jobs = workflow.get("jobs", {})
     if set(jobs) != CI_JOBS:

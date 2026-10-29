@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -575,6 +576,32 @@ def test_reviewed_ci_contract_refuses_default_merge_checkout(tmp_path):
     (target / 'ci.yml').write_text(yaml.safe_dump({"jobs": jobs}))
     with pytest.raises(release.ReleaseDenied, match="reviewed_ci_checkout_contract_mismatch"):
         release.verify_ci_checkout_contract(tmp_path)
+
+
+def test_ci_contract_keeps_venv_yaml_after_sdk_third_party_prepend(tmp_path):
+    shadow = tmp_path / "google-cloud-sdk/lib/third_party"
+    package = shadow / "yaml"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("raise ModuleNotFoundError('error')\n")
+    script = """
+import sys
+from pathlib import Path
+
+root, shadow = map(Path, sys.argv[1:])
+sys.path.insert(0, str(root / "infra/gcp"))
+import monetary_release as release
+
+# The coordinator SDK prepends this directory after release module loading.
+sys.path[:0] = [str(shadow)]
+release.verify_ci_checkout_contract(root)
+import yaml
+assert shadow not in Path(yaml.__file__).resolve().parents
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script, str(ROOT), str(shadow)],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("aliases,overlap,reason", [
