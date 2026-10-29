@@ -139,7 +139,8 @@
             "interview-evidence-v5",
             "interview-evidence-v6",
             "interview-evidence-v7",
-            "interview-evidence-v8"
+            "interview-evidence-v8",
+            "interview-evidence-v9"
           ],
           "title": "Prompt Version",
           "type": "string"

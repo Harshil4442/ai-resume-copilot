@@ -82,10 +82,16 @@ def _dependency_snapshot(
         ]
     if payload.get("mode") == "enhanced" or operation == "resume_tailor":
         from ...services.llm_client import GEMINI_FALLBACK_MODELS
+        from ...services.personal_claims import VERSION as PERSONAL_CLAIM_VERSION
         from ...services.prompt_privacy import PROMPT_PRIVACY_VERSION
+        from ...services.tailoring_contract import (
+            COMPLETE_PROMPT_VERSION,
+            LEGACY_PROMPT_VERSION,
+            VALIDATOR_VERSION,
+        )
 
         dependencies["generation"] = {
-            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": "resume-source-v7" if paid_context else "resume-source-v6"}.get(operation),
+            "prompt": {"job_match": "match-mega-v2", "interview_questions": contract_versions()["prompt"], "resume_tailor": COMPLETE_PROMPT_VERSION if paid_context else LEGACY_PROMPT_VERSION}.get(operation),
             "model_policy": os.getenv("LLM_MODEL", "unconfigured"),
             "provider_base": os.getenv("LLM_API_BASE", ""),
             "fallback_policy": GEMINI_FALLBACK_MODELS,
@@ -97,6 +103,13 @@ def _dependency_snapshot(
             dependencies["generation"].update({"effective_model": LLM_MODEL, "effective_provider_base": LLM_API_BASE})
         if operation == "resume_tailor" and paid_context:
             dependencies["generation"]["context_selection"] = "full-editable-source-v1"
+        if operation == "resume_tailor":
+            dependencies["generation"].update({"validator": VALIDATOR_VERSION,
+                                                "personal_claims": PERSONAL_CLAIM_VERSION})
+        if operation in {"resume_tailor", "interview_questions"}:
+            from ...services.delivery_contracts import current_output_contract
+
+            dependencies["generation"]["output_contract_sha256"] = current_output_contract(operation)
     return dependencies
 
 

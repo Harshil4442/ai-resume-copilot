@@ -339,6 +339,8 @@ def persistent_execution_budget(
 
     @contextlib.contextmanager
     def context():
+        # An alternate same-operation budget cannot bypass output qualification.
+        require_route(route, policy, now=service._stamp(None))
         identity = analysis_run_id or f"unified:{hold_id}"
         current = current_budget()
         if current is not None:

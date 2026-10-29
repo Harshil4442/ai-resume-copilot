@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 
 from . import finance, service
 from .admission import ExecutionBudgetPolicy
-from .service_quotes import QualifiedRoute, require_route
+from .service_quotes import QualifiedRoute, require_current_output_contract, require_route
 
 
 class RuntimeConfig(finance.Closed):
@@ -48,6 +48,7 @@ class RuntimeConfig(finance.Closed):
         selected = next((route for route in self.routes if route.operation == service_name), None)
         if selected is None:
             raise finance.FundingUnavailable("This service has no qualified delivery route")
+        require_current_output_contract(selected)
         for name, value in (observed_limits or {}).items():
             # Measurements originate from owned source artifacts, never from a
             # client claim of its own size. A new scope always needs new review.

@@ -516,12 +516,18 @@ def test_tailoring_does_not_borrow_factual_support_from_unrelated_context(monkey
 def test_tailoring_accepts_new_factual_terms_from_the_cited_evidence(monkeypatch, support_field):
     inputs = _tailoring_input()
     evidence = {"id": "evd_java", "text": "Developed customer services."}
-    evidence[support_field] = "Developed Java services." if support_field == "text" else ["Java"]
+    evidence[support_field] = "Developed Java services and reduced response time by 20%." if support_field == "text" else ["Java"]
     inputs["approved_evidence"].append(evidence)
     edit = {**_tailoring_edit(), "replacement_text": "Built Java services and reduced response time by 20%.", "evidence_ids": ["evd_python", "evd_java"]}
     monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
-    result = llm_client.tailor_resume_from_evidence(**inputs)
-    assert result["source_edits"] == [edit]
+    if support_field == "skills":
+        # A skill tag does not establish a Java implementation or let an edit
+        # reattach the Python project's metric to different work.
+        with pytest.raises(llm_client.TailoringOutputError, match="personal responsibilities"):
+            llm_client.tailor_resume_from_evidence(**inputs)
+    else:
+        result = llm_client.tailor_resume_from_evidence(**inputs)
+        assert result["source_edits"] == [edit]
 
 
 @pytest.mark.parametrize("source_term,replacement_term", [("JavaScript", "Java"), ("C", "C++"), ("C++", "C#"), ("MySQL", "SQL")])
@@ -570,12 +576,16 @@ def test_tailoring_accepts_grounded_complete_acronym_and_original_brand_tokens(
 def test_tailoring_accepts_acronym_plural_support_from_only_the_cited_evidence(monkeypatch, support_field):
     inputs = _tailoring_input()
     if support_field == "text":
-        inputs["approved_evidence"][0]["text"] += " Built reliable APIs."
+        inputs["approved_evidence"][0]["text"] += " Built reliable API services and reduced response time by 20%."
     else:
         inputs["approved_evidence"][0]["skills"] = ["APIs"]
     edit = {**_tailoring_edit(), "replacement_text": "Built API services and reduced response time by 20%."}
     monkeypatch.setattr(llm_client, "_chat", lambda messages: json.dumps({"source_edits": [edit]}))
-    assert llm_client.tailor_resume_from_evidence(**inputs)["source_edits"] == [edit]
+    if support_field == "skills":
+        with pytest.raises(llm_client.TailoringOutputError, match="personal responsibilities"):
+            llm_client.tailor_resume_from_evidence(**inputs)
+    else:
+        assert llm_client.tailor_resume_from_evidence(**inputs)["source_edits"] == [edit]
 
 
 @pytest.mark.parametrize("source_term,replacement_term", [("AWS", "AW"), ("APIsExtra", "API"), ("MySQL", "SQLs"), ("API", "ZPXs")])

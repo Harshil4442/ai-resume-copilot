@@ -8,6 +8,7 @@ from backend.app.database import Base
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.app.domains.dispatch.models import DispatchOutbox
+from backend.tests import test_unified_synchronous as synchronous_checks
 from backend.tests.test_employer_admissions_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_unified_synchronous import (
     configure,
@@ -59,3 +60,16 @@ def test_concurrent_identical_inline_requests_cannot_generate_or_charge_twice(fa
         assert db.query(DispatchOutbox).count() == 0
         assert service.wallet(db, user_id=1).available_credits == 38
         assert db.get(models.User, 1).ai_credits == 17
+
+
+@pytest.mark.parametrize("operation", ["enhanced_qa", "bullet_rewrite", "learning_strategy"])
+def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(
+        factory, monkeypatch, operation):
+    context = setup.__wrapped__(factory, monkeypatch)
+    synchronous_checks.test_unsupported_personal_claim_refunds_once_and_retains_real_supplier_accounting(
+        context, operation)
+
+
+def test_unknown_supplier_hold_survives_personal_claim_route_rollback_on_postgres(factory, monkeypatch):
+    context = setup.__wrapped__(factory, monkeypatch)
+    synchronous_checks.test_unknown_provider_failure_refunds_but_cannot_retry_same_quote(context)

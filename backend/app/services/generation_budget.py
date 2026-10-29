@@ -153,10 +153,11 @@ def persistent_run_budget(factory, run_id: str):
         budget = GenerationBudget(limit=run.generation_attempt_limit, used=run.generation_attempt_count, run_id=run_id)
         user_id = run.user_id
         from .interview_contract import PROMPT_VERSION as INTERVIEW_PROMPT_VERSION
+        from .tailoring_contract import COMPLETE_PROMPT_VERSION, LEGACY_PROMPT_VERSION
         tailoring_version = (
-            "resume-source-v7"
+            COMPLETE_PROMPT_VERSION
             if (run.model_cost_quote or {}).get("billing_currency") == "credits"
-            else "resume-source-v6"
+            else LEGACY_PROMPT_VERSION
         )
         prompt_version = {"job_match": "match-mega-v2", "interview_questions": INTERVIEW_PROMPT_VERSION, "resume_tailor": tailoring_version}.get(run.operation, "legacy-v1")
 

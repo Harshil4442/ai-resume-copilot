@@ -21,6 +21,7 @@ from backend.app.domains.credits.models import (
 from backend.app.domains.credits.privacy import erase_owner_credit_links
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.models import ModelCostLiability, User
+from backend.app.services.delivery_contracts import current_output_contract
 from backend.app.services.model_cost_policy import ModelPriceQuote
 from backend.tests.test_unified_credits import NOW, factory, grant
 
@@ -67,6 +68,7 @@ def route(*, attempts=2, native=False):
         supported_source_formats=("pdf",),
         qualification_id="synthetic-qualification",
         qualification_evidence_sha256="a" * 64,
+        output_contract_sha256=None if native else current_output_contract("resume_tailor"),
         qualified_from=NOW - timedelta(days=1),
         qualified_until=NOW + timedelta(days=30),
         native_cost_evidence_sha256="b" * 64,

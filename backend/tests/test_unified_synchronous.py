@@ -45,8 +45,11 @@ def setup(factory, monkeypatch):
 
 
 def configure(monkeypatch, operation):
+    from backend.app.services.delivery_contracts import current_output_contract
+
     chosen = route(attempts=1)
     chosen = chosen.model_copy(update={"operation": operation, "credits": pricing.SERVICE_CREDITS[operation],
+        "output_contract_sha256": current_output_contract(operation),
         "model_quotes": tuple(item.model_copy(update={"max_input_tokens": 20_000}) for item in chosen.model_quotes),
         "supported_limits": {"context_bytes": 40_000, "evidence_items": 100}})
     config = runtime.RuntimeConfig(policy=financial_policy(), budgets=budgets(), routes=(chosen,))
@@ -276,6 +279,35 @@ def test_no_useful_enrichment_restores_credits_and_keeps_original_source(setup):
         assert db.get(models.Resume, 1).raw_text == "Built 2 Python APIs and Docker services."
         assert db.get(models.Resume, 1).skills == ["Python"]
         assert service.wallet(db, user_id=1).available_credits == 40
+
+
+@pytest.mark.parametrize("operation", ["enhanced_qa", "learning_strategy", "bullet_rewrite"])
+def test_unsupported_personal_claim_refunds_once_and_retains_real_supplier_accounting(setup, operation):
+    factory, monkeypatch = setup
+    configure(monkeypatch, operation)
+    raw = output(operation)
+    if operation == "enhanced_qa":
+        raw["answer"] = "You have 10 years of Java experience."
+    elif operation == "learning_strategy":
+        raw["timeline"][0]["deliverable"] = "You led Python platform."
+    else:
+        raw["bullets"][0]["replacement_text"] = "Led 2 Python APIs and Docker services."
+    calls = provider(monkeypatch, operation, raw=raw)
+    with factory() as db:
+        request = payload(operation)
+        quote_id = quote(db, request)
+        with pytest.raises(HTTPException) as failure:
+            invoke(db, request, quote_id)
+        assert failure.value.detail["credits_charged"] == 0
+        run = db.query(models.AnalysisRun).one()
+        assert run.status == "failed" and run.result_payload is None
+        assert service.wallet(db, user_id=1).available_credits == 40
+        liability = db.query(models.ModelCostLiability).one()
+        assert liability.cost_state == "settled" and liability.settled_cost_micros > 0
+        assert db.query(CreditExecutionHold).one().delivery_state == "failed"
+        with pytest.raises(HTTPException):
+            invoke(db, request, quote_id)
+        assert len(calls) == 1 and service.wallet(db, user_id=1).available_credits == 40
 
 
 def test_reused_new_key_is_durably_bound_to_original_result(setup):

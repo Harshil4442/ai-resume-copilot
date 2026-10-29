@@ -63,10 +63,17 @@ def test_tailoring_builder_keeps_pre_refactor_prompt_bytes(repair_note, digest):
     assert hashlib.sha256(serialized.encode()).hexdigest() == digest
 
 
-def test_legacy_v6_source_checksum_and_full_v7_context_are_distinct(monkeypatch):
+def test_new_factuality_versions_do_not_reuse_legacy_v6_checksum_and_full_context_is_distinct(monkeypatch):
+    from backend.app.services.tailoring_contract import (
+        COMPLETE_PROMPT_VERSION,
+        LEGACY_PROMPT_VERSION,
+    )
+
+    assert LEGACY_PROMPT_VERSION == "resume-source-v8"
+    assert COMPLETE_PROMPT_VERSION == "resume-source-v9"
     assert hashlib.sha256(
         inspect.getsource(llm_client.tailor_resume_from_evidence).encode()
-    ).hexdigest() == "7fa5f456719dfabbb5adbeeb72a39afe7080f586607d9362bd674194d70a70f9"
+    ).hexdigest() != "7fa5f456719dfabbb5adbeeb72a39afe7080f586607d9362bd674194d70a70f9"
     extended = {
         **_TAILORING_INPUT,
         "jd_text": "J" * 7_000 + "JOB_SUFFIX",
@@ -301,7 +308,7 @@ def _paid_tailoring_run(*, paid_context: bool = True):
             paid_context=paid_context,
         )
         if not paid_context:
-            assert dependencies["generation"]["prompt"] == "resume-source-v6"
+            assert dependencies["generation"]["prompt"] == "resume-source-v8"
             assert "context_selection" not in dependencies["generation"]
         fingerprint = payload_fingerprint({
             "operation": "resume_tailor", "opportunity_id": "opp_race",

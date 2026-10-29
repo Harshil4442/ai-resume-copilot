@@ -101,6 +101,9 @@ def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceReque
         "generation_configuration": {"model": llm_client.LLM_MODEL, "api_base": llm_client.LLM_API_BASE,
                                      "fallback_models": list(llm_client.GEMINI_FALLBACK_MODELS)},
     }
+    from ...services.delivery_contracts import current_output_contract
+
+    context["output_contract_sha256"] = current_output_contract(payload.operation)
     if payload.operation == "bullet_rewrite" and not facts:
         raise _reject("Approve the supporting resume evidence before requesting changed personal claims")
     if match is not None:

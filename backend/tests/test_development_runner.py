@@ -148,7 +148,7 @@ def test_generated_authorization_schema_preserves_historical_readability():
     schema = json.loads((ROOT / "development-authorization.schema.json").read_bytes())
     assert schema == runner.Authorization.model_json_schema()
     assert schema["$defs"]["Route"]["properties"]["prompt_version"]["enum"] == [
-        "interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7", "interview-evidence-v8"]
+        "interview-evidence-v5", "interview-evidence-v6", "interview-evidence-v7", "interview-evidence-v8", "interview-evidence-v9"]
 
 
 @pytest.mark.parametrize("prompt,source", [

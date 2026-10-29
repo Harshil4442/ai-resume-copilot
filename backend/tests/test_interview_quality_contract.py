@@ -272,8 +272,8 @@ def test_v8_prompt_separates_synthetic_job_claims_from_candidate_facts_and_keeps
 ):
     # These are illustrative unsafe patterns in the observed v7 failure family.
     # The two rejected model responses were not retained, so their wording is unknown.
-    assert interview_contract.PROMPT_VERSION == "interview-evidence-v8"
-    assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
+    assert interview_contract.PROMPT_VERSION == "interview-evidence-v9"
+    assert interview_contract.VALIDATOR_VERSION == "interview-complete-v4"
     messages = interview_contract.build_interview_messages(job_title, job_description, [])
     system = messages[0]["content"]
     source = json.loads(messages[1]["content"].split("\n", 1)[1].split("\n\nNumber of Qs:", 1)[0])

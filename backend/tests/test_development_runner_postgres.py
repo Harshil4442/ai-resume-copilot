@@ -216,8 +216,8 @@ def test_historical_export_survives_new_prompt_and_implementation(
             outcome = runner.execute(factory, **values, side="reference", maximum_operations=1)
             assert list(outcome["outcomes"].values()) == ["succeeded"] and len(calls) == 1
 
-        assert interview_contract.PROMPT_VERSION == "interview-evidence-v8"
-        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v3"
+        assert interview_contract.PROMPT_VERSION == "interview-evidence-v9"
+        assert interview_contract.VALIDATOR_VERSION == "interview-complete-v4"
         assert runner.contract_digest() != auth.routes["reference"].contract_sha256
         with factory() as db:
             saved = {run.id: packet.canonical({"input": run.input_payload, "output": run.result_payload,

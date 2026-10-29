@@ -4,7 +4,7 @@ import httpx
 
 from ...schemas import RagAskResponse, RagMessage
 from ..llm_client import chat_json
-from .chunking import build_match_chunks
+from .chunking import EvidenceChunk, build_match_chunks
 from .direct_answers import direct_match_answer, unsupported_direct_answer
 from .prompts import build_ask_ai_messages
 from .retrieval import rank_chunks
@@ -48,6 +48,10 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: list[RagMessa
     if mode != "enhanced":
         return unsupported_direct_answer()
     chunks = build_match_chunks(resume, match)
+    facts = {str(item["id"]): item for item in approved_evidence or [] if item.get("id")}
+    chunks.extend(EvidenceChunk(identity, "approved_evidence", str(item.get("title", "Approved fact")),
+                                str(item.get("text", "")), 1.0)
+                  for identity, item in facts.items())
     intent, top_chunks = rank_chunks(question, chunks)
     messages = build_ask_ai_messages(
         question=question,
@@ -80,6 +84,10 @@ def ask_match_ai(*, resume, match, question: str, recent_messages: list[RagMessa
         followups = [str(item).strip() for item in followups if str(item).strip()][:4]
         if not citations and confidence != "low":
             raise ValueError("Generated answer must cite retrieved context")
+        from ..synchronous_contracts import _supported_personal_prose
+
+        _supported_personal_prose([answer, followups],
+                                 [facts[identity] for identity in citations if identity in facts])
         return RagAskResponse(
             answer=answer,
             confidence=confidence,
