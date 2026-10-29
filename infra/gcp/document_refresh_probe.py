@@ -420,10 +420,12 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
 
 
 def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = None,
-                       api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
+                       api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None,
+                       caller_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
     if image == candidate.IMAGE or policy_sha256 == candidate.POLICY_SHA256:
+        need(caller_serving_validator is None, "document_native_candidate_app_context_review_required")
         adapter = load_source("hirewiz_document_candidate_release", HERE / "document_candidate_release.py")
         return adapter.verify_caller_pins(clients, image, policy_sha256=policy_sha256)
     policy = POLICY if policy_sha256 is None else policy_sha256
@@ -449,7 +451,9 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
         containers = service.get("template", {}).get("containers", [])
         need(type(containers) is list and len(containers) == 1,
              "document_native_caller_pin_unverified")
-        revision = (api_serving_validator(clients, service, containers[0].get("image"), name)
+        revision = (caller_serving_validator(clients, service, containers[0].get("image"), name)
+                    if caller_serving_validator is not None else
+                    api_serving_validator(clients, service, containers[0].get("image"), name)
                     if name == "ai-resume-parser" and api_serving_validator is not None else
                     validate_serving(clients, service, containers[0].get("image"), name))
         for row in (containers[0], revision["containers"][0]):
@@ -991,7 +995,8 @@ def verify_expired_current_v2_for_retirement(image: str, service_metadata: dict[
          "document_native_retirement_proof_unavailable")
 
 
-def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path) -> dict[str, Any]:
+def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path, *,
+                      caller_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> dict[str, Any]:
     """Delete only the original owned prior Job after a different native successor serves."""
     clients = None
     try:
@@ -1003,7 +1008,10 @@ def cleanup_successor(image: str, build_identity: dict[str, Any], journal: Path)
         current_acceptance = verify_current_successor(current, service)
         need(current_acceptance.contract_version == 2 and current_acceptance.required_case_count == 10
              and current_acceptance.policy_sha256 == POLICY, "document_native_v2_successor_required_for_retirement")
-        verify_caller_pins(clients, current)
+        if caller_serving_validator is None:
+            verify_caller_pins(clients, current)
+        else:
+            verify_caller_pins(clients, current, caller_serving_validator=caller_serving_validator)
         nonce = build.get("nonce")
         need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_native_nonce_invalid")
         prior = clients.job(PARENT + "/jobs/hirewiz-doc-six-" + nonce[:12])

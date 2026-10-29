@@ -339,13 +339,14 @@ def test_workflow_sends_fresh_v2_upgrade_only_when_manually_selected(tmp_path, s
     result = subprocess.run(["/bin/bash", "-eu", "-c", step["run"]], cwd=tmp_path,
         env={**os.environ, "OUTPUT_DIRECTORY": "private output", "HISTORY_DIRECTORY": "private history",
              "RECOVER_FAILED_NATIVE_JOB": "", "RETIRE_EXPIRED_V2": "false",
-             "RESCUE_EXPIRED_V2": "false",
+             "RESCUE_EXPIRED_V2": "false", "CONSUMED_BUNDLE": "private consumed",
              "UPGRADE_CURRENT_V2_TO_V3": "true" if selected else "false", "CAPTURE_ARGS": str(capture)},
         capture_output=True, timeout=5)
     assert result.returncode == 0
     expected = ["backend/scripts/document_refresh.py", "--mode", "refresh", "--publish-candidate",
                 "--prior-history-directory", "private history", "--output-directory", "private output"]
-    assert json.loads(capture.read_bytes()) == expected + (["--upgrade-current-v2-to-v3"] if selected else [])
+    assert json.loads(capture.read_bytes()) == expected + (["--upgrade-current-v2-to-v3"] if selected else
+        ["--reviewed-application-context", "--consumed-history-bundle", "private consumed"])
 
 
 @pytest.mark.parametrize("modes", [

@@ -339,10 +339,14 @@ def verify_rescue_caller_pins(clients: Any, probe: Any, image: str) -> None:
 
 class Controller:
     def __init__(self, http: Any, probe: Any, owner: Journal, *, seconds: int = 1800,
-                 candidate_image: str | None = None, rescue_expired_v2: bool = False):
+                 candidate_image: str | None = None, rescue_expired_v2: bool = False,
+                 application_context: Any = None):
         self.http, self.probe, self.owner = http, probe, owner
         self.candidate_image = candidate_image
         self.rescue_expired_v2 = rescue_expired_v2
+        self.application_context = application_context
+        need(application_context is None or not rescue_expired_v2,
+             "document_transition_app_context_mode_refused")
         self.deadline = time.monotonic() + seconds
         self.observed: dict[str, dict[str, Any]] = {}
 
@@ -402,7 +406,9 @@ class Controller:
              "document_transition_immutable_image_required")
         statuses = value.get("trafficStatuses")
         tagged = type(statuses) is list and len(statuses) == 1 and type(statuses[0]) is dict and statuses[0].get("tag")
-        if self.rescue_expired_v2 and service == CALLERS[0] and tagged:
+        if self.application_context is not None and service in CALLERS:
+            revision = self.application_context.serving(self, value, image, service, uid)
+        elif self.rescue_expired_v2 and service == CALLERS[0] and tagged:
             revision = guarded_api_serving(self, value, image, service, probe=self.probe)
         else:
             revision = self.probe.validate_serving(self, value, image, service, uid)
@@ -427,6 +433,9 @@ class Controller:
         self.ready(service, before)
         body = {"name": before["name"], "etag": before["etag"], "template": template,
                 "traffic": [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100}]}
+        qualified = self.application_context is not None and service in CALLERS
+        if qualified:
+            body["traffic"] = self.application_context.phase_traffic(before, service, template["revision"])
         mask = "template,traffic"
         if labels is not None:
             body["labels"] = {**before.get("labels", {}), **labels}
@@ -507,6 +516,15 @@ class Controller:
                           or ready is None and reconciling is True),
                      "document_transition_readback_changed")
                 statuses = current.get("trafficStatuses", [])
+                if qualified:
+                    if self.qualified_readback(service, before, current, body, expected_revision,
+                                               expected_generation, expected_labels):
+                        self.ready(service, current, uid=before["uid"])
+                        break
+                    need(time.monotonic() < readback_deadline,
+                         "document_transition_readback_deadline_reconcile_only")
+                    time.sleep(min(2, max(0, readback_deadline - time.monotonic())))
+                    continue
                 need(type(statuses) is list and len(statuses) <= 2
                      and (statuses or reconciling is True)
                      and all(type(row) is dict
@@ -537,12 +555,40 @@ class Controller:
             time.sleep(min(2, max(0, readback_deadline - time.monotonic())))
         self.observed[service] = current
         self.owner.write(marker + ".verified.json", {**expected, "operation": name,
-            "revision": current["latestReadyRevision"], "generation": str(current["generation"])})
+            "revision": expected_revision, "generation": str(current["generation"])})
+
+    def qualified_readback(self, service: str, before: dict[str, Any], current: dict[str, Any],
+                           body: dict[str, Any], expected_revision: str, generation: int,
+                           labels: dict[str, str]) -> bool:
+        """Only a homogeneous successor can retain each reviewed private alias."""
+        import document_application_context as applications
+
+        old = applications.allocations(service, before)
+        allowed = {row["revision"] for row in old} | {expected_revision.rsplit("/", 1)[-1]}
+        statuses = current.get("trafficStatuses", [])
+        tags = {row.get("tag") for row in old}
+        need(type(statuses) is list and len(statuses) <= 40
+             and all(type(row) is dict and row.get("revision", "").rsplit("/", 1)[-1] in allowed
+                     and type(row.get("percent", 0)) is int and 0 <= row.get("percent", 0) <= 100
+                     and row.get("tag") in tags for row in statuses)
+             and len({(row.get("tag"), row.get("revision")) for row in statuses}) == len(statuses)
+             and (not statuses or sum(row.get("percent", 0) for row in statuses) == 100),
+             "document_transition_readback_changed")
+        if (current.get("latestCreatedRevision") != expected_revision
+                or str(current.get("observedGeneration")) != str(generation)
+                or current.get("reconciling", False) is not False
+                or current.get("terminalCondition", {}).get("state") != "CONDITION_SUCCEEDED"
+                or current.get("traffic") != body["traffic"] or current.get("labels", {}) != labels):
+            return False
+        # Physical allocation and each exact tag must agree with the reviewed
+        # intent; a stale unserved latestReady is not serving authority.
+        resolved = applications.allocations(service, current)
+        return all(row["revision"] == expected_revision.rsplit("/", 1)[-1] for row in resolved)
 
 
 def transition(image: str, build: dict[str, Any], native_journal: Path, journal: Path,
                *, http: Any, probe: Any, retire_expired_v2: bool = False,
-               rescue_expired_v2: bool = False) -> dict[str, Any]:
+               rescue_expired_v2: bool = False, application_context: Any = None) -> dict[str, Any]:
     """Trusted controller entry: actual fresh native acceptance, never a boolean receipt."""
     need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
          and not (retire_expired_v2 and rescue_expired_v2),
@@ -552,7 +598,12 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
         owner.write("native-acceptance.json", asdict(acceptance))
-        run = Controller(http, probe, owner, candidate_image=image, rescue_expired_v2=rescue_expired_v2)
+        run = Controller(http, probe, owner, candidate_image=image, rescue_expired_v2=rescue_expired_v2,
+                         application_context=application_context)
+        if application_context is not None:
+            application_context.observe()
+        caller_mode = ({"caller_serving_validator": application_context.serving}
+                       if application_context is not None else {})
         if rescue_expired_v2:
             verify_guarded_api(run, probe)
         captured = {}
@@ -593,7 +644,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         if rescue_expired_v2:
             verify_rescue_caller_pins(run, probe, prior_image)
         else:
-            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
+            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy, **caller_mode)
         owner.write("captured-flags.json", captured)
         # No claim of quiescence: old in-flight callers can finish or safely503.
         for name in CALLERS:
@@ -607,7 +658,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             need(run.service(WORKER) == run.observed[WORKER],
                  "document_transition_expired_predecessor_worker_changed")
             probe.verify_expired_current_v2_for_retirement(prior_image, run.observed[WORKER])
-            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy)
+            probe.verify_caller_pins(run, prior_image, policy_sha256=prior_policy, **caller_mode)
             owner.write("expired-v2-retirement-only.json", {"image": prior_image,
                 "candidate_image": image, "all_three_callers_closed": True,
                 "serving_authority": False, "automatic_replay": False})
@@ -622,7 +673,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "pins", build["nonce"], image, pins, captured[name])
             run.patch(name, "pins", template, acceptance=acceptance)
-        probe.verify_caller_pins(run, image)
+        probe.verify_caller_pins(run, image, **caller_mode)
         probe.verify_current_successor(image, run.observed[WORKER])
         if rescue_expired_v2:
             # The old API was closed before this transition. Reopen its
@@ -637,7 +688,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name])
             run.patch(name, "open", template, acceptance=acceptance)
-        probe.verify_caller_pins(run, image)
+        probe.verify_caller_pins(run, image, **caller_mode)
         probe.verify_current_successor(image, run.observed[WORKER])
         need(all(run.service(name) == run.observed[name] for name in SERVICES),
              "document_transition_final_join_changed")

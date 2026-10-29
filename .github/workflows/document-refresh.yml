@@ -9,7 +9,7 @@ on:
       mode:
         description: Audit expiry or execute reviewed definition/full-source maintenance
         type: choice
-        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition]
+        options: [monitor, refresh, full-source-refresh, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition, audit-consumed-v2-history]
         default: monitor
       recover_failed_native_job:
         description: Exact failed synthetic Job to reconcile once before a fresh full refresh
@@ -53,6 +53,7 @@ jobs:
       RETIRE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.retire_expired_v2 || false }}
       RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
       UPGRADE_CURRENT_V2_TO_V3: ${{ github.event_name == 'workflow_dispatch' && inputs.upgrade_current_v2_to_v3 || false }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Initialize private maintenance paths
         run: |
@@ -63,8 +64,11 @@ jobs:
           printf '%s\n' "FINAL_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40788512340" >> "$GITHUB_ENV"
           printf '%s\n' "READBACK_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40805300453" >> "$GITHUB_ENV"
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
+          printf '%s\n' "CONSUMED_BUNDLE=$RUNNER_TEMP/document-refresh-consumed-audit" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
       - name: Require explicitly provisioned maintenance identity
         env:
           PROVIDER: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -129,6 +133,19 @@ jobs:
           fi
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Retrieve exact consumed history for read-only audit when needed
+        if: env.REFRESH_MODE == 'audit-consumed-v2-history' || (env.REFRESH_MODE == 'refresh' && env.RETIRE_EXPIRED_V2 != 'true' && env.RESCUE_EXPIRED_V2 != 'true' && env.UPGRADE_CURRENT_V2_TO_V3 != 'true')
+        run: |
+          args=(--output-directory "$CONSUMED_BUNDLE")
+          if [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then
+            args+=(--force-audit)
+          else
+            args+=(--prior-history-directory "$HISTORY_DIRECTORY")
+          fi
+          backend/.venv/bin/python backend/scripts/retrieve_consumed_document_history.py "${args[@]}"
+      - name: Audit consumed V2 history without mutation or heartbeat
+        if: env.REFRESH_MODE == 'audit-consumed-v2-history'
+        run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode audit-consumed-v2-history --consumed-history-bundle "$CONSUMED_BUNDLE" --output-directory "$OUTPUT_DIRECTORY"
       - name: Retrieve the exact retained already-built candidate
         if: env.REFRESH_MODE == 'resume-full-source-refresh'
         env:
@@ -270,6 +287,9 @@ jobs:
           fi
           if [[ "$UPGRADE_CURRENT_V2_TO_V3" = true ]]; then
             args+=(--upgrade-current-v2-to-v3)
+          fi
+          if [[ "$RETIRE_EXPIRED_V2" != true && "$RESCUE_EXPIRED_V2" != true && "$UPGRADE_CURRENT_V2_TO_V3" != true ]]; then
+            args+=(--reviewed-application-context --consumed-history-bundle "$CONSUMED_BUNDLE")
           fi
           backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
       - name: Build full-source inspector, prove native cases and transition exact pins
