@@ -45,7 +45,7 @@
     "non_emulator_signup_security_tests_passed": 57,
     "native_signup_emulator_local": "unavailable, must pass exact-source CI",
     "independent_reviews": "finance, factuality, signup, diagnostic privacy and bounded app25 operator reviewed",
-    "combined_ci": "pending",
+    "combined_ci": "new corrected exact-source run pending",
     "immutable_candidate_build": "pending",
     "production_candidate_deployment": "pending",
     "combined_postgresql17_tests_passed": 23,
@@ -58,7 +58,16 @@
     "full_ci_ruff": "passed locally",
     "full_ci_mypy_linux": "passed locally,247 source files",
     "gitleaks_pinned_8_24_2": "zero findings across reachable code history at4072f0a; final documentation scan required",
-    "diagnostic_private_key_custody": "owned0600 inside owned0700; derived public key matches committed PEM"
+    "diagnostic_private_key_custody": "owned0600 inside owned0700; derived public key matches committed PEM",
+    "fresh_user_and_cold_runner_tests_passed": 54,
+    "cold_journey_expectations": "Corrected real new-account baseline0 and explicit legacy-bundle grant2; retained-account rights fixtures unchanged. Immediate browser profile assertions added.",
+    "first_combined_ci_attempt": {
+      "run_id": 40865167342,
+      "head": "854db9fdb71b97179e8b4710bb50227ead454b22",
+      "known_failure": "cold-no-ai browser line319 retained old expected52; no production defect or full CI acceptance inferred",
+      "disposition": "Correct assertions and validate a new exact source; never count failed attempt as release acceptance"
+    },
+    "frontend_journey_typecheck_eslint": "passed locally"
   },
   "remaining_gates": [
     "Exact combined-source full CI and native document checks",

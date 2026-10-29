@@ -412,7 +412,7 @@ def _sql_proof(engine):
         approvals = db.execute(text("SELECT allowed_actions FROM employer_application_approvals")).scalars().all()
         assert all(sorted(row) == ["fill", "upload"] for row in approvals)
         balance, units = db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.browser@example.com'")).one()
-        assert balance == 96 and units == 52
+        assert balance == 96 and units == 2
         assert scalar("SELECT count(*) FROM usage_events WHERE source_type='payment_order' AND event_type='grant' AND amount=2") == 1
         assert scalar("SELECT count(*) FROM usage_events WHERE source_type='analysis_run'") == 0
         assert scalar("SELECT count(*) FROM service_credit_events WHERE event_type='grant' AND amount=100") == 1
@@ -426,7 +426,7 @@ def _sql_proof(engine):
         assert receipt is None
         assert scalar("SELECT count(*) FROM user_profiles WHERE target_role='Python Engineer' AND preferred_location='Bengaluru'") == 1
         version = scalar("SELECT version_num FROM alembic_version")
-        return {"model_calls": 0, "analysis_runs": 0, "analysis_units_after_purchase": 52, "bundle_analysis_units_granted": 2, "analysis_unit_operation_debits": 0, "posting_index": 4,
+        return {"model_calls": 0, "analysis_runs": 0, "analysis_units_after_purchase": 2, "bundle_analysis_units_granted": 2, "analysis_unit_operation_debits": 0, "posting_index": 4,
                 "owned_docx_sources": 2, "service_credit_grants": 1, "service_balance": 96,
                 "search_reserved": 6, "search_charged": 4, "search_released": 2,
                 "application_fee": 0, "application_attempts": 0, "employer_apply_outbox": 0,
@@ -453,11 +453,11 @@ def _sql_unified_proof(engine):
         assert scalar("SELECT count(*) FROM free_core_reservations WHERE operation='resume_parse'") == 1
         assert scalar("SELECT count(*) FROM free_core_requests WHERE state='completed'") == 1
         assert scalar("SELECT count(*) FROM resumes") == 1
-        assert tuple(db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.unified@example.com'")).one()) == (0, 50)
+        assert tuple(db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.unified@example.com'")).one()) == (0, 0)
         return {"model_calls": 0, "analysis_runs": 0, "payment_orders": 1, "purchased_credits": 40,
             "remaining_credits": 39, "discovery_batches": 2, "new_jobs": 2, "credits_reserved": 2,
             "credits_charged": 1, "credits_released": 1, "free_resume_parse": 1,
-            "legacy_service_credits": 0, "legacy_analysis_units": 50, "external_applications": 0,
+            "legacy_service_credits": 0, "legacy_analysis_units": 0, "external_applications": 0,
             "unreconciled_native_holds_preserved": 2, "migration": scalar("SELECT version_num FROM alembic_version")}
 
 

@@ -24,6 +24,10 @@ unavailable locally. The initial unavailable-emulator run is retained as a
 limitation, not reported as a pass. Those tests must pass in the combined CI
 environment before release.
 
-The existing browser financial journey intentionally retains a seeded legacy
-50-unit balance to verify that a new purchased pass cannot change old rights.
-That historical fixture is not a new-signup grant or production promotion.
+The cold browser journeys create actual new accounts and therefore assert zero
+initial legacy units. Their finite legacy-bundle fixture grants exactly two
+analysis units only after its signed synthetic payment capture; duplicate
+capture and subsequent non-AI work leave that purchased balance at two. The
+unified-pass journey leaves both legacy balances at zero. Retained historical
+balances are exercised separately through explicit existing-account fixtures.
+These synthetic payment fixtures are not a production promotion or receipt.
