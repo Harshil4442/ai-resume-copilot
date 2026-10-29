@@ -11,6 +11,7 @@ from backend.app.domains.credits.pricing import CATALOG_VERSION
 from backend.app.domains.credits.runtime import RuntimeConfig
 from backend.app.models import EntitlementLedger, PaymentOrder, User
 from backend.app.routers import credits
+from backend.app.services.delivery_contracts import current_output_contract
 from test_razorpay_billing import (  # Reuse verified-signature test transport only.
     _capture_payload,
     _post_event,
@@ -153,7 +154,8 @@ def test_discovery_kill_switch_also_closes_its_purchase_offer(unified, monkeypat
 def test_changed_service_list_requires_new_purchase_quote_without_provider_call(unified, monkeypatch, session_factory):
     client, calls = unified
     first = route(attempts=1)
-    second = first.model_copy(update={"id": "bullet-route", "operation": "bullet_rewrite", "credits": 2})
+    second = first.model_copy(update={"id": "bullet-route", "operation": "bullet_rewrite", "credits": 2,
+                                      "output_contract_sha256": current_output_contract("bullet_rewrite")})
     limits = budgets()
     limits = limits.model_copy(update={"monthly_route_minor": limits.monthly_route_minor | {second.id: 10_000}})
     configuration = RuntimeConfig(policy=release.current_review().policy, budgets=limits, routes=(first, second))
@@ -171,6 +173,36 @@ def test_changed_service_list_requires_new_purchase_quote_without_provider_call(
     with session_factory() as db:
         assert db.query(PaymentOrder).count() == 0
         assert db.query(CreditPurchaseQuote).one().accepted_order_id is None
+
+
+def test_route_with_another_services_output_contract_cannot_create_a_purchase(unified, monkeypatch, session_factory):
+    client, calls = unified
+    original_quote = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "before-contract-drift"})
+    assert original_quote.status_code == 200, original_quote.text
+    first = route(attempts=1)
+    # A changed service needs its own reviewed output contract. Relabeling a
+    # qualified tailoring route must never make bullet delivery purchasable.
+    wrong = first.model_copy(update={"id": "wrong-bullet-route", "operation": "bullet_rewrite", "credits": 2})
+    assert wrong.output_contract_sha256 != current_output_contract("bullet_rewrite")
+    limits = budgets()
+    limits = limits.model_copy(update={"monthly_route_minor": limits.monthly_route_minor | {wrong.id: 10_000}})
+    config = RuntimeConfig(policy=release.current_review().policy, budgets=limits, routes=(first, wrong))
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
+    catalog = client.get("/api/v1/credits/catalog")
+    assert catalog.status_code == 200
+    assert catalog.json()["eligible_services"] == [] and not catalog.json()["checkout_enabled"]
+    quote = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "wrong-service-contract"})
+    assert quote.status_code == 503 and calls == []
+    order = client.post("/api/v1/credits/orders", json={
+        "quote_id": original_quote.json()["quote_id"], "billing_country": "IN",
+        "idempotency_key": "before-contract-drift"})
+    assert order.status_code == 503 and calls == []
+    with session_factory() as db:
+        assert db.query(CreditPurchaseQuote).count() == 1
+        assert db.query(CreditPurchaseQuote).one().accepted_order_id is None
+        assert db.query(PaymentOrder).count() == 0
 
 
 def test_payment_recovery_remains_readable_but_not_payable_while_service_paused(unified, monkeypatch):
