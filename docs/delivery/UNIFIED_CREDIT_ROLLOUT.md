@@ -263,6 +263,15 @@ This does not prove existing invocations have finished: retain the independent
 SQL lease and queue-drain checks. Global observation and the immediate pre-DDL
 check both require fresh evidence that coordinator admission is closed.
 
+Coordinator restoration applies the same physical-traffic readiness checks as
+service maintenance: an unserved Ready restore revision may coexist with the
+previous pause revision in `latestReadyRevision`. Only those two exact names
+are accepted, with the created restore template and original physical routes
+independently verified. Retired prior revision status/etag changes are accepted
+only when the bounded immutable template, source, image, identity and original
+admission flag still match. Pilot reopening reuses these checks rather than
+requiring provider-owned status bytes to remain frozen.
+
 Capture the initial migration plan against schema21 and verify fresh disabled flags and
 drained work. `upgrade` preserves all old rows and permissions while adding the
 14 credit/free-processing tables through the four reviewed migrations. A lost

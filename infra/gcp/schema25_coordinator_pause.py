@@ -20,12 +20,17 @@ SERVICE = "hirewiz-resume-coordinator"
 RESOURCE = rolling.PARENT + "/services/" + SERVICE
 ACCOUNT = SERVICE + "@" + rolling.release.PROJECT + ".iam.gserviceaccount.com"
 FLAG = "RESUME_UPLOAD_COORDINATOR_ENABLED"
+REVISION_READ_OUTPUTS = frozenset({
+    "name", "service", "uid", "generation", "observedGeneration", "createTime",
+    "updateTime", "creator", "etag", "conditions", "scalingStatus",
+    "launchStage", "logUri",
+})
 
 
 class NativeCoordinatorRun(native.NativeRun):
     """Reuse the stock one-send SDK adapter with a different fixed singleton scope."""
 
-    SERVICES = (SERVICE,)
+    SERVICES = (SERVICE,)  # type: ignore[assignment]  # Intentional narrower native write scope.
 
 
 def need(value, code):
@@ -45,8 +50,9 @@ def ready(service):
     need(service.get("name") == RESOURCE and service.get("reconciling", False) is False
          and int(service.get("generation", -1)) == int(service.get("observedGeneration", -2))
          and service.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
-         and service.get("latestCreatedRevision") == service.get("latestReadyRevision")
          and type(service.get("etag")) is str and bool(service["etag"]), "service_not_ready")
+    rolling.short_revision(service.get("latestCreatedRevision", ""), SERVICE)
+    rolling.short_revision(service.get("latestReadyRevision", ""), SERVICE)
     template = service["template"]
     env = rolling.environment(template)
     image = template["containers"][0].get("image", "")
@@ -74,7 +80,10 @@ def observe_closed(reader):
     rows = [service["template"]]
     traffic = rolling.pinned_traffic(SERVICE, service)
     targets = {row["revision"] for row in traffic}
-    targets.add(rolling.short_revision(service["latestReadyRevision"], SERVICE))
+    created = rolling.short_revision(service["latestCreatedRevision"], SERVICE)
+    latest_ready = rolling.short_revision(service["latestReadyRevision"], SERVICE)
+    need(latest_ready == created or latest_ready not in targets, "stale_ready_revision_serving")
+    targets.add(created)
     for name in sorted(targets):
         rows.append(revision(reader, name))
     for row in rows:
@@ -86,7 +95,7 @@ def observe_closed(reader):
              and row["containers"][0].get("image") == image, "admission_not_closed")
     need(reader.service(SERVICE) == service, "observation_changed")
     return {"service_uid": service["uid"], "generation": int(service["generation"]),
-            "revision": service["latestReadyRevision"], "admission": "closed",
+            "revision": service["latestCreatedRevision"], "admission": "closed",
             "inflight_invocations_proven_drained": False}
 
 
@@ -135,7 +144,10 @@ def capture(reader, nonce):
     service = reader.service(SERVICE)
     image, source = ready(service)
     traffic = rolling.pinned_traffic(SERVICE, service)
-    prior = rolling.short_revision(service["latestReadyRevision"], SERVICE)
+    prior = rolling.short_revision(service["latestCreatedRevision"], SERVICE)
+    latest_ready = rolling.short_revision(service["latestReadyRevision"], SERVICE)
+    need(latest_ready == prior or latest_ready not in {row["revision"] for row in traffic},
+         "stale_ready_revision_serving")
     rows = {name: revision(reader, name) for name in {r["revision"] for r in traffic} | {prior}}
     # A newer idle revision must never replace the actually serving image during
     # a pause. Every reachable source is pinned and must match before any write.
@@ -146,6 +158,9 @@ def capture(reader, nonce):
              and env.get("APP_RELEASE", {}).get("value") == source
              and row["containers"][0].get("image") == image, "reachable_source_changed")
     keys = tuple(sorted(key for key in service["template"] if key != "revision"))
+    need(all({key: row.get(key) for key in keys}
+             == {key: service["template"][key] for key in keys} for row in rows.values()),
+         "reachable_configuration_differs")
     need({key: rows[prior].get(key) for key in keys}
          == {key: service["template"][key] for key in keys}, "serving_template_changed")
     plan = CoordinatorPausePlan(nonce, service["uid"], int(service["generation"]), rolling.sha(service),
@@ -157,12 +172,32 @@ def capture(reader, nonce):
     return plan
 
 
+def pinned_revision(plan, reader, name, expected):
+    row = revision(reader, name)
+    if rolling.sha(row) != expected:
+        # Revision runtime configuration is immutable; provider status/etag can
+        # settle after it becomes unserved. Accept only bounded output fields
+        # with the exact independently captured source and template.
+        env = rolling.environment(row)
+        need(set(plan.template_keys) <= set(row)
+             and set(row) <= set(plan.template_keys) | REVISION_READ_OUTPUTS
+             and row.get("service") in (SERVICE, RESOURCE)
+             and type(row.get("uid")) is str
+             and re.fullmatch(r"[a-f0-9-]{36}", row["uid"])
+             and str(row.get("generation")) == str(row.get("observedGeneration"))
+             and row.get("serviceAccount") == ACCOUNT
+             and row["containers"][0].get("image") == plan.image
+             and env.get("SERVICE_ROLE", {}).get("value") == "resume-upload-coordinator"
+             and env.get("APP_RELEASE", {}).get("value") == plan.source_release
+             and env.get(FLAG) == plan.original_flag
+             and template_hash({key: row[key] for key in plan.template_keys}) == plan.template_sha256,
+             "prior_revision_changed")
+    return row
+
+
 def original_template(plan, reader):
-    rows = {}
-    for name, expected in plan.prior_revisions:
-        row = revision(reader, name)
-        need(rolling.sha(row) == expected, "prior_revision_changed")
-        rows[name] = row
+    rows = {name: pinned_revision(plan, reader, name, expected)
+            for name, expected in plan.prior_revisions}
     template = {key: copy.deepcopy(rows[plan.prior_revision].get(key)) for key in plan.template_keys}
     env = rolling.environment(template)
     need(template_hash(template) == plan.template_sha256
@@ -192,7 +227,10 @@ def readback(plan, reader, phase, started):
     template, traffic = desired(plan, reader, phase)
     need(current["uid"] == plan.uid and int(current["generation"]) == started["prior_generation"] + 1
          and static_hash(current) == plan.static_sha256
-         and rolling.short_revision(current["latestReadyRevision"], SERVICE) == plan.revision_name(phase)
+         and rolling.short_revision(current["latestCreatedRevision"], SERVICE) == plan.revision_name(phase)
+         and rolling.short_revision(current["latestReadyRevision"], SERVICE) in (
+             {plan.revision_name("pause"), plan.revision_name("restore")}
+             if phase == "restore" else {plan.revision_name("pause")})
          and template_hash(current["template"]) == template_hash(template)
          and rolling.pinned_traffic(SERVICE, current) == traffic, "readback_changed")
     observed = revision(reader, plan.revision_name(phase))
@@ -247,7 +285,7 @@ def action(plan, reader, journal, phase, *, reconcile=False):
         current = readback(plan, reader, phase, started)
         if journal.read(marker + ".checked") is None:
             journal.record(marker + ".checked", {"generation": int(current["generation"]),
-                "revision": current["latestReadyRevision"], "reconciled_without_ack": ack is None})
+                "revision": current["latestCreatedRevision"], "reconciled_without_ack": ack is None})
         return {"status": "coordinator_" + phase + "_observed", "phase": phase,
                 "replay_authorized": False, "inflight_invocations_proven_drained": False}
 

@@ -153,6 +153,28 @@ def test_restoration_or_document_gate_failure_prevents_reopen(tmp_path, monkeypa
     assert observed == [True] and run.writes == []
 
 
+@pytest.mark.parametrize("drift", [None, "source", "unknown_configuration"])
+def test_prior_flags_allow_only_settled_revision_outputs(tmp_path, monkeypatch, drift):
+    run, before, _plan, _journal, _ = context(tmp_path, monkeypatch)
+    service = pilot.SERVICES[0]
+    pin = next(item for item in before.services if item.name == service)
+    revision = run.revisions[(service, pin.prior_revision)]
+    revision.update({"service": service, "uid": "e1ad9c8d-4314-4d9d-a306-256d0c2fbadb",
+                     "generation": "1", "observedGeneration": "1", "etag": "settled-output",
+                     "scalingStatus": {"desiredMinInstanceCount": 0}})
+    if drift == "source":
+        pilot.rolling.environment(revision)["APP_RELEASE"]["value"] = "e" * 40
+    elif drift == "unknown_configuration":
+        revision["encryptionKey"] = "unreviewed-key"
+    if drift is not None:
+        with pytest.raises(pilot.rolling.RollingDenied, match="schema25_pilot_premaintenance_revision_changed"):
+            pilot._original_flags(run, before, service)
+    else:
+        assert pilot._original_flags(run, before, service)["RESUME_DIRECT_UPLOAD_ENABLED"] == {
+            "name": "RESUME_DIRECT_UPLOAD_ENABLED", "value": "true"}
+    assert run.writes == []
+
+
 @pytest.mark.parametrize("reconcile", [False, True])
 def test_tampered_plan_cannot_open_a_flag_absent_from_prior_revision(
         tmp_path, monkeypatch, reconcile):
@@ -168,8 +190,9 @@ def test_tampered_plan_cannot_open_a_flag_absent_from_prior_revision(
     assert run.writes == []
 
 
+@pytest.mark.parametrize("retired_and_settled", [False, True])
 def test_document_gate_accepts_exact_schema25_tagged_callers_and_refuses_drift(
-        tmp_path, monkeypatch):
+        tmp_path, monkeypatch, retired_and_settled):
     worker_image = pilot.document_probe.REPOSITORY + "@sha256:" + "1" * 64
     doc_pins = {
         "DOCUMENT_WORKER_URL": pilot.document_probe.WORKER_URL,
@@ -183,16 +206,19 @@ def test_document_gate_accepts_exact_schema25_tagged_callers_and_refuses_drift(
     name = pilot.coordinator.SERVICE
     resource = pilot.document_probe.PARENT + "/services/" + name
     uid = "00000000-0000-4000-8000-000000000004"
-    prior_name, restore_name = name + "-prior", name + "-restore"
+    prior_name, restore_name, pause_name = name + "-prior", name + "-restore", name + "-pause"
     original = {"labels": {"hirewiz-source": plan.source_release},
                 "serviceAccount": pilot.coordinator.ACCOUNT,
                 "containers": [{"image": plan.image, "env": [
                     {"name": "APP_RELEASE", "value": plan.source_release},
+                    {"name": "SERVICE_ROLE", "value": "resume-upload-coordinator"},
+                    {"name": pilot.coordinator.FLAG, "value": "true"},
                     *({"name": key, "value": value} for key, value in doc_pins.items())]}]}
     original_keys = tuple(sorted(original))
     original_revision = {**copy.deepcopy(original),
                          "name": resource + "/revisions/" + prior_name,
-                         "service": resource, "uid": uid,
+                         "service": name, "uid": uid,
+                         "generation": "1", "observedGeneration": "1", "etag": "captured-output",
                          "conditions": [{"type": "Ready", "state": "CONDITION_SUCCEEDED"}]}
     restore_template = {**copy.deepcopy(original), "revision": restore_name}
     restore_revision = {**copy.deepcopy(restore_template),
@@ -205,7 +231,8 @@ def test_document_gate_accepts_exact_schema25_tagged_callers_and_refuses_drift(
         "name": resource, "uid": uid, "etag": "coordinator-etag",
         "generation": "9", "observedGeneration": "9", "reconciling": False,
         "terminalCondition": {"state": "CONDITION_SUCCEEDED"},
-        "latestReadyRevision": restore_revision["name"],
+        "latestReadyRevision": (resource + "/revisions/" + pause_name
+                                if retired_and_settled else restore_revision["name"]),
         "latestCreatedRevision": restore_revision["name"],
         "template": restore_template, "traffic": copy.deepcopy(traffic),
         "trafficStatuses": copy.deepcopy(traffic),
@@ -216,10 +243,14 @@ def test_document_gate_accepts_exact_schema25_tagged_callers_and_refuses_drift(
         prior_revisions=((prior_name, pilot.rolling.sha(original_revision)),),
         template_keys=original_keys,
         template_sha256=pilot.coordinator.template_hash(original),
+        original_flag={"name": pilot.coordinator.FLAG, "value": "true"},
         original_traffic=tuple(traffic),
         static_sha256=pilot.coordinator.static_hash(coordinator_service),
-        revision_name=lambda phase: restore_name,
+        revision_name=lambda phase: restore_name if phase == "restore" else pause_name,
     )
+    if retired_and_settled:
+        original_revision["etag"] = "settled-output"
+        original_revision["scalingStatus"] = {"desiredMinInstanceCount": 0}
 
     class FakeClients:
         def __init__(self, *, read_only_release):
@@ -256,6 +287,15 @@ def test_document_gate_accepts_exact_schema25_tagged_callers_and_refuses_drift(
     assert pilot.advance(plan, journal, run, lambda *args: None,
                          lambda first: None, before)["status"] == "pilot_reopen_observed"
     pilot.verify_document_pins(plan, journal, coordinator_plan)
+    if retired_and_settled:
+        original_revision["encryptionKey"] = "unreviewed-key"
+        with pytest.raises(pilot.rolling.RollingDenied, match="schema25_pilot_document_coordinator_prior_changed"):
+            pilot.verify_document_pins(plan, journal, coordinator_plan)
+        del original_revision["encryptionKey"]
+        coordinator_service["latestReadyRevision"] = resource + "/revisions/" + name + "-unrelated"
+        with pytest.raises(pilot.rolling.RollingDenied, match="document_caller_serving_changed"):
+            pilot.verify_document_pins(plan, journal, coordinator_plan)
+        coordinator_service["latestReadyRevision"] = resource + "/revisions/" + pause_name
     run.states[pilot.SERVICES[0]]["trafficStatuses"][0]["tag"] = "drifted-tag"
     with pytest.raises(pilot.rolling.RollingDenied, match="document_caller_state_changed"):
         pilot.verify_document_pins(plan, journal, coordinator_plan)

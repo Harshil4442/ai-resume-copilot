@@ -17,6 +17,7 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import document_refresh_probe as document_probe
 import rolling_native as native
@@ -115,10 +116,11 @@ class PilotPlan:
 
 def _original_flags(run, maintenance_plan, service):
     pin = next(item for item in maintenance_plan.services if item.name == service)
-    revision = run.revision(service, pin.prior_revision)
-    need(revision is not None
-         and rolling.sha(revision) == dict(pin.revisions)[pin.prior_revision],
-         "premaintenance_revision_changed")
+    try:
+        revision = maintenance.pinned_revision(
+            pin, run, pin.prior_revision, dict(pin.revisions)[pin.prior_revision])
+    except rolling.RollingDenied:
+        raise rolling.RollingDenied("schema25_pilot_premaintenance_revision_changed") from None
     # The capture tied this revision to the original serving template, image,
     # source, account and traffic. Recheck its exact full template hash here.
     template = {key: revision.get(key) for key in pin.template_keys}
@@ -183,9 +185,20 @@ def _deployed(deployment_plan, deployment_journal, boundary):
     boundary.observer.verify_policy_configuration(deployment_plan.target_policies())
 
 
+def _coordinator_revision(clients, plan, name):
+    expected = dict(plan.prior_revisions)
+    need(name in expected, "document_coordinator_prior_changed")
+    reader = SimpleNamespace(revision=lambda service, short: clients.revision(
+        document_probe.PARENT + "/services/" + service + "/revisions/" + short))
+    try:
+        return coordinator.pinned_revision(plan, reader, name, expected[name])
+    except rolling.RollingDenied:
+        raise rolling.RollingDenied("schema25_pilot_document_coordinator_prior_changed") from None
+
+
 def _schema25_caller(clients, name, uid, image, source, latest, traffic,
                      template_sha, template_keys, pins, *, static_sha=None, coordinator_static=False,
-                     active_digest=None):
+                     coordinator_plan=None):
     """Read-only caller proof for an exact tagged schema25 serving revision.
 
     The scanner's generic no-tag validator remains unchanged. Schema25 leaves
@@ -194,13 +207,22 @@ def _schema25_caller(clients, name, uid, image, source, latest, traffic,
     """
     resource = document_probe.PARENT + "/services/" + name
     current = clients.service(resource)
+    expected_created = resource + "/revisions/" + latest
+    ready_revisions = {expected_created}
+    if coordinator_plan is not None:
+        need(coordinator_static and name == coordinator.SERVICE,
+             "document_coordinator_scope_changed")
+        paused = coordinator_plan.revision_name("pause")
+        need(paused not in {row["revision"] for row in traffic},
+             "document_coordinator_pause_serving")
+        ready_revisions.add(resource + "/revisions/" + paused)
     need(current.get("name") == resource and current.get("uid") == uid
          and type(current.get("etag")) is str and bool(current["etag"])
          and str(current.get("generation")) == str(current.get("observedGeneration"))
          and current.get("reconciling", False) is False
          and current.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
-         and current.get("latestReadyRevision") == resource + "/revisions/" + latest
-         and current.get("latestCreatedRevision") == current.get("latestReadyRevision")
+         and current.get("latestReadyRevision") in ready_revisions
+         and current.get("latestCreatedRevision") == expected_created
          and rolling.pinned_traffic(name, current) == traffic,
          "document_caller_serving_changed")
     if static_sha is not None:
@@ -214,7 +236,9 @@ def _schema25_caller(clients, name, uid, image, source, latest, traffic,
     active = next(row["revision"] for row in traffic if row.get("percent") == 100)
     for revision_name in sorted({latest, active}):
         full = resource + "/revisions/" + revision_name
-        revision = clients.revision(full)
+        revision = (_coordinator_revision(clients, coordinator_plan, revision_name)
+                    if revision_name != latest and coordinator_plan is not None
+                    else clients.revision(full))
         ready = revision.get("conditions", [])
         need(revision.get("name") == full
              and revision.get("service") in (resource, name)
@@ -231,7 +255,7 @@ def _schema25_caller(clients, name, uid, image, source, latest, traffic,
                       else rolling.template_sha(revision_template, name))
             need(digest == template_sha, "document_caller_revision_changed")
         else:
-            need(active_digest is not None and rolling.sha(revision) == active_digest,
+            need(coordinator_plan is not None,
                  "document_caller_revision_changed")
         for row in (revision, template if revision_name == latest else {}):
             if not row:
@@ -282,7 +306,7 @@ def verify_document_pins(plan, pilot_journal, coordinator_plan):
             started = pilot_journal.read(marker + ".started")
             checked = pilot_journal.read(marker + ".checked")
             choices = [] if checked is not None else [candidate]
-            if started is not None and reopened is not None:
+            if started is not None and reopened is not None and reopened_traffic is not None:
                 choices.append((plan.revision(name), reopened_traffic,
                                 rolling.template_sha(reopened, name)))
             need(bool(choices), "document_caller_state_changed")
@@ -297,14 +321,10 @@ def verify_document_pins(plan, pilot_journal, coordinator_plan):
                              static_sha=pin.static_sha256)
         name = coordinator.SERVICE
         resource = document_probe.PARENT + "/services/" + name
-        prior = clients.revision(resource + "/revisions/" + coordinator_plan.prior_revision)
-        need(rolling.sha(prior) == dict(coordinator_plan.prior_revisions)[coordinator_plan.prior_revision],
-             "document_coordinator_prior_changed")
+        prior = _coordinator_revision(clients, coordinator_plan, coordinator_plan.prior_revision)
         original = {key: prior.get(key) for key in coordinator_plan.template_keys}
         need(coordinator.template_hash(original) == coordinator_plan.template_sha256,
              "document_coordinator_prior_changed")
-        active = next(row["revision"] for row in coordinator_plan.original_traffic
-                      if row.get("percent") == 100)
         _schema25_caller(clients, name, coordinator_plan.uid, coordinator_plan.image,
                          coordinator_plan.source_release,
                          coordinator_plan.revision_name("restore"),
@@ -313,7 +333,7 @@ def verify_document_pins(plan, pilot_journal, coordinator_plan):
                          coordinator_plan.template_keys, pins,
                          static_sha=coordinator_plan.static_sha256,
                          coordinator_static=True,
-                         active_digest=dict(coordinator_plan.prior_revisions)[active])
+                         coordinator_plan=coordinator_plan)
     finally:
         clients.close()
 
@@ -574,7 +594,7 @@ def main():
     boundary = schema25.NativeSchema25Boundary(Path(__file__).resolve().parents[2],
                                                 schema25.contract.SCHEMA)
     def health(release_id, service, revision, tag):
-        boundary.observer._verify_http_health(SimpleNamespace(release=release_id),
+        boundary.observer._verify_http_health(cast(Any, SimpleNamespace(release=release_id)),
                                               service, revision, candidate_tag=tag)
     def gate(first):
         _restored(maintenance_plan, maintenance_journal, coordinator_plan,
