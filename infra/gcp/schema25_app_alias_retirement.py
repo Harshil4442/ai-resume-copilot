@@ -212,12 +212,13 @@ def execute(plan, boundary, journal, *, reconcile=False):
     writes = 0
     with journal.locked():
         for pin in plan.services:
-            boundary.verify_aliases(plan)
             if desired(plan, pin) == list(pin.traffic):
+                boundary.verify_aliases(plan)
                 continue
             key = "aliases." + pin.service
             started, ack = journal.read(key + ".started"), journal.read(key + ".ack")
             if started is None:
+                boundary.verify_aliases(plan)
                 if reconcile:
                     continue
                 current = boundary.service(pin.service)
@@ -246,6 +247,10 @@ def execute(plan, boundary, journal, *, reconcile=False):
                 need(observed.get("name") == ack["operation"] and "error" not in observed, "operation_failed")
                 if observed.get("done", False) is not True:
                     return {"status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": writes}
+            # A retained exact operation can be observed while the service is
+            # reconciling. This read grants no new write or health authority;
+            # terminal acknowledgement still needs the entire settled proof.
+            boundary.verify_aliases(plan)
             if phase(plan, pin, boundary.service(pin.service)) != "after":
                 return {"status": "alias_retirement_unknown_reconcile_only", "replay_authorized": False, "native_mutations": writes}
             boundary.verify_aliases(plan)

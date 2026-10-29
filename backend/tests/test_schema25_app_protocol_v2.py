@@ -1,6 +1,7 @@
 """Installed SDK/wire + owned-emulator qualification, never cloud/IAM/capacity proof."""
 from __future__ import annotations
 
+import ast
 import importlib.metadata
 import os
 import subprocess
@@ -27,6 +28,33 @@ def test_exact_installed_native_dependencies_and_reviewed_transport_source():
     import unified_credit_schema25_release as release
     assert contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
     assert all((ROOT / name).is_file() for name in contract.TRANSPORT_PATHS)
+
+
+def test_protocol_fingerprint_binds_the_finite_transitive_local_proof_helpers():
+    declared = {ROOT / name for name in contract.PROTOCOL_FIXTURES} | {
+        ROOT / "backend" / name for name in SUITES}
+    pending = [ROOT / "backend" / name for name in SUITES]
+    observed = set()
+    while pending:
+        source = pending.pop()
+        if source in observed:
+            continue
+        observed.add(source)
+        for node in ast.walk(ast.parse(source.read_text())):
+            modules = [node.module or ""] if isinstance(node, ast.ImportFrom) else (
+                [name.name for name in node.names] if isinstance(node, ast.Import) else [])
+            for module in modules:
+                if module.startswith("backend.tests."):
+                    relative = module.removeprefix("backend.")
+                elif module.startswith(("tests.", "test_")):
+                    relative = module if module.startswith("tests.") else "tests." + module
+                else:
+                    continue
+                helper = ROOT / "backend" / (relative.replace(".", "/") + ".py")
+                assert helper.is_file() and helper in declared, f"Unbound local proof helper: {relative}"
+                pending.append(helper)
+    assert observed <= declared
+    assert ROOT / "backend/pyproject.toml" in declared
 
 
 def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipped_cases():

@@ -365,6 +365,7 @@ jobs:
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
         run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v2.py
       - name: Run backend tests

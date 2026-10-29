@@ -102,6 +102,54 @@ def test_pending_exact_operation_observed_without_repeated_send(context):
     assert len(boundary.writes)==1
 
 
+def test_pending_exact_operation_is_read_before_settled_service_or_health_proof(context, monkeypatch):
+    boundary, journal = context
+    boundary.pause = True
+    assert aliases.execute(boundary.plan, boundary, journal)["status"] == "alias_retirement_pending"
+    pin = boundary.plan.services[0]
+    boundary.states[pin.service]["reconciling"] = True
+    boundary.states[pin.service]["observedGeneration"] = str(pin.generation)
+    reads = []
+    original_operation = boundary.operation
+
+    def operation(name):
+        reads.append(name)
+        return original_operation(name)
+
+    monkeypatch.setattr(boundary, "operation", operation)
+    monkeypatch.setattr(boundary, "verify_aliases", lambda plan: pytest.fail("Pending is not settled proof"))
+    monkeypatch.setattr(boundary, "health", lambda *args: pytest.fail("Pending grants no health authority"))
+    result = aliases.execute(boundary.plan, boundary, journal, reconcile=True)
+    assert result == {"status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": 0}
+    assert reads == [journal.read("aliases." + pin.service + ".ack")["operation"]]
+    assert len(boundary.writes) == 1
+    assert journal.read("aliases." + pin.service + ".checked") is None
+    assert all(journal.read("aliases." + row.service + ".started") is None for row in boundary.plan.services[1:])
+
+
+@pytest.mark.parametrize("change", ["reconciling", "financial", "failed", "different_operation"])
+def test_terminal_operation_needs_exact_ack_and_full_settled_join_before_completion(context, monkeypatch, change):
+    boundary, journal = context
+    boundary.pause = True
+    assert aliases.execute(boundary.plan, boundary, journal)["status"] == "alias_retirement_pending"
+    pin = boundary.plan.services[0]
+    operation = next(iter(boundary.operations.values()))
+    operation["done"] = True
+    if change == "reconciling":
+        boundary.states[pin.service]["reconciling"] = True
+    elif change == "financial":
+        boundary.finance_drift = True
+    elif change == "failed":
+        operation["error"] = {"code": 9}
+    else:
+        operation["name"] = operation["name"] + "-other"
+    with pytest.raises(rolling.RollingDenied):
+        aliases.execute(boundary.plan, boundary, journal, reconcile=True)
+    assert len(boundary.writes) == 1
+    assert journal.read("aliases." + pin.service + ".checked") is None
+    assert all(journal.read("aliases." + row.service + ".started") is None for row in boundary.plan.services[1:])
+
+
 @pytest.mark.parametrize("change",["positive_old_traffic","template","generation","uid","financial","stage5"])
 def test_unreviewed_source_config_or_funding_never_permits_a_traffic_write(context,change):
     boundary,journal=context

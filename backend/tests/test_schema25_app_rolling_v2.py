@@ -126,7 +126,7 @@ def test_retained_tag_cannot_hide_stage5_activation(context, monkeypatch, flag):
     assert not fixture.writes
 
 
-@pytest.mark.parametrize("change", ["continue", "optional", "environment", "retained", "history"])
+@pytest.mark.parametrize("change", ["continue", "optional", "environment", "postgres_missing", "postgres_foreign", "retained", "history"])
 def test_ci_cannot_relabel_optional_or_missing_qualification_as_success(tmp_path, change):
     import yaml
 
@@ -140,6 +140,10 @@ def test_ci_cannot_relabel_optional_or_missing_qualification_as_success(tmp_path
         step["if"] = "false"
     elif change == "environment":
         step["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] = "false"
+    elif change == "postgres_missing":
+        step["env"].pop("HIREWIZ_TEST_POSTGRES_URL")
+    elif change == "postgres_foreign":
+        step["env"]["HIREWIZ_TEST_POSTGRES_URL"] = "postgresql+psycopg://hirewiz:hirewiz@192.0.2.1:55433/hirewiz_admission_test"
     elif change == "retained":
         steps[:] = [row for row in steps if row.get("name") != "Qualify retained actual-source schema25 app v1"]
     else:

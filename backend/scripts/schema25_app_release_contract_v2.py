@@ -48,7 +48,13 @@ PROTOCOL_SUITES = ("tests/test_firestore_identity_list.py", "tests/test_candidat
     "tests/test_gcp_rpc_emulator.py", "tests/test_candidate_web_lifecycle.py")
 PROTOCOL_FIXTURES = ("backend/tests/test_candidate_production_factory.py", "backend/tests/test_browser_submit_native.py",
     "backend/tests/fixtures/firestore_emulator.py", "backend/tests/test_candidate_scoped_lifecycle_emulator.py",
-    "backend/tests/test_gcp_pairing_emulator.py", "backend/tests/test_gcp_password_lifetime_emulator.py")
+    "backend/tests/test_gcp_pairing_emulator.py", "backend/tests/test_gcp_password_lifetime_emulator.py",
+    "backend/tests/test_gcp_rpc.py", "backend/tests/test_gcp_journal_sdk.py",
+    "backend/tests/test_gcp_scoped_authority_emulator.py", "backend/tests/test_gcp_password_reauth_emulator.py",
+    "backend/tests/test_pairing_kms.py", "backend/tests/test_employer_admissions_postgres.py",
+    "backend/tests/fixtures/gcp_publication.py", "backend/tests/fixtures/gcp_partitioned_publication.py",
+    "backend/tests/fixtures/gcp_closure.py", "backend/tests/fixtures/pairing_authority.py",
+    "backend/tests/fixtures/candidate_ingress.py", "backend/pyproject.toml")
 BOOTSTRAP_PATHS = ("backend/app/domains/candidate_accounts/bootstrap.py", "backend/app/domains/candidate_accounts/profile_view.py",
     "backend/app/domains/credits/availability.py", "backend/app/domains/credits/service.py", "backend/app/routers/auth.py",
     "backend/app/routers/credits.py", "backend/openapi.json", "backend/tests/test_owned_bootstrap.py",
@@ -89,6 +95,7 @@ def verify_ci(root):
     for name, command in ((COMPATIBILITY_STEP, COMPATIBILITY_COMMAND), (PROTOCOL_STEP, PROTOCOL_COMMAND)):
         matched = [step for step in steps if step.get("name") == name]
         expected_env = ({"HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
+                         "HIREWIZ_TEST_POSTGRES_URL": "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test",
                          "HIREWIZ_OWNED_REDIS_SERVER": "${{ steps.native-metadata-redis.outputs.binary }}"} if name == PROTOCOL_STEP else
                         {"HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true",
                          "HIREWIZ_TEST_POSTGRES_URL": "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test"})
