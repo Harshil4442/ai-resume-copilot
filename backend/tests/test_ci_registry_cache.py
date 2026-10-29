@@ -288,6 +288,6 @@ def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_
     check = "backend/.venv/bin/python backend/scripts/document_test_image.py"
     assert step.index(create) < step.index(export) < step.index(check)
     assert 'trap \'rm -f -- "$document_source_policy_path"\' EXIT' in step
-    assert '--platform linux/amd64 --output "$document_test_report_path"' in step
+    assert '--platform linux/amd64 --source-revision --output "$document_test_report_path"' in step
     assert "--image-id" not in step and "|| true" not in step and "continue-on-error" not in step
     assert workflow.count("EXPERIMENTAL_BUILDKIT_SOURCE_POLICY:") == 1

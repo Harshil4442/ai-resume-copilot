@@ -403,17 +403,32 @@ def test_tex_real_blank_source_admission_uses_actual_pdf_parser_output(evaluatio
     assert native_tex._compile_project(native_project.read_project(source, kind)) == (pdf, auth.compiler_image, auth.compiler_policy_sha256)
 
 
-def test_real_two_column_pdf_reading_order_failure_remains_a_refusal(evaluation, monkeypatch):
+def test_real_two_column_pdf_capture_requires_complete_verified_reading_order(evaluation, monkeypatch):
+    monkeypatch.setattr(llm_client, "_chat", lambda *_: pytest.fail("No provider call"))
+    case, _, source, _, parsed = actual_composite_capture(evaluation, monkeypatch, kind="tex", columns=2)
+    assert inputs.reading_order(case, parsed["raw_text"]), "Do not accept interleaved or incomplete paragraphs"
+    rows, issues = inputs.native_inputs(evaluation["packet_root"], evaluation["native_root"], evaluation["auth"],
+        evaluation["authorization_root"], evaluation["native_receipts"])
+    row = next(row for row in rows if row["case_id"] == case["case_id"])
+    assert row["native_input_ready"] and issues == []
+    assert row["source_bytes"] == source and row["source_format"] == "tex"
+    assert row["parsed"][0] == parsed["raw_text"] and row["parsed"][1] == parsed["sections"]
+
+
+def test_real_ambiguous_two_column_pdf_refuses_before_a_capture(monkeypatch):
+    from backend.scripts.document_test_image import reading_order_corpus
+
     from tests import test_document_processor as worker
 
     processor = worker.load("processor")
-    # The separately reviewed parser now refuses this ambiguous PDF before it
-    # can produce a capture. Do not manufacture text/a success receipt to reach
-    # the later evaluation reading-order check.
-    monkeypatch.setattr(worker, "load", lambda _: processor)
+    # Exercise the real parser with the generic crossing-gutter negative. AV is
+    # explicitly synthetic; no accepted capture or native receipt is invented.
+    monkeypatch.setattr(processor, "scan_original", lambda path: {
+        "engine": "ClamAV", "version": "synthetic-test-only", "definitions": "not-native-AV-proof"})
     monkeypatch.setattr(llm_client, "_chat", lambda *_: pytest.fail("No provider call"))
+    pdf = dict(reading_order_corpus())["pdf_unaligned_gutter_refused"]
     with pytest.raises(processor.InspectionDenied, match="^document_inspection_refused$"):
-        actual_composite_capture(evaluation, monkeypatch, kind="tex", columns=2)
+        processor.inspect(worker.payload(pdf, "pdf"))
 
 
 @pytest.mark.parametrize("changed", ["missing_compilation", "fake_source_text", "source_sha", "request_sha", "renderer", "policy", "compiled_pdf", "pdf_inspection", "native_review_pdf"])
