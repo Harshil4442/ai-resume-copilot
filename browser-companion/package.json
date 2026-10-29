@@ -1,13 +1,13 @@
 {
   "name": "hirewiz-browser-companion",
   "private": true,
-  "version": "0.8.4",
+  "version": "0.8.5",
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test tests/protocol.test.js tests/pairing-transport.test.js tests/pairing-runtime.test.js tests/assistance-transport.test.js",
+    "test": "node --test tests/protocol.test.js tests/pairing-transport.test.js tests/pairing-runtime.test.js tests/assistance-transport.test.js tests/startup-diagnostics.test.js tests/device-phase-diagnostics.test.js tests/lost-key-recovery.test.js tests/package-release.test.js",
     "test:browser": "node --test tests/browser.test.js",
-    "test:native-runtime": "node --test tests/native-runtime-browser.test.js",
+    "test:native-runtime": "node --test --test-concurrency=1 tests/native-runtime-browser.test.js tests/lost-key-recovery-browser.test.js",
     "test:assistance": "node --test --test-concurrency=1 tests/assistance-browser.test.js tests/razorpay-live-adapter.test.js tests/assistance-runtime.test.js",
     "package:reviewed": "python3 scripts/package-reviewed.py",
     "check": "node scripts/check-package.js"
