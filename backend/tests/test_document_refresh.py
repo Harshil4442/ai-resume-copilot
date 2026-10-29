@@ -275,6 +275,38 @@ def test_scanner_failure_emits_fixed_immediate_unavailable_without_repeating_ope
     assert "private" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(("error", "code"), [
+    ("native", "document_native_readonly_transient_exhausted"),
+    ("transition", "document_final_preclaim_state_changed"),
+    ("private", "document_refresh_unavailable"),
+])
+def test_final_continuation_failure_retains_only_allowlisted_fixed_diagnostic(
+        monkeypatch, capsys, tmp_path, error, code):
+    import json
+    import sys
+
+    from infra.gcp.document_refresh_probe import NativeProofDenied
+    from infra.gcp.document_refresh_transition import TransitionDenied
+
+    failures = {
+        "native": NativeProofDenied("document_native_readonly_transient_exhausted"),
+        "transition": TransitionDenied("document_final_preclaim_state_changed"),
+        "private": NativeProofDenied("private credential-bearing vendor body"),
+    }
+    output = tmp_path / "private-result"
+    output.mkdir(mode=0o700)
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "resume-final-v2-transition",
+        "--output-directory", str(output)])
+    monkeypatch.setattr(refresh, "main", lambda: (_ for _ in ()).throw(failures[error]))
+    monkeypatch.setattr(refresh, "emit_status", lambda value: None)
+    assert refresh.run_cli() == 2
+    receipt = json.loads((output / "failure.json").read_text())
+    console = json.loads(capsys.readouterr().out)
+    assert receipt["fixed_code"] == console["fixed_code"] == code
+    assert receipt["automatic_replay"] is False and receipt["state_requires_read_only_reconciliation"] is True
+    assert "private credential" not in (output / "failure.json").read_text()
+
+
 @pytest.mark.parametrize("full_source", [False, True])
 def test_prior_unknown_run_blocks_new_build_before_any_external_action(monkeypatch, tmp_path, full_source):
     history = tmp_path / "history"
