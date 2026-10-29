@@ -224,6 +224,17 @@ actions actually started by this maintenance are restored. Service restoration
 refuses after source/image/configuration drift, including a promoted new
 candidate, rather than overwrite it.
 
+Cloud Run can leave `latestReadyRevision` on the unserved maintenance-close
+revision after restoring physical traffic to the captured original revisions.
+The created restore revision can already be Ready but retired at zero traffic.
+Reconciliation accepts that shape only with the exact acknowledged restore
+generation, created revision and template, original physical traffic, and an
+independently Ready restore revision. It records the created restore revision
+without another PATCH. A later maintenance capture selects that Ready created
+template, verifies every physical serving/tagged revision has the same source,
+image, identity and configuration, and refuses if the stale ready revision is
+still serving.
+
 After a successful schema25 deployment, **do not use `restore-services`**.
 The `restore-queues` and `restore-schedules` phases instead accept
 `--deployment-plan`, `--deployment-plan-sha256` and `--deployment-journal` from

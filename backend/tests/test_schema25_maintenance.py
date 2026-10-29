@@ -249,6 +249,99 @@ def test_restore_unknown_patch_reconciles_without_reverting_to_closed_state(tmp_
     assert len(run.writes) == 6
 
 
+def retired_restore_context(tmp_path):
+    """Provider-shaped restore: original physical route, unserved Ready template."""
+    ctx = context(tmp_path)
+    run, _, plan, _, _, _ = ctx
+    apply(ctx, "pause-schedules")
+    apply(ctx, "close-api")
+    run.pause = True
+    assert apply(ctx, "restore-services")["status"] == "maintenance_operation_pending"
+    service = m.SERVICES[0]
+    state = run.states[service]
+    state["latestReadyRevision"] = state["name"] + "/revisions/" + plan.revision(service, "close")
+    revision = run.revisions[(service, plan.revision(service, "restore"))]
+    revision["conditions"] = [{"type": "Ready", "state": "CONDITION_SUCCEEDED", "reason": "RETIRED"},
+                              {"type": "Active", "state": "CONDITION_FAILED", "reason": "RETIRED"}]
+    for operation in run.operations.values():
+        operation["done"] = True
+    run.pause = False
+    return ctx
+
+
+def test_retired_restore_reconciles_exact_original_traffic_without_another_patch(tmp_path):
+    ctx = retired_restore_context(tmp_path)
+    run, _, plan, journal, _, _ = ctx
+    assert len(run.writes) == 2
+    assert apply(ctx, "restore-services", reconcile=True)["status"] == "maintenance_phase_observed"
+    assert len(run.writes) == 2
+    assert m.rolling.pinned_traffic(m.SERVICES[0], run.states[m.SERVICES[0]]) == list(plan.services[0].traffic)
+    checked = journal.read("service." + m.SERVICES[0] + ".restore.checked")
+    assert checked["revision"] == run.states[m.SERVICES[0]]["latestCreatedRevision"]
+    assert checked["revision"].endswith(plan.revision(m.SERVICES[0], "restore"))
+    assert apply(ctx, "restore-schedules")["status"] == "maintenance_phase_observed"
+    assert len(run.writes) == 2
+
+
+@pytest.mark.parametrize("drift", ["ready", "created", "revision", "traffic"])
+def test_retired_restore_refuses_unrelated_or_unready_state_without_patch(tmp_path, drift):
+    ctx = retired_restore_context(tmp_path)
+    run, _, plan, journal, _, _ = ctx
+    service = m.SERVICES[0]
+    state = run.states[service]
+    if drift == "ready":
+        state["latestReadyRevision"] = state["name"] + "/revisions/" + service + "-unrelated"
+    elif drift == "created":
+        state["latestCreatedRevision"] = state["latestReadyRevision"]
+    elif drift == "revision":
+        run.revisions[(service, plan.revision(service, "restore"))]["conditions"][0]["state"] = "CONDITION_FAILED"
+    else:
+        state["trafficStatuses"][0]["revision"] = plan.revision(service, "close")
+    with pytest.raises(m.rolling.RollingDenied):
+        apply(ctx, "restore-services", reconcile=True)
+    assert len(run.writes) == 2
+    assert journal.read("service." + service + ".restore.checked") is None
+
+
+def test_capture_after_retired_restore_pins_ready_created_template_and_physical_routes(tmp_path):
+    ctx = retired_restore_context(tmp_path)
+    run, controls, previous, _, _, drain = ctx
+    apply(ctx, "restore-services", reconcile=True)
+    apply(ctx, "restore-schedules")
+    plan = m.capture(run, controls, "f" * 32)
+    pin = plan.services[0]
+    assert pin.prior_revision == previous.revision(m.SERVICES[0], "restore")
+    assert pin.traffic == previous.services[0].traffic
+    assert set(dict(pin.revisions)) == {pin.prior_revision, previous.services[0].prior_revision}
+    assert m.load(m.rolling.canonical(asdict(plan))) == plan
+    directory = tmp_path / "fresh"
+    directory.mkdir(mode=0o700)
+    journal = m.rolling.Journal(directory, plan)
+    m.execute(plan, run, controls, journal, "pause-schedules", drain)
+    assert m.execute(plan, run, controls, journal, "close-api", drain)["status"] == "maintenance_phase_observed"
+    state = run.states[m.SERVICES[0]]
+    assert state["latestReadyRevision"] == state["latestCreatedRevision"]
+    assert len(run.writes) == 3
+
+
+@pytest.mark.parametrize("drift", ["created_not_ready", "created_template", "stale_ready_serving"])
+def test_capture_retired_template_requires_ready_exact_created_and_serving_revisions(tmp_path, drift):
+    ctx = retired_restore_context(tmp_path)
+    run, controls, plan = ctx[:3]
+    service = m.SERVICES[0]
+    state = run.states[service]
+    revision = run.revisions[(service, plan.revision(service, "restore"))]
+    if drift == "created_not_ready":
+        revision["conditions"][0]["state"] = "CONDITION_FAILED"
+    elif drift == "created_template":
+        revision["maxInstanceRequestConcurrency"] = 99
+    else:
+        state["trafficStatuses"][0]["revision"] = plan.revision(service, "close")
+    with pytest.raises(m.rolling.RollingDenied):
+        m.capture(run, controls, "f" * 32)
+    assert len(run.writes) == 2
+
+
 def test_safe_abort_restores_only_actions_that_actually_started(tmp_path):
     ctx = context(tmp_path)
     apply(ctx, "pause-schedules")
@@ -313,6 +406,7 @@ def test_unrelated_configuration_on_tagged_route_requires_separate_review(tmp_pa
     original = run.plan.pin(m.SERVICES[0]).prior_revision
     tagged = m.SERVICES[0] + "-tagged"
     row = copy.deepcopy(run.revisions[(m.SERVICES[0], original)])
+    row["name"] = state["name"] + "/revisions/" + tagged
     row["maxInstanceRequestConcurrency"] = 99
     run.revisions[(m.SERVICES[0], tagged)] = row
     state["trafficStatuses"].append({"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", "revision": tagged, "tag": "different"})

@@ -49,12 +49,17 @@ def configuration(row):
 
 
 def ready(row, service):
+    # A restored physical traffic allocation can leave latestReadyRevision on
+    # the previous (now unserved) revision while latestCreatedRevision is Ready
+    # but retired at zero traffic. Callers separately prove the created and
+    # serving revisions; this check establishes only settled Service state.
     need(service in SERVICES and row.get("name") == rolling.PARENT + "/services/" + service
          and row.get("reconciling", False) is False
          and str(row.get("generation")) == str(row.get("observedGeneration"))
          and row.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
-         and row.get("latestReadyRevision") == row.get("latestCreatedRevision")
          and bool(row.get("etag")), "service_not_ready")
+    rolling.short_revision(row.get("latestReadyRevision", ""), service)
+    rolling.short_revision(row.get("latestCreatedRevision", ""), service)
     env = rolling.environment(row["template"])
     image = row["template"]["containers"][0].get("image", "")
     source = env.get("APP_RELEASE", {}).get("value", "")
@@ -64,6 +69,16 @@ def ready(row, service):
          and env.get("SERVICE_ROLE", {}).get("value") == ("api" if service == SERVICES[0] else "worker"),
          "source_or_identity_changed")
     return source, image
+
+
+def revision_ready(row, service, name):
+    need(row is not None
+         and row.get("name") == rolling.PARENT + "/services/" + service + "/revisions/" + name
+         and type(row.get("conditions")) is list
+         and any(type(condition) is dict and condition.get("type") == "Ready"
+                 and condition.get("state") == "CONDITION_SUCCEEDED"
+                 for condition in row["conditions"]), "revision_not_ready")
+    return row
 
 
 @dataclass(frozen=True)
@@ -127,12 +142,16 @@ def capture(run, controls, nonce):
         row = run.service(service)
         source, image = ready(row, service)
         traffic = rolling.pinned_traffic(service, row)
-        prior = rolling.short_revision(row["latestReadyRevision"], service)
+        prior = rolling.short_revision(row["latestCreatedRevision"], service)
+        latest_ready = rolling.short_revision(row["latestReadyRevision"], service)
+        need(latest_ready == prior or latest_ready not in {target["revision"] for target in traffic},
+             "stale_ready_revision_serving")
         keys = tuple(sorted(key for key in row["template"] if key != "revision"))
         revisions = {}
         for name in {prior, *[target["revision"] for target in traffic]}:
             revision = run.revision(service, name)
             need(revision is not None, "prior_revision_missing")
+            revision_ready(revision, service, name)
             env = rolling.environment(revision)
             need(env.get("APP_RELEASE", {}).get("value") == source
                  and revision["containers"][0].get("image") == image
@@ -212,10 +231,14 @@ def service_readback(plan, pin, run, phase, started):
     template, traffic = desired(plan, pin, run, phase)
     need(row["uid"] == pin.uid and int(row["generation"]) == started["prior_generation"] + 1
          and rolling.static_sha(row) == pin.static_sha256
-         and rolling.short_revision(row["latestReadyRevision"], pin.name) == plan.revision(pin.name, phase)
+         and rolling.short_revision(row["latestCreatedRevision"], pin.name) == plan.revision(pin.name, phase)
+         and rolling.short_revision(row["latestReadyRevision"], pin.name) in (
+             {plan.revision(pin.name, "close"), plan.revision(pin.name, "restore")}
+             if phase == "restore" else {plan.revision(pin.name, "close")})
          and coordinator.template_hash(row["template"]) == coordinator.template_hash(template)
          and rolling.pinned_traffic(pin.name, row) == traffic, "service_readback_changed")
     revision = run.revision(pin.name, plan.revision(pin.name, phase))
+    revision_ready(revision, pin.name, plan.revision(pin.name, phase))
     need(revision is not None and {key: revision.get(key) for key in pin.template_keys}
          == {key: template.get(key) for key in pin.template_keys}, "revision_readback_changed")
     return row
@@ -256,7 +279,7 @@ def service_action(plan, pin, run, journal, phase, *, reconcile=False):
             return False
     row = service_readback(plan, pin, run, phase, started)
     if journal.read(marker + ".checked") is None:
-        journal.record(marker + ".checked", {"generation": int(row["generation"]), "revision": row["latestReadyRevision"]})
+        journal.record(marker + ".checked", {"generation": int(row["generation"]), "revision": row["latestCreatedRevision"]})
     return True
 
 
