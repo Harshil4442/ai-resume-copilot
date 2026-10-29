@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { encode } from "next-auth/jwt";
 import type { components } from "../lib/generated/api";
+import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
 
 const opportunityId = "opp_tailoring_fixture";
 const workspacePath = `/workspace/${opportunityId}?tab=resume`;
@@ -62,17 +64,26 @@ function createFixture() {
       if (location.protocol !== "http:" && location.protocol !== "https:") return;
       localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() }));
     });
-    await context.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|bootstrap)$/.test(url.pathname), async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", "");
       const method = request.method();
       const body = method === "GET" ? undefined : request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() : request.postData();
       const record = { path, method, query: url.search, body };
       requests.push(record);
       let status = 200;
       let value: unknown;
-      if (path === "/auth/profile") value = { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 };
+      if (path === "/auth/bootstrap" && method === "GET") {
+        value = ownedBootstrapFixture({
+          profile: { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 },
+          features: { career_workspace: true, evidence_tailoring: true, async_analysis: true },
+          availability: { catalog_enabled: state.unified, execution_enabled: state.unified, supported_operations: state.unified ? ["resume_tailor", "resume_tailor_extended"] : [] },
+          wallet: { schema_version: "unified-credits-v1", server_time: now, available_credits: 0, reserved_credits: 0, debt_credits: 0, lots: [] },
+        });
+        expect(parseOwnedBootstrap(value)).not.toBeNull();
+      }
+      else if (path === "/auth/profile") value = { email: "fixture@example.com", full_name: "Taylor Example", tier: "free", ai_credits: 40 };
       else if (path === "/public/billing/catalog") value = { analysis_pricing_version: "tailoring-fixture-v1", analysis_operation_units: { resume_tailor: 2 } };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true }, evidence_tailoring: { enabled: true }, async_analysis: { enabled: true } } };
       else if (path === "/v1/credits/availability") value = { catalog_enabled: state.unified, execution_enabled: state.unified, supported_operations: state.unified ? ["resume_tailor", "resume_tailor_extended"] : [] };

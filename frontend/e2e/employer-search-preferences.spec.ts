@@ -3,6 +3,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { encode } from "next-auth/jwt";
 import type { EmployerSearch } from "../lib/employerJobs";
 import { searchSummary, type EmployerSavedResultPage, type EmployerSearchSummaryPage } from "../lib/employerJobs";
+import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
 
 // UI integration only: API responses are explicit synthetic fixtures. Actual
 // search/ledger/PG behaviour is independently exercised by backend tests.
@@ -15,11 +17,16 @@ test("preferences bind paid search retries, restore saved choices and remain usa
   const savedReads: { path: string; method: string }[] = [];
   let interrupted = true;
   const unexpected: string[] = [];
-  await page.route((url) => url.pathname.startsWith("/api/backend/") || url.pathname === "/api/account/profile", async (route) => {
-    const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/profile$/, "/auth/profile").replace("/api/backend", "");
+  await page.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|bootstrap)$/.test(url.pathname), async (route) => {
+    const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", "");
     const method = request.method();
     let value: unknown, status = 200;
-    if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "premium", ai_credits: 500, job_service_credits: 100, profile_completeness: 80, full_name: "Fixture" };
+    if (path === "/auth/bootstrap" && method === "GET") {
+      value = ownedBootstrapFixture({ profile: { email: "fixture@example.com", tier: "premium", ai_credits: 500, profile_completeness: 80, full_name: "Fixture" } });
+      expect(parseOwnedBootstrap(value)).not.toBeNull();
+    }
+    else if (path === "/auth/bootstrap") { unexpected.push(`${method} ${path}`); status = 503; value = { detail: "Unexpected local fixture request" }; }
+    else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "premium", ai_credits: 500, job_service_credits: 100, profile_completeness: 80, full_name: "Fixture" };
     else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
     else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
     else if (path === "/resume/list") value = { resumes: [{ id: 10, filename: "Fixture.pdf", source_available: true, source_format: "pdf" }] };

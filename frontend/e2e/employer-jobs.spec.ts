@@ -485,9 +485,24 @@ test("reviewed discovery purchases one bounded batch and preserves legacy histor
   const discoveryRequests: { path: string; method: string; body: Record<string, unknown> }[] = [];
   const item = { posting: f.application.posting, fit: { score: 67, matched_skills: ["Python"], missing_evidence: ["PostgreSQL"], reasons: ["Documented skill overlap"], scoring_version: "native-v1" }, charged_credits: 0, included_in_batch: true, billing_currency: "credits" };
   const batch = { id: "search_unified", status: "completed", billing_currency: "credits", desired_count: 5, delivered_count: 2, charged_credits: 1, reserved_credits: 0, refunded_credits: 0, partial_batch: true, maximum_batch_size: 5, scope: {}, items: [item, { ...item, posting: { ...item.posting, id: "job_second", title: "Platform Engineer" } }] };
-  await context.route((url) => url.pathname === "/api/backend/v1/credits/availability" || url.pathname.startsWith("/api/backend/v1/credits/discovery-"), async (route) => {
+  await context.route((url) => url.pathname === "/api/account/bootstrap" || url.pathname === "/api/backend/v1/credits/availability" || url.pathname.startsWith("/api/backend/v1/credits/discovery-"), async (route) => {
     const request = route.request(), path = new URL(request.url()).pathname;
     const body = request.method() === "POST" ? request.postDataJSON() : {};
+    if (path === "/api/account/bootstrap") {
+      if (request.method() !== "GET") {
+        f.unexpected.push(`${request.method()} /auth/bootstrap`);
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Unexpected local fixture request" }) });
+        return;
+      }
+      const value = ownedBootstrapFixture({
+        profile: { email: "fixture@example.com", tier: f.state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], premium_until: "2026-11-08T10:00:00Z" },
+        availability: { catalog_enabled: true, execution_enabled: true, supported_operations: ["job_discovery_batch"] },
+        wallet: { schema_version: "unified-credits-v1", server_time: now, available_credits: 7, reserved_credits: 0, debt_credits: 0, lots: [] },
+      });
+      expect(parseOwnedBootstrap(value)).not.toBeNull();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
+      return;
+    }
     discoveryRequests.push({ path, method: request.method(), body });
     const value = path.endsWith("/availability") ? { catalog_enabled: true, execution_enabled: true, supported_operations: ["job_discovery_batch"] }
       : path.endsWith("/discovery-quotes") ? { schema_version: "unified-service-quote-v1", quote_id: "csq_discovery", operation: "job_discovery_batch", input_fingerprint: digest, route_id: "native-discovery", route_version: "1", mode: "native", tariff_version: "v1", credits: 1, deliverable: "Up to 5 new verified employer jobs.", supported_limits: { maximum_results: 5, candidate_limit: 1000 }, created_at: now, server_time: now, expires_at: "2026-10-08T10:15:00Z" } : batch;
