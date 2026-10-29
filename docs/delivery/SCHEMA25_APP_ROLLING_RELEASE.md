@@ -148,7 +148,7 @@ Traffic rollback is application recovery evidence only. It does not qualify a
 database restore, regional disaster recovery, a general RTO/RPO, commercial
 hosting, the seven-day shadow-accounting gate or human AI-quality approval.
 
-## Verification checklist within Stage 7
+## Verification checklist within Stage 7: completed v1 baseline
 
 - [x] Distinct app-only plan and fixed native write scope; old migration guards untouched.
 - [x] Bidirectional actual prior8cb/candidate PostgreSQL17 compatibility rehearsal.
@@ -156,12 +156,33 @@ hosting, the seven-day shadow-accounting gate or human AI-quality approval.
 - [x] Pilot flags and existing native resources preserved; mutable pilot balances permitted.
 - [x] Unknown provider holds preserved, new wallet/active AI/catalog drift refused.
 - [x] One-send interruption/reconciliation and traffic-only rollback tests.
-- [ ] Candidate merged with successful exact five-job CI and immutable build proof.
-- [ ] Private native plan captured/reviewed and source/resource/financial observations pass.
-- [ ] Candidate staged, HTTP health checked and promoted; fresh production acceptance recorded.
+- [x] Baseline candidate merged with successful exact five-job CI and immutable build proof.
+- [x] Baseline private native plan captured/reviewed and source/resource/financial observations pass.
+- [x] Baseline candidate staged, HTTP health checked and promoted; fresh production acceptance recorded.
 
-The checked items describe tested implementation. The unchecked items need
-their own retained runtime evidence; this document does not authorize a cloud action.
+On 29 October 2026, the v1 application rollout completed for source
+`ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2`, merged as
+`7b63ba67a19c6ec00a659082d1ad8487515e037b`. Exact five-job CI `40896668321`
+and Git-source Build `3da6ce3e-b592-4955-9027-f1e64663d259` qualified image
+`sha256:acfb2c50c96cdcd8cc1823217e030128b92ae809c3b33eabc9b60fcc264b7645`.
+Native production readback at 17:50 UTC observed 100% of each service's traffic
+on that source, with schema25 and the existing pilot/closed launch flags retained:
+
+| Service | Observed generation | Serving revision |
+| --- | ---: | --- |
+| API | 352 | `ai-resume-parser-r-ab2deadd1b1c-a2ef354c` |
+| Analysis worker | 75 | `hirewiz-analysis-worker-r-ab2deadd1b1c-a2ef354c` |
+| Employer worker | 37 | `hirewiz-employer-worker-r-ab2deadd1b1c-a2ef354c` |
+
+The temporary Tasks-service-account health-token grant was removed and its
+absence verified at 17:47:40 UTC. A subsequent signed-in synthetic PDF upload,
+original preview and byte-identical original download succeeded. This is a
+single functional acceptance, not a capacity or AI-quality qualification.
+Retained zero-percent 8cb tags still need the separately qualified cleanup below.
+
+These checked runtime items apply only to the completed v1 baseline. The next v2
+release and the overall Stage 7, financial, quality and launch gates remain
+incomplete. This document does not authorize a cloud action.
 
 ## Prepared v2 extension for the next reviewed application
 
@@ -234,6 +255,14 @@ the private plan SHA and separate owned journal. Intent/etag/request hashes
 precede one send. Unknown outcomes require read-only exact reconciliation,
 which never resends or starts the next action. Native drift or failed ab2
 health stops further writes.
+
+Before any settled-service proof or further action, reconciliation validates
+all retained intents, acknowledgements and completion records for the three
+services, then reads only their exact retained operations. A pending operation
+on any service is reported without health or completion authority, including
+when an earlier service already completed. Missing acknowledgements never
+authorize operation discovery, adoption or a repeated PATCH; terminal results
+still require the full fresh settled/native/health proof.
 
 Any cleanup generation change makes the completed original app plan historical;
 never replay it. Capture fresh homogeneous ab2 metadata for the next release:

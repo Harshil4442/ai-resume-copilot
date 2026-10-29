@@ -206,17 +206,81 @@ def load(raw):
     return plan
 
 
+def retained_intent(plan, pin, journal, started):
+    need(type(started.get("previous_etag")) is str and bool(started["previous_etag"]), "intent_changed")
+    body = {"name": rolling.PARENT + "/services/" + pin.service,
+            "etag": started["previous_etag"], "traffic": desired(plan, pin)}
+    need(started == {"request_sha256": rolling.sha(body), "previous_etag": started["previous_etag"],
+        "service_uid": pin.uid, "expected_generation": pin.generation + 1, "replay_authorized": False,
+        "plan_sha256": journal.plan_hash} and started["replay_authorized"] is False
+        and type(started["expected_generation"]) is int, "intent_changed")
+
+
+def retained_ack(journal, started, ack):
+    operation = ack.get("operation")
+    need(type(operation) is str and rolling.OPERATION.fullmatch(operation)
+         and ack == {"operation": operation, "request_sha256": started["request_sha256"],
+                     "plan_sha256": journal.plan_hash}, "ack_changed")
+
+
+def retained_actions(plan, journal):
+    """Validate every retained row before any native read or write authority."""
+    actions = {}
+    operations = []
+    for pin in plan.services:
+        key = "aliases." + pin.service
+        started, ack, checked = (journal.read(key + suffix) for suffix in (".started", ".ack", ".checked"))
+        if started is None or desired(plan, pin) == list(pin.traffic):
+            need(ack is None and checked is None and started is None, "orphaned_action")
+        else:
+            retained_intent(plan, pin, journal, started)
+            if ack is not None:
+                retained_ack(journal, started, ack)
+                operations.append(ack["operation"])
+            if checked is not None:
+                need(checked == {"traffic_sha256": rolling.sha(desired(plan, pin)),
+                    "prior_http_health_observed": True, "operation_ack_retained": ack is not None,
+                    "replay_authorized": False, "plan_sha256": journal.plan_hash}
+                    and checked["prior_http_health_observed"] is True
+                    and checked["operation_ack_retained"] is (ack is not None)
+                    and checked["replay_authorized"] is False, "checked_changed")
+        actions[pin.service] = (started, ack, checked)
+    need(len(operations) == len(set(operations)), "operation_reused")
+    return actions
+
+
+def retained_operations(boundary, actions, *, reconcile):
+    """Read exact retained LROs before settled proof across all services."""
+    need(reconcile or all(started is None or checked is not None
+         for started, _, checked in actions.values()), "unknown_send_reconcile_only")
+    done, pending = set(), False
+    for _, ack, _ in actions.values():
+        if ack is None:
+            continue
+        observed = boundary.operation(ack["operation"])
+        need(observed.get("name") == ack["operation"] and "error" not in observed, "operation_failed")
+        if observed.get("done", False) is True:
+            done.add(ack["operation"])
+        else:
+            pending = True
+    return done, pending
+
+
 def execute(plan, boundary, journal, *, reconcile=False):
     plan.validate()
     need(type(journal) is rolling.Journal and journal.plan_hash == rolling.sha(asdict(plan)), "journal_changed")
     writes = 0
     with journal.locked():
+        actions = retained_actions(plan, journal)
+        observed_done, pending = retained_operations(boundary, actions, reconcile=reconcile)
+        if pending:
+            return {"status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": 0}
         for pin in plan.services:
             if desired(plan, pin) == list(pin.traffic):
                 boundary.verify_aliases(plan)
                 continue
             key = "aliases." + pin.service
-            started, ack = journal.read(key + ".started"), journal.read(key + ".ack")
+            started, ack, _ = actions[pin.service]
             if started is None:
                 boundary.verify_aliases(plan)
                 if reconcile:
@@ -232,21 +296,19 @@ def execute(plan, boundary, journal, *, reconcile=False):
                 writes += 1
                 operation = boundary.patch(pin.service, body, "traffic")
                 need(type(operation.get("name")) is str and rolling.OPERATION.fullmatch(operation["name"]), "ack_unknown_reconcile_only")
+                need(operation["name"] not in observed_done, "operation_reused")
                 ack = {"operation": operation["name"], "request_sha256": started["request_sha256"]}
                 journal.record(key + ".ack", ack)
-            elif journal.read(key + ".checked") is None:
-                need(reconcile, "unknown_send_reconcile_only")
-            body = {"name": rolling.PARENT + "/services/" + pin.service,
-                    "etag": started["previous_etag"], "traffic": desired(plan, pin)}
-            need(started == {"request_sha256": rolling.sha(body), "previous_etag": started["previous_etag"],
-                "service_uid": pin.uid, "expected_generation": pin.generation + 1, "replay_authorized": False,
-                "plan_sha256": journal.plan_hash}, "intent_changed")
+                ack = journal.read(key + ".ack")
+            retained_intent(plan, pin, journal, started)
             if ack is not None:
-                need(ack.get("request_sha256") == started["request_sha256"] and rolling.OPERATION.fullmatch(ack.get("operation", "")), "ack_changed")
-                observed = boundary.operation(ack["operation"])
-                need(observed.get("name") == ack["operation"] and "error" not in observed, "operation_failed")
-                if observed.get("done", False) is not True:
-                    return {"status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": writes}
+                retained_ack(journal, started, ack)
+                if ack["operation"] not in observed_done:
+                    observed = boundary.operation(ack["operation"])
+                    need(observed.get("name") == ack["operation"] and "error" not in observed, "operation_failed")
+                    if observed.get("done", False) is not True:
+                        return {"status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": writes}
+                    observed_done.add(ack["operation"])
             # A retained exact operation can be observed while the service is
             # reconciling. This read grants no new write or health authority;
             # terminal acknowledgement still needs the entire settled proof.

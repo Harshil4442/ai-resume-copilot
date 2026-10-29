@@ -127,6 +127,130 @@ def test_pending_exact_operation_is_read_before_settled_service_or_health_proof(
     assert all(journal.read("aliases." + row.service + ".started") is None for row in boundary.plan.services[1:])
 
 
+@pytest.mark.parametrize("pending_index", [1, 2])
+def test_later_service_pending_is_read_before_earlier_service_global_verification(context, monkeypatch, pending_index):
+    boundary, journal = context
+    pin = boundary.plan.services[pending_index]
+    original_patch = boundary.patch
+
+    def patch(service, body, mask):
+        boundary.pause = service == pin.service
+        result = original_patch(service, body, mask)
+        if service == pin.service:
+            boundary.states[service]["reconciling"] = True
+            boundary.states[service]["observedGeneration"] = str(pin.generation)
+        return result
+
+    monkeypatch.setattr(boundary, "patch", patch)
+    first = aliases.execute(boundary.plan, boundary, journal)
+    assert first == {"status": "alias_retirement_pending", "replay_authorized": False,
+                     "native_mutations": pending_index + 1}
+    assert len(boundary.writes) == pending_index + 1
+    boundary.polls.clear()
+    original_verify = boundary.verify_aliases
+    with monkeypatch.context() as pending:
+        pending.setattr(boundary, "verify_aliases", lambda plan: pytest.fail("Earlier service must not hide a later LRO"))
+        pending.setattr(boundary, "health", lambda *args: pytest.fail("Pending grants no health authority"))
+        assert aliases.execute(boundary.plan, boundary, journal, reconcile=True) == {
+            "status": "alias_retirement_pending", "replay_authorized": False, "native_mutations": 0}
+    retained = [journal.read("aliases." + row.service + ".ack")["operation"]
+                for row in boundary.plan.services[:pending_index + 1]]
+    assert boundary.polls == retained
+    assert journal.read("aliases." + pin.service + ".checked") is None
+    assert len(boundary.writes) == pending_index + 1
+    assert all(journal.read("aliases." + row.service + ".started") is None
+               for row in boundary.plan.services[pending_index + 1:])
+
+    boundary.operations[retained[-1]]["done"] = True
+    boundary.states[pin.service]["reconciling"] = False
+    boundary.states[pin.service]["observedGeneration"] = boundary.states[pin.service]["generation"]
+    proofs = []
+
+    def verify(plan):
+        proofs.append(True)
+        original_verify(plan)
+
+    monkeypatch.setattr(boundary, "verify_aliases", verify)
+    result = aliases.execute(boundary.plan, boundary, journal, reconcile=True)
+    assert result["status"] == ("alias_retirement_observed" if pending_index == 2 else "existing_alias_actions_reconciled_only")
+    assert proofs and journal.read("aliases." + pin.service + ".checked") is not None
+    assert len(boundary.writes) == pending_index + 1
+
+
+@pytest.mark.parametrize("unknown_index", [1, 2])
+def test_later_unknown_ack_never_adopts_an_unretained_operation_or_resends(context, monkeypatch, unknown_index):
+    boundary, journal = context
+    pin = boundary.plan.services[unknown_index]
+    original_patch = boundary.patch
+
+    def patch(service, body, mask):
+        boundary.lose_ack = service == pin.service
+        try:
+            return original_patch(service, body, mask)
+        finally:
+            if service == pin.service:
+                boundary.states[service]["reconciling"] = True
+
+    monkeypatch.setattr(boundary, "patch", patch)
+    with pytest.raises(RuntimeError):
+        aliases.execute(boundary.plan, boundary, journal)
+    assert journal.read("aliases." + pin.service + ".ack") is None
+    boundary.polls.clear()
+    with pytest.raises(rolling.RollingDenied, match="reconcile_only"):
+        aliases.execute(boundary.plan, boundary, journal)
+    assert not boundary.polls
+    with pytest.raises(rolling.RollingDenied):
+        aliases.execute(boundary.plan, boundary, journal, reconcile=True)
+    assert boundary.polls == [journal.read("aliases." + row.service + ".ack")["operation"]
+                              for row in boundary.plan.services[:unknown_index]]
+    assert journal.read("aliases." + pin.service + ".ack") is None
+    assert journal.read("aliases." + pin.service + ".checked") is None
+    assert len(boundary.writes) == unknown_index + 1
+    assert all(journal.read("aliases." + row.service + ".started") is None
+               for row in boundary.plan.services[unknown_index + 1:])
+
+
+@pytest.mark.parametrize("tamper", ["intent", "ack", "checked", "orphan_ack", "duplicate_operation", "plan"])
+def test_all_retained_journal_integrity_is_checked_before_any_lro_or_settled_read(context, monkeypatch, tamper):
+    boundary, journal = context
+    second = boundary.plan.services[1]
+    original_patch = boundary.patch
+
+    def patch(service, body, mask):
+        boundary.pause = service == second.service
+        return original_patch(service, body, mask)
+
+    monkeypatch.setattr(boundary, "patch", patch)
+    assert aliases.execute(boundary.plan, boundary, journal)["native_mutations"] == 2
+    if tamper == "orphan_ack":
+        journal.record("aliases." + boundary.plan.services[2].service + ".ack", {
+            "operation": rolling.PARENT + "/operations/not-retained", "request_sha256": "a" * 64})
+    else:
+        first = boundary.plan.services[0]
+        suffix = ".started" if tamper == "intent" else ".checked" if tamper == "checked" else ".ack"
+        service = first.service if tamper == "checked" else second.service
+        path = journal.directory / ("aliases." + service + suffix + ".json")
+        value = json.loads(path.read_text())
+        if tamper == "intent":
+            value["service_uid"] = first.uid
+            value["expected_generation"] += 1
+        elif tamper == "ack":
+            value["request_sha256"] = "a" * 64
+        elif tamper == "checked":
+            value["prior_http_health_observed"] = False
+        elif tamper == "duplicate_operation":
+            value["operation"] = journal.read("aliases." + first.service + ".ack")["operation"]
+        else:
+            value["plan_sha256"] = "b" * 64
+        path.write_text(json.dumps(value))
+    boundary.polls.clear()
+    monkeypatch.setattr(boundary, "operation", lambda name: pytest.fail("Tampered journal grants no native operation read"))
+    monkeypatch.setattr(boundary, "verify_aliases", lambda plan: pytest.fail("Tampered journal grants no settled proof"))
+    with pytest.raises(rolling.RollingDenied):
+        aliases.execute(boundary.plan, boundary, journal, reconcile=True)
+    assert not boundary.polls and len(boundary.writes) == 2
+
+
 @pytest.mark.parametrize("change", ["reconciling", "financial", "failed", "different_operation"])
 def test_terminal_operation_needs_exact_ack_and_full_settled_join_before_completion(context, monkeypatch, change):
     boundary, journal = context
