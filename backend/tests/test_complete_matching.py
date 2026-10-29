@@ -18,7 +18,7 @@ def context():
 
 
 def comparison_output(value):
-    required, _ = contract.extract_skills_from_text(value["job"]["description"])
+    required = {row["skill"] for row in contract.extract_skill_mentions(value["job"]["description"])}
     rows = []
     for skill in required:
         fact = next((fact for fact in value["approved_evidence"] if contract.source_skill(skill, fact["text"])), None)
@@ -157,3 +157,53 @@ def test_malformed_or_near_prefix_keeps_existing_sensitive_fallback():
         result = redact_prompt_text(value)
         assert "private-do-not-send" not in result and "private@example.invalid" not in result
         assert REDACTED in result
+
+
+def test_complete_job_checks_late_alias_without_sanitizer_clipping_or_negation_loss():
+    value = context()
+    value["job"]["description"] = "Build Python APIs. " + "Detailed role context. " * 700 +         "Skills: Postgres. Minimum3 years. No prior experience in Kubernetes is required."
+    assert len(value["job"]["description"]) > 12000
+    sent = json.loads(contract.messages(value)[-1]["content"].split("COMPLETE SOURCE DATA:\n", 1)[1])
+    assert sent == value  # Numeric requirements, aliases and negation unchanged.
+    raw = comparison_output(value)
+    assert "PostgreSQL" in raw["extracted_jd_skills"] and "Kubernetes" not in raw["extracted_jd_skills"]
+    contract.validate(raw, value)
+    raw["extracted_jd_skills"].remove("PostgreSQL")
+    raw["skill_analysis"] = [row for row in raw["skill_analysis"] if row["jd_skill"] != "PostgreSQL"]
+    with pytest.raises(contract.MatchingOutputUnavailable, match="omitted"):
+        contract.validate(raw, value)
+
+
+@pytest.mark.parametrize("changed", ["helper", "negation", "literal_negation", "ambiguity", "context", "compiled_pattern"])
+def test_matching_delivery_digest_tracks_actual_extractor_sources_and_runtime_rules(monkeypatch, changed):
+    import re
+
+    from app.services.market import skill_extractor
+
+    before = delivery_contracts.current_output_contract("enhanced_job_match")
+    if changed == "helper":
+        def changed_mentions(text):
+            return []
+        monkeypatch.setattr(contract, "extract_skill_mentions", changed_mentions)
+    elif changed == "negation":
+        monkeypatch.setattr(skill_extractor, "_NEGATION", re.compile(r"never-match-negation"))
+    elif changed == "literal_negation":
+        monkeypatch.setattr(contract, "_NEGATION", re.compile(r"never-match-negation"))
+    elif changed == "ambiguity":
+        monkeypatch.setattr(skill_extractor, "_AMBIGUOUS_TERMS", skill_extractor._AMBIGUOUS_TERMS | {"python"})
+    elif changed == "context":
+        monkeypatch.setattr(skill_extractor, "_TECH_CONTEXT", re.compile(r"never-match-context"))
+    else:
+        patterns = dict(skill_extractor._PATTERNS)
+        patterns["Python"] = [("Python", re.compile(r"never-match-python"))]
+        monkeypatch.setattr(skill_extractor, "_PATTERNS", patterns)
+    assert delivery_contracts.current_output_contract("enhanced_job_match") != before
+    assert delivery_contracts.current_output_contract("job_match") != before
+
+
+def test_impossible_requirement_count_declines_before_any_generation(monkeypatch):
+    value = context()
+    value["job"]["description"] = "Required programming skills: " + ", ".join(contract.all_search_terms())
+    monkeypatch.setattr(llm_client, "_chat", lambda *_: pytest.fail("No model call"))
+    with pytest.raises(contract.MatchingContextUnavailable, match="more than 100"):
+        llm_client.analyze_job_match_complete_llm(value)

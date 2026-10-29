@@ -66,7 +66,7 @@ def transport(monkeypatch, operation, *, invalid=False, unknown=False):
             return json.dumps(comparison_output(context))
         fact = context["approved_evidence"][0]
         if operation == "resume_enrichment":
-            skills, _ = matching_contract.extract_skills_from_text(context["resume"]["raw_text"])
+            skills = {row["skill"] for row in matching_contract.extract_skill_mentions(context["resume"]["raw_text"])}
             result = {"skills": sorted(skills)}
         elif operation == "bullet_rewrite":
             original = fact["text"]

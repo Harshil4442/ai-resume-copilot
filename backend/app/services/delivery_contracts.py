@@ -68,10 +68,12 @@ def current_output_contract(operation: str) -> str | None:
     helpers: tuple[Any, ...]
     if operation == "enhanced_job_match":
         from . import matching, matching_contract
+        from .market import skill_extractor
 
         helpers = (matching_contract.messages, matching_contract.validate,
                    matching_contract._facts, matching_contract._prose, matching_contract.source_skill,
                    matching_contract.score, llm_client.analyze_job_match_complete_llm,
+                   matching_contract.extract_skill_mentions, matching_contract._term_pattern, skill_taxonomy.all_search_terms,
                    interview_contract.unsupported_experience_inference, interview_contract._normalized_personal_text,
                    matching.compute_skill_scores, matching.combine_scores, matching.get_dynamic_weights)
         versions = {"prompt": matching_contract.PROMPT_VERSION, "validator": matching_contract.VALIDATOR_VERSION}
@@ -81,6 +83,13 @@ def current_output_contract(operation: str) -> str | None:
             "negative_experience": (interview_contract._NEGATIVE_EXPERIENCE.pattern, interview_contract._NEGATIVE_EXPERIENCE.flags),
             "nonasserting_prefix": (interview_contract._NONASSERTING_PREFIX.pattern, interview_contract._NONASSERTING_PREFIX.flags),
             "schema": matching_contract.Output.model_json_schema(),
+            "extractor": {"version": skill_extractor.SKILL_EXTRACTOR_VERSION,
+                "negation": (skill_extractor._NEGATION.pattern, skill_extractor._NEGATION.flags),
+                "literal_negation": (matching_contract._NEGATION.pattern, matching_contract._NEGATION.flags),
+                "ambiguity": sorted(skill_extractor._AMBIGUOUS_TERMS),
+                "technical_context": (skill_extractor._TECH_CONTEXT.pattern, skill_extractor._TECH_CONTEXT.flags),
+                "patterns": {name: [(term, pattern.pattern, pattern.flags) for term, pattern in patterns]
+                    for name, patterns in skill_extractor._PATTERNS.items()}},
             "skill_weights": matching.SKILL_WEIGHTS, "dimension_weights": matching.HOLISTIC_DIMENSION_WEIGHTS}
     elif operation == "interview_questions":
         helpers = (interview_contract.build_interview_messages, interview_contract.require_complete_context,
