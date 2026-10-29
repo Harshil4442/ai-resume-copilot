@@ -1,0 +1,117 @@
+name: Stage5 owned-local capacity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage5-owned-capacity-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  owned-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        buyers: [20, 25]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install locked test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check uv==0.11.32
+          uv sync --project backend --frozen --all-groups
+      - name: Prepare pinned official native PG17 without a system installation
+        id: postgres
+        timeout-minutes: 11
+        run: |
+          test -f /usr/include/openssl/ssl.h
+          owned_pg_root="$(mktemp -d "$RUNNER_TEMP/stage5-pg17-XXXXXX")"
+          chmod 700 "$owned_pg_root"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --max-time 60 --max-filesize 33554432 \
+            https://ftp.postgresql.org/pub/source/v17.11/postgresql-17.11.tar.bz2 \
+            --output "$owned_pg_root/source.tar.bz2"
+          printf '%s  %s\n' dd27f2b3c59e73ed14aa3324901242bf69a032a6347805f274e6260322d42979 \
+            "$owned_pg_root/source.tar.bz2" | sha256sum --check --status
+          mkdir "$owned_pg_root/source"
+          tar --no-same-owner --no-same-permissions --strip-components=1 \
+            -xjf "$owned_pg_root/source.tar.bz2" -C "$owned_pg_root/source"
+          (
+            cd "$owned_pg_root/source"
+            timeout 60s ./configure --prefix="$owned_pg_root/runtime" --without-readline \
+              --without-icu --without-zlib --with-ssl=openssl > "$owned_pg_root/configure.log" 2>&1
+          )
+          timeout 420s make -C "$owned_pg_root/source" -j2 > "$owned_pg_root/build.log" 2>&1
+          timeout 60s make -C "$owned_pg_root/source" install > "$owned_pg_root/install.log" 2>&1
+          test -x "$owned_pg_root/runtime/bin/initdb"
+          "$owned_pg_root/runtime/bin/postgres" --version | grep -E '^postgres \(PostgreSQL\) 17\.11$'
+          printf 'bin=%s\n' "$owned_pg_root/runtime/bin" >> "$GITHUB_OUTPUT"
+      - name: Prepare only the pinned public emulator image
+        run: |
+          docker image pull gcr.io/google.com/cloudsdktool/google-cloud-cli:573.0.0-emulators@sha256:1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe
+      - name: Prepare the existing pinned owned TLS Redis binary
+        id: redis
+        timeout-minutes: 7
+        run: |
+          owned_redis_root="$(mktemp -d "$RUNNER_TEMP/stage5-redis-XXXXXX")"
+          chmod 700 "$owned_redis_root"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --max-time 60 --max-filesize 20971520 \
+            https://codeload.github.com/redis/redis/tar.gz/refs/tags/7.2.7 \
+            --output "$owned_redis_root/source.tgz"
+          printf '%s  %s\n' fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9 \
+            "$owned_redis_root/source.tgz" | sha256sum --check --status
+          mkdir "$owned_redis_root/source"
+          tar --no-same-owner --no-same-permissions --strip-components=1 \
+            -xzf "$owned_redis_root/source.tgz" -C "$owned_redis_root/source"
+          timeout 300s make -C "$owned_redis_root/source" -j2 BUILD_TLS=yes MALLOC=libc redis-server \
+            > "$owned_redis_root/build.log" 2>&1
+          test -x "$owned_redis_root/source/src/redis-server"
+          printf 'binary=%s\n' "$owned_redis_root/source/src/redis-server" >> "$GITHUB_OUTPUT"
+      - name: Check finite workload and isolation contracts
+        working-directory: backend
+        env:
+          HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
+          HIREWIZ_STAGE5_PG_REQUIRED: "true"
+        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py
+      - name: Execute only fresh owned loopback resources
+        timeout-minutes: 13
+        env:
+          BUYERS_PERCENT: ${{ matrix.buyers }}
+          OWNED_REDIS_BINARY: ${{ steps.redis.outputs.binary }}
+          OWNED_PG_BIN: ${{ steps.postgres.outputs.bin }}
+        working-directory: backend
+        run: |
+          .venv/bin/python - <<'PY'
+          import json, os
+          from pathlib import Path
+          source = json.loads(Path("capacity/stage5-owned-http-v1.json").read_text())
+          source["buyers_percent"] = int(os.environ["BUYERS_PERCENT"])
+          target = Path(os.environ["RUNNER_TEMP"]) / "stage5-config.json"
+          target.write_text(json.dumps(source))
+          target.chmod(0o600)
+          PY
+          .venv/bin/python scripts/run_stage5_capacity.py --execute \
+            --config "$RUNNER_TEMP/stage5-config.json" \
+            --pg-bin "$OWNED_PG_BIN" --redis-server "$OWNED_REDIS_BINARY" \
+            --output "$RUNNER_TEMP/stage5-owned-${{ matrix.buyers }}"
+      - name: Retain sanitized local measurements or exact failure boundary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stage5-owned-local-${{ matrix.buyers }}-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/report.json
+            ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/cleanup.json
+            ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/failure.json

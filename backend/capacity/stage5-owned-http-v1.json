@@ -1,0 +1,10 @@
+{
+  "requests_per_phase": 50,
+  "arrivals_per_second": 10,
+  "measurement_seconds": 600,
+  "buyers_percent": 25,
+  "users": 10000,
+  "ordinary_opportunities": 10,
+  "heavy_opportunities": 500,
+  "concurrency": [1, 10, 25]
+}

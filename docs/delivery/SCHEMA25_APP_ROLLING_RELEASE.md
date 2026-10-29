@@ -259,11 +259,12 @@ under a private `RUNNER_TEMP` directory. Missing OpenSSL headers or binary stops
 the mandatory qualification. Cleanup removes only that exact owned source;
 the fixture terminates only its verified owned child, never another listener.
 
-The existing payment status poll can still issue 24 requests at 2.5-second
-intervals, requiring 48 List operations per minute for that journey alone.
-This exceeds the proposed 40-call pacing budget; real journey/load acceptance
-and an appropriate bounded polling change remain activation blockers. No
-compatibility receipt converts this arithmetic into qualified capacity.
+The separately qualified payment status poll now permits eight adaptive automatic
+reads plus one explicit manual status read; the historical 24-at-2.5-second
+estimate is superseded. Real aggregate journey/load acceptance against the
+40-unit pacing budget remains open. `STAGE5_OWNED_HTTP_CAPACITY.md` describes the
+bounded owned-local experiment and remaining native evidence. No compatibility
+receipt converts local measurements into qualified production capacity.
 
 ### Finite old-tag retirement
 
