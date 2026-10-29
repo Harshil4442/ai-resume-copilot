@@ -69,12 +69,24 @@ password never grants participation. Revocation does not require an enabled
 runtime or fresh funding. Replaying an old opt-in request returns that old receipt
 and cannot overwrite a later revocation.
 
-The subsequent UI should display the complete notice with an initially unchecked
-participation choice and a separate explicit confirmation; show a Stop
-participating control while opted in; and refetch status after any choice. It must
-not interpret an idempotent acknowledgment, `can_opt_in`, a displayed execution
-flag or a quote as a reserved traffic slot. No UI has been enabled by this server
-change. Quotes and normal price review remain separate and never grant credits.
+The Billing participation panel displays the complete notice with an initially
+unchecked choice and a separate explicit keyboard-accessible confirmation. It
+shows Stop participating for current/retained opt-ins, including paused reviews,
+and reads the exact owned review after a choice before reporting current status.
+An unknown response permits read-only status checking instead of automatic POST
+retries. Changed notices reset confirmation. The panel appears only for a valid
+owned invitation or retained choice and uses the existing owner-scoped query
+boundary; unmounting stops further reads/callbacks from the old surface.
+
+The exact BFF allowlist permits only GET/POST, a bounded paired review selector,
+and the exact choice fields. It preserves existing same-origin mutation and
+session/bearer policy and limits streamed POST bodies to 2 KiB. No other owner IDs
+are sent. A verified choice refreshes availability and pass eligibility once;
+wallet/history reads and monetary rights are unchanged. Late earlier catalog
+reads cannot overwrite refreshed eligibility. An acknowledgment, `can_opt_in`,
+a displayed execution flag or a quote never reserves a traffic slot. This code
+does not enable a rollout flag. Quotes and normal price review remain separate
+and never grant credits.
 
 ## Literal accepted-traffic limit
 

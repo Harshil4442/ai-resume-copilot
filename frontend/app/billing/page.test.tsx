@@ -33,6 +33,7 @@ const legacyCheckout = { order_id: "order_legacy", provider: "razorpay", provide
 const openCheckout = vi.fn();
 const hostedCheckout = vi.fn(function (options: RazorpayOptions) { void options; return { open: openCheckout, on: vi.fn() }; });
 function read(url: string): Promise<unknown> {
+  if (url === "/v1/credits/canary-enrollment") return Promise.resolve({ status: "NOT_AVAILABLE" });
   if (url === "/v1/credits/catalog") return Promise.resolve(catalog);
   if (url === "/v1/credits/wallet") return Promise.resolve(wallet);
   if (url === "/v1/credits/history?limit=20") return Promise.resolve({ schema_version: schema, items: [], next_cursor: null });
@@ -232,4 +233,57 @@ describe("legacy payment recovery", () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ sku: "premium_30d", status: "paid", fulfilled: true, accepted_quote: null, checkout_available: false })) : read(url));
     render(<BillingPage />); await screen.findByRole("heading", { name: "Payment confirmed" }); await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled()); noCheckout();
   });
+});
+
+it("refreshes only the pass eligibility after an explicitly confirmed participation choice", async () => {
+  let optedIn = false;
+  const invitation = { status: "NOT_OPTED_IN", review_id: "fixture-canary-v1", review_sha256: "a".repeat(64),
+    notice_sha256: "b".repeat(64), runtime_sha256: "c".repeat(64), expires_at: "2030-10-29T00:00:00Z",
+    notice: "Participation is voluntary. Review each price, keep control of applications and stop at any time.",
+    can_opt_in: true, execution_flag_enabled: true, accepted_work_survives_revocation: true };
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/credits/canary-enrollment")
+    ? Promise.resolve({ ...invitation, status: optedIn ? "OPTED_IN" : "NOT_OPTED_IN" })
+    : url === "/v1/credits/catalog" ? Promise.resolve({ ...catalog, checkout_enabled: optedIn }) : read(url));
+  state.post.mockImplementation((url: string) => {
+    if (url === "/v1/credits/canary-enrollment") { optedIn = true; return Promise.resolve({ status: "CHOICE_RECORDED" }); }
+    return post(url);
+  });
+  render(<BillingPage />);
+  const pass = await screen.findByRole("button", { name: "Review Starter pass" });
+  expect(pass).toBeDisabled();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /participation notice/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Review participation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm participation" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/catalog")).toHaveLength(2);
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/wallet")).toHaveLength(1);
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(1);
+  expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/canary-enrollment"]);
+  noCheckout();
+});
+
+it("does not let an earlier slow eligible catalog overwrite the refreshed stopped-participation state", async () => {
+  let optedIn = true, catalogCalls = 0, finishOld!: (value: unknown) => void;
+  const invitation = { status: "OPTED_IN", review_id: "fixture-canary-v1", review_sha256: "a".repeat(64),
+    notice_sha256: "b".repeat(64), runtime_sha256: "c".repeat(64), expires_at: "2030-10-29T00:00:00Z",
+    notice: "Participation is voluntary. Review each price, keep control of applications and stop at any time.",
+    can_opt_in: false, execution_flag_enabled: false, accepted_work_survives_revocation: true };
+  state.get.mockImplementation((url: string) => {
+    if (url.startsWith("/v1/credits/canary-enrollment")) return Promise.resolve({ ...invitation, status: optedIn ? "OPTED_IN" : "NOT_OPTED_IN" });
+    if (url === "/v1/credits/catalog") {
+      catalogCalls += 1;
+      return catalogCalls === 1 ? new Promise((resolve) => { finishOld = resolve; }) : Promise.resolve({ ...catalog, checkout_enabled: false });
+    }
+    return read(url);
+  });
+  state.post.mockImplementation((url: string) => {
+    if (url === "/v1/credits/canary-enrollment") { optedIn = false; return Promise.resolve({ status: "CHOICE_RECORDED" }); }
+    return post(url);
+  });
+  render(<BillingPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Stop participating" }));
+  expect(await screen.findByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  await act(async () => finishOld(catalog));
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  expect(catalogCalls).toBe(2); noCheckout();
 });

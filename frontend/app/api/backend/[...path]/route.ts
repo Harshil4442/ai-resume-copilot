@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isTrustedRequestOrigin } from "../../../../lib/requestOrigin";
 import { handleAccount, SAFE_ACCOUNT_ALIASES } from "../../../../lib/accountTransportServer";
 import { candidateAuthSecret } from "../../../../lib/candidateAuthServer";
+import { validCanaryChoice, validCanarySelectors } from "../../../../lib/canaryParticipation";
 import { catalogTimingHeaders } from "../../../../lib/catalogTiming";
 
 
@@ -55,6 +56,13 @@ async function forward(
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
   }
 
+  const canary = path[0] === "v1" && path[1] === "credits" && path[2] === "canary-enrollment";
+  if (canary && (path.length !== 3 || !["GET", "POST"].includes(request.method))) {
+    return NextResponse.json({ detail: "Unsupported participation request" }, { status: 405, headers: { Allow: "GET, POST", "Cache-Control": "private, no-store" } });
+  }
+  if (canary && (request.method === "POST" ? [...request.nextUrl.searchParams].length !== 0 : !validCanarySelectors(request.nextUrl.searchParams))) {
+    return NextResponse.json({ detail: "Invalid participation selector" }, { status: 422 });
+  }
   const isCatalog = request.method === "GET" && path.join("/") === "v1/employer-jobs/catalog";
   const sessionStarted = isCatalog ? performance.now() : 0;
   const token = await getToken({ req: request, secret: candidateAuthSecret() });
@@ -76,7 +84,30 @@ async function forward(
   if (isCatalog) headers.delete("x-correlation-id");
 
   const hasBody = !["GET", "HEAD"].includes(request.method);
-  const body = hasBody ? await request.arrayBuffer() : undefined;
+  let body: ArrayBuffer | undefined;
+  if (canary && request.method === "POST") {
+    const reader = request.body?.getReader();
+    try {
+      if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" || !reader) throw new Error("Invalid choice");
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        length += part.value.byteLength;
+        if (length > 2048) { await reader.cancel(); throw new Error("Invalid choice"); }
+        chunks.push(part.value);
+      }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      if (!validCanaryChoice(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))) throw new Error("Invalid choice");
+      body = bytes.buffer;
+    } catch {
+      try { await reader?.cancel(); } catch { /* Release the invalid input without reflecting it. */ }
+      return NextResponse.json({ detail: "Invalid participation request" }, { status: 422, headers: { "Cache-Control": "private, no-store" } });
+    } finally { reader?.releaseLock(); }
+  } else if (hasBody) body = await request.arrayBuffer();
   const backendStarted = isCatalog ? performance.now() : 0;
   // Private document inspection has a 75-second HTTP budget before the
   // parse response is saved. Leave headroom only for this exact upload route.
