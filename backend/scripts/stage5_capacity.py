@@ -116,17 +116,17 @@ def finish_owned_http(*, server, thread, guards, finalizers) -> None:
         if thread is not None:
             thread.join(timeout=15)
             terminal = not thread.is_alive()
-    except Exception:
+    except BaseException:
         failures.append("http_shutdown")
     for finalize in finalizers:
         try:
             finalize(terminal)
-        except Exception:
+        except BaseException:
             failures.append("owned_finalizer")
     if terminal:
         try:
             guards.undo()
-        except Exception:
+        except BaseException:
             failures.append("guard_restore")
     if not terminal or failures:
         raise RuntimeError("Owned HTTP or dependency finalization is incomplete")
