@@ -6,7 +6,8 @@ vi.mock("@sentry/nextjs", () => sentry);
 afterEach(() => { history.replaceState(null, "", "/"); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("reset telemetry exclusion before hydration", () => {
-  it.each(["/forgot-password", "/reset-password/", "/account-recovery", "/api/password-reset/request", "/api/auth/password-reset/confirm"])("excludes exact sensitive surface %s", (path) => {
+  it.each(["/forgot-password", "/reset-password/", "/account-recovery", "/api/password-reset/request", "/api/auth/password-reset/confirm",
+    "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/request", "/api/auth/privacy-erasure/confirm"])("excludes exact sensitive surface %s", (path) => {
     expect(isPasswordResetPath(path)).toBe(true);
     expect(isPasswordResetUrl(`https://www.example.invalid${path}#token=private`)).toBe(true);
     expect(isPasswordResetUrl(`POST ${path}`)).toBe(true);
@@ -46,7 +47,8 @@ describe("reset telemetry exclusion before hydration", () => {
     const modulePath = "../next.config.mjs";
     const { default: config } = await import(modulePath);
     const all = await config.headers();
-    for (const source of ["/forgot-password", "/reset-password", "/account-recovery", "/api/password-reset/:path*"]) {
+    for (const source of ["/forgot-password", "/reset-password", "/account-recovery", "/api/password-reset/:path*",
+      "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/:path*"]) {
       const rule = all.find((row: { source: string }) => row.source === source);
       const headers = Object.fromEntries(rule.headers.map((row: { key: string; value: string }) => [row.key, row.value]));
       expect(headers["Referrer-Policy"]).toBe("no-referrer");
@@ -56,5 +58,19 @@ describe("reset telemetry exclusion before hydration", () => {
       expect(headers["Content-Security-Policy"]).not.toMatch(/google|sentry|posthog/);
     }
     expect(all[0].headers.find((row: { key: string }) => row.key === "Content-Security-Policy").value).toContain("https://accounts.google.com/gsi/client");
+  });
+  it("strips erasure fragment before telemetry initialization without adopting it as reset proof", async () => {
+    vi.resetModules(); sentry.init.mockReset();
+    const token = "E".repeat(43);
+    history.replaceState(null, "", `/privacy-erasure/confirm#token=${token}`);
+    sentry.init.mockImplementationOnce(() => { expect(location.hash).toBe(""); });
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "https://synthetic.invalid/123");
+    await import("../instrumentation-client");
+    expect(sentry.init).toHaveBeenCalledOnce();
+    expect(sentry.init.mock.calls[0][0].enabled).toBe(false);
+    const erasure = await import("./privacyErasureLink");
+    expect(erasure.readPrivacyErasureLink().token).toBe(token);
+    const reset = await import("./passwordResetLink");
+    expect(reset.readPasswordResetToken()).toBeNull();
   });
 });

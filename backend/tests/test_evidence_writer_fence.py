@@ -24,6 +24,7 @@ def load_migration():
 def test_upgrade_orders_bounded_exclusive_drain_before_exact_always_enabled_trigger(monkeypatch):
     migration = load_migration()
     statements = []
+    ddl = []
 
     class Bind:
         dialect = postgresql.dialect()
@@ -38,14 +39,17 @@ def test_upgrade_orders_bounded_exclusive_drain_before_exact_always_enabled_trig
         def in_transaction(self):
             return True
 
-    monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=lambda: Bind()))
+    monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=lambda: Bind(),
+        add_column=lambda table, column, **kw: ddl.append((table, column.name, str(column.type), column.nullable,
+            str(column.server_default.arg), kw)),
+        create_check_constraint=lambda name, table, condition, **kw: ddl.append((name, table, condition, kw))))
     migration.upgrade()
     assert migration.revision == "20261031_0026"
     assert migration.down_revision == "20261028_0025"
     assert statements[:3] == ["SET LOCAL lock_timeout = '4s'", "SET LOCAL statement_timeout = '10s'",
         'LOCK TABLE "owned_schema".evidence_items IN ACCESS EXCLUSIVE MODE']
-    assert len(statements) == 6
-    function, trigger, enabled = statements[3:]
+    assert len(statements) == 7
+    function, trigger, enabled = statements[3:6]
     assert 'CREATE FUNCTION "owned_schema".evidence_writer_fence()' in function
     assert "SECURITY INVOKER SET search_path = pg_catalog" in function
     assert "pg_catalog.current_setting('hirewiz.evidence_writer_version', true) IS DISTINCT FROM 'cas_v1'" in function
@@ -54,6 +58,9 @@ def test_upgrade_orders_bounded_exclusive_drain_before_exact_always_enabled_trig
     assert "BEFORE INSERT OR UPDATE OR DELETE" in trigger and "FOR EACH STATEMENT" in trigger
     assert 'ON "owned_schema".evidence_items' in trigger
     assert enabled == 'ALTER TABLE "owned_schema".evidence_items ENABLE ALWAYS TRIGGER evidence_writer_fence'
+    assert statements[6] == "LOCK TABLE owned_schema.password_reset_tokens IN ACCESS EXCLUSIVE MODE"
+    assert ddl == [("password_reset_tokens", "purpose", "VARCHAR(24)", False, "password_reset", {"schema": "owned_schema"}),
+        ("ck_password_reset_purpose", "password_reset_tokens", "purpose IN ('password_reset','privacy_erasure')", {"schema": "owned_schema"})]
     assert all("DROP " not in statement and "TRUNCATE " not in statement for statement in statements)
 
 
@@ -71,10 +78,18 @@ def test_install_requires_an_existing_transaction_before_any_sql():
 
 
 def test_local_sqlite_does_not_pretend_to_install_a_postgresql_fence(monkeypatch):
+    from contextlib import contextmanager
     migration = load_migration()
     bind = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
-    monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=lambda: bind))
+    calls = []
+    @contextmanager
+    def batch(name):
+        assert name == "password_reset_tokens"
+        yield SimpleNamespace(add_column=lambda column: calls.append(column.name),
+            create_check_constraint=lambda name, condition: calls.append((name, condition)))
+    monkeypatch.setattr(migration, "op", SimpleNamespace(get_bind=lambda: bind, batch_alter_table=batch))
     migration.upgrade()
+    assert calls == ["purpose", ("ck_password_reset_purpose", "purpose IN ('password_reset','privacy_erasure')")]
 
 
 def test_downgrade_refuses_before_any_database_or_ddl_access(monkeypatch):

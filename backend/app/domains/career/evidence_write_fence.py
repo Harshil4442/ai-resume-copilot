@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ... import models
 from . import evidence_fence_definition as definition
+
+if TYPE_CHECKING:
+    from ... import models
 
 SETTING = definition.SETTING
 VERSION = definition.VERSION
@@ -113,6 +116,8 @@ def evidence_write_scope(db: Session) -> Iterator[None]:
 
 def flush_evidence_writes(db: Session, items: Sequence[models.EvidenceItem]) -> None:
     """Flush only the explicitly validated ORM rows while the marker is armed."""
+    from ... import models
+
     if not items or any(not isinstance(item, models.EvidenceItem) for item in items):
         raise EvidenceWriteFenceDenied("evidence_writer_rows_required")
     with evidence_write_scope(db):

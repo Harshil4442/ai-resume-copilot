@@ -120,6 +120,15 @@ jobs:
           tests/test_schema25_app_rolling_release.py tests/test_schema25_app_compatibility_postgres.py
           tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
           tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_protocol_v2.py
+          tests/test_schema25_app_compatibility_v3_postgres.py tests/test_schema25_app_protocol_v3.py
+          tests/test_schema25_app_rolling_v3.py tests/test_qualify_schema26_compatibility.py
+          tests/test_evidence_writer_adapters.py tests/test_evidence_writer_fence.py
+          tests/test_evidence_writer_fence_postgres.py tests/test_evidence_writer_schema26_contract.py
+          tests/test_neon_schema26_release_transport.py tests/test_schema26_operator_successors.py
+          tests/test_schema26_catalog_postgres.py tests/test_privacy_erasure_recovery.py
+          tests/test_privacy_erasure_postgres.py tests/test_mail_budget.py app/routers/privacy_erasure.py
+          tests/fixtures/evidence_fence.py
+          ../infra/gcp/schema26_app_rolling_v3.py
           tests/test_firestore_identity_list.py tests/test_candidate_validation_identity_list.py
           tests/test_native_metadata_admission.py tests/test_native_metadata_admission_redis.py
           app/routers/native_metadata_http.py
@@ -200,6 +209,12 @@ jobs:
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
           scripts/schema25_app_release_contract.py scripts/schema25_app_release_contract_v2.py
+          scripts/schema25_app_release_contract_v3.py scripts/evidence_writer_schema26_contract.py
+          scripts/qualify_schema26_compatibility.py scripts/qualify_schema25_retained_v2.py
+          scripts/reconcile_native_expenses_schema26.py scripts/review_canary_audience_schema26.py
+          app/domains/career/evidence_fence_definition.py app/domains/career/evidence_write_fence.py
+          app/domains/credits/reconciliation_schema26.py ../infra/gcp/schema26_app_rolling_v3.py
+          app/routers/privacy_erasure.py
           scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
           ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py
           scripts/credit_shadow_report.py
@@ -336,12 +351,12 @@ jobs:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
         run: .venv/bin/python scripts/qualify_schema25_retained_v1.py
-      - name: Qualify schema25 app v2 compatibility
+      - name: Qualify schema26 app v3 compatibility
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
+        run: .venv/bin/python -I -B scripts/qualify_schema26_compatibility.py
       - name: Prepare pinned owned TLS Redis wire binary
         id: native-metadata-redis
         timeout-minutes: 7
@@ -363,14 +378,22 @@ jobs:
             > "$owned_redis_root/build.log" 2>&1
           test -x "$owned_redis_root/source/src/redis-server"
           printf 'binary=%s\n' "$owned_redis_root/source/src/redis-server" >> "$GITHUB_OUTPUT"
-      - name: Qualify schema25 app v2 native protocol
+      - name: Qualify retained actual-source schema25 app v2
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v2.py
+        run: .venv/bin/python scripts/qualify_schema25_retained_v2.py
+      - name: Qualify schema26 app v3 native protocol
+        working-directory: backend
+        env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v3.py
       - name: Run backend tests
         working-directory: backend
         env:
@@ -392,7 +415,7 @@ jobs:
             --owned ../infra/document-processing/service.py
           # Catch the native delivery/application contract before the full suite.
           .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
-          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics --ignore=tests/test_schema25_app_compatibility_v2_postgres.py --ignore=tests/test_schema25_app_rolling_v2.py --ignore=tests/test_schema25_app_alias_retirement.py --ignore=tests/test_schema25_app_protocol_v2.py
       - name: Save encrypted PostgreSQL failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref

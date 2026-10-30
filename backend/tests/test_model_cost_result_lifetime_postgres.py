@@ -11,6 +11,7 @@ import pytest
 from backend.app import models
 from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
 from backend.app.domains.analysis import operations, schemas, service, tasks
+from backend.app.domains.career.evidence_write_fence import flush_evidence_writes
 from backend.app.routers import resume as resume_routes
 from backend.app.services import docx_artifact, guardrails, llm_client, result_commit
 from backend.app.services.generation_budget import current_budget
@@ -86,11 +87,13 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
     with factory() as db:
         resume = db.get(models.Resume, 1)
         resume.source_document, resume.source_format = _native_source(), "docx"
-        db.add(models.EvidenceItem(
+        evidence = models.EvidenceItem(
             id="evd_approved", user_id=1, resume_id=1, category="experience",
             title="Synthetic platform", evidence_text=SOURCE_EXPERIENCE, skills=["python"],
             approval_state="approved", metrics={},
-        ))
+        )
+        db.add(evidence)
+        flush_evidence_writes(db, [evidence])
         db.commit()
         run, _ = service.create_run(db, user_id=1, payload=schemas.AnalysisRunCreate(
             operation="resume_tailor", opportunity_id="opp_test", input={},

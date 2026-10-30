@@ -12,22 +12,18 @@ from ..domains.candidate_accounts.bootstrap import OwnedBootstrapView, bootstrap
 from ..domains.candidate_accounts.dashboard import OwnedDashboardView, dashboard_view
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
 from ..domains.candidate_accounts.profile_view import profile_view
-from ..domains.career.evidence_write_fence import evidence_write_scope
 from ..domains.notifications import enqueue_notification
 from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
 from ..domains.recovery.store import GuardDenied
 from ..models import (
-    AdminAuditEvent,
     AnalysisRun,
     ApplicationEvent,
     CandidateGoogleIdentity,
     CandidatePasswordAccount,
     CareerMemoryEntry,
-    EntitlementLedger,
     EvidenceItem,
     JobMatch,
     ModelCallEvent,
-    NotificationOutbox,
     Opportunity,
     OpportunityContact,
     PaymentOrder,
@@ -416,73 +412,9 @@ def delete_account(
             raise metadata_http_error(exc) from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
-    now = datetime.now(UTC)
+    from ..domains.candidate_accounts.account_erasure import erase_account_sql
 
-    from ..domains.employer.admissions import lock_application_set
-
-    # This same short lifetime guard fences new application/analysis creation
-    # and model admission. Lock runs before model events and the owner row.
-    lock_application_set(db, uid)
-    db.query(AnalysisRun).filter_by(user_id=uid).order_by(AnalysisRun.id).with_for_update().all()
-
-    # End access before unlinking the ledger. This is an audit transition, not
-    # a refund and not a subscription cancellation.
-    active_entitlements = (
-        db.query(EntitlementLedger)
-        .filter(
-            EntitlementLedger.user_id == uid,
-            EntitlementLedger.status == "active",
-        )
-        .all()
-    )
-    for entitlement in active_entitlements:
-        entitlement.status = "ended_account_deleted"
-        entitlement.revoked_at = now
-        entitlement.user_id = None
-    db.query(EntitlementLedger).filter(EntitlementLedger.user_id == uid).update(
-        {EntitlementLedger.user_id: None}, synchronize_session=False
-    )
-
-    orders = db.query(PaymentOrder).filter(PaymentOrder.user_id == uid).all()
-    for order in orders:
-        if order.status in {"initializing", "created", "client_confirmed"}:
-            order.status = "customer_deleted"
-        order.active_attempt_key = None
-        order.customer_deleted_at = now
-        order.user_id = None
-
-    db.query(ModelCallEvent).filter(ModelCallEvent.user_id == uid).delete(synchronize_session=False)
-    from ..domains.analysis.models import AnalysisRequestKey
-    from ..domains.credits.privacy import erase_owner_credit_links
-    from ..domains.dispatch.models import DispatchOutbox
-    from ..domains.employer.service import delete_account_data
-    erase_owner_credit_links(db, user_id=uid)
-    delete_account_data(db, uid)
-    run_ids = [identity for (identity,) in db.query(AnalysisRun.id).filter_by(user_id=uid).all()]
-    if run_ids:
-        db.query(DispatchOutbox).filter(DispatchOutbox.topic == "analysis.run", DispatchOutbox.aggregate_id.in_(run_ids)).delete(synchronize_session=False)
-    db.query(AnalysisRequestKey).filter_by(user_id=uid).delete(synchronize_session=False)
-    db.query(NotificationOutbox).filter(NotificationOutbox.user_id == uid).delete(synchronize_session=False)
-    db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_user_id == uid).update(
-        {AdminAuditEvent.actor_user_id: None}, synchronize_session=False
-    )
-    db.query(UsageEvent).filter(UsageEvent.user_id == uid).delete(synchronize_session=False)
-    db.query(ApplicationEvent).filter(ApplicationEvent.user_id == uid).delete(synchronize_session=False)
-    db.query(ResumeVersion).filter(ResumeVersion.user_id == uid).delete(synchronize_session=False)
-    # The account/lifetime owner checks above authorize only this exact privacy
-    # deletion. Do not carry its write marker into the remaining erasure work.
-    with evidence_write_scope(db):
-        db.query(EvidenceItem).filter(EvidenceItem.user_id == uid).delete(synchronize_session=False)
-    db.query(Reminder).filter(Reminder.user_id == uid).delete(synchronize_session=False)
-    db.query(OpportunityContact).filter(OpportunityContact.user_id == uid).delete(synchronize_session=False)
-    db.query(CareerMemoryEntry).filter(CareerMemoryEntry.user_id == uid).delete(synchronize_session=False)
-    db.query(AnalysisRun).filter(AnalysisRun.user_id == uid).delete(synchronize_session=False)
-    db.query(Opportunity).filter(Opportunity.user_id == uid).delete(synchronize_session=False)
-    db.query(JobMatch).filter(JobMatch.user_id == uid).delete(synchronize_session=False)
-    db.query(Resume).filter(Resume.user_id == uid).delete(synchronize_session=False)
-    db.query(UserProfile).filter(UserProfile.user_id == uid).delete(synchronize_session=False)
-    db.query(CandidatePasswordAccount).filter_by(user_id=uid).delete(synchronize_session=False)
-    db.query(User).filter(User.id == uid).delete(synchronize_session=False)
+    erase_account_sql(db, uid)
     db.commit()
     return {"status": "deleted"}
 

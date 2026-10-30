@@ -252,7 +252,7 @@ def review_transcription(
 @router.delete("/evidence-items/{evidence_id}", status_code=204)
 def delete_evidence(
     evidence_id: str,
-    expected_fingerprint: str | None = Query(default=None, pattern=r"^[a-f0-9]{64}$"),
+    expected_fingerprint: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):

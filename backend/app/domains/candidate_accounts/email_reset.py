@@ -51,6 +51,8 @@ def _issue_token(row: PasswordResetToken) -> str:
 
 def _valid_token(row: PasswordResetToken, token: str) -> bool:
     try:
+        if row.purpose != "password_reset":
+            return False
         raw = base64.b64decode(token + "=", altchars=b"-_", validate=True)
         return (len(raw) == 32 and base64.urlsafe_b64encode(raw).decode().rstrip("=") == token
             and hmac.compare_digest(raw[16:], _token_mac(row, raw[:16])))
@@ -75,7 +77,7 @@ def request_reset(db: Session, email: str, *, now: datetime | None = None) -> st
     if owner is None:
         db.rollback()
         return None
-    last = db.query(PasswordResetToken).filter_by(user_id=owner.id).order_by(PasswordResetToken.created_at.desc()).first()
+    last = db.query(PasswordResetToken).filter_by(user_id=owner.id, purpose="password_reset").order_by(PasswordResetToken.created_at.desc()).first()
     if last is not None and now < last.created_at.replace(tzinfo=UTC) + COOLDOWN:
         db.rollback()
         return None
@@ -84,9 +86,9 @@ def request_reset(db: Session, email: str, *, now: datetime | None = None) -> st
     except GuardDenied:
         db.rollback()
         return None  # A pending/deleting native account cannot be silently recovered.
-    for old in db.query(PasswordResetToken).filter_by(user_id=owner.id, status="PENDING"):
+    for old in db.query(PasswordResetToken).filter_by(user_id=owner.id, purpose="password_reset", status="PENDING"):
         old.status, old.consumed_at = "INVALIDATED", now
-    row = PasswordResetToken(id=public_id("rst"), user_id=owner.id,
+    row = PasswordResetToken(id=public_id("rst"), purpose="password_reset", user_id=owner.id,
         email_sha256=digest(owner.email), credential_sha256=digest(owner.password_hash), native_revision_sha256=native,
         legacy_epoch=int(owner.credential_epoch or 0), status="PENDING", created_at=now, expires_at=now + TTL)
     token = _issue_token(row)
@@ -102,12 +104,12 @@ def confirm_reset(db: Session, token: str, new_password: str, *, now: datetime |
         raise ResetLinkInvalid()
     now = now or utcnow()
     # Resolve only ownership before locking in the same owner->proof order as issuance.
-    owner_id = db.query(PasswordResetToken.user_id).filter_by(token_sha256=digest(token)).scalar()
+    owner_id = db.query(PasswordResetToken.user_id).filter_by(token_sha256=digest(token), purpose="password_reset").scalar()
     if owner_id is None:
         db.rollback()
         raise ResetLinkInvalid()
     owner = db.query(User).filter_by(id=owner_id).with_for_update().one_or_none()
-    row = db.query(PasswordResetToken).filter_by(token_sha256=digest(token)).with_for_update().one_or_none()
+    row = db.query(PasswordResetToken).filter_by(token_sha256=digest(token), purpose="password_reset").with_for_update().one_or_none()
     if (owner is None or row is None or row.status != "PENDING" or row.consumed_at is not None
             or now >= row.expires_at.replace(tzinfo=UTC) or row.email_sha256 != digest(owner.email)
             or row.credential_sha256 != digest(owner.password_hash) or row.legacy_epoch != int(owner.credential_epoch or 0)
@@ -124,7 +126,7 @@ def confirm_reset(db: Session, token: str, new_password: str, *, now: datetime |
         raise ResetLinkInvalid()
     encoded = hash_password(new_password)
     row.status, row.consumed_at = "PROCESSING", now
-    for other in db.query(PasswordResetToken).filter_by(user_id=owner.id, status="PENDING"):
+    for other in db.query(PasswordResetToken).filter_by(user_id=owner.id, purpose="password_reset", status="PENDING"):
         if other.id != row.id:
             other.status, other.consumed_at = "INVALIDATED", now
     reset_id = row.id
@@ -139,7 +141,7 @@ def confirm_reset(db: Session, token: str, new_password: str, *, now: datetime |
         (accounts or production_candidate_accounts()).reset_password_from_email(reset_id, encoded, token)
     except Exception:  # noqa: BLE001 -- uncertain native outcomes never replay or expose provider text.
         db.rollback()
-        failed = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one()
+        failed = db.query(PasswordResetToken).filter_by(id=reset_id, purpose="password_reset").with_for_update().one()
         failed.status = "UNAVAILABLE"
         db.commit()
         raise ResetUnavailable() from None

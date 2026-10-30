@@ -213,3 +213,24 @@ def test_exact_delete_locks_and_refreshes_then_flushes_only_the_owned_row(monkey
     service.delete_evidence(db, 1, db.item.id, expected_fingerprint=shown)
     assert deleted == flushed == [db.item] and db.commits == 1
     assert any(fresh and locked and "FOR UPDATE" in sql for sql, fresh, locked in db.queries)
+
+
+@pytest.mark.parametrize("token", [None, "not-a-sha256"])
+def test_delete_http_foreign404_precedes_even_malformed_version_comparison(token):
+    from backend.app.database import get_db
+    from backend.app.routers.v1.career import require_career_workspace, router
+    from backend.app.security import get_current_user
+    from backend.tests.test_source_transcription_review import PersistencePort
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    db = PersistencePort()
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=2)
+    app.dependency_overrides[require_career_workspace] = lambda: None
+    with TestClient(app) as client:
+        response = client.delete("/api/v1/evidence-items/" + db.item.id,
+            params={} if token is None else {"expected_fingerprint": token})
+    assert response.status_code == 404 and db.commits == 0

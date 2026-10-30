@@ -11,6 +11,7 @@ const OPERATIONS = new Set([
   "POST /api/auth/candidate/v1/enroll-password", "POST /api/auth/google-login",
   "POST /api/auth/candidate/v1/recovery-google-challenge", "POST /api/auth/candidate/v1/recover-google",
   "POST /api/auth/password-reset/request", "POST /api/auth/password-reset/confirm",
+  "POST /api/auth/privacy-erasure/request", "POST /api/auth/privacy-erasure/confirm",
   "POST /api/auth/register", "POST /api/auth/login", "POST /api/auth/delete-account",
 ]);
 const fail = () => { throw new Error("AUTH_UNAVAILABLE"); };
@@ -28,7 +29,8 @@ function bytes(body?: BodyInit | null) {
 }
 export function candidateIngressHeaders(path: string, init: RequestInit = {}, now = Date.now(), requestId = randomUUID()) {
   const method = init.method || "GET";
-  const privateRequired = path.startsWith("/api/auth/candidate/") || path.startsWith("/api/auth/password-reset/");
+  const privateRequired = path.startsWith("/api/auth/candidate/") || path.startsWith("/api/auth/password-reset/")
+    || path.startsWith("/api/auth/privacy-erasure/");
   const headers = new Headers(init.headers);
   headers.delete("x-hirewiz-candidate-ingress");
   if (!OPERATIONS.has(`${method} ${path}`)) {

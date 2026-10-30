@@ -269,8 +269,12 @@ def pause():
 def before_flush(session,*args):
     if any(isinstance(row,models.EvidenceItem) for row in session.dirty):
         pause()
-def before_sql(*args):
-    pause()
+def before_sql(connection,cursor,statement,parameters,context,executemany):
+    normalized=' '.join(statement.lower().split())
+    if normalized.startswith('select ') and 'from evidence_items' in normalized:
+        # Authentication and the career feature guard have already completed;
+        # this is the actual old service's first evidence read, not auth SQL.
+        pause()
 def failed(context):
     states.append(getattr(context.original_exception,'sqlstate',None))
 event.listen(engine,'handle_error',failed)
