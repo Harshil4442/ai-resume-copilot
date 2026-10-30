@@ -73,3 +73,9 @@ def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_
 def test_unknown_supplier_hold_survives_personal_claim_route_rollback_on_postgres(factory, monkeypatch):
     context = setup.__wrapped__(factory, monkeypatch)
     synchronous_checks.test_unknown_provider_failure_refunds_but_cannot_retry_same_quote(context)
+
+
+@pytest.mark.parametrize("stage", ["preflight", "before"])
+def test_changed_source_during_native_dispatch_admission_on_postgres(factory, monkeypatch, stage):
+    context = setup.__wrapped__(factory, monkeypatch)
+    synchronous_checks.test_source_change_during_native_budget_io_refuses_supplier_and_retains_any_claim(context, stage)

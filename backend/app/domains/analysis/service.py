@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from ... import models
 from ...billing import catalog as pricing
@@ -58,12 +59,20 @@ def _dependency_snapshot(
     resume_id = payload.get("resume_id") or (opportunity.resume_id if opportunity else None)
     if resume_id:
         resume = _owned_resume(db, user_id, resume_id)
+        effective = None
+        if operation == "resume_tailor" or (operation == "job_match" and payload.get("mode") == "enhanced"):
+            from ..career import transcription_review
+
+            effective = transcription_review.require_effective_transcription(db, user_id, resume.id)
+            dependencies["transcription"] = transcription_review.context_binding(effective)
         dependencies["resume"] = {
             "source_sha256": hashlib.sha256(resume.source_document or b"").hexdigest(),
             "source_format": resume.source_format, "text": resume.raw_text,
             "sections": resume.sections, "skills": resume.skills,
             "experience": resume.experience_years,
         }
+        if effective is not None and operation == "job_match":
+            dependencies["resume"].update(text=effective.raw_text, sections=dict(effective.sections))
     if operation in {"interview_questions", "resume_tailor"} or (operation == "job_match" and paid_context):
         evidence_query = db.query(models.EvidenceItem).filter(
             models.EvidenceItem.user_id == user_id,
@@ -71,15 +80,27 @@ def _dependency_snapshot(
         )
         if resume_id:
             evidence_query = evidence_query.filter(models.EvidenceItem.resume_id == resume_id)
+        if resume_id and operation != "interview_questions":
+            from ..career import transcription_review
+
+            evidence_rows = sorted((row for row in transcription_review.owned_evidence(db, user_id, resume_id)
+                if row.approval_state == "approved"), key=lambda row: row.id)
+        else:
+            evidence_rows = evidence_query.order_by(models.EvidenceItem.id).all()
         dependencies["approved_evidence"] = [
             {"id": item.id, "text": item.evidence_text, "skills": item.skills,
              "metrics": item.metrics, "title": item.title,
              **({"correction_version": item.updated_at.isoformat() if item.updated_at else None,
                  "provenance": item.provenance, "source_ref": item.source_ref,
                  "category": item.category, "confidence": item.confidence}
-                if operation == "interview_questions" or (operation == "job_match" and paid_context) else {})}
-            for item in evidence_query.order_by(models.EvidenceItem.id).all()
+                if operation in {"interview_questions", "resume_tailor"} or (operation == "job_match" and paid_context) else {})}
+            for item in evidence_rows
         ]
+        if operation != "interview_questions":
+            from ..career.schemas import evidence_snapshot_fingerprint
+
+            for value, item in zip(dependencies["approved_evidence"], evidence_rows, strict=True):
+                value["snapshot_fingerprint"] = evidence_snapshot_fingerprint(item)
     if payload.get("mode") == "enhanced" or operation == "resume_tailor":
         from ...services.llm_client import GEMINI_FALLBACK_MODELS
         from ...services.personal_claims import VERSION as PERSONAL_CLAIM_VERSION
@@ -176,6 +197,37 @@ def ensure_tailoring_inputs_current(
             "The selected job, resume, approved evidence or tailoring contract changed. "
             "Review the current inputs and request a new quote."
         )
+
+
+@contextmanager
+def guard_analysis_inputs(db: Session, run: models.AnalysisRun, *, paid_context: bool):
+    from ...services.provider_input_guard import guard_provider_inputs
+    from ...services.source_transcription import SourceTranscriptionChanged
+
+    semantic = {key: value for key, value in (run.input_payload or {}).items() if key != "_accepted_analysis_quote"}
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False)
+    def check():
+        with factory() as fresh:
+            if _current_input_fingerprint(fresh, run, semantic, paid_context=paid_context) != run.input_fingerprint:
+                raise SourceTranscriptionChanged()
+    with guard_provider_inputs(check, run_id=run.id):
+        yield check
+
+
+@contextmanager
+def guard_dependency_inputs(db: Session, *, user_id: int, operation: str, payload: dict,
+                            fingerprint: str, run_id: str):
+    """Legacy admission keeps its budget while binding the complete source input."""
+    from ...services.provider_input_guard import guard_provider_inputs
+    from ...services.source_transcription import SourceTranscriptionChanged
+
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False)
+    def check():
+        with factory() as fresh:
+            if payload_fingerprint(_dependency_snapshot(fresh, user_id, operation, None, payload)) != fingerprint:
+                raise SourceTranscriptionChanged()
+    with guard_provider_inputs(check, run_id=run_id):
+        yield check
 
 
 def _owned_resume(db: Session, user_id: int, resume_id: Any) -> models.Resume:

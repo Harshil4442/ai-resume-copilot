@@ -118,7 +118,10 @@ def _database():
     factory = sessionmaker(bind=engine, autoflush=False)
     with factory() as db:
         db.add(User(id=1, email='owner@example.com', ai_credits=20, tier='free'))
-        db.add(Resume(id=1, user_id=1, original_filename='resume.pdf', raw_text='Python engineer', skills=['Python'], sections={'experience': 'Built Python services'}, experience_years=1))
+        from backend.tests.fixtures.transcription_source import source_for_text
+
+        db.add(Resume(id=1, user_id=1, original_filename='resume.pdf', raw_text='Python engineer', skills=['Python'], sections={'experience': 'Built Python services'}, experience_years=1,
+            source_format='pdf', source_document=source_for_text('Python engineer')))
         db.add(JobMatch(id=2, user_id=1, resume_id=1, job_title='Software Engineer', company='Example', job_description='Build Python and Docker services.', match_score=50, required_skills=['Python', 'Docker'], true_gaps=['Docker'], partial_matches=[], dimension_scores=[], improvement_tips=[]))
         db.add(EvidenceItem(id='approved', user_id=1, resume_id=1, title='API work', evidence_text='Built Python services.', category='experience', approval_state='approved'))
         db.add(EvidenceItem(id='pending', user_id=1, resume_id=1, title='Unreviewed', evidence_text='Invented experience', category='experience', approval_state='pending'))

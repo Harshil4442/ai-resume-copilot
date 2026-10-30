@@ -190,15 +190,20 @@ async def match_learning_strategy(
         }, create=build_curated)
 
     warnings = ["Suggested projects are future work. Add resume claims only after completing the work and approving its evidence."]
-    facts = db.query(models.EvidenceItem).filter_by(
-        user_id=current_user.id, resume_id=match.resume_id, approval_state="approved").all()
-    approved_evidence = [{"id": item.id, "text": item.evidence_text} for item in facts]
+    request = synchronous.request("learning_strategy", payload)
+    prepared = synchronous.owned_context(db, user_id=current_user.id, payload=request)
+    approved_evidence = prepared.context["approved_evidence"]
+    resume_skills, experience_years = prepared.context["resume"]["skills"], prepared.context["resume"]["experience_years"]
+    true_gaps, partial_matches = prepared.context["match"]["true_gaps"], prepared.context["match"]["partial_matches"]
+    required_skills = prepared.context["match"]["required_skills"]
+    improvement_tips, dimension_scores = prepared.context["match"]["improvement_tips"], prepared.context["match"]["dimension_scores"]
     generated_by = "curated"
     try:
         with billable_operation(
             user_id=current_user.id, db=db, operation="learning_strategy", amount=1,
-            input_payload={"match_id": match.id, "mode": payload.mode},
-        ):
+            input_payload={"match_id": match.id, "mode": payload.mode, "context_fingerprint": prepared.fingerprint},
+        ) as run, synchronous.guard_prepared_inputs(db, user_id=current_user.id, payload=request,
+                prepared=prepared, run_id=run.id):
             if payload.mode == "enhanced":
                 from starlette.concurrency import run_in_threadpool
 
@@ -233,6 +238,10 @@ async def match_learning_strategy(
             for project in _as_list(strategy.get("project_recommendations")):
                 if isinstance(project, dict):
                     project["resume_bullets"] = []
+            from ..services.result_commit import begin_result_commit
+
+            begin_result_commit(db, current_user.id, run.id)
+            synchronous.require_current_inputs(db, user_id=current_user.id, payload=request, prepared=prepared)
     except Exception as exc:
         if payload.mode != "enhanced" or isinstance(exc, HTTPException):
             raise

@@ -24,6 +24,13 @@ _KEYS = {"record_id", "user_id", "resume_id", "evidence_id", "source_sha256", "s
          "original_section_sha256", "approved_text_sha256", "assessment_fingerprint", "reviewed_at", "action"}
 
 
+class TranscriptionUnavailable(HTTPException):
+    # A source authorization refusal must not replay a whole worker/model run,
+    # even if an opaque numeric resume ID contains a retry-looking status code.
+    retryable = False
+    budget_exhausted = True
+
+
 def _sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -53,7 +60,8 @@ def assess_resume(resume: models.Resume, user_id: int) -> core.Assessment:
             source_bytes=resume.source_document, source_format=resume.source_format,
             raw_text=resume.raw_text, sections=resume.sections or {})
     except (ValueError, TypeError, AttributeError):
-        raise HTTPException(422, "The complete original source and extracted sections are required for transcription review.") from None
+        raise TranscriptionUnavailable(422, {"code": "transcription_source_required", "message":
+            "The complete original source and extracted sections are required for transcription review."}) from None
 
 
 def load_explicit_reviews(assessment: core.Assessment, evidence: list[object]) -> tuple[core.ExplicitTranscriptionReview, ...]:
@@ -130,9 +138,14 @@ def _bounded_evidence(db: Session, user_id: int, resume_id: int) -> list[models.
     rows = db.query(models.EvidenceItem).filter(models.EvidenceItem.user_id == user_id,
         models.EvidenceItem.resume_id == resume_id).populate_existing().limit(_MAX_EVIDENCE + 1).all()
     if len(rows) > _MAX_EVIDENCE:
-        raise HTTPException(422, {"code": "transcription_evidence_scope_exceeded", "message":
+        raise TranscriptionUnavailable(422, {"code": "transcription_evidence_scope_exceeded", "message":
             "This resume exceeds the complete transcription review evidence limit."})
     return rows
+
+
+def owned_evidence(db: Session, user_id: int, resume_id: int) -> list[models.EvidenceItem]:
+    """Complete bounded fresh rows; callers may filter approvals after the cap."""
+    return _bounded_evidence(db, user_id, resume_id)
 
 
 def load_effective_transcription(db: Session, user_id: int, resume_id: int, *,
@@ -146,6 +159,21 @@ def load_effective_transcription(db: Session, user_id: int, resume_id: int, *,
     rows = _bounded_evidence(db, user_id, resume_id)
     return core.resolve_transcription(assessment, rows, load_explicit_reviews(assessment, rows),
         expected_context_fingerprint=expected_context_fingerprint)
+
+
+def require_effective_transcription(db: Session, user_id: int, resume_id: int) -> core.ResolvedTranscription:
+    value = load_effective_transcription(db, user_id, resume_id)
+    if value.status != "ready":
+        raise TranscriptionUnavailable(422, {"code": "transcription_review_required", "resume_id": resume_id,
+            "message": "Compare the complete extracted sections with your original file in Resume & evidence, then explicitly review their transcription before optional AI work."})
+    return value
+
+
+def context_binding(value: core.ResolvedTranscription) -> dict[str, str | None]:
+    if value.status != "ready" or value.raw_text is None:
+        raise ValueError("transcription_review_required")
+    return {"assessment": value.assessment_fingerprint, "review_version": value.review_version_fingerprint,
+            "context": value.context_fingerprint}
 
 
 def review_snapshot(db: Session, user_id: int, resume_id: int) -> schemas.TranscriptionReviewResponse:

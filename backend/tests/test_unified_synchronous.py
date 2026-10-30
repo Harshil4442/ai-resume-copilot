@@ -1,16 +1,29 @@
 """Real inline reservations around synthetic provider calls and actual route functions."""
 import asyncio
 import json
+from contextlib import contextmanager
 from datetime import timedelta
 
 import pytest
 from backend.app import models, schemas
-from backend.app.domains.credits import pricing, runtime, service, service_quotes, synchronous
-from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
+from backend.app.domains.credits import (
+    execution,
+    pricing,
+    runtime,
+    service,
+    service_quotes,
+    synchronous,
+)
+from backend.app.domains.credits.models import (
+    CreditExecutionAttempt,
+    CreditExecutionHold,
+    CreditReservation,
+)
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.routers import llm, rag, recommendations, resume
 from backend.app.services import llm_client
 from backend.app.services.generation_budget import current_budget
+from backend.tests.fixtures.transcription_source import source_for_text
 from backend.tests.test_unified_credits import NOW, factory, grant
 from backend.tests.test_unified_execution import budgets, financial_policy, response, route
 from fastapi import HTTPException
@@ -35,7 +48,8 @@ def setup(factory, monkeypatch):
         "urls": {"https://docs.docker.com/get-started/": "a" * 64}}))
     with factory() as db:
         grant(db)
-        db.add(models.Resume(id=1, user_id=1, raw_text="Built 2 Python APIs and Docker services.", skills=["Python"], sections={}, contact_info={}))
+        db.add(models.Resume(id=1, user_id=1, raw_text="Built 2 Python APIs and Docker services.", skills=["Python"], sections={}, contact_info={},
+            source_format="pdf", source_document=source_for_text("Built 2 Python APIs and Docker services.")))
         db.flush()
         db.add(models.JobMatch(id=1, user_id=1, resume_id=1, job_title="Backend engineer", company="Example", job_description="Build reliable Python APIs and Docker services.", true_gaps=["Docker"], required_skills=["Python", "Docker"], partial_matches=[], match_score=75, fit_summary="Relevant Python experience", dimension_scores=[], improvement_tips=[], full_matches=[]))
         db.add(models.EvidenceItem(id="evidence-1", user_id=1, resume_id=1, category="experience", title="API work", evidence_text="Built 2 Python APIs and Docker services.", approval_state="approved", source_ref="resume:1", skills=["Python", "Docker"], metrics={}))
@@ -194,6 +208,57 @@ def test_unknown_provider_failure_refunds_but_cannot_retry_same_quote(setup):
         with pytest.raises(HTTPException):
             invoke(db, request, quote_id, key="different-new-key")
         assert len(calls) == 1
+
+
+@pytest.mark.parametrize("stage", ["preflight", "before"])
+def test_source_change_during_native_budget_io_refuses_supplier_and_retains_any_claim(setup, stage):
+    factory, monkeypatch = setup
+    configure(monkeypatch, "enhanced_qa")
+    provider(monkeypatch, "enhanced_qa")
+    original_context = execution.persistent_execution_budget
+    @contextmanager
+    def interrupted(*args, **kwargs):
+        with original_context(*args, **kwargs) as active:
+            original = getattr(active, stage)
+            def callback(*args, **kwargs):
+                result = original(*args, **kwargs)
+                with factory() as other:
+                    other.get(models.Resume, 1).source_document += b"source-rotation-after-native-admission"
+                    other.commit()
+                return result
+            setattr(active, stage, callback)
+            yield active
+    monkeypatch.setattr(execution, "persistent_execution_budget", interrupted)
+    counts, generations = [], []
+    def chat(messages, active):
+        active.preflight("google", "synthetic-model", messages, "https://generativelanguage.googleapis.com")
+        counts.append("synthetic-count-only")
+        event = active.admit("google", "synthetic-model", messages, api_base="https://generativelanguage.googleapis.com")
+        generations.append("synthetic-generation-only")
+        active.finish(event, latency_ms=1, response=response())
+        return json.dumps(output("enhanced_qa"))
+    monkeypatch.setattr(llm_client, "_chat_with_budget", chat)
+    with factory() as db:
+        selected = payload("enhanced_qa")
+        quote_id = quote(db, selected)
+        with pytest.raises(HTTPException) as caught:
+            invoke(db, selected, quote_id)
+        assert caught.value.detail["credits_charged"] == 0
+        assert counts == ([] if stage == "preflight" else ["synthetic-count-only"])
+        assert not generations
+        assert service.wallet(db, user_id=1).available_credits == 40
+        run = db.query(models.AnalysisRun).one()
+        assert run.status == "failed" and run.result_payload is None and run.committed_units == 0
+        attempts = db.query(CreditExecutionAttempt).all()
+        if stage == "before":
+            assert any(item.state in {"started", "outcome_unknown"} for item in attempts)
+            assert db.query(CreditExecutionHold).one().state == "outcome_unknown"
+            assert db.query(models.ModelCostLiability).one().settled_cost_micros is None
+        else:
+            assert all(item.state == "cancelled" for item in attempts)
+        with pytest.raises(HTTPException):
+            invoke(db, selected, quote_id)
+        assert not generations
 
 
 @pytest.mark.parametrize("change", ["source", "evidence", "job", "history"])

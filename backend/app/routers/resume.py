@@ -332,17 +332,25 @@ async def parse_resume(
             pass
 
         try:
+            from ..domains.credits import synchronous
+
+            enrichment_request = synchronous.request("resume_enrichment", schemas.ResumeEnrichmentRequest(resume_id=parsed_resume_id))
+            prepared = synchronous.owned_context(db, user_id=owner_id, payload=enrichment_request)
+            base_skills = prepared.context["resume"]["skills"]
             with billable_operation(
                 user_id=owner_id, db=db, operation="resume_enrichment", amount=1,
-                input_payload={"resume_id": parsed_resume_id, "source_sha256": hashlib.sha256(file_bytes).hexdigest(), "mode": "enhanced"},
-            ) as enrichment_run:
+                input_payload={"resume_id": parsed_resume_id, "source_sha256": hashlib.sha256(file_bytes).hexdigest(), "mode": "enhanced",
+                    "context_fingerprint": prepared.fingerprint},
+            ) as enrichment_run, synchronous.guard_prepared_inputs(db, user_id=owner_id,
+                    payload=enrichment_request, prepared=prepared, run_id=enrichment_run.id):
                 enrichment_run_id = enrichment_run.id
-                enriched = await run_in_threadpool(enrich_resume_skills, raw_text, skills)
+                enriched = await run_in_threadpool(enrich_resume_skills, prepared.context["resume"]["raw_text"], base_skills)
                 begin_result_commit(db, owner_id, enrichment_run_id)
+                synchronous.require_current_inputs(db, user_id=owner_id, payload=enrichment_request, prepared=prepared)
                 resume = db.query(models.Resume).filter_by(id=parsed_resume_id, user_id=owner_id).populate_existing().with_for_update().one_or_none()
                 if resume is None:
                     raise HTTPException(status_code=404, detail="Resume not found")
-                if enriched == skills:
+                if enriched == base_skills:
                     raise NoUsefulEnrichment("No additional supported skills were found")
                 resume.skills = enriched
                 db.flush()
@@ -359,10 +367,16 @@ async def parse_resume(
             enrichment_state = "unavailable"
             warnings.append("Optional AI enrichment is unavailable because its reviewed model-cost authorization is not ready. Your original resume was parsed without AI; no enrichment units were charged.")
         except HTTPException as exc:
-            if exc.status_code != 402:
+            if isinstance(exc.detail, dict) and exc.detail.get("code") in {
+                "transcription_review_required", "transcription_source_required", "transcription_evidence_scope_exceeded"
+            }:
+                enrichment_state = "requires_review"
+                warnings.append("Review the original file and complete transcription in Resume & evidence before optional AI enrichment. Your source was parsed without AI; no enrichment units were charged.")
+            elif exc.status_code != 402:
                 raise
-            enrichment_state = "insufficient_units"
-            warnings.append("Optional enrichment requires 1 analysis unit. Your original resume was parsed without AI.")
+            else:
+                enrichment_state = "insufficient_units"
+                warnings.append("Optional enrichment requires 1 analysis unit. Your original resume was parsed without AI.")
         except Exception:
             enrichment_state = "failed"
             warnings.append("Optional enrichment was unavailable. Your original resume was parsed without AI and no enrichment units were charged.")

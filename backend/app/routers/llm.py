@@ -31,20 +31,23 @@ async def rewrite_bullets_endpoint(
             accepted_service_quote_id=payload.accepted_service_quote_id,
             idempotency_key=payload.idempotency_key)
 
-    facts = db.query(models.EvidenceItem).filter_by(
-        user_id=current_user.id, resume_id=resume.id, approval_state="approved").all()
-    if not facts:
-        raise HTTPException(422, "Approve supporting resume facts before rewriting bullets")
-    evidence = [{"id": item.id, "text": item.evidence_text, "skills": item.skills or []} for item in facts]
+    request = synchronous.request("bullet_rewrite", payload)
+    prepared = synchronous.owned_context(db, user_id=current_user.id, payload=request)
+    evidence = prepared.context["approved_evidence"]
     with billable_operation(
         user_id=current_user.id,
         db=db,
         operation="rewrite_bullets",
         amount=1,
-        input_payload={"resume_id": resume.id, "tone": payload.tone},
-    ):
-        data = rewrite_bullets(resume.raw_text, payload.job_description, payload.tone,
+        input_payload={"resume_id": resume.id, "tone": payload.tone, "context_fingerprint": prepared.fingerprint},
+    ) as run, synchronous.guard_prepared_inputs(db, user_id=current_user.id, payload=request,
+            prepared=prepared, run_id=run.id):
+        data = rewrite_bullets(prepared.context["resume"]["raw_text"], payload.job_description, payload.tone,
                                approved_evidence=evidence)
+        from ..services.result_commit import begin_result_commit
+
+        begin_result_commit(db, current_user.id, run.id)
+        synchronous.require_current_inputs(db, user_id=current_user.id, payload=request, prepared=prepared)
     return schemas.RewriteBulletsResponse(
         rewritten_bullets=data.get("bullets", []),
         summary=data.get("summary", ""),
