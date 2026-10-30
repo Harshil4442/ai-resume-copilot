@@ -10,6 +10,7 @@ on:
       - backend/scripts/run_stage5_capacity.py
       - backend/scripts/stage5_capacity.py
       - backend/scripts/stage5_resources.py
+      - backend/scripts/stage5_relay.py
       - backend/scripts/stage5_seed.py
       - backend/tests/fixtures/stage5_native.py
       - backend/tests/test_stage5_capacity.py
@@ -129,3 +130,4 @@ jobs:
             ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/report.json
             ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/cleanup.json
             ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/failure.json
+            ${{ runner.temp }}/stage5-owned-${{ matrix.buyers }}/emulator-transport.json

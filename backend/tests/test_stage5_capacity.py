@@ -24,6 +24,8 @@ from scripts.stage5_resources import (
     EMULATOR_REPO_DIGEST,
     FORBIDDEN_PORTS,
     Resources,
+    effective_publication,
+    internal_endpoint,
     pinned_emulator_configuration,
     private_json,
     require_owned_internal_network,
@@ -340,7 +342,7 @@ def test_unknown_docker_cleanup_does_not_prevent_stopping_other_owned_process(mo
     monkeypatch.setattr(module, "_stop", lambda process: stopped.append(process) or {"verified_stopped": True})
     with pytest.raises(RuntimeError):
         resource.close()
-    assert stopped == resource.processes and resource.cleanup[-1]["verified_stopped"]
+    assert stopped == resource.processes and resource.cleanup[0]["verified_stopped"]
 
 
 def test_plan_mode_has_no_database_or_application_dependency(tmp_path):
@@ -360,7 +362,7 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 10 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 11 and "backend/app/**" not in trigger["paths"]
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -381,4 +383,113 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "run_stage5_capacity.py --execute" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
-    assert len(artifacts) == 3 and all(path.endswith(("report.json", "cleanup.json", "failure.json")) for path in artifacts)
+    assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)
+
+
+def test_effective_publication_is_not_the_requested_host_configuration():
+    requested = {"HostConfig": {"PortBindings": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "59999"}]}},
+                 "NetworkSettings": {"Ports": {"8080/tcp": None}}}
+    assert effective_publication(requested, 59999) is False
+    requested["NetworkSettings"]["Ports"]["8080/tcp"] = [{"HostIp": "127.0.0.1", "HostPort": "59999"}]
+    assert effective_publication(requested, 59999) is True
+    requested["NetworkSettings"]["Ports"]["8080/tcp"] = [{"HostIp": "0.0.0.0", "HostPort": "59999"}]
+    with pytest.raises(RuntimeError):
+        effective_publication(requested, 59999)
+
+
+def test_relay_target_requires_exact_current_native_network_membership():
+    import copy
+    container = {"Id": "container", "Config": {"Labels": {"hirewiz.stage5.owner": "nonce"}},
+        "NetworkSettings": {"Networks": {"own": {"NetworkID": "network", "IPAddress": "172.20.0.2"}}}}
+    network = {"Id": "network", "Internal": True, "Driver": "bridge",
+        "Labels": {"hirewiz.stage5.owner": "nonce"},
+        "Containers": {"container": {"IPv4Address": "172.20.0.2/24"}},
+        "IPAM": {"Config": [{"Subnet": "172.20.0.0/24", "Gateway": "172.20.0.1"}]}}
+    assert internal_endpoint(container, network, container_id="container", network_id="network",
+                             nonce="nonce") == (("172.20.0.2", 8080), "172.20.0.0/24")
+    for change in ("container", "network", "subnet", "outside", "gateway", "external", "other_member"):
+        c, n = copy.deepcopy(container), copy.deepcopy(network)
+        if change == "container":
+            c["Id"] = "foreign"
+        elif change == "network":
+            c["NetworkSettings"]["Networks"]["own"]["NetworkID"] = "foreign"
+        elif change == "subnet":
+            n["IPAM"]["Config"][0]["Subnet"] = "172.21.0.0/24"
+        elif change == "outside":
+            c["NetworkSettings"]["Networks"]["own"]["IPAddress"] = "8.8.8.8"
+        elif change == "gateway":
+            c["NetworkSettings"]["Networks"]["own"]["IPAddress"] = "172.20.0.1"
+        elif change == "external":
+            n["Internal"] = False
+        else:
+            n["Containers"]["foreign"] = {}
+        with pytest.raises((RuntimeError, ValueError)):
+            internal_endpoint(c, n, container_id="container", network_id="network", nonce="nonce")
+
+
+@pytest.mark.parametrize("address,subnet,port", [
+    ("8.8.8.8", "8.0.0.0/8", 8080), ("169.254.169.254", "169.254.0.0/16", 8080),
+    ("127.0.0.1", "127.0.0.0/8", 8080), ("172.20.0.2", "172.21.0.0/24", 8080),
+    ("172.20.0.2", "172.20.0.0/24", 443), ("example.invalid", "172.20.0.0/24", 8080),
+    ("172.20.0.0", "172.20.0.0/24", 8080), ("::1", "::/0", 8080),
+])
+def test_relay_has_no_external_dns_or_alternative_port_target(address, subnet, port):
+    from scripts.stage5_relay import validate_target
+    with pytest.raises(ValueError):
+        validate_target(address, subnet, port)
+
+
+def test_relay_preserves_actual_binary_bytes_both_ways_without_network():
+    import socket
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from scripts.stage5_relay import forward_pair
+
+    with ExitStack() as stack:
+        sockets = [stack.enter_context(value) for value in (*socket.socketpair(), *socket.socketpair())]
+        client, left, right, backend = sockets
+        for value in sockets:
+            value.settimeout(1)
+        counts = []
+        first, second = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\xff" * 100, b"\x00\x00\x00\x04\x00\x00\x00\x00\x00" * 100
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(forward_pair, left, right, deadline=time.monotonic() + 2, account=counts.append)
+            client.sendall(first)
+            actual = b""
+            while len(actual) < len(first):
+                actual += backend.recv(len(first) - len(actual))
+            assert actual == first
+            backend.sendall(second)
+            actual = b""
+            while len(actual) < len(second):
+                actual += client.recv(len(second) - len(actual))
+            assert actual == second
+            client.shutdown(socket.SHUT_WR)
+            future.result(timeout=1)
+        assert sum(counts) == len(first) + len(second)
+
+
+def test_relay_rejects_config_hash_drift_before_any_listener(tmp_path, monkeypatch, capsys):
+    import scripts.stage5_relay as relay
+    config = tmp_path / "config.json"
+    config.write_text('{"synthetic_private_value":"do-not-print"}')
+    config.chmod(0o600)
+    monkeypatch.setattr(sys, "argv", ["stage5_relay.py", str(config), "0" * 64, str(tmp_path / "ready.json")])
+    monkeypatch.setattr(relay, "serve", lambda *args: pytest.fail("Unbound config reached listener"))
+    assert relay.main() == 1 and "do-not-print" not in capsys.readouterr().err
+
+
+def test_relay_stop_is_proved_before_docker_endpoint_can_be_released(monkeypatch):
+    import scripts.stage5_resources as module
+    resource = object.__new__(Resources)
+    resource.container_id, resource.network_id, resource.nonce = "own", "network", "own"
+    resource.processes, resource.logs, resource.cleanup = [object()], [], []
+    calls = []
+    resource.command = lambda *args: calls.append("docker") or "[]"
+    def uncertain(process):
+        raise RuntimeError("Owned process is not terminal")
+    monkeypatch.setattr(module, "_stop", uncertain)
+    with pytest.raises(RuntimeError):
+        resource.close()
+    assert not calls and resource.container_id == "own" and resource.network_id == "network"
