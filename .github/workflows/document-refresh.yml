@@ -319,7 +319,7 @@ jobs:
             !${{ env.OUTPUT_DIRECTORY }}/failure-diagnostic.json
           if-no-files-found: warn
           retention-days: 14
-      - name: Retain private failure diagnostics separately from native custody
+      - name: Retain sanitized failure diagnostics separately from native custody
         if: always() && env.OUTPUT_DIRECTORY != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
