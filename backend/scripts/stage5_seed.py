@@ -4,6 +4,21 @@ from __future__ import annotations
 from sqlalchemy import text
 
 
+def synthetic_email(user_id: int) -> str:
+    if type(user_id) is not int or not 1 <= user_id <= 10_000:
+        raise ValueError("Synthetic actor is outside the owned dataset")
+    return f"capacity-{user_id}@example.com"
+
+
+def owned_opportunity_ids(user_id: int, *, offset: int = 0, limit: int = 50) -> list[str]:
+    synthetic_email(user_id)
+    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 200:
+        raise ValueError("Synthetic owner page is outside its declared bounds")
+    start, count = ((99991, 500) if user_id == 8 else
+                    (71, 10) if user_id == 10000 else ((user_id - 1) * 10 + 1, 10))
+    return [f"capacity-opp-{i}" for i in range(start + offset, start + min(count, offset + limit))]
+
+
 def seed(engine, plan, *, enrolled: int = 8) -> dict:
     if enrolled != 8:
         raise ValueError("Eight genuinely enrolled actors are required")
@@ -12,7 +27,7 @@ def seed(engine, plan, *, enrolled: int = 8) -> dict:
         connection.exec_driver_sql("SET LOCAL statement_timeout=120000")
         assert connection.execute(text("SELECT count(*) FROM candidate_password_accounts WHERE state='ACTIVE'")).scalar_one() == enrolled
         connection.exec_driver_sql("""INSERT INTO users(id,email,password_hash,credential_epoch,tier,ai_credits,job_service_credits)
-            SELECT i,'capacity-'||i||'@example.test','',0,'free',0,0 FROM generate_series(9,10000) i""")
+            SELECT i,'capacity-'||i||'@example.com','',0,'free',0,0 FROM generate_series(9,10000) i""")
         connection.exec_driver_sql("""INSERT INTO resumes(id,user_id,created_at,original_filename,raw_text,source_document,source_format,skills,experience_years,sections,contact_info)
             SELECT i,i,now(),'synthetic-resume.pdf',repeat('Synthetic Python PostgreSQL project experience. ',256),decode('73796e746865746963','hex'),'pdf','["Python","PostgreSQL","REST"]',3,'{"experience":"Fictional engineering evidence only."}','{"name":"Fictional Candidate"}' FROM generate_series(1,10000)i""")
         # Actor8 is the one heavy account: 9,999*10 + 500 = 100,490 opportunities.

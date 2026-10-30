@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import google.auth
@@ -13,7 +14,11 @@ import pytest
 import requests
 from google.cloud.firestore_admin_v1.types import ListDatabasesRequest
 from google.cloud.firestore_v1.types import BeginTransactionResponse, CommitResponse
+from pydantic import ValidationError
 
+from app.domains.career.schemas import OpportunityListResponse, OpportunityResponse
+from app.schemas import UserProfileResponse
+from scripts.stage5_seed import owned_opportunity_ids, synthetic_email
 from tests.fixtures.stage5_native import (
     Counters,
     EmulatorNative,
@@ -107,11 +112,55 @@ def test_synthetic_metadata_is_explicitly_typed_and_preserves_all_pins():
     assert native.counters.snapshot() == {"synthetic_admin_list_databases": 1}
 
 
+def opportunity_page(user_id, *, offset=0, limit=50):
+    rows = [OpportunityResponse(id=identity, resume_id=user_id, latest_match_id=1,
+        latest_analysis_run_id=None, title="Backend Engineer", company="Fictional Employer",
+        location="Bengaluru", source="manual", source_url=None, job_description="Synthetic role.",
+        job_snapshot={}, stage="saved", priority="medium", compensation=None, deadline_at=None,
+        next_action=None, notes="", outcome=None, outcome_notes=None, archived_at=None,
+        outcome_at=None, created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC))
+        for identity in owned_opportunity_ids(user_id, offset=offset, limit=limit)]
+    return OpportunityListResponse(items=rows, total=500 if user_id == 8 else 10).model_dump(mode="json")
+
+
 def test_owned_response_contract_rejects_wrong_owner_empty_page_and_fake_wallet():
-    ordinary = {"total": 10, "items": [{"user_id": 1}] * 10}
+    ordinary = opportunity_page(1)
+    assert "user_id" not in OpportunityResponse.model_fields
     assert check_body("/api/v1/opportunities?limit=50", ordinary, user_id=1, buyer=False, heavy=False)
     assert not check_body("/api/v1/opportunities?limit=50", ordinary, user_id=2, buyer=False, heavy=False)
     assert not check_body("/api/v1/opportunities?limit=50", {"total": 10, "items": []},
                           user_id=1, buyer=False, heavy=False)
     assert not check_body("/api/v1/credits/wallet", {"available_credits": 90},
+                          user_id=1, buyer=False, heavy=False)
+    for row in ordinary["items"]:
+        row["resume_id"] = 2
+    assert not check_body("/api/v1/opportunities?limit=50", ordinary, user_id=1, buyer=False, heavy=False)
+
+
+@pytest.mark.parametrize("user_id,offset,limit", [(i, 0, 50) for i in range(1, 9)] +
+    [(8, 50, 200), (8, 490, 50), (8, 500, 50), (10000, 3, 5)])
+def test_actual_public_opportunity_schema_has_exact_owned_ids_across_actors_and_pages(user_id, offset, limit):
+    body = opportunity_page(user_id, offset=offset, limit=limit)
+    path = f"/api/v1/opportunities?limit={limit}&offset={offset}"
+    assert check_body(path, body, user_id=user_id, buyer=False, heavy=user_id == 8)
+    if body["items"]:
+        body["items"][0]["id"] = "capacity-opp-99999" if user_id != 8 else "capacity-opp-1"
+        assert not check_body(path, body, user_id=user_id, buyer=False, heavy=user_id == 8)
+
+
+def test_reserved_synthetic_address_matches_real_profile_schema_without_dns(monkeypatch):
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: pytest.fail("No DNS permitted"))
+    fields = {"email": synthetic_email(1), "profile_completeness": 0, "tier": "free", "ai_credits": 0}
+    profile = UserProfileResponse(**fields).model_dump(mode="json")
+    with pytest.raises(ValidationError):
+        UserProfileResponse(**{**fields, "email": "capacity-1@example.test"})
+    body = {"schema_version": "owned-bootstrap-v1", "profile": profile,
+            "credit_wallet": {"available_credits": 0}, "unavailable": []}
+    assert check_body("/api/auth/bootstrap", body, user_id=1, buyer=False, heavy=False)
+    assert not check_body("/api/auth/bootstrap", {**body, "profile": None}, user_id=1, buyer=False, heavy=False)
+    assert not check_body("/api/auth/bootstrap", {**body, "profile": {**profile, "email": synthetic_email(2)}},
+                          user_id=1, buyer=False, heavy=False)
+    assert not check_body("/api/auth/bootstrap", {**body, "unavailable": ["profile"]},
                           user_id=1, buyer=False, heavy=False)

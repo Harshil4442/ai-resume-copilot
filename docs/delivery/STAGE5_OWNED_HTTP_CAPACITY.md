@@ -48,6 +48,10 @@ only this finite path set is offered by the workload. Missing-bearer and foreign
 resume controls must first return 401/404 through the real boundary. Measured SQL
 connections inherit server-side read-only transactions. Counts, response contracts
 and balances are checked; a 200 with wrong ownership or content is a failed result.
+Synthetic addresses use reserved `example.com` and the real public profile email
+validator, without DNS or email delivery. Opportunity ownership is checked against
+the exact seeded public-ID page and each item's resume ID, including offsets;
+the public response intentionally does not expose its private SQL `user_id`.
 No order, upload, search, application, email, employer, model or native cloud call
 is generated. ADC, external requests/httpx, native TLS channels and non-owned
 Python socket connections deny before send. The emulator's Docker network has no
@@ -102,7 +106,15 @@ Arrivals are scheduled before semaphore admission. Arrival-to-completion latency
 includes the client queue; HTTP service latency and queue delay are reported
 separately. Refusals (including 429/503), deadline/transport errors, failed owned
 contracts, body bytes and successful responses are separate counts. Fast 429s do
-not inflate successful throughput. Reports contain actual SQL statement counts,
+not inflate successful throughput.
+The CLI preserves its report and exits nonzero for failed controls, any bad owned
+200 body, missing phases/requests, unexpected statuses, transport/deadline errors,
+or incomplete cleanup. A governed 429 is accepted only as an explicit refusal
+after checking the actual capacity error body and Retry-After/cache headers;
+it remains outside successful-response throughput. Even a valid local workload
+keeps `production_capacity_qualified` false.
+
+Reports contain actual SQL statement counts,
 pool acquisition composite timings, real data-plane RPC counts, synthetic Admin/
 Storage SDK call counts and Redis server command deltas. The Redis INFO observation
 itself adds a command; script internals/connection setup can add more. This is not
@@ -158,7 +170,7 @@ production environment, cloud credentials, secrets or provider action. It upload
 only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
-workflow has not been run as part of source preparation. Its PR trigger names
+workflow runs only the reviewed owned-local experiment. Its PR trigger names
 only the eleven finite Stage5 tooling/config/test paths, so this Linux validation
 can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
@@ -186,15 +198,23 @@ A later verification attempt hit filesystem ENOSPC and is retained as incomplete
 not a passing rerun. Its failed disposable cluster was removed separately only
 after matching the retained native system identifier/nonce and observing its
 original PID absent; the crash-recovery state remains in the failure evidence.
-The current source/observer/finalizer checks are separate from actual Linux HTTP
-execution, which remains pending.
+The source/observer/finalizer checks are separate from actual Linux HTTP
+execution and do not establish its response contracts or production capacity.
 
 The first actual Linux PR run also stopped at GAPIC readiness in both buyer
 scenarios after the pinned dependencies and finite/PG seed checks passed. No
 HTTP workload was measured; its artifacts prove owned cleanup. That failure
 motivated effective-listener diagnostics and the fixed internal-endpoint relay.
-The corrected physical path still needs actual Linux GAPIC/workload success;
-the synthetic relay controls do not replace it. A later Mac Docker image-inspect
+The second actual Linux run at source `5c6bb1d` reached the genuine GAPIC/emulator
+and direct HTTPS workload through its owned fixed relay in both buyer scenarios.
+Each produced 300 measured requests and verified cleanup, but 68 HTTP200 bodies
+failed the original fixture oracle. The fixture's `.test` email was rejected by
+the real profile schema, and it incorrectly expected private `user_id` fields in
+the public opportunities response. Those original reports remain failed contract
+measurements. Their green workflow exits exposed a missing CLI failure gate;
+physical transport success is separate from workload acceptance. The corrected
+fixture/oracle and mandatory failure gate need a fresh actual Linux result.
+A later Mac Docker image-inspect
 probe timed out before any resource creation and was not repeated.
 
 ## Original acceptance remains open

@@ -15,10 +15,12 @@ import pytest
 from scripts.stage5_capacity import (
     PATHS,
     Plan,
+    expected_capacity_refusal,
     finish_owned_http,
     release_native_context,
     scheduled_phase,
     summarize,
+    workload_validation,
 )
 from scripts.stage5_resources import (
     EMULATOR_REPO_DIGEST,
@@ -163,6 +165,187 @@ def test_refusals_and_bad_owned_contracts_are_never_successful_throughput():
     result = summarize(rows)
     assert result["offered"] == 4 and result["successful_owned_responses"] == 1
     assert result["contract_failures"] == 1 and result["status_counts"] == {"200": 2, "429": 1, "503": 1}
+
+
+PREFLIGHT = {"missing_bearer_status": 401, "foreign_resume_status": 404,
+             "bootstrap_status": 200, "bootstrap_contract_valid": True}
+CAPACITY_BODY = {"detail": {"code": "NATIVE_METADATA_CAPACITY",
+    "message": "Request capacity is temporarily allocated. Please try again later."}}
+CAPACITY_HEADERS = {"retry-after": "60", "cache-control": "private, no-store", "pragma": "no-cache"}
+
+
+@pytest.mark.parametrize("change", [None, "mode", "status", "body", "retry", "cache", "pragma"])
+def test_capacity_refusal_requires_actual_typed_body_and_all_response_headers(change):
+    mode, status, body, headers = "list_governed_40", 429, CAPACITY_BODY, dict(CAPACITY_HEADERS)
+    if change == "mode":
+        mode = "get_unpaced_diagnostic"
+    elif change == "status":
+        status = 503
+    elif change == "body":
+        body = {"detail": "Rate limited"}
+    elif change:
+        del headers[{"retry": "retry-after", "cache": "cache-control", "pragma": "pragma"}[change]]
+    assert expected_capacity_refusal(mode, status, body, headers) is (change is None)
+
+
+def measured_results(count=5):
+    return [{"mode": mode, "concurrency": concurrency, "offered": count,
+             "requests": [{"index": i, "status": 200, "contract_valid": True} for i in range(count)]}
+        for mode in ("get_unpaced_diagnostic", "list_governed_40") for concurrency in (1, 10, 25)]
+
+
+@pytest.mark.parametrize("failure", [None, "contract", "503", "401", "404", "transport_error",
+    "deadline", "429_unknown", "429_get", "missing_phase", "empty_phase", "wrong_owner_denial",
+    "missing_profile", "unstarted"])
+def test_workload_validation_preserves_failures_and_expected_refusals_without_capacity_claim(failure):
+    results, preflight = measured_results(), dict(PREFLIGHT)
+    # A correctly identified governed refusal is never a successful response.
+    results[-1]["requests"][0] = {"status": 429, "contract_valid": False, "capacity_refusal_valid": True}
+    if failure == "contract":
+        results[0]["requests"][0]["contract_valid"] = False
+    elif failure in {"503", "401", "404", "transport_error", "deadline", "429_unknown", "429_get"}:
+        results[0]["requests"][0] = {"status": int(failure) if failure.isdigit() else
+            (429 if failure.startswith("429") else failure), "capacity_refusal_valid": failure == "429_get"}
+    elif failure == "missing_phase":
+        results.pop()
+    elif failure == "empty_phase":
+        results[0].update(requests=[], offered=0)
+    elif failure == "wrong_owner_denial":
+        preflight["foreign_resume_status"] = 200
+    elif failure == "missing_profile":
+        preflight["bootstrap_contract_valid"] = False
+    elif failure == "unstarted":
+        results[0]["state"] = "not_started_deadline"
+    validation = workload_validation(results, requests_per_phase=5, preflight=preflight)
+    assert validation["passed"] is (failure is None)
+    assert validation["production_capacity_qualified"] is False
+    assert bool(validation["failures"]) is (failure is not None)
+
+
+@pytest.mark.parametrize("failure", [None, "contract", "preflight", "cleanup"])
+def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failure(tmp_path, monkeypatch, capsys, failure):
+    from scripts import run_stage5_capacity as runner
+
+    output, calls = tmp_path / "owned", []
+    class InertResources:
+        def __init__(self, directory, *args):
+            self.directory, self.cleanup = directory, []
+            directory.mkdir(mode=0o700)
+        def close(self):
+            calls.append("cleanup")
+            self.cleanup.append({"synthetic_terminal": failure != "cleanup"})
+            if failure == "cleanup":
+                raise RuntimeError("synthetic-private-error")
+    def execute(plan, resources):
+        results, preflight = measured_results(plan.requests_per_phase), dict(PREFLIGHT)
+        resources.partial_report.update(results=results, preflight=preflight, synthetic_test=True)
+        if failure == "preflight":
+            preflight["foreign_resume_status"] = 200
+            raise RuntimeError("synthetic-private-error")
+        if failure == "contract":
+            results[0]["requests"][0]["contract_valid"] = False
+        # The actual CLI independently recomputes; a producer's stale success
+        # annotation cannot hide a measured bad body or failed control.
+        resources.partial_report["validation"] = {"passed": True}
+        return resources.partial_report
+    monkeypatch.setattr(runner, "Resources", InertResources)
+    monkeypatch.setattr(runner, "execute", execute)
+    monkeypatch.setattr(sys, "argv", ["runner", "--execute", "--output", str(output),
+                                    "--pg-bin", "/not-opened", "--redis-server", "/not-opened"])
+    assert runner.main() == (0 if failure is None else 1)
+    report = json.loads((output / "report.json").read_text())
+    assert report["validation"]["passed"] is (failure is None)
+    assert report["validation"]["production_capacity_qualified"] is False
+    assert report["synthetic_test"] and calls == ["cleanup"]
+    assert report["cleanup_verified"] is (failure != "cleanup")
+    assert (output / "cleanup.json").is_file()
+    assert len(report["results"]) == 6
+    assert "synthetic-private-error" not in capsys.readouterr().err
+
+
+def test_cli_does_not_write_failure_into_preexisting_unowned_output(tmp_path, monkeypatch):
+    from scripts import run_stage5_capacity as runner
+    monkeypatch.setattr(sys, "argv", ["runner", "--execute", "--output", str(tmp_path),
+                                    "--pg-bin", "/not-opened", "--redis-server", "/not-opened"])
+    assert runner.main() == 1 and list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("response_kind", ["missing_profile", "governed", "untyped_429"])
+def test_actual_workload_collector_validates_refusal_wire_and_missing_profile_without_sockets(monkeypatch, response_kind):
+    import httpx
+
+    from scripts import run_stage5_capacity as runner
+
+    class InertClient:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def get(self, path, **kwargs):
+            assert path in PATHS and kwargs["headers"]["Authorization"] == "Bearer synthetic-only"
+            return httpx.Response(200 if response_kind == "missing_profile" else 429,
+                json={"profile": None} if response_kind == "missing_profile" else
+                    CAPACITY_BODY if response_kind == "governed" else {"detail": "other"},
+                headers=CAPACITY_HEADERS)
+    async def phase(**kwargs):
+        rows = []
+        for i in range(kwargs["count"]):
+            row = await kwargs["request"](i)
+            rows.append({**row, "index": i, "queue_ms": 0, "http_ms": 1, "arrival_to_completion_ms": 1})
+        return rows
+    monkeypatch.setattr(httpx, "AsyncClient", InertClient)
+    monkeypatch.setattr(runner, "ssl", SimpleNamespace(create_default_context=lambda **kwargs: None))
+    monkeypatch.setattr(runner, "scheduled_phase", phase)
+    for name in ("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED"):
+        monkeypatch.setenv(name, "false")
+    results, _ = asyncio.run(runner.workload(Plan(requests_per_phase=5), SimpleNamespace(api_port=59999),
+        dict.fromkeys(range(1, 9), "synthetic-only"),
+        SimpleNamespace(storage=SimpleNamespace(info=lambda *args: {"total_commands_processed": 0})),
+        SimpleNamespace(snapshot=lambda: {}), {"acquire_ms": []}, Path("/not-read")))
+    assert len(results) == 6
+    for result in results:
+        valid_refusal = response_kind == "governed" and result["mode"] == "list_governed_40"
+        assert result["successful_owned_responses"] == 0
+        assert result["validated_capacity_refusals"] == (5 if valid_refusal else 0)
+        assert all(row["contract_valid"] is False and row["capacity_refusal_valid"] is valid_refusal
+                   for row in result["requests"])
+
+
+def test_completed_phase_is_retained_when_later_observation_fails_without_sockets(monkeypatch):
+    import httpx
+
+    from scripts import run_stage5_capacity as runner
+
+    class InertClient:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+    calls = []
+    def snapshot():
+        calls.append("observation")
+        if len(calls) == 3:
+            raise RuntimeError("synthetic later observation failed")
+        return {}
+    async def phase(**kwargs):
+        return [{"index": i, "status": 200, "contract_valid": True, "bytes": 1,
+                 "queue_ms": 0, "http_ms": 1, "arrival_to_completion_ms": 1} for i in range(kwargs["count"])]
+    monkeypatch.setattr(httpx, "AsyncClient", InertClient)
+    monkeypatch.setattr(runner, "ssl", SimpleNamespace(create_default_context=lambda **kwargs: None))
+    monkeypatch.setattr(runner, "scheduled_phase", phase)
+    for name in ("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED"):
+        monkeypatch.setenv(name, "false")
+    resources = SimpleNamespace(api_port=59999, partial_report={})
+    with pytest.raises(RuntimeError, match="later observation"):
+        asyncio.run(runner.workload(Plan(requests_per_phase=5), resources, {},
+            SimpleNamespace(storage=SimpleNamespace(info=lambda *args: {"total_commands_processed": 0})),
+            SimpleNamespace(snapshot=snapshot), {"acquire_ms": []}, Path("/not-read")))
+    assert len(resources.partial_report["results"]) == 1
+    assert resources.partial_report["results"][0]["offered"] == 5
 
 
 def test_no_configurable_provider_destination_and_no_payment_mutation_path():

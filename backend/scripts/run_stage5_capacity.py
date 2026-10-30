@@ -30,10 +30,12 @@ from scripts.stage5_capacity import (  # noqa: E402
     PATHS,
     VERSION,
     Plan,
+    expected_capacity_refusal,
     finish_owned_http,
     release_native_context,
     scheduled_phase,
     summarize,
+    workload_validation,
 )
 from scripts.stage5_resources import Resources, private_json  # noqa: E402
 
@@ -125,7 +127,11 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
 
     from tests.fixtures.stage5_native import check_body
 
-    results = []
+    results: list[dict] = []
+    if hasattr(resources, "partial_report"):
+        # Retain completed phases even if a later observation/transport setup
+        # fails before workload() can return its normal complete report.
+        resources.partial_report["results"] = results
     start = time.perf_counter()
     deadline = start + plan.measurement_seconds
     async with httpx.AsyncClient(base_url=f"https://127.0.0.1:{resources.api_port}",
@@ -142,7 +148,7 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
                 redis_before = storage.storage.info("stats")["total_commands_processed"]
                 pool_before = len(sql["acquire_ms"])
                 active = peak = 0
-                async def request(index):
+                async def request(index, *, phase_mode=mode):
                     nonlocal active, peak
                     uid = index % 8 + 1
                     path = PATHS[index % len(PATHS)]
@@ -152,15 +158,20 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
                         response = await client.get(path, headers={"Authorization": "Bearer " + tokens[uid]})
                     finally:
                         active -= 1
-                    valid = False
-                    if response.status_code == 200:
+                    valid = refusal_valid = False
+                    if response.status_code in (200, 429):
                         try:
-                            valid = check_body(path, response.json(), user_id=uid,
-                                buyer=uid % (5 if plan.buyers_percent == 20 else 4) == 0, heavy=uid == 8)
+                            body = response.json()
+                            if response.status_code == 200:
+                                valid = check_body(path, body, user_id=uid,
+                                    buyer=uid % (5 if plan.buyers_percent == 20 else 4) == 0, heavy=uid == 8)
+                            else:
+                                refusal_valid = expected_capacity_refusal(phase_mode, response.status_code, body, response.headers)
                         except (ValueError, TypeError, KeyError, AttributeError):
                             valid = False
                     return {"status": response.status_code, "bytes": len(response.content),
                             "path": path, "actor": uid, "contract_valid": valid,
+                            "capacity_refusal_valid": refusal_valid,
                             "retry_after": response.headers.get("retry-after")}
                 phase_start = time.perf_counter()
                 rows = await scheduled_phase(count=plan.requests_per_phase, concurrency=concurrency,
@@ -218,7 +229,7 @@ def execute(plan, resources):
 
     from app import database, security
     from app.domains.recovery import native_metadata_admission
-    from scripts.stage5_seed import seed
+    from scripts.stage5_seed import seed, synthetic_email
     from tests.fixtures.stage5_native import (
         Counters,
         RequestGuardScope,
@@ -263,14 +274,16 @@ def execute(plan, resources):
         actors = {}
         from tests.test_candidate_production_factory import PASSWORD
         for uid in range(1, 9):
-            actual = native.case.accounts.register(email=f"capacity-{uid}@example.test",
+            actual = native.case.accounts.register(email=synthetic_email(uid),
                 password=PASSWORD, policy_version="2026-10-08")
             if actual != uid:
                 raise RuntimeError("Fresh synthetic account sequence differs")
-            session = native.case.accounts.login(email=f"capacity-{uid}@example.test", password=PASSWORD)
+            session = native.case.accounts.login(email=synthetic_email(uid), password=PASSWORD)
             actors[uid] = security.create_access_token(subject=str(uid), candidate_lifetime={
                 "version": 1, "context": session.context.model_dump(mode="json"), "auth_generation": 1})
         data = seed(source, plan)
+        resources.partial_report.update(postgres_identity=identity, data=data,
+                                        emulator=resources.emulator_identity)
         guards.setattr(native_metadata_admission, "_shared_storage", lambda: storage)
         from app.main import app
         if app.dependency_overrides:
@@ -303,13 +316,26 @@ def execute(plan, resources):
         context = ssl.create_default_context(cafile=str(cert))
         with httpx.Client(base_url=f"https://127.0.0.1:{resources.api_port}",
                           verify=context, trust_env=False, timeout=10) as client:
-            assert client.get(PATHS[0]).status_code == 401
+            preflight = resources.partial_report["preflight"]
+            preflight["missing_bearer_status"] = client.get(PATHS[0]).status_code
+            if preflight["missing_bearer_status"] != 401:
+                raise RuntimeError("Missing bearer boundary differs")
             denied = client.get("/api/resume/2", headers={"Authorization": "Bearer " + actors[1]})
-            assert denied.status_code == 404
+            preflight["foreign_resume_status"] = denied.status_code
+            if preflight["foreign_resume_status"] != 404:
+                raise RuntimeError("Foreign owner boundary differs")
             first_start = time.perf_counter()
             first = client.get(PATHS[0], headers={"Authorization": "Bearer " + actors[1]})
             first_ms = (time.perf_counter() - first_start) * 1000
-            assert first.status_code == 200
+            from tests.fixtures.stage5_native import check_body
+            preflight["bootstrap_status"] = first.status_code
+            try:
+                preflight["bootstrap_contract_valid"] = first.status_code == 200 and check_body(
+                    PATHS[0], first.json(), user_id=1, buyer=False, heavy=False)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                preflight["bootstrap_contract_valid"] = False
+            if preflight["bootstrap_contract_valid"] is not True:
+                raise RuntimeError("First owned bootstrap contract differs")
         # Enforce read-only PostgreSQL at the server as well as observing SQL.
         with source.begin() as connection:
             connection.exec_driver_sql("ALTER ROLE stage5_owned SET default_transaction_read_only=on")
@@ -319,6 +345,7 @@ def execute(plan, resources):
         source.pool.connect = acquire
         cpu_before = resource.getrusage(resource.RUSAGE_SELF)
         results, elapsed = asyncio.run(workload(plan, resources, actors, storage, counters, sql, cert))
+        resources.partial_report.update(results=results, measurement_seconds=elapsed)
         cpu_after = resource.getrusage(resource.RUSAGE_SELF)
         with source.connect() as connection:
             assert connection.execute(text("SHOW transaction_read_only")).scalar_one() == "on"
@@ -326,11 +353,11 @@ def execute(plan, resources):
             assert observed == identity["system_identifier"]
         assert counters.snapshot().get("blocked_external_attempts", 0) == 0
         assert counters.snapshot().get("request_transaction_guard_leaks", 0) == 0
-        return {"version": VERSION, "scope": "owned_local_direct_https_and_native_data_emulator",
+        report = {"version": VERSION, "scope": "owned_local_direct_https_and_native_data_emulator",
             "plan": asdict(plan), "postgres_identity": identity, "data": data,
             "emulator": resources.emulator_identity, "pool": {"size": 4, "overflow": 2, "timeout_seconds": 10},
             "server_start_to_listen_ms": startup_ms, "first_local_owned_bootstrap_http_ms": first_ms,
-            "measurement_seconds": elapsed, "results": results,
+            "measurement_seconds": elapsed, "results": results, "preflight": dict(preflight),
             "measurement_process_cpu_seconds": cpu_after.ru_utime + cpu_after.ru_stime - cpu_before.ru_utime - cpu_before.ru_stime,
             "process_peak_rss_bytes_including_setup": cpu_after.ru_maxrss * (1 if sys.platform == "darwin" else 1024),
             "external_attempts_blocked": 0, "provider_calls": 0,
@@ -349,6 +376,10 @@ def execute(plan, resources):
                 "Local wall/CPU/RSS and response bytes do not establish native CU, autoscaling, invoice cost or 10,000-user peaks.",
                 "1M authenticated requests/month remains required; 40 units/min and two Lists yields at most 864,000/30 days before other use.",
                 "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
+        report["validation"] = workload_validation(results, requests_per_phase=plan.requests_per_phase,
+                                                   preflight=preflight)
+        resources.partial_report = report
+        return report
     finally:
         def observers(terminal):
             if terminal:
@@ -363,6 +394,8 @@ def execute(plan, resources):
 
 def main():
     args = parser().parse_args()
+    resources = None
+    cleanup_verified = False
     try:
         plan = Plan.parse(json.loads(args.config.read_text()))
         if not args.execute:
@@ -372,27 +405,46 @@ def main():
         if not args.output or not args.pg_bin or not args.redis_server:
             raise ValueError("Execute requires a new output directory and explicit PG17/TLS Redis binaries")
         resources = Resources(args.output.resolve(), args.pg_bin, args.redis_server)
+        resources.partial_report = {"version": VERSION,
+            "scope": "owned_local_direct_https_and_native_data_emulator",
+            "plan": asdict(plan), "preflight": {}, "results": [],
+            "validation": {"passed": False, "failures": {"execution_incomplete": 1},
+                           "production_capacity_qualified": False}}
         try:
             # Fixed diagnostic labels only. No auth body, token, SQL parameter or
             # exception message is emitted by the runner or its private report.
             logging.disable(logging.CRITICAL)
             result = execute(plan, resources)
+            result["validation"] = workload_validation(result["results"],
+                requests_per_phase=plan.requests_per_phase, preflight=result["preflight"])
+            resources.partial_report = result
         finally:
             try:
                 resources.close()
+                cleanup_verified = True
             finally:
                 private_json(resources.directory / "cleanup.json", resources.cleanup)
-        result["cleanup_verified"] = True
+        result["cleanup_verified"] = cleanup_verified
         private_json(resources.directory / "report.json", result)
-        print(json.dumps({"report": str(resources.directory / "report.json"), "cleanup_verified": True}))
-        return 0
-    except Exception as error:
-        if args.execute and args.output and args.output.is_dir():
-            path = args.output / "failure.json"
+        passed = result["validation"]["passed"] is True
+        print(json.dumps({"report": str(resources.directory / "report.json"),
+                          "cleanup_verified": cleanup_verified, "workload_contracts_passed": passed,
+                          "production_capacity_qualified": False}))
+        return 0 if passed else 1
+    except BaseException as error:
+        if resources is not None:
+            path = resources.directory / "failure.json"
             if not path.exists():
                 private_json(path, {"class": type(error).__name__, "frames": [
                     {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
                     for frame in traceback.extract_tb(error.__traceback__)[-10:]]})
+            path = resources.directory / "report.json"
+            if not path.exists():
+                report = resources.partial_report
+                report["cleanup_verified"] = cleanup_verified
+                report["validation"] = {"passed": False, "failures": {"execution_failed": 1},
+                                        "production_capacity_qualified": False}
+                private_json(path, report)
         print(json.dumps({"error": "Owned Stage5 experiment refused or failed", "class": type(error).__name__}), file=sys.stderr)
         return 1
 
