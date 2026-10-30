@@ -65,6 +65,7 @@ PROTOCOL_SUITES = ("tests/test_firestore_identity_list.py", "tests/test_candidat
     "tests/test_browser_gateway_admission.py", "tests/test_device_transport_admission.py",
     "tests/test_browser_pairing_cheap_preflight.py", "tests/test_browser_pairing_production.py",
     "tests/test_browser_pairing_identity_observation.py", "tests/test_browser_pairing_http.py",
+    "tests/test_native_failure_diagnostics.py",
     "tests/test_native_input_acquisition.py", "tests/test_stage5_capacity.py", "tests/test_stage5_native_fixture.py")
 PROTOCOL_FIXTURES = ("backend/tests/test_candidate_production_factory.py", "backend/tests/test_browser_submit_native.py",
     "backend/tests/fixtures/firestore_emulator.py", "backend/tests/test_candidate_scoped_lifecycle_emulator.py",
