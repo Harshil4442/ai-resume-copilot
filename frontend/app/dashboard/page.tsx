@@ -51,7 +51,8 @@ export default function DashboardPage() {
   const billingCatalog = useQuery({ ...unifiedCatalogOptions(), enabled: shouldOfferUpgrade });
   const upgradeTracked = useRef(false);
   const loading = snapshot.isLoading;
-  const partial = Boolean(data && (data.unavailable.length || data.bootstrap.unavailable.length));
+  const partial = Boolean(data && (data.unavailable.some((name) => name === "summary" || workspaceEnabled)
+    || data.bootstrap.unavailable.length));
   const active = (opportunities.data?.items || []).filter((item) => !["rejected", "withdrawn", "archived"].includes(item.stage));
   const interviews = active.filter((item) => item.stage === "interviewing").length;
   const activation = [

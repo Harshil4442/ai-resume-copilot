@@ -18,6 +18,7 @@ export function parseOwnedDashboard(value: unknown): OwnedDashboard | null {
   if (!bootstrap) return null;
   for (const key of DASHBOARD_COMPONENTS) if ((value[key] === null) !== value.unavailable.includes(key)) return null;
   const summary = value.summary, opportunities = value.opportunities, reminders = value.reminders;
+  if (bootstrap.features?.career_workspace?.enabled !== true && (opportunities !== null || reminders !== null)) return null;
   if (summary !== null && (!object(summary) || !exact(summary, ["resume_count", "applications_count", "average_match_score", "resume_quality"])
     || !integer(summary.resume_count) || !integer(summary.applications_count)
     || typeof summary.average_match_score !== "number" || !Number.isFinite(summary.average_match_score)

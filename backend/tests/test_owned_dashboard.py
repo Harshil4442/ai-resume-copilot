@@ -132,3 +132,71 @@ def test_current_native_account_denial_prevents_dashboard_projection(api, monkey
     api.validation.side_effect = GuardDenied("synthetic closed account")
     monkeypatch.setattr(dashboard, "dashboard_view", lambda *_: pytest.fail("denied account reached projection"))
     assert request(api).status_code == 401
+
+
+def test_disabled_workspace_never_queries_restricted_previews(api, monkeypatch):
+    monkeypatch.setenv("FEATURE_CAREER_WORKSPACE_ENABLED", "false")
+    def forbidden(*_):
+        pytest.fail("disabled workspace preview was queried")
+    monkeypatch.setattr(dashboard, "_opportunities", forbidden)
+    monkeypatch.setattr(dashboard, "_reminders", forbidden)
+    result = request(api)
+    assert result.status_code == 200
+    body = result.json()
+    assert body["bootstrap"]["features"]["career_workspace"]["enabled"] is False
+    assert body["opportunities"] is None and body["reminders"] is None
+    assert body["unavailable"] == ["opportunities", "reminders"]
+    assert body["summary"] is not None
+
+
+def test_workspace_kill_during_reader_withholds_whole_snapshot(api, monkeypatch):
+    original = dashboard._summary
+    def kill(db, user_id):
+        value = original(db, user_id)
+        monkeypatch.setenv("FEATURE_CAREER_WORKSPACE_ENABLED", "false")
+        return value
+    monkeypatch.setattr(dashboard, "_summary", kill)
+    monkeypatch.setattr(dashboard, "_opportunities", lambda *_: pytest.fail("disabled data queried"))
+    assert request(api).status_code == 401
+
+
+def test_nullable_scores_count_as_zero_and_empty_average_remains_zero(api):
+    with api.c.accounts.sessions() as db:
+        db.add(Resume(id=55, user_id=api.owner, original_filename="average.pdf"))
+        db.add_all([JobMatch(id=55, user_id=api.owner, resume_id=55, job_title="Scored", match_score=75),
+                    JobMatch(id=56, user_id=api.owner, resume_id=55, job_title="Unscored")])
+        db.commit()
+        db.execute(update(JobMatch).where(JobMatch.id == 56).values(match_score=None))
+        db.commit()
+    assert request(api).json()["summary"]["average_match_score"] == 37.5
+    with api.c.accounts.sessions() as db:
+        db.query(JobMatch).delete()
+        db.commit()
+    assert request(api).json()["summary"]["average_match_score"] == 0
+
+
+def test_latest_resume_null_dates_are_last_and_timestamp_ties_have_stable_id_order(api):
+    with api.c.accounts.sessions() as db:
+        for identifier, stamp, skills, sections in [
+            (60, datetime(2026, 1, 1), ["Python"], {"experience": "Python"}),
+            (61, datetime(2026, 1, 1), ["SQL"], {}),
+            (62, datetime(2026, 1, 2), ["Java"], {"experience": "Java"}),
+            (63, datetime(2026, 1, 3), ["Other"], {}),
+        ]:
+            db.add(Resume(id=identifier, user_id=api.owner, original_filename="dated.pdf",
+                          created_at=stamp, skills=skills, sections=sections))
+        db.commit()
+        db.execute(update(Resume).where(Resume.id == 63).values(created_at=None))
+        db.commit()
+    observed, remove = _reads_only(api.c.source)
+    try:
+        assert request(api).json()["summary"]["resume_quality"]["verification_rate"] == 100
+    finally:
+        remove()
+    # The actual executed projection explicitly declares PostgreSQL-compatible
+    # ordering; a SQLite success alone could hide a missing NULLS LAST clause.
+    assert any("resumes.created_at DESC NULLS LAST, resumes.id ASC" in sql for sql in observed.statements)
+    with api.c.accounts.sessions() as db:
+        db.query(Resume).filter(Resume.id == 62).delete()
+        db.commit()
+    assert request(api).json()["summary"]["resume_quality"]["verification_rate"] == 100

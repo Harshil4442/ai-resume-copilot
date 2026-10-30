@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, inspect
@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.orm import Session, object_session
 
+from ...feature_flags import decide_feature
 from ...models import JobMatch, Opportunity, Reminder, Resume, User
 from ...schemas import UserProfileResponse
 from ..career.schemas import OpportunityStage
@@ -77,9 +78,14 @@ class OwnedDashboardView(BaseModel):
 
 def _summary(db: Session, user_id: int) -> DashboardSummary:
     resumes = db.query(func.count(Resume.id)).filter(Resume.user_id == user_id).scalar()
-    matches, average = db.query(func.count(JobMatch.id), func.avg(JobMatch.match_score)).filter(
+    matches, total_score = db.query(func.count(JobMatch.id), func.sum(func.coalesce(JobMatch.match_score, 0.0))).filter(
         JobMatch.user_id == user_id).one()
-    latest = db.query(Resume.skills, Resume.sections).filter(Resume.user_id == user_id).order_by(Resume.created_at.desc()).first()
+    # The legacy summary counts NULL scores as zero in the denominator.
+    average = float(total_score or 0.0) / matches if matches else 0.0
+    # NULL is older than any dated upload. Equal timestamps previously had no
+    # defined secondary order; use lowest ID to make this projection stable.
+    latest = db.query(Resume.skills, Resume.sections).filter(Resume.user_id == user_id).order_by(
+        Resume.created_at.desc().nulls_last(), Resume.id.asc()).first()
     evidenced, rate = 0, 0
     if latest is not None:
         if len(json.dumps(dict(latest._mapping), ensure_ascii=False, allow_nan=False).encode()) > 2 * 1024 * 1024:
@@ -90,7 +96,7 @@ def _summary(db: Session, user_id: int) -> DashboardSummary:
         evidenced = len({skill for skill in skills if skill in evidence})
         rate = round(evidenced / max(len(skills), 1) * 100)
     return DashboardSummary(resume_count=resumes, applications_count=matches,
-        average_match_score=average if average is not None else 0,
+        average_match_score=average,
         resume_quality=DashboardResumeSignal(evidenced_skills=evidenced, verification_rate=rate))
 
 
@@ -108,6 +114,13 @@ def _reminders(db: Session, user_id: int) -> list[DashboardReminder]:
     return [DashboardReminder.model_validate(dict(row._mapping)) for row in rows]
 
 
+def _workspace_allowed(user_id: int, email: str) -> bool:
+    decision = decide_feature("career_workspace", user_id=user_id, email=email)
+    if type(decision.enabled) is not bool:
+        raise GuardDenied("Workspace decision is unavailable")
+    return decision.enabled
+
+
 def dashboard_view(db: Session, user: User) -> OwnedDashboardView:
     state = inspect(user, raiseerr=False)
     identity = state.identity if state is not None else None
@@ -119,7 +132,9 @@ def dashboard_view(db: Session, user: User) -> OwnedDashboardView:
     # simulated auth call. Malformed state is never downgraded to partial success.
     with db.no_autoflush:
         before = _subject(db, user_id)
-        values, unavailable = {}, []
+        workspace_allowed = _workspace_allowed(user_id, user.email)
+        values: dict[str, Any] = {}
+        unavailable = []
         readers = (
             ("profile", lambda: UserProfileResponse.model_validate(profile_view(db, user))),
             ("features", lambda: _features(user_id, user.email)),
@@ -130,6 +145,13 @@ def dashboard_view(db: Session, user: User) -> OwnedDashboardView:
             ("reminders", lambda: _reminders(db, user_id)),
         )
         for name, read in readers:
+            if name in {"opportunities", "reminders"}:
+                if not workspace_allowed or values.get("features") is None:
+                    values[name] = None
+                    unavailable.append(name)
+                    continue
+                if not _workspace_allowed(user_id, user.email):
+                    raise GuardDenied("Workspace decision changed")
             try:
                 value = read()
                 raw = ([item.model_dump(mode="json") for item in value] if isinstance(value, list)
@@ -146,6 +168,8 @@ def dashboard_view(db: Session, user: User) -> OwnedDashboardView:
                 unavailable.append(name)
         if _subject(db, user_id) != before:
             raise GuardDenied("Not authenticated")
+        if _workspace_allowed(user_id, user.email) != workspace_allowed:
+            raise GuardDenied("Workspace decision changed")
         base_names = tuple(MAX_COMPONENT_BYTES)
         base = OwnedBootstrapView(**{name: values.pop(name) for name in base_names},
             unavailable=[name for name in unavailable if name in base_names])

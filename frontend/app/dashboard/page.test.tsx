@@ -66,6 +66,16 @@ it("shows unavailable components rather than invented zero counts, empty workspa
   expect(state.get).toHaveBeenCalledTimes(1);
 });
 
+it("keeps permitted resume tools without a generic outage or hidden workspace data when disabled", async () => {
+  state.get.mockResolvedValue(ownedDashboardFixture(ownedBootstrapFixture({ features: { career_workspace: false } })));
+  render(tree());
+  await screen.findByText("Career Workspace is not enabled for this account yet. Your resume and profile tools remain available.");
+  expect(screen.queryByText("Owned role")).toBeNull();
+  expect(screen.queryByText("Owned follow-up")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Refresh dashboard" })).toBeNull();
+  expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard"]);
+});
+
 it.each([401, 403, 429, 503])("does not fan out or retry after current snapshot HTTP %s", async (status) => {
   state.get.mockRejectedValue(new ApiError("Unavailable", status, {})); render(tree());
   await screen.findByRole("button", { name: "Refresh dashboard" });

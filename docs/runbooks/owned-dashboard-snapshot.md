@@ -22,6 +22,16 @@ Each query filters the authenticated owner. An attached User identity and curren
 credential/account subject are checked before and after the complete operation.
 There is no flush, commit, new wallet, enrollment or action authorization.
 
+Workspace previews retain the existing server `career_workspace` decision gate.
+Disabled or unavailable feature data means no role/reminder query and explicit
+null previews; permitted profile/resume tools remain available. A decision change
+before a preview or final export withholds the whole snapshot. Clients also reject
+previews bundled with disabled/unknown workspace features. Null scores count as
+zero across all matches, matching the legacy dashboard average, including zero
+when no matches exist. Latest-resume selection uses explicit NULLS LAST; equal
+timestamps use lowest ID as a new documented deterministic tie rule, since the
+older analytics query did not define a secondary ordering.
+
 Only recognized SQL connection/pool availability errors and explicit fixed-size
 budget failures may mark a component unavailable. Unknown, malformed-state,
 ownership, current-subject and authorization errors fail the whole snapshot.
