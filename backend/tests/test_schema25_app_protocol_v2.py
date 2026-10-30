@@ -69,6 +69,20 @@ def local_proof_helpers(root, source):
                 yield helper
 
 
+def local_proof_ancestors(root, source):
+    """Every existing package initializer is executable local proof source."""
+    boundary = root / "backend"
+    source.relative_to(boundary)
+    parent = source.parent
+    while True:
+        initializer = parent / "__init__.py"
+        if initializer != source and initializer.is_file():
+            yield initializer
+        if parent == boundary:
+            break
+        parent = parent.parent
+
+
 def proof_closure(root, suites, fixtures):
     declared = {root / name for name in fixtures} | {root / "backend" / name for name in suites}
     pending = [root / "backend" / name for name in suites]
@@ -78,7 +92,7 @@ def proof_closure(root, suites, fixtures):
         if source in observed:
             continue
         observed.add(source)
-        for helper in local_proof_helpers(root, source):
+        for helper in (*local_proof_ancestors(root, source), *local_proof_helpers(root, source)):
             assert helper in declared, f"Unbound local proof helper: {helper.relative_to(root)}"
             pending.append(helper)
     assert observed <= declared
@@ -112,6 +126,48 @@ def test_package_style_local_import_cannot_hide_an_undeclared_helper(tmp_path, s
     assert proof_closure(tmp_path, suites, fixtures) == {source, helper}
     with pytest.raises(AssertionError, match="Unbound local proof helper"):
         proof_closure(tmp_path, suites, ())
+
+
+@pytest.mark.parametrize("ancestor", ["backend/__init__.py", "backend/tests/__init__.py",
+    "backend/tests/fixtures/__init__.py"])
+def test_imported_helper_package_ancestors_require_explicit_binding(tmp_path, ancestor):
+    source = tmp_path / "backend/tests/test_entry.py"
+    helper = tmp_path / "backend/tests/fixtures/leaf.py"
+    helper.parent.mkdir(parents=True)
+    source.write_text("from backend.tests.fixtures import leaf\n")
+    helper.write_text("value = 'synthetic helper'\n")
+    initializer = tmp_path / ancestor
+    initializer.write_text("value = 'executable package ancestor'\n")
+    suites, fixtures = ("tests/test_entry.py",), ("backend/tests/fixtures/leaf.py",)
+    with pytest.raises(AssertionError, match="Unbound local proof helper"):
+        proof_closure(tmp_path, suites, fixtures)
+    assert proof_closure(tmp_path, suites, (*fixtures, ancestor)) == {source, helper, initializer}
+
+
+@pytest.mark.parametrize("ancestor", ["backend/__init__.py", "backend/tests/__init__.py"])
+def test_entry_suite_ancestors_are_bound_even_without_local_imports(tmp_path, ancestor):
+    source = tmp_path / "backend/tests/test_entry.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'entry suite without imports'\n")
+    initializer = tmp_path / ancestor
+    initializer.write_text("value = 'executable entry ancestor'\n")
+    with pytest.raises(AssertionError, match="Unbound local proof helper"):
+        proof_closure(tmp_path, ("tests/test_entry.py",), ())
+    assert proof_closure(tmp_path, ("tests/test_entry.py",), (ancestor,)) == {source, initializer}
+
+
+def test_declared_package_ancestor_cannot_hide_a_transitive_helper(tmp_path):
+    source = tmp_path / "backend/tests/test_entry.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("value = 'entry suite'\n")
+    initializer = tmp_path / "backend/__init__.py"
+    initializer.write_text("from backend.tests import hidden\n")
+    hidden = tmp_path / "backend/tests/hidden.py"
+    hidden.write_text("value = 'transitive initializer dependency'\n")
+    suites, fixtures = ("tests/test_entry.py",), ("backend/__init__.py",)
+    with pytest.raises(AssertionError, match="Unbound local proof helper"):
+        proof_closure(tmp_path, suites, fixtures)
+    assert proof_closure(tmp_path, suites, (*fixtures, "backend/tests/hidden.py")) == {source, initializer, hidden}
 
 
 def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipped_cases():
