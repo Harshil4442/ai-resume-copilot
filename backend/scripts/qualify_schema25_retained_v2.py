@@ -181,8 +181,14 @@ def run(root: Path) -> None:
         anchor = _identity(base, checkout, owner, env, None)
         _verify(checkout, env)
         for suites in (COMPATIBILITY, PROTOCOL):
-            _call([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q", *suites],
-                  cwd=checkout / "backend", env=env, timeout=300)
+            try:
+                _call([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q", *suites],
+                      cwd=checkout / "backend", env=env, timeout=300)
+            except RetainedV2Denied:
+                # An inner timeout can become the outer pytest's ordinary exit1.
+                # Any failed native suite leaves descendant cleanup unproven.
+                unknown = True
+                raise
             _identity(base, checkout, owner, env, anchor)
             _verify(checkout, env)
     except _UnknownOutcome:

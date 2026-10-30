@@ -38,7 +38,8 @@ def harness(tmp_path, monkeypatch):
     monkeypatch.delenv("HIREWIZ_AUTHORITY_EMULATOR_PORT", raising=False)
     monkeypatch.setattr(runner.sys, "platform", "linux")
     state = SimpleNamespace(root=current, temporary=temporary, environment=environment, calls=[],
-                            checkout=None, fail=None, changed=None, verifications=0)
+                            checkout=None, fail=None, changed=None, verifications=0,
+                            error_output=b"private error never reflected")
 
     def fake(args, *, cwd, env, stdin, capture_output, timeout, check):
         assert stdin == subprocess.DEVNULL and capture_output is True and check is False
@@ -99,7 +100,7 @@ def harness(tmp_path, monkeypatch):
         if state.fail == (phase, "interrupt"):
             raise KeyboardInterrupt
         if state.fail == (phase, "error"):
-            return SimpleNamespace(returncode=1, stdout=b"", stderr=b"private error never reflected")
+            return SimpleNamespace(returncode=1, stdout=b"", stderr=state.error_output)
         if phase == "remove" and state.changed != "remove_no_ack":
             shutil.rmtree(state.checkout)  # This fake's invocation-owned scratch only.
         if phase == "compatibility" and state.changed == "link":
@@ -130,14 +131,23 @@ def test_original_two_commands_use_only_verified_historical_checkout_and_isolate
 
 
 @pytest.mark.parametrize("phase", ["compatibility", "protocol"])
-def test_known_failed_original_child_refuses_and_cleans_only_owned_checkout(harness, phase):
+def test_failed_original_child_refuses_and_retains_unproven_descendant_source(harness, phase):
     harness.fail = (phase, "error")
     with pytest.raises(runner.RetainedV2Denied, match="child_failed"):
         runner.run(harness.root)
-    assert phases(harness).count(phase) == 1 and phases(harness).count("remove") == 1
-    assert not harness.checkout.exists()
+    assert phases(harness).count(phase) == 1 and "remove" not in phases(harness)
+    assert harness.checkout.exists()
     if phase == "compatibility":
         assert "protocol" not in phases(harness)
+
+
+def test_inner_timeout_reported_as_outer_pytest_exit_one_keeps_owned_checkout(harness):
+    harness.fail = ("protocol", "error")
+    harness.error_output = b"subprocess.TimeoutExpired: synthetic inner native test exceeded240s"
+    with pytest.raises(runner.RetainedV2Denied, match="child_failed"):
+        runner.run(harness.root)
+    assert phases(harness).count("protocol") == 1 and "remove" not in phases(harness)
+    assert harness.checkout.is_dir()
 
 
 @pytest.mark.parametrize("phase", ["add", "verify", "compatibility", "protocol", "remove"])
