@@ -23,6 +23,23 @@ _SHA = re.compile(r"[a-f0-9]{64}\Z")
 _LINE_END = re.compile(r"(?<![^\W\d_])[^\W\d_]+[-\u00ad\u2010\u2011][ \t]*\r?\n[ \t]*[^\W\d_]+")
 
 
+def correction_creates_ambiguity(assessment: Assessment, section: str, text: str) -> bool:
+    """Check one proposed logical replacement; this issues no review authority."""
+    bindings = [row for row in assessment.affected_sections if row.section == section]
+    if len(bindings) != 1:
+        return True
+    binding = bindings[0]
+    shift = len(text) - (binding.end - binding.start)
+    unchanged = set()
+    for match in _LINE_END.finditer(assessment.raw_text):
+        if match.end() <= binding.start:
+            unchanged.add((match.start(), match.end()))
+        elif match.start() >= binding.end:
+            unchanged.add((match.start() + shift, match.end() + shift))
+    raw = assessment.raw_text[:binding.start] + text + assessment.raw_text[binding.end:]
+    return any((match.start(), match.end()) not in unchanged for match in _LINE_END.finditer(raw))
+
+
 def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 

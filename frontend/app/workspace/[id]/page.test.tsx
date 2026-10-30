@@ -27,6 +27,7 @@ function read(url: string) {
   if (url === "/resume/list") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
   if (url === `/v1/opportunities/${state.id}`) return Promise.resolve(opportunity());
   if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: "Built reliable services.", skills: [], snapshot_fingerprint: "a".repeat(64) }]);
+  if (url.startsWith("/v1/evidence-items/transcription-review/")) return Promise.resolve({ resume_id: resumeId, filename: `synthetic-${resumeId}.pdf`, source_format: "pdf", source_sha256: "c".repeat(64), assessment_fingerprint: "d".repeat(64), status: "not_required", sections: [], unmapped_text: null });
   if (url.startsWith("/v1/analysis-runs/")) return Promise.resolve({ id: "run-one", opportunity_id: state.id, operation: "resume_tailor", status: "cancelled", estimated_units: 7, committed_units: 0 });
   throw new Error(`Unexpected local fixture GET ${url}`);
 }
@@ -46,6 +47,84 @@ beforeEach(() => {
   state.get.mockReset().mockImplementation(read); state.post.mockReset(); state.patch.mockReset().mockImplementation(async (_url, body) => { resumeId = body.resume_id; return opportunity(); });
 });
 afterEach(() => { cleanup(); client.clear(); });
+
+const originalTranscription = "Developed clear docu-\nmented records.";
+function transcriptionSnapshot(fingerprint = "d") {
+  return { resume_id: 1, filename: "actual-original.pdf", source_format: "pdf", source_sha256: "c".repeat(64),
+    assessment_fingerprint: fingerprint.repeat(64), status: "needs_review", unmapped_text: null,
+    sections: [{ section: "experience", original_text: originalTranscription, evidence_id: "evidence-one", evidence_fingerprint: "a".repeat(64), reviewed: false }] };
+}
+function ambiguousRead(url: string) {
+  if (url.startsWith("/v1/evidence-items/transcription-review/")) return Promise.resolve(transcriptionSnapshot());
+  if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: originalTranscription, skills: [], snapshot_fingerprint: "a".repeat(64) }]);
+  return read(url);
+}
+
+it("shows full literal extraction and actual source, requiring explicit compare and visible-text confirmation", async () => {
+  state.get.mockImplementation(ambiguousRead);
+  state.post.mockResolvedValue({});
+  await page();
+  await screen.findByText(/Some line-end text is ambiguous/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit evidence" }));
+  expect(screen.getByText((_text, node) => node?.tagName === "PRE" && node.textContent === originalTranscription)).toBeVisible();
+  expect(screen.getByRole("link", { name: "View original PDF file" })).toHaveAttribute("href", "/resume/preview?resume=1");
+  const confirm = screen.getByRole("button", { name: "Keep visible text and approve" });
+  expect(confirm).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "I compared this complete section with my original file." }));
+  expect(state.post).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/evidence-items/evidence-one/transcription-review", {
+    expected_fingerprint: "a".repeat(64), expected_assessment_fingerprint: "d".repeat(64),
+    section: "experience", evidence_text: originalTranscription, action: "confirm_visible_text",
+  }));
+});
+
+it("freezes source and evidence versions for an explicit correction, preserving draft and locking after conflict", async () => {
+  state.get.mockImplementation(ambiguousRead);
+  state.post.mockRejectedValue(new ApiError("Changed", 409, { detail: { code: "evidence_refresh_required" } }));
+  await page();
+  await screen.findByText(/Some line-end text is ambiguous/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit evidence" }));
+  const draft = "Developed clear documented records.";
+  fireEvent.change(screen.getByRole("textbox", { name: "Edit Approved fact evidence" }), { target: { value: draft } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "I compared this complete section with my original file." }));
+  await act(async () => { client.setQueryData(["transcription-review", 1], transcriptionSnapshot("e")); });
+  fireEvent.click(screen.getByRole("button", { name: "Approve corrected transcription" }));
+  await screen.findByRole("alert");
+  expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/evidence-items/evidence-one/transcription-review", {
+    expected_fingerprint: "a".repeat(64), expected_assessment_fingerprint: "d".repeat(64),
+    section: "experience", evidence_text: draft, action: "correct_transcription",
+  });
+  expect(screen.getByRole("textbox", { name: "Edit Approved fact evidence" })).toHaveValue(draft);
+  expect(screen.getByRole("button", { name: "Approve corrected transcription" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Keep visible text and approve" })).toBeDisabled();
+  await act(async () => { await client.invalidateQueries({ queryKey: ["transcription-review", 1] }); });
+  expect(state.post).toHaveBeenCalledTimes(1);
+});
+
+it("does not offer transcription approval when the source review is unavailable or unmapped", async () => {
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/evidence-items/transcription-review/")
+    ? Promise.resolve({ ...transcriptionSnapshot(), status: "editable_source_required", unmapped_text: originalTranscription }) : ambiguousRead(url));
+  await page();
+  await screen.findByText(/This extraction cannot map every ambiguous section exactly/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit evidence" }));
+  expect(screen.queryByRole("button", { name: "Keep visible text and approve" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Upload an editable source" })).toHaveAttribute("href", expect.stringContaining("/resume?opportunity="));
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("lets a candidate explicitly restore complete literal text from an older edited fact without auto-approval", async () => {
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/evidence-items?") ? read(url) : ambiguousRead(url));
+  await page();
+  await screen.findByText(/Some line-end text is ambiguous/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit evidence" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "I compared this complete section with my original file." }));
+  expect(screen.getByRole("button", { name: "Keep visible text and approve" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Use original extracted text" }));
+  expect(screen.getByRole("textbox", { name: "Edit Approved fact evidence" })).toHaveValue(originalTranscription);
+  expect(screen.getByRole("checkbox", { name: "I compared this complete section with my original file." })).not.toBeChecked();
+  expect(state.post).not.toHaveBeenCalled();
+});
 
 it.each([["Approve evidence", "approved"], ["Reject evidence", "rejected"]])("binds %s to the exact rendered evidence version", async (name, reviewState) => {
   state.patch.mockResolvedValue({});

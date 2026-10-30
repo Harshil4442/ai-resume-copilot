@@ -7963,6 +7963,172 @@
         "title": "TailoringFailureGuidance",
         "type": "object"
       },
+      "TranscriptionReviewAction": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "correct_transcription",
+              "confirm_visible_text"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "evidence_text": {
+            "maxLength": 20000,
+            "minLength": 2,
+            "title": "Evidence Text",
+            "type": "string"
+          },
+          "expected_assessment_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Assessment Fingerprint"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
+          },
+          "section": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "action",
+          "evidence_text"
+        ],
+        "title": "TranscriptionReviewAction",
+        "type": "object"
+      },
+      "TranscriptionReviewResponse": {
+        "properties": {
+          "assessment_fingerprint": {
+            "title": "Assessment Fingerprint",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptionSectionReview"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "not_required",
+              "needs_review",
+              "reviewed",
+              "editable_source_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unmapped_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unmapped Text"
+          }
+        },
+        "required": [
+          "resume_id",
+          "filename",
+          "source_format",
+          "source_sha256",
+          "assessment_fingerprint",
+          "status",
+          "sections"
+        ],
+        "title": "TranscriptionReviewResponse",
+        "type": "object"
+      },
+      "TranscriptionSectionReview": {
+        "properties": {
+          "evidence_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Fingerprint"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "original_text": {
+            "title": "Original Text",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "original_text",
+          "evidence_id",
+          "evidence_fingerprint",
+          "reviewed"
+        ],
+        "title": "TranscriptionSectionReview",
+        "type": "object"
+      },
       "UploadCreate": {
         "additionalProperties": false,
         "properties": {
@@ -16746,6 +16912,53 @@
         ]
       }
     },
+    "/api/v1/evidence-items/transcription-review/{resume_id}": {
+      "get": {
+        "operationId": "transcription_review_snapshot_api_v1_evidence_items_transcription_review__resume_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resume_id",
+            "required": true,
+            "schema": {
+              "title": "Resume Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Transcription Review Snapshot",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
     "/api/v1/evidence-items/{evidence_id}": {
       "delete": {
         "operationId": "delete_evidence_api_v1_evidence_items__evidence_id__delete",
@@ -16836,6 +17049,63 @@
           }
         ],
         "summary": "Update Evidence",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/evidence-items/{evidence_id}/transcription-review": {
+      "post": {
+        "operationId": "review_transcription_api_v1_evidence_items__evidence_id__transcription_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptionReviewAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Review Transcription",
         "tags": [
           "career-workspace"
         ]

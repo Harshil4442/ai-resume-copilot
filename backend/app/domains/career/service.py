@@ -11,6 +11,7 @@ from ... import models
 from ...services.matching import score_to_grade
 from ..common import public_id, utcnow
 from . import schemas
+from . import transcription_review as transcription
 
 VALID_STAGES = {
     "saved",
@@ -458,22 +459,29 @@ def import_resume_evidence(
     user_id: int,
     resume_id: int,
 ) -> tuple[list[models.EvidenceItem], int]:
-    resume = _owned_resume(db, user_id, resume_id)
+    # Serialize section import against another import/action for this source.
+    resume = db.query(models.Resume).filter(models.Resume.id == resume_id,
+        models.Resume.user_id == user_id).populate_existing().with_for_update().first()
+    if resume is None:
+        raise HTTPException(404, "Resume not found")
     created: list[models.EvidenceItem] = []
     skipped = 0
     existing_refs = {
-        value[0]
-        for value in db.query(models.EvidenceItem.source_ref)
+        transcription.original_reference(value)
+        for value in db.query(models.EvidenceItem)
         .filter(
             models.EvidenceItem.user_id == user_id,
             models.EvidenceItem.resume_id == resume_id,
         )
         .all()
-        if value[0]
+        if value.source_ref and value.provenance == "resume_extraction"
     }
     for section, content in (resume.sections or {}).items():
-        text = str(content or "").strip()
-        if len(text) < 2:
+        # Exact reviewable section text must retain physical line boundaries and
+        # outside whitespace. Oversized legacy imports remain ordinary facts;
+        # the transcription assessment refuses their truncated source mapping.
+        text = str(content or "")
+        if len(text.strip()) < 2:
             continue
         source_ref = f"resume:{resume_id}:section:{section}"
         if source_ref in existing_refs:
@@ -548,6 +556,7 @@ def update_evidence(
         )
     updates = payload.model_dump(exclude_unset=True)
     updates.pop("expected_fingerprint", None)
+    transcription.clear_review(item)
     factual_fields = {"category", "title", "evidence_text", "metrics", "skills"}
     if factual_fields.intersection(updates) and "approval_state" not in updates:
         item.approval_state = "pending"

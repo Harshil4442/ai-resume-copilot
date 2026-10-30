@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ... import models
 from ...database import get_db
-from ...domains.career import schemas, service
+from ...domains.career import schemas, service, transcription_review
 from ...feature_flags import decide_feature
 from ...security import get_current_user
 from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
@@ -228,6 +228,25 @@ def update_evidence(
     current_user: models.User = Depends(get_current_user),
 ):
     return service.update_evidence(db, current_user.id, evidence_id, payload)
+
+
+@router.get("/evidence-items/transcription-review/{resume_id}", response_model=schemas.TranscriptionReviewResponse)
+def transcription_review_snapshot(
+    resume_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return transcription_review.review_snapshot(db, current_user.id, resume_id)
+
+
+@router.post("/evidence-items/{evidence_id}/transcription-review", response_model=schemas.EvidenceResponse)
+def review_transcription(
+    evidence_id: str,
+    payload: schemas.TranscriptionReviewAction,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    return transcription_review.record_review(db, current_user.id, evidence_id, payload)
 
 
 @router.delete("/evidence-items/{evidence_id}", status_code=204)

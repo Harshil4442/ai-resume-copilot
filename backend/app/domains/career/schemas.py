@@ -194,6 +194,33 @@ class EvidenceImportResponse(BaseModel):
     skipped: int
 
 
+class TranscriptionSectionReview(BaseModel):
+    section: str
+    original_text: str
+    evidence_id: str | None
+    evidence_fingerprint: str | None
+    reviewed: bool
+
+
+class TranscriptionReviewResponse(BaseModel):
+    resume_id: int
+    filename: str
+    source_format: str
+    source_sha256: str
+    assessment_fingerprint: str
+    status: Literal["not_required", "needs_review", "reviewed", "editable_source_required"]
+    sections: list[TranscriptionSectionReview]
+    unmapped_text: str | None = None
+
+
+class TranscriptionReviewAction(StrictModel):
+    expected_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    expected_assessment_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    section: str = Field(min_length=1, max_length=80)
+    action: Literal["correct_transcription", "confirm_visible_text"]
+    evidence_text: str = Field(min_length=2, max_length=20_000)
+
+
 class ResumeVersionCreate(StrictModel):
     resume_id: int
     opportunity_id: str | None = Field(default=None, max_length=64)
