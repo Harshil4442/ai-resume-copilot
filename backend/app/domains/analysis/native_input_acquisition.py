@@ -341,6 +341,9 @@ def execute(packet_root, native_root, auth, authorization_root, journal, *, maxi
                     channel.before_send(journal, key)
                 sent += 1
                 try:
+                    # A durable ACK can outlive the original funded window.
+                    # Keep its intent/reserve UNKNOWN; it cannot extend consent.
+                    need(auth.valid_from <= datetime.now(UTC) < auth.expires_at, "authorization_expired")
                     raw = transport.compile(auth.compiler, source, row["source_format"]) if phase == "compile" else transport.inspect(auth.inspector, source, "pdf" if phase == "pdf" else row["source_format"])
                     need(type(raw) is bytes and 0 < len(raw) <= (MAX_ARTIFACT if phase == "compile" else inspection.MAX_RESPONSE_BYTES), "response_bound")
                     artifact = _new(journal, key + ".raw.json", raw)

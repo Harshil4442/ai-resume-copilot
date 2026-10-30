@@ -139,6 +139,10 @@ immutable phase intent **before** the original `ServiceTransport` may send, then
 publishes the exact original raw response/retained/result/PDF files before the
 next phase. A journal bound to this channel refuses execution through the
 unwrapped CLI; it cannot silently lose its remote one-send fence.
+The original trusted authorization window is checked again after the durable
+phase ACK, immediately before calling the original processing transport. A late
+ACK never extends that window: equality or expiry withholds the POST and leaves
+the existing intent, UNKNOWN state and native reserve intact, without replay.
 
 The adapter requires an independently reviewed channel binding and dispatch ACK
 object, each with an exact object name, positive generation, size and SHA-256.

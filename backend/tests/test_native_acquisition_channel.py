@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 
 import pytest
@@ -105,6 +106,44 @@ def test_intent_ack_precedes_original_transport_and_preserves_exact_bytes(durabl
         assert durable["store"].data[key + suffix].raw == acquisition._read(durable["journal"], key + suffix)
     assert result["native_approval"] == "pending"
     assert durable["store"].data[result["terminal"]["name"]].raw.count(b'"authorizes_retail":false') == 1
+
+
+@pytest.mark.parametrize("after_expiry_ms", [-1, 0, 1])
+def test_original_funding_window_is_rechecked_after_phase_ack(durable, monkeypatch, after_expiry_ms):
+    auth = durable["auth"]
+    current = [auth.expires_at - timedelta(seconds=1)]
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is UTC
+            return current[0]
+    monkeypatch.setattr(acquisition, "datetime", Clock)
+    key = durable["report"]["selected_cases"][0]["case_id"] + ".source"
+    original_create = durable["store"].create
+    def acknowledged(name, raw):
+        reference = original_create(name, raw)
+        if name == key + ".intent.json":
+            current[0] = auth.expires_at + timedelta(milliseconds=after_expiry_ms)
+        return reference
+    durable["store"].create = acknowledged
+    dispatch = durable["issue"]()
+    if after_expiry_ms < 0:
+        durable["execute"](initialize=True, dispatch=dispatch)
+        assert len(durable["transport"].calls) == 1
+    else:
+        with pytest.raises(ValueError, match="unknown_or_refused_no_replay"):
+            durable["execute"](initialize=True, dispatch=dispatch)
+        assert not durable["transport"].calls
+        # The acknowledged remote intent and original local reserved expense
+        # remain; expiry neither deletes them nor manufactures a refusal result.
+        assert key + ".intent.json" in durable["store"].data
+        assert not (durable["journal"] / (key + ".result.json")).exists()
+        status = acquisition.inspect_local(*durable["common"], durable["journal"])
+        assert status["cases"][0]["phases"]["source"] == {"state": "unknown_no_replay",
+            "reserved_minor": auth.reserved_minor_per_request, "actual_native_cost_minor": None}
+        with pytest.raises(ValueError):
+            durable["execute"](dispatch=dispatch)
+        assert not durable["transport"].calls
 
 
 @pytest.mark.parametrize("moment", ["before", "after"])
