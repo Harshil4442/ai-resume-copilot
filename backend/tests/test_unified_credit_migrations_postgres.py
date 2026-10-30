@@ -17,7 +17,7 @@ def test_postgres_additive_upgrade_and_empty_rollback_preserve_old_rights(pg_eng
     with Session(pg_engine) as db:
         db.add(User(id=42, email="pg-legacy-migration@example.test", ai_credits=17, job_service_credits=13))
         db.commit()
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     assert {"credit_grants", "credit_execution_holds", "free_core_reservations"}.issubset(inspect(pg_engine).get_table_names())
     with Session(pg_engine) as db:
         user = db.get(User, 42)
@@ -30,7 +30,7 @@ def test_postgres_additive_upgrade_and_empty_rollback_preserve_old_rights(pg_eng
 
 
 def test_postgres_populated_downgrade_is_atomic_and_retains_credit_history(pg_engine):
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     with Session(pg_engine) as db:
         db.add(User(id=42, email="pg-retained-migration@example.test"))
         db.commit()

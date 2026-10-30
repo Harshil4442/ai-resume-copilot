@@ -31,7 +31,25 @@ def pg_engine():
 
 @pytest.fixture
 def factory(pg_engine):
-    _migrate(pg_engine, "head")
+    return _factory_at_revision(pg_engine, "head")
+
+
+@pytest.fixture
+def factory25_with_current_evidence_fence(pg_engine):
+    # Mixed-purpose fixture: exact25 monetary history plus the real current
+    # evidence trigger needed by current erasure. This is not pristine25 catalog
+    # or native schema26 qualification; the Alembic marker remains exactly25.
+    result = _factory_at_revision(pg_engine, "20261028_0025")
+    from backend.app.domains.career.evidence_fence_definition import install
+
+    with pg_engine.begin() as db:
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261028_0025"
+        install(db, db.scalar(text("SELECT current_schema()")))
+    return result
+
+
+def _factory_at_revision(pg_engine, revision):
+    _migrate(pg_engine, revision)
     result = sessionmaker(bind=pg_engine, autoflush=False)
     seed(result)
     with result() as db:
@@ -182,7 +200,8 @@ def test_postgres_parallel_duplicate_current_call_settlement_after_erasure_is_ex
         assert row.cost_state == "settled" and db.query(models.User).count() == 0
 
 
-def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factory, pg_engine):
+def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factory25_with_current_evidence_fence, pg_engine):
+    factory = factory25_with_current_evidence_fence
     with persistent_run_budget(factory, "private_run_1") as budget:
         record = admit(budget)
         budget.finish(record, latency_ms=1, error=TimeoutError("synthetic unknown"))
@@ -199,11 +218,11 @@ def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factor
 
 def test_postgres_empty_liability_migration_roundtrip_preserves_unquoted_history(pg_engine):
     _migrate(pg_engine, "20261008_0009")
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     assert "model_cost_liabilities" in inspect(pg_engine).get_table_names()
     _migrate(pg_engine, "20261008_0009", direction="downgrade")
     assert "model_cost_liabilities" not in inspect(pg_engine).get_table_names()
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     assert "model_cost_liabilities" in inspect(pg_engine).get_table_names()
 
 

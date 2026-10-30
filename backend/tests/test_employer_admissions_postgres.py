@@ -866,7 +866,7 @@ def test_postgres_clean_upgrade_and_populated_round_trip_preserve_unknown_holds(
     finally:
         source_client.close()
         source_factory.kw["bind"].dispose()
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     factory = sessionmaker(bind=pg_engine, autoflush=False)
     monkeypatch.setattr(tasks, "SessionLocal", factory)
     monkeypatch.setattr(connectors, "submit_greenhouse", lambda *_a, **_k: pytest.fail("Unknown historical send must not be retried"))
@@ -878,7 +878,7 @@ def test_postgres_clean_upgrade_and_populated_round_trip_preserve_unknown_holds(
     # Verify the real migrated constraints, not a metadata-created schema.
     _migrate(pg_engine, "20261008_0008", direction="downgrade")
     assert "opening_key" not in {row["name"] for row in inspect(pg_engine).get_columns("employer_applications")}
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     with factory() as db:
         saved = db.get(models.EmployerApplication, app["id"])
         admission = db.query(models.EmployerAdmission).one()
@@ -911,10 +911,10 @@ def test_postgres_clean_migrations_build_admission_constraints(pg_engine):
 def test_sqlite_admission_migration_can_upgrade_downgrade_and_upgrade(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'admission-roundtrip.sqlite'}")
     try:
-        _migrate(engine, "head")
+        _migrate(engine, "20261028_0025")
         _migrate(engine, "20261008_0008", direction="downgrade")
         assert "employer_admissions" not in inspect(engine).get_table_names()
-        _migrate(engine, "head")
+        _migrate(engine, "20261028_0025")
         assert "employer_admissions" in inspect(engine).get_table_names()
         assert "fk_employer_application_batch" in {row["name"] for row in inspect(engine).get_foreign_keys("employer_applications")}
     finally:
