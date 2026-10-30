@@ -69,6 +69,7 @@ class Resources:
         self.container_id: str | None = None
         self.network_id: str | None = None
         self.pg_data: Path | None = None
+        self.pg_system_identifier: str | None = None
         self.pg_port, self.emulator_port, self.api_port = unused_port(), unused_port(), unused_port()
         if len({self.pg_port, self.emulator_port, self.api_port}) != 3:
             raise RuntimeError("Owned port collision")
@@ -104,6 +105,15 @@ class Resources:
         self.pg_data = data
         self.command([str(self.pg_bin / "initdb"), "-D", str(data), "-U", "stage5_owned",
                       "--auth-local=trust", "--auth-host=trust", "--no-locale", "--encoding=UTF8"])
+        control = self.command([str(self.pg_bin / "pg_controldata"), "-D", str(data)])
+        fields = dict(line.split(":", 1) for line in control.splitlines() if ":" in line)
+        original_id = fields["Database system identifier"].strip()
+        if (re.fullmatch(r"[0-9]{1,20}", original_id) is None
+                or fields["Database cluster state"].strip() != "shut down"):
+            raise RuntimeError("Fresh owned PostgreSQL creation identity unavailable")
+        self.pg_system_identifier = original_id
+        private_json(self.directory / "pg-creation-identity.json",
+                     {"nonce": self.nonce, "system_identifier": original_id})
         process = self.spawn([str(self.pg_bin / "postgres"), "-D", str(data), "-h", "127.0.0.1",
             "-p", str(self.pg_port), "-k", "", "-c", "max_connections=25",
             "-c", "log_statement=none"], "postgres")
@@ -199,8 +209,13 @@ class Resources:
                     raise RuntimeError("Owned stopped scratch identity differs")
                 control = self.command([str(self.pg_bin / "pg_controldata"), "-D", str(data)])
                 fields = dict(line.split(":", 1) for line in control.splitlines() if ":" in line)
-                if fields["Database cluster state"].strip() != "shut down":
-                    raise RuntimeError("Owned PostgreSQL is not shut down")
+                anchor = getattr(self, "pg_system_identifier", None)
+                retained = json.loads((self.directory / "pg-creation-identity.json").read_text())
+                if (type(anchor) is not str or not anchor
+                        or retained != {"nonce": self.nonce, "system_identifier": anchor}
+                        or fields["Database system identifier"].strip() != anchor
+                        or fields["Database cluster state"].strip() != "shut down"):
+                    raise RuntimeError("Original owned PostgreSQL identity/shutdown differs")
                 shutil.rmtree(data)
                 self.cleanup.append({"pg_scratch_removed": True,
                     "local_system_identifier": fields["Database system identifier"].strip()})

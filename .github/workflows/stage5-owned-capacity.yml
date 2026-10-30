@@ -2,6 +2,19 @@ name: Stage5 owned-local capacity
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/stage5-owned-capacity.yml
+      - backend/capacity/stage5-owned-http-v1.json
+      - backend/scripts/run_stage5_capacity.py
+      - backend/scripts/stage5_capacity.py
+      - backend/scripts/stage5_resources.py
+      - backend/scripts/stage5_seed.py
+      - backend/tests/fixtures/stage5_native.py
+      - backend/tests/test_stage5_capacity.py
+      - backend/tests/test_stage5_native_fixture.py
+      - backend/tests/test_stage5_seed_postgres.py
 
 permissions:
   contents: read
@@ -21,6 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:

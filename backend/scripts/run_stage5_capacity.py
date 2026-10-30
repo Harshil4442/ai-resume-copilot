@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import traceback
+from contextlib import ExitStack
 from dataclasses import asdict
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from scripts.stage5_capacity import (  # noqa: E402
     VERSION,
     Plan,
     finish_owned_http,
+    release_native_context,
     scheduled_phase,
     summarize,
 )
@@ -89,7 +91,9 @@ def migrate(resources):
                 (SELECT system_identifier::text FROM pg_control_system()) AS system_identifier,
                 (SELECT oid::bigint FROM pg_database WHERE datname=current_database()) AS database_oid,
                 current_setting('server_version_num')::int AS server_version""")).mappings().one())
-            if identity["database"] != "stage5_owned" or not 170000 <= identity["server_version"] < 180000:
+            if (identity["database"] != "stage5_owned"
+                    or not 170000 <= identity["server_version"] < 180000
+                    or identity["system_identifier"] != resources.pg_system_identifier):
                 raise RuntimeError("Owned PostgreSQL identity differs")
             connection.exec_driver_sql("CREATE SCHEMA stage5_owned AUTHORIZATION stage5_owned")
         config = Config(str(ROOT / "backend/alembic.ini"))
@@ -132,6 +136,8 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
             os.environ["CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED"] = "true" if mode.startswith("list") else "false"
             os.environ["CANDIDATE_METADATA_ADMISSION_ENABLED"] = "true" if mode.startswith("list") else "false"
             for concurrency in plan.concurrency:
+                if time.perf_counter() >= deadline:
+                    break
                 before = counters.snapshot()
                 redis_before = storage.storage.info("stats")["total_commands_processed"]
                 pool_before = len(sql["acquire_ms"])
@@ -180,6 +186,21 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
                     break
             if time.perf_counter() >= deadline:
                 break
+    observed = {(row["mode"], row["concurrency"]) for row in results}
+    for mode in ("get_unpaced_diagnostic", "list_governed_40"):
+        for concurrency in plan.concurrency:
+            if (mode, concurrency) not in observed:
+                # No service/Redis observation and no fabricated latency sample.
+                results.append({"mode": mode, "concurrency": concurrency,
+                    "state": "not_started_deadline", "planned_requests": plan.requests_per_phase,
+                    "unsent_requests": plan.requests_per_phase, "offered": 0,
+                    "successful_owned_responses": 0, "status_counts": {},
+                    "elapsed_seconds": None, "actual_peak_inflight_http": 0,
+                    "successful_owned_responses_per_second": None,
+                    "all_arrival_to_completion_p95_ms": None,
+                    "success_arrival_to_completion_p95_ms": None,
+                    "queue_p95_ms": None, "http_p95_ms": None,
+                    "wire_and_sql": {}, "requests": []})
     return results, time.perf_counter() - start
 
 
@@ -229,6 +250,7 @@ def execute(plan, resources):
     redis_port = storage.storage.connection_pool.connection_kwargs["port"]
     guards = pytest.MonkeyPatch()
     server = thread = None
+    native_context = ExitStack()
     key, cert = resources.directory / "http-key.pem", resources.directory / "http-cert.pem"
     try:
         _create_owned_tls(key, cert)
@@ -236,104 +258,105 @@ def execute(plan, resources):
         # internal. Other Python HTTP/socket/credential paths deny before send.
         install_egress_guard(guards, {resources.pg_port, resources.emulator_port,
                                      resources.api_port, redis_port}, counters)
-        with configured_accounts(engine=source, directory=resources.directory,
-                endpoint=f"127.0.0.1:{resources.emulator_port}", counters=counters) as native:
-            actors = {}
-            from tests.test_candidate_production_factory import PASSWORD
-            for uid in range(1, 9):
-                actual = native.case.accounts.register(email=f"capacity-{uid}@example.test",
-                    password=PASSWORD, policy_version="2026-10-08")
-                if actual != uid:
-                    raise RuntimeError("Fresh synthetic account sequence differs")
-                session = native.case.accounts.login(email=f"capacity-{uid}@example.test", password=PASSWORD)
-                actors[uid] = security.create_access_token(subject=str(uid), candidate_lifetime={
-                    "version": 1, "context": session.context.model_dump(mode="json"), "auth_generation": 1})
-            data = seed(source, plan)
-            guards.setattr(native_metadata_admission, "_shared_storage", lambda: storage)
-            from app.main import app
-            if app.dependency_overrides:
-                raise RuntimeError("No application auth/database dependency override is allowed")
-            # Counter instrumentation observes the real validate method, not a grant.
-            actual_validate = native.case.accounts.validate
-            def validated(*args, **kwargs):
-                counters.add("native_account_validate")
-                return actual_validate(*args, **kwargs)
-            guards.setattr(native.case.accounts, "validate", validated)
-            scoped_app = RequestGuardScope(app, [native.case.sql_active, native.native.views], counters)
-            config = uvicorn.Config(scoped_app, host="127.0.0.1", port=resources.api_port,
-                ssl_keyfile=str(key), ssl_certfile=str(cert), access_log=False, log_config=None,
-                lifespan="off", workers=1)
-            server = uvicorn.Server(config)
-            cold_start = time.perf_counter()
-            thread = threading.Thread(target=server.run, name="owned-stage5-http", daemon=True)
-            thread.start()
-            ready_deadline = time.monotonic() + 15
-            while not server.started and time.monotonic() < ready_deadline:
-                if not thread.is_alive():
-                    raise RuntimeError("Owned HTTP server exited")
-                time.sleep(.05)
-            if not server.started:
-                raise RuntimeError("Owned HTTP readiness expired")
-            startup_ms = (time.perf_counter() - cold_start) * 1000
-            # Cross-owner and missing bearer controls traverse actual JWT/native
-            # auth and actual owned SQL, before the measured phases.
-            import httpx
-            context = ssl.create_default_context(cafile=str(cert))
-            with httpx.Client(base_url=f"https://127.0.0.1:{resources.api_port}",
-                              verify=context, trust_env=False, timeout=10) as client:
-                assert client.get(PATHS[0]).status_code == 401
-                denied = client.get("/api/resume/2", headers={"Authorization": "Bearer " + actors[1]})
-                assert denied.status_code == 404
-                first_start = time.perf_counter()
-                first = client.get(PATHS[0], headers={"Authorization": "Bearer " + actors[1]})
-                first_ms = (time.perf_counter() - first_start) * 1000
-                assert first.status_code == 200
-            # Enforce read-only PostgreSQL at the server as well as observing SQL.
-            with source.begin() as connection:
-                connection.exec_driver_sql("ALTER ROLE stage5_owned SET default_transaction_read_only=on")
-            source.dispose()  # New measured connections inherit the read-only role default.
-            instrumented_pool = source.pool
-            actual_connect = instrumented_pool.connect
-            source.pool.connect = acquire
-            cpu_before = resource.getrusage(resource.RUSAGE_SELF)
-            results, elapsed = asyncio.run(workload(plan, resources, actors, storage, counters, sql, cert))
-            cpu_after = resource.getrusage(resource.RUSAGE_SELF)
-            with source.connect() as connection:
-                assert connection.execute(text("SHOW transaction_read_only")).scalar_one() == "on"
-                observed = connection.execute(text("SELECT system_identifier::text FROM pg_control_system()")).scalar_one()
-                assert observed == identity["system_identifier"]
-            assert counters.snapshot().get("blocked_external_attempts", 0) == 0
-            assert counters.snapshot().get("request_transaction_guard_leaks", 0) == 0
-            return {"version": VERSION, "scope": "owned_local_direct_https_and_native_data_emulator",
-                "plan": asdict(plan), "postgres_identity": identity, "data": data,
-                "emulator": resources.emulator_identity, "pool": {"size": 4, "overflow": 2, "timeout_seconds": 10},
-                "server_start_to_listen_ms": startup_ms, "first_local_owned_bootstrap_http_ms": first_ms,
-                "measurement_seconds": elapsed, "results": results,
-                "measurement_process_cpu_seconds": cpu_after.ru_utime + cpu_after.ru_stime - cpu_before.ru_utime - cpu_before.ru_stime,
-                "process_peak_rss_bytes_including_setup": cpu_after.ru_maxrss * (1 if sys.platform == "darwin" else 1024),
-                "external_attempts_blocked": 0, "provider_calls": 0,
-                "source": resources.command(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).strip(),
-                "actual_application_python_sources_sha256": application_sources_sha256(),
-                "python": platform.python_version(), "machine": platform.machine(),
-                "redis_binary_sha256": hashlib.sha256(resources.redis_binary.read_bytes()).hexdigest(),
-                "limitations": [
-                    "Local synthetic accounts only; native Admin UID and GCS SDK transports are synthetic, not provider/IAM proof.",
-                    "Authority fixture clock is fixed; no session TTL/expiry qualification.",
-                    "Direct HTTPS only; BFF/browser, network geography, Cloud Run cold starts and provider latency excluded.",
-                    "Get/unpaced mode is diagnostic only; List mode preserves one shared 40-unit moving window, including refusals.",
-                    "500-opportunity actor is deliberately oversampled; buyer data is synthetic existing balances, not invoices/payments.",
-                    "Connection acquisition includes pre-ping/connect/wait; pure pool wait is unknown.",
-                    "Redis INFO counter includes observation/setup protocol commands; it is not provider billing metering.",
-                    "Local wall/CPU/RSS and response bytes do not establish native CU, autoscaling, invoice cost or 10,000-user peaks.",
-                    "1M authenticated requests/month remains required; 40 units/min and two Lists yields at most 864,000/30 days before other use.",
-                    "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
+        native = native_context.enter_context(configured_accounts(engine=source, directory=resources.directory,
+                endpoint=f"127.0.0.1:{resources.emulator_port}", counters=counters))
+        actors = {}
+        from tests.test_candidate_production_factory import PASSWORD
+        for uid in range(1, 9):
+            actual = native.case.accounts.register(email=f"capacity-{uid}@example.test",
+                password=PASSWORD, policy_version="2026-10-08")
+            if actual != uid:
+                raise RuntimeError("Fresh synthetic account sequence differs")
+            session = native.case.accounts.login(email=f"capacity-{uid}@example.test", password=PASSWORD)
+            actors[uid] = security.create_access_token(subject=str(uid), candidate_lifetime={
+                "version": 1, "context": session.context.model_dump(mode="json"), "auth_generation": 1})
+        data = seed(source, plan)
+        guards.setattr(native_metadata_admission, "_shared_storage", lambda: storage)
+        from app.main import app
+        if app.dependency_overrides:
+            raise RuntimeError("No application auth/database dependency override is allowed")
+        # Counter instrumentation observes the real validate method, not a grant.
+        actual_validate = native.case.accounts.validate
+        def validated(*args, **kwargs):
+            counters.add("native_account_validate")
+            return actual_validate(*args, **kwargs)
+        guards.setattr(native.case.accounts, "validate", validated)
+        scoped_app = RequestGuardScope(app, [native.case.sql_active, native.native.views], counters)
+        config = uvicorn.Config(scoped_app, host="127.0.0.1", port=resources.api_port,
+            ssl_keyfile=str(key), ssl_certfile=str(cert), access_log=False, log_config=None,
+            lifespan="off", workers=1)
+        server = uvicorn.Server(config)
+        cold_start = time.perf_counter()
+        thread = threading.Thread(target=server.run, name="owned-stage5-http", daemon=True)
+        thread.start()
+        ready_deadline = time.monotonic() + 15
+        while not server.started and time.monotonic() < ready_deadline:
+            if not thread.is_alive():
+                raise RuntimeError("Owned HTTP server exited")
+            time.sleep(.05)
+        if not server.started:
+            raise RuntimeError("Owned HTTP readiness expired")
+        startup_ms = (time.perf_counter() - cold_start) * 1000
+        # Cross-owner and missing bearer controls traverse actual JWT/native
+        # auth and actual owned SQL, before the measured phases.
+        import httpx
+        context = ssl.create_default_context(cafile=str(cert))
+        with httpx.Client(base_url=f"https://127.0.0.1:{resources.api_port}",
+                          verify=context, trust_env=False, timeout=10) as client:
+            assert client.get(PATHS[0]).status_code == 401
+            denied = client.get("/api/resume/2", headers={"Authorization": "Bearer " + actors[1]})
+            assert denied.status_code == 404
+            first_start = time.perf_counter()
+            first = client.get(PATHS[0], headers={"Authorization": "Bearer " + actors[1]})
+            first_ms = (time.perf_counter() - first_start) * 1000
+            assert first.status_code == 200
+        # Enforce read-only PostgreSQL at the server as well as observing SQL.
+        with source.begin() as connection:
+            connection.exec_driver_sql("ALTER ROLE stage5_owned SET default_transaction_read_only=on")
+        source.dispose()  # New measured connections inherit the read-only role default.
+        instrumented_pool = source.pool
+        actual_connect = instrumented_pool.connect
+        source.pool.connect = acquire
+        cpu_before = resource.getrusage(resource.RUSAGE_SELF)
+        results, elapsed = asyncio.run(workload(plan, resources, actors, storage, counters, sql, cert))
+        cpu_after = resource.getrusage(resource.RUSAGE_SELF)
+        with source.connect() as connection:
+            assert connection.execute(text("SHOW transaction_read_only")).scalar_one() == "on"
+            observed = connection.execute(text("SELECT system_identifier::text FROM pg_control_system()")).scalar_one()
+            assert observed == identity["system_identifier"]
+        assert counters.snapshot().get("blocked_external_attempts", 0) == 0
+        assert counters.snapshot().get("request_transaction_guard_leaks", 0) == 0
+        return {"version": VERSION, "scope": "owned_local_direct_https_and_native_data_emulator",
+            "plan": asdict(plan), "postgres_identity": identity, "data": data,
+            "emulator": resources.emulator_identity, "pool": {"size": 4, "overflow": 2, "timeout_seconds": 10},
+            "server_start_to_listen_ms": startup_ms, "first_local_owned_bootstrap_http_ms": first_ms,
+            "measurement_seconds": elapsed, "results": results,
+            "measurement_process_cpu_seconds": cpu_after.ru_utime + cpu_after.ru_stime - cpu_before.ru_utime - cpu_before.ru_stime,
+            "process_peak_rss_bytes_including_setup": cpu_after.ru_maxrss * (1 if sys.platform == "darwin" else 1024),
+            "external_attempts_blocked": 0, "provider_calls": 0,
+            "source": resources.command(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).strip(),
+            "actual_application_python_sources_sha256": application_sources_sha256(),
+            "python": platform.python_version(), "machine": platform.machine(),
+            "redis_binary_sha256": hashlib.sha256(resources.redis_binary.read_bytes()).hexdigest(),
+            "limitations": [
+                "Local synthetic accounts only; native Admin UID and GCS SDK transports are synthetic, not provider/IAM proof.",
+                "Authority fixture clock is fixed; no session TTL/expiry qualification.",
+                "Direct HTTPS only; BFF/browser, network geography, Cloud Run cold starts and provider latency excluded.",
+                "Get/unpaced mode is diagnostic only; List mode preserves one shared 40-unit moving window, including refusals.",
+                "500-opportunity actor is deliberately oversampled; buyer data is synthetic existing balances, not invoices/payments.",
+                "Connection acquisition includes pre-ping/connect/wait; pure pool wait is unknown.",
+                "Redis INFO counter includes observation/setup protocol commands; it is not provider billing metering.",
+                "Local wall/CPU/RSS and response bytes do not establish native CU, autoscaling, invoice cost or 10,000-user peaks.",
+                "1M authenticated requests/month remains required; 40 units/min and two Lists yields at most 864,000/30 days before other use.",
+                "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
     finally:
         def observers(terminal):
             if terminal:
                 instrumented_pool.connect = actual_connect
                 event.remove(source, "before_cursor_execute", statement)
         finish_owned_http(server=server, thread=thread, guards=guards, finalizers=[
-            observers, lambda _: source.dispose(), lambda _: storage.storage.close(),
+            observers, lambda terminal: release_native_context(native_context, terminal),
+            lambda _: source.dispose(), lambda _: storage.storage.close(),
             lambda _: redis_generator.close(), lambda _: key.unlink(missing_ok=True),
             lambda _: cert.unlink(missing_ok=True)])
 

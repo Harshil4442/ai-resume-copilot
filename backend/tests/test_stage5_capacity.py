@@ -5,13 +5,21 @@ import asyncio
 import json
 import subprocess
 import sys
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from scripts.stage5_capacity import PATHS, Plan, finish_owned_http, scheduled_phase, summarize
+from scripts.stage5_capacity import (
+    PATHS,
+    Plan,
+    finish_owned_http,
+    release_native_context,
+    scheduled_phase,
+    summarize,
+)
 from scripts.stage5_resources import (
     EMULATOR_REPO_DIGEST,
     FORBIDDEN_PORTS,
@@ -98,6 +106,54 @@ def test_global_deadline_counts_unsent_and_inflight_work_without_replay():
     assert summarize(rows)["successful_owned_responses"] == 0
 
 
+@pytest.mark.parametrize("expired_before_first", [False, True])
+def test_actual_workload_retains_unstarted_phases_without_extra_rpc_observation(monkeypatch, expired_before_first):
+    import httpx
+
+    from scripts import run_stage5_capacity as runner
+
+    clock, calls = [100.0], {"snapshot": 0, "redis": 0, "schedule": 0}
+    class InertClient:
+        def __init__(self, **kwargs):
+            pass
+        async def __aenter__(self):
+            if expired_before_first:
+                clock[0] = 701.0
+            return self
+        async def __aexit__(self, *args):
+            pass
+        async def get(self, *args, **kwargs):
+            pytest.fail("Deadline-only synthetic phase must not send HTTP")
+    def snapshot():
+        calls["snapshot"] += 1
+        return {}
+    def info(*args):
+        calls["redis"] += 1
+        return {"total_commands_processed": 0}
+    async def phase(**kwargs):
+        calls["schedule"] += 1
+        clock[0] = 701.0
+        return [{"index": i, "status": "deadline", "bytes": 0, "queue_ms": 0,
+                 "http_ms": 0, "arrival_to_completion_ms": 0} for i in range(kwargs["count"])]
+    monkeypatch.setattr(httpx, "AsyncClient", InertClient)
+    monkeypatch.setattr(runner, "ssl", SimpleNamespace(create_default_context=lambda **kwargs: None))
+    monkeypatch.setattr(runner, "time", SimpleNamespace(perf_counter=lambda: clock[0]))
+    monkeypatch.setattr(runner, "scheduled_phase", phase)
+    for name in ("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED"):
+        monkeypatch.setenv(name, "false")
+    results, _ = asyncio.run(runner.workload(Plan(), SimpleNamespace(api_port=59999), {},
+        SimpleNamespace(storage=SimpleNamespace(info=info)), SimpleNamespace(snapshot=snapshot),
+        {"acquire_ms": []}, Path("/not-read")))
+    unstarted = [row for row in results if row.get("state") == "not_started_deadline"]
+    assert len(results) == 6 and len(unstarted) == (6 if expired_before_first else 5)
+    assert sum(row["unsent_requests"] for row in unstarted) == (300 if expired_before_first else 250)
+    assert all(row["offered"] == 0 and row["requests"] == []
+               and row["http_p95_ms"] is None and row["successful_owned_responses_per_second"] is None
+               for row in unstarted)
+    assert calls == ({"snapshot": 0, "redis": 0, "schedule": 0} if expired_before_first else
+                     {"snapshot": 2, "redis": 2, "schedule": 1})
+
+
 def test_refusals_and_bad_owned_contracts_are_never_successful_throughput():
     rows = [{"status": value, "bytes": 10, "queue_ms": 0, "http_ms": 1,
              "arrival_to_completion_ms": 1, "contract_valid": valid}
@@ -149,6 +205,48 @@ def test_a_failed_owned_finalizer_does_not_skip_later_cleanup_and_restores_only_
     assert calls == ["failed", "Redis", "guard"]
 
 
+@pytest.mark.parametrize("terminal", [True, False])
+def test_native_factory_context_is_not_unwound_until_http_is_terminal(monkeypatch, terminal):
+    import scripts.stage5_capacity as module
+    retained = []
+    monkeypatch.setattr(module, "_RETAINED_NATIVE_CONTEXTS", retained)
+    state = {"native_installed": False, "egress_blocked": True}
+    events = []
+    @contextmanager
+    def native_fixture():
+        state["native_installed"] = True
+        try:
+            yield
+        finally:
+            assert state["egress_blocked"]
+            events.append("native_unwind")
+            state["native_installed"] = False
+    stack = ExitStack()
+    stack.enter_context(native_fixture())
+    def joined(**kwargs):
+        assert state["native_installed"] and state["egress_blocked"]
+        events.append("http_join")
+    def restore_guard():
+        assert not state["native_installed"]
+        state["egress_blocked"] = False
+        events.append("egress_restore")
+    arguments = {"server": SimpleNamespace(should_exit=False),
+        "thread": SimpleNamespace(join=joined, is_alive=lambda: not terminal),
+        "guards": SimpleNamespace(undo=restore_guard),
+        "finalizers": [lambda done: release_native_context(stack, done)]}
+    if terminal:
+        finish_owned_http(**arguments)
+        assert events == ["http_join", "native_unwind", "egress_restore"] and not retained
+    else:
+        with pytest.raises(RuntimeError):
+            finish_owned_http(**arguments)
+        assert state == {"native_installed": True, "egress_blocked": True}
+        assert events == ["http_join"] and retained == [stack]
+        # Synthetic test cleanup after representing terminal workers. The CLI
+        # schedules no automatic delayed unwind on its stuck-worker path.
+        stack.close()
+
+
 def test_new_owned_directory_required_and_existing_is_never_adopted(tmp_path):
     with pytest.raises(ValueError, match="must be new"):
         Resources(tmp_path, Path("/not-used"), Path("/not-used"))
@@ -193,6 +291,31 @@ def test_scratch_cleanup_never_deletes_drifted_or_live_cluster(tmp_path, drift):
     assert data.exists() and (data / "PG_VERSION").is_file()
 
 
+@pytest.mark.parametrize("observed_id,anchor,saved", [
+    ("111", "111", "111"), ("222", "111", "111"), ("111", None, "111"),
+    ("111", "111", "222"),
+])
+def test_shutdown_scratch_must_match_original_native_creation_identity(tmp_path, observed_id, anchor, saved):
+    resource = object.__new__(Resources)
+    resource.container_id = resource.network_id = None
+    resource.processes, resource.logs, resource.cleanup = [], [], []
+    resource.directory, resource.nonce, resource.pg_bin = tmp_path, "own", Path("/unused")
+    resource.pg_system_identifier = anchor
+    resource.pg_data = data = tmp_path / "pg-data"
+    data.mkdir()
+    (data / "PG_VERSION").write_text("17")
+    (tmp_path / "ownership.json").write_text(json.dumps({"nonce": "own"}))
+    (tmp_path / "pg-creation-identity.json").write_text(json.dumps({"nonce": "own", "system_identifier": saved}))
+    resource.command = lambda *args: "Database cluster state: shut down\nDatabase system identifier: " + observed_id + "\n"
+    if observed_id == anchor == saved == "111":
+        resource.close()
+        assert not data.exists() and resource.cleanup[-1]["local_system_identifier"] == "111"
+    else:
+        with pytest.raises(RuntimeError):
+            resource.close()
+        assert data.exists() and resource.cleanup[-1]["cleanup"] == "refused_or_unknown"
+
+
 def test_unknown_docker_cleanup_does_not_prevent_stopping_other_owned_process(monkeypatch):
     import scripts.stage5_resources as module
     resource = object.__new__(Resources)
@@ -220,11 +343,17 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     path = Path(__file__).resolve().parents[2] / ".github/workflows/stage5-owned-capacity.yml"
     source = path.read_text()
     workflow = yaml.load(source, Loader=yaml.BaseLoader)
-    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
+    trigger = workflow["on"]["pull_request"]
+    assert trigger["branches"] == ["main"]
+    assert len(trigger["paths"]) == 10 and "backend/app/**" not in trigger["paths"]
+    assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
     assert "id-token" not in source and "service_account" not in source
     job = workflow["jobs"]["owned-linux"]
+    assert job["steps"][0]["with"] == {
+        "ref": "${{ github.event.pull_request.head.sha || github.sha }}", "persist-credentials": "false"}
     assert job["strategy"]["matrix"]["buyers"] == ["20", "25"]
     runs = "\n".join(step.get("run", "") for step in job["steps"])
     assert "test -x \"$owned_pg_root/runtime/bin/initdb\"" in runs
