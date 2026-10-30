@@ -16,6 +16,78 @@ NOW = datetime(2026, 10, 16, 6, 24, 15, tzinfo=UTC)
 HEADER = b"ClamAV 1.4.3/28153/Wed Oct 14 06:24:15 2026\n"
 
 
+def test_isolated_file_entrypoint_resolves_serving_source_package_before_native_io(tmp_path):
+    """Real file-mode CLI with only native IO replaced; package imports stay real."""
+    import json
+    import subprocess
+    import sys
+
+    program = r'''
+import importlib.util, json, runpy, sys
+from pathlib import Path
+from types import SimpleNamespace
+
+script, output = map(Path, sys.argv[1:])
+root = script.parents[2]
+# -I removes ambient PYTHONPATH/cwd; this is the script-directory entry that
+# Python supplies for ordinary `python backend/scripts/document_refresh.py`.
+sys.path.insert(0, str(script.parent))
+assert str(root) not in sys.path
+class NoProviders:
+    def find_spec(self, fullname, path=None, target=None):
+        assert fullname.split('.')[0] not in {'google', 'grpc', 'requests', 'httpx'}, 'SDK import forbidden'
+sys.meta_path.insert(0, NoProviders())
+def no_external(event, args):
+    assert event not in {'socket.__new__', 'subprocess.Popen'}, 'External IO forbidden'
+sys.addaudithook(no_external)
+spec = importlib.util.spec_from_file_location('document_refresh_probe', root / 'infra/gcp/document_refresh_probe.py')
+probe = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = probe
+spec.loader.exec_module(probe)
+class LocalImportReached(Exception):
+    pass
+def imported(service, image):
+    module = sys.modules['infra.gcp.document_source_candidate']
+    assert Path(module.__file__).resolve() == root / 'infra/gcp/document_source_candidate.py'
+    raise LocalImportReached
+probe.policy_for_serving = imported
+def traced(frame, event, arg):
+    if event == 'call' and frame.f_code.co_filename == str(script) and frame.f_code.co_name == 'main':
+        sys.settrace(None)
+        namespace = frame.f_globals
+        def monitor(*, now):
+            name = f"projects/{namespace['PROJECT']}/locations/{namespace['REGION']}/services/{namespace['SERVICE']}"
+            revision = name + '/revisions/' + namespace['SERVICE'] + '-synthetic'
+            image = namespace['REPOSITORY'] + '@sha256:' + 'b' * 64
+            service = {'name': name, 'uid': '7014a5ba-faee-4fbf-8272-a437b1de49ad',
+                'generation': '1', 'observedGeneration': '1', 'terminalCondition': {'state': 'CONDITION_SUCCEEDED'},
+                'latestReadyRevision': revision, 'latestCreatedRevision': revision,
+                'template': {'containers': [{'image': image}]},
+                'trafficStatuses': [{'percent': 100, 'revision': revision}]}
+            try:
+                namespace['_serving_pin'](service, SimpleNamespace(ACCEPTED_IMAGE=namespace['RENDERER_BASE']))
+            except LocalImportReached:
+                return {'mode': 'monitor', 'definitions': {'status': 'fresh'}, 'local_imports_verified': True}
+            except ModuleNotFoundError as error:
+                print(json.dumps({'missing_package': error.name}), file=sys.stderr)
+                raise
+            raise AssertionError('Did not reach the real source-package import')
+        namespace['monitor'], namespace['emit_status'] = monitor, lambda result: None
+    return traced
+sys.settrace(traced)
+sys.argv = [str(script), '--mode', 'monitor', '--output-directory', str(output)]
+runpy.run_path(str(script), run_name='__main__')
+'''
+    output = tmp_path / "private-monitor-output"
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", program,
+        str(refresh.ROOT / "backend/scripts/document_refresh.py"), str(output)], cwd=tmp_path,
+        capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stderr.decode()
+    expected = {"mode": "monitor", "definitions": {"status": "fresh"}, "local_imports_verified": True}
+    assert json.loads(result.stdout) == json.loads((output / "result.json").read_bytes()) == expected
+    assert result.stderr == b""
+
+
 @pytest.mark.parametrize(("elapsed", "status"), [
     (timedelta(hours=47), "fresh"), (timedelta(hours=48), "refresh_required"),
     (timedelta(days=3), "refresh_required"), (timedelta(days=3, seconds=1), "expired"),

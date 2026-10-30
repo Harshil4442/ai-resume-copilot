@@ -28,6 +28,9 @@ from types import ModuleType
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
+# File-mode maintenance starts with backend/scripts on sys.path. Resolve local
+# package imports from this trusted source root before loading serving readers.
+sys.path.insert(0, str(ROOT))
 PROJECT, REGION, SERVICE = "ai-resume-parser-482412", "us-central1", "hirewiz-document-inspector"
 REPOSITORY = f"{REGION}-docker.pkg.dev/{PROJECT}/cloud-run-source-deploy/{SERVICE}"
 RENDERER_BASE = REPOSITORY + "@sha256:0a7e550623f0485945f9bbe52573091aabedfd612eb353e6a8bbb920e2ffa94f"
