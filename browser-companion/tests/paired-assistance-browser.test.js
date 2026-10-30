@@ -2,6 +2,7 @@
 // SDK-intercepted production composition → protected + SQL activation. All HTTP
 // is locally fulfilled. Test-only fixed clocks match the synthetic native clock.
 import assert from "node:assert/strict";
+import { readinessFixture } from "./pairing-readiness-fixture.js";
 import test from "node:test";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -52,6 +53,8 @@ async function fixture() {
         if(url.startsWith("chrome-extension:")) return route.continue();
         const origin = request.headers().origin || "";
         requests.push({url,origin,method:request.method()});
+        const ready = readinessFixture({url, method:request.method(), headers:request.headers(), body:request.postData()}, WEBSITE, EXTENSION);
+        if (ready) return route.fulfill(ready);
         let result;
         if(url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) && request.method()==="POST") {
           result = await bridge({operation:"pairing_device",action:url.split("/").at(-1),origin,body:request.postDataJSON()});
@@ -70,8 +73,9 @@ async function fixture() {
       async restart(){await context.close();return launch();},
       async close(){await context?.close();if(python.exitCode===null){python.stdin.end();await new Promise(resolve=>python.once("exit",resolve));}
         await rm(directory,{recursive:true,force:true});assert.equal(errors,"");
-        assert.ok(requests.every(({url,origin,method})=>method==="POST" && origin===`chrome-extension://${EXTENSION}`
-          && (url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) || url.startsWith(`${WEBSITE}/api/browser-assistance/device/`))),"Only owned local fulfillments with actual extension Origin");}
+        assert.ok(requests.every(({url,origin,method})=>method==="GET" ? readinessFixture({url,method,headers:origin?{origin}:{},body:null},WEBSITE,EXTENSION)?.status===204
+          : method==="POST" && origin===`chrome-extension://${EXTENSION}`
+          && (url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) || url.startsWith(`${WEBSITE}/api/browser-assistance/device/`))),"Only finite public readiness or owned signed fulfillments with actual extension Origin");}
     };
   } catch(error){await context?.close();python.kill();await rm(directory,{recursive:true,force:true});throw error;}
 }

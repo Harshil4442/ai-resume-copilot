@@ -2,6 +2,7 @@
 // device crypto, SDK-intercepted native pairing/submit and private real SQL.
 // Every employer request terminates at an owned loopback HTTPS server.
 import assert from "node:assert/strict";
+import { readinessFixture } from "./pairing-readiness-fixture.js";
 import test from "node:test";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -81,6 +82,8 @@ async function fixture({submitStatus=200,loseUploadOutcome=false,loseSubmitOutco
     await context.route("**/*",async route=>{
       const request=route.request(),url=request.url();
       if(url.startsWith("chrome-extension:")||["job-boards.greenhouse.io","boards.greenhouse.io","owned-resume.s3.amazonaws.com"].includes(new URL(url).hostname))return route.continue();
+      const ready=readinessFixture({url,method:request.method(),headers:request.headers(),body:request.postData()},WEBSITE,EXTENSION);
+      if(ready)return route.fulfill(ready);
       if(!url.startsWith(`${WEBSITE}/api/`)||request.method()!=="POST")return route.abort("blockedbyclient");
       if(url.endsWith("/outcome")){
         const body=request.postDataJSON().body;

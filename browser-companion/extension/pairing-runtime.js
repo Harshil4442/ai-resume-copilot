@@ -310,6 +310,7 @@ export class PairingRuntime {
     } finally { this.busy = false; }
   }
   async cancel() {
+    this.transport.cancelReadiness?.();
     this.cancelled = true; this.abort?.abort(); this.transport.claim = null;
     this.generation += 1;
     // No intent/checkpoint or send can precede the first permission await.

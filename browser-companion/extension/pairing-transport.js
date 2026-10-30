@@ -5,7 +5,9 @@ const encoder = new TextEncoder();
 // Allow the bounded native operation to settle before the outer client gives up.
 // This does not extend any signed request, challenge, claim or action deadline.
 const REQUEST_TIMEOUT_MS = 40000;
+const READINESS_TIMEOUT_MS = 15000;
 const TIMED_READS = new Set(["status", "inspect-key"]);
+const READINESS_OPERATIONS = new Set(["prepare", "inspect-key", "status", "challenge", "refresh-challenge"]);
 const MAX_TIMING_MS = 86400000;
 const timingInteger = (value, minimum = -MAX_TIMING_MS) => Number.isSafeInteger(value)
   && value >= minimum && value <= MAX_TIMING_MS ? value : null;
@@ -24,6 +26,7 @@ function cancelBestEffort(stream) {
 export class PairingTransport {
   #readTiming = null;
   #readAttempt = null;
+  #readiness = new Set();
 
   constructor({ configuration, identity, now = () => Date.now(), beforePost = async () => undefined }) {
     let local = false;
@@ -50,11 +53,40 @@ export class PairingTransport {
   readTiming() {
     return this.#readTiming === null ? null : { ...this.#readTiming };
   }
-  async post(operation, body) {
+  cancelReadiness() {
+    for (const controller of this.#readiness) controller.abort(new Error("Connection request was paused"));
+  }
+  async #withReady(operation, send) {
+    if (!READINESS_OPERATIONS.has(operation)) throw new Error("Pairing readiness operation is unavailable");
+    if (TIMED_READS.has(operation)) { this.#readAttempt = {}; this.#readTiming = null; }
+    const retainedSignal = this.signal;
+    const controller = new AbortController();
+    this.#readiness.add(controller);
+    const current = () => {
+      if (controller.signal.aborted || retainedSignal?.aborted || this.signal !== retainedSignal) throw new Error("Connection request was paused");
+    };
+    try {
+      await this.beforePost(); current();
+      const signal = AbortSignal.any([AbortSignal.timeout(READINESS_TIMEOUT_MS), controller.signal, ...(retainedSignal ? [retainedSignal] : [])]);
+      const response = await fetch(`${this.configuration.websiteOrigin}/api/browser-pairing/device/${operation}`, {
+        method: "GET", credentials: "omit", redirect: "error", cache: "no-store", signal });
+      cancelBestEffort(response.body);
+      signal.throwIfAborted(); current();
+      if (response.status !== 204) throw new Error("Pairing readiness is unavailable; no signed request was sent");
+      // Readiness is not authority and is never cached. Recheck the local fence
+      // before constructing the timestamp; post() retains its own final check.
+      await this.beforePost(); current(); signal.throwIfAborted();
+      // Keep this private cancellation owner across signing and post's final
+      // permission await, including reads outside runtime.mutate().
+      return await send(controller.signal);
+    } finally { this.#readiness.delete(controller); }
+  }
+  async post(operation, body, readinessSignal = null) {
     const attempt = TIMED_READS.has(operation) ? {} : null;
     if (attempt) { this.#readAttempt = attempt; this.#readTiming = null; }
     await this.beforePost();
     if (this.signal?.aborted) throw new Error("Connection request was paused");
+    readinessSignal?.throwIfAborted();
     let issued = null, age = null;
     if (attempt) {
       try {
@@ -70,7 +102,7 @@ export class PairingTransport {
     try {
       const response = await fetch(`${this.configuration.websiteOrigin}/api/browser-pairing/device/${operation}`, {
         method: "POST", credentials: "omit", redirect: "error", cache: "no-store",
-        signal: this.signal ? AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), this.signal]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...(this.signal ? [this.signal] : []), ...(readinessSignal ? [readinessSignal] : [])]),
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (attempt) {
         try {
@@ -122,9 +154,11 @@ export class PairingTransport {
     if (typeof onPrepared !== "function" || typeof beforeCreate !== "function") throw new Error("Durable connection checkpoints are required before preparation");
     this.claim = null;
     const key = publicKey(this.identity.public_key);
-    const payload = { protocol_version: 2, operation: "prepare_request", key, extension_id: this.configuration.extensionId,
-      revision: this.configuration.executorRevision, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
-    const prepared = await this.post("prepare", { ...payload, signature: await this.sign("transport-request", payload) });
+    const prepared = await this.#withReady("prepare", async (signal) => {
+      const payload = { protocol_version: 2, operation: "prepare_request", key, extension_id: this.configuration.extensionId,
+        revision: this.configuration.executorRevision, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
+      return this.post("prepare", { ...payload, signature: await this.sign("transport-request", payload) }, signal);
+    });
     const request = prepared.request;
     if (!request || !UUID.test(request.pairing_id) || !UUID.test(request.device_id) || !UUID.test(prepared.nonce)
         || canonical(request.public_key) !== canonical(key) || request.key_sha256 !== await digest(domain("public-key", key))
@@ -144,9 +178,11 @@ export class PairingTransport {
   }
   async inspectKey() {
     const key = publicKey(this.identity.public_key);
-    const payload = { protocol_version: 2, operation: "key_status", key, extension_id: this.configuration.extensionId,
-      revision: this.configuration.executorRevision, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
-    const result = await this.post("inspect-key", { ...payload, signature: await this.sign("transport-request", payload) });
+    const result = await this.#withReady("inspect-key", async (signal) => {
+      const payload = { protocol_version: 2, operation: "key_status", key, extension_id: this.configuration.extensionId,
+        revision: this.configuration.executorRevision, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
+      return this.post("inspect-key", { ...payload, signature: await this.sign("transport-request", payload) }, signal);
+    });
     if (Object.keys(result).sort().join(",") !== "executor_revision,extension_id,key_sha256,protocol_version,status"
         || result.protocol_version !== 2 || result.key_sha256 !== await this.keyDigest()
         || result.extension_id !== this.configuration.extensionId || result.executor_revision !== this.configuration.executorRevision
@@ -154,9 +190,11 @@ export class PairingTransport {
     return result;
   }
   async lookup(operation, identity) {
-    const payload = { protocol_version: 2, operation, identity, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
     const path = { device_challenge: "challenge", refresh_challenge: "refresh-challenge", status: "status" }[operation];
-    return this.post(path, { ...payload, signature: await this.sign("transport-request", payload) });
+    return this.#withReady(path, async (signal) => {
+      const payload = { protocol_version: 2, operation, identity, request_id: crypto.randomUUID(), issued_at_ms: this.now() };
+      return this.post(path, { ...payload, signature: await this.sign("transport-request", payload) }, signal);
+    });
   }
   async identify(refresh = false) {
     if (!this.pairingId || !this.deviceId) throw new Error("A candidate-reviewed pairing is required");
