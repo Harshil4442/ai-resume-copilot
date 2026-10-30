@@ -2,6 +2,29 @@
 
 Status: implemented; deployed enrollment acceptance remains pending.
 
+## Dedicated browser-pairing gateway distinction
+
+The separate browser-pairing gateway currently receives its coordinator clock
+from candidate-account composition's local `time.time_ns()` callback. It does
+not use the provider-bounded ingress environment described below. The
+[pairing admission candidate](../delivery/BROWSER_GATEWAY_ADMISSION_CANDIDATE.md)
+keeps that existing clock and signed five-second incoming-admission window,
+while allowing an opaque, single-request processing lease bounded by both local
+wall and monotonic elapsed time to at most thirty seconds. Final gateway nonce
+consumption uses that lease rather than reusing the public five-second expiry
+after native reads; nonce retention covers only the latest bounded lease.
+
+This is an explicit pairing freshness-semantics change, not provider-clock
+attestation or an authorization cache. All current account/session/password/
+review checks remain required. Pure pinned gateway admission now precedes native
+composition, which shares the same bounded processing lease and exact one-use
+construction-owner/native binding. The BFF account eligibility preflight does
+not guarantee this exact pairing service is warm; platform delay before admission
+can still expire incoming input. Actual cold-path/clock qualification remains
+open. This candidate does not change the provider-time/uncertainty/no-fallback
+requirements of the private account-ingress protocol below or introduce a new
+clock authority.
+
 The website BFF signs native account requests for exactly five seconds. The
 backend independently verifies the signature, physical request, current custody
 and unique nonce against its bounded provider-clock observation. On 22 October,

@@ -182,19 +182,33 @@ class ConfiguredBrowserPairing:
         self._origin = os.environ["BROWSER_PAIRING_WEBSITE_ORIGIN"]
         self._native: NativeBrowserPairing | None = None
         self._lock = Lock()
+        from .browser_pairing import GatewayVerifier
+        self._gateway = GatewayVerifier(key=bytes.fromhex(os.environ["BROWSER_PAIRING_GATEWAY_SECRET"]),
+            issuer="hirewiz_bff_v1", origin=self._origin)
+        self._admission_owner = object()
 
-    @native_phase("browser_pairing", "service")
-    def _service(self) -> NativeBrowserPairing:
+    @staticmethod
+    def _gateway_now_ms() -> int:
+        # Same existing pairing wall-clock authority as account composition's
+        # lifetime.now_ms; this is not private account-ingress provider time.
+        return time.time_ns() // 1_000_000
+
+    def _check_configuration(self) -> BrowserPairingNativeConfiguration:
         current = configuration()
         if (canonical(current.model_dump(mode="json")) != self._raw
                 or hashlib.sha256(os.environ["BROWSER_PAIRING_GATEWAY_SECRET"].encode()).digest() != self._gateway_digest
                 or os.environ["BROWSER_PAIRING_WEBSITE_ORIGIN"] != self._origin):
             raise GuardDenied("Browser pairing deployment configuration changed")
+        return current
+
+    @native_phase("browser_pairing", "service")
+    def _service(self) -> NativeBrowserPairing:
+        current = self._check_configuration()
         with self._lock:
             if self._native is None:
                 from ..browser_assistance.native_pairing import activation_port
                 from ..candidate_accounts.production import production_candidate_accounts
-                from .browser_pairing import GatewayVerifier, NativeBrowserPairing
+                from .browser_pairing import NativeBrowserPairing
                 from .gcp_journal import GcsJournal
                 from .gcp_paired_devices import ProtectedPairingDevices
                 from .gcp_pairing import GcpPairingCoordinator
@@ -223,9 +237,7 @@ class ConfiguredBrowserPairing:
                     credentials=credentials, signer=_IdentityGuardedSigner(
                         RefreshingKmsSigner(current.assertion_key, issuer=current.assertion_issuer)),
                     issuer=current.assertion_issuer)
-                gateway = GatewayVerifier(key=bytes.fromhex(os.environ["BROWSER_PAIRING_GATEWAY_SECRET"]),
-                    issuer="hirewiz_bff_v1", origin=os.environ["BROWSER_PAIRING_WEBSITE_ORIGIN"])
-                self._native = NativeBrowserPairing(coordinator, password, gateway, paired_devices=devices)
+                self._native = NativeBrowserPairing(coordinator, password, self._gateway, paired_devices=devices)
         assert self._native is not None
         return self._native
 
@@ -253,16 +265,29 @@ class ConfiguredBrowserPairing:
         return context
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
-        native = self._service()
-        from .browser_pairing import PREFIX, exact_json
-        native.gateway.verify(assertion, signature, path=f"{PREFIX}/candidate/{operation}",
-            raw=raw, now_ms=native.coordinator.now_ms())
-        exact_json(raw)
-        with self._observations(native):
-            with native_phase("browser_pairing", "native_operation"):
-                result = native.candidate(operation, raw, assertion, signature)
-            self._service()
-        return result
+        from .browser_pairing import PREFIX
+        self._check_configuration()  # Pure pins/key/origin checks before composition/SDK IO.
+        path = f"{PREFIX}/candidate/{operation}"
+        gateway = self._gateway
+        admission = gateway.admit_composition(assertion, signature, owner=self._admission_owner,
+            path=path, raw=raw, now_ms=self._gateway_now_ms())
+        native = None
+        try:
+            native = self._service()
+            self._check_configuration()  # A mid-composition key/config change cannot bind authority.
+            gateway.bind_composed(admission, construction_owner=self._admission_owner,
+                native=native, path=path, raw=raw, now_ms=self._gateway_now_ms())
+            with self._observations(native):
+                with native_phase("browser_pairing", "native_operation"):
+                    result = native.candidate_admitted(operation, raw, admission)
+                self._service()
+            native.gateway.admitted(admission, owner=native, path=f"{PREFIX}/candidate/{operation}",
+                raw=raw, now_ms=native.coordinator.now_ms())
+            return result
+        finally:
+            gateway.finish_admission(admission, owner=self._admission_owner)
+            if native is not None:
+                gateway.finish_admission(admission, owner=native)
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
         native = self._service()

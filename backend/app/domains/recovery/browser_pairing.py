@@ -6,14 +6,20 @@ native password boundary. No SQL/bearer bootstrap, action permit or credit opera
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import math
 import re
+from dataclasses import dataclass
+from threading import Lock, current_thread
+from time import monotonic
 from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
@@ -33,6 +39,7 @@ from .store import GuardDenied, GuardUnavailable
 MAX_BODY = 8_192
 MAX_RESPONSE = 16_384
 WINDOW_MS = 5_000
+PROCESSING_MS = 30_000
 PREFIX = "/api/v1/browser-pairing"
 FAILURE = "Browser pairing request was rejected"
 
@@ -113,6 +120,35 @@ class DeviceSelection(HttpContract):
     device_id: UUID
 
 
+class VerifiedGatewayAdmission:
+    """Opaque, process-local receipt; only its verifier can issue a usable one."""
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls):
+        raise TypeError("Gateway admissions are verifier-issued only")
+
+
+@dataclass(repr=False)
+class _Admission:
+    envelope: GatewayAssertion
+    owner: object
+    thread: object
+    task: object | None
+    admitted_ms: int
+    admitted_monotonic: float
+    last_ms: int
+    last_monotonic: float
+    started: bool = False
+    composition_owner: object | None = None
+
+
+def _task():
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
+
+
 def exact_json(raw: bytes) -> dict:
     """Reject duplicate keys, floats, oversized bodies and nonobject JSON without echo."""
     def pairs(items: list[tuple[str, object]]) -> dict:
@@ -146,6 +182,8 @@ class GatewayVerifier:
                 or any(c.isspace() for c in origin) or re.fullmatch(r"[A-Za-z0-9_-]{1,160}", issuer) is None):
             raise GuardUnavailable("A fixed HTTPS candidate origin is required")
         self._key, self.issuer, self.origin = key, issuer, origin
+        self._admissions: WeakKeyDictionary[VerifiedGatewayAdmission, _Admission] = WeakKeyDictionary()
+        self._admission_lock = Lock()
 
     def verify(self, encoded: str, signature: str, *, path: str, raw: bytes,
                now_ms: int) -> GatewayAssertion:
@@ -171,6 +209,84 @@ class GatewayVerifier:
         except (ValidationError, ValueError, TypeError, UnicodeError):
             raise GuardDenied(FAILURE) from None
 
+    def admit(self, encoded: str, signature: str, *, owner: object, path: str,
+              raw: bytes, now_ms: int) -> VerifiedGatewayAdmission:
+        # This retains pairing's existing local wall-clock authority, not
+        # ADR008's separately provider-anchored account-ingress clock.
+        started = monotonic()
+        envelope = self.verify(encoded, signature, path=path, raw=raw, now_ms=now_ms)
+        exact_json(raw)
+        if (type(now_ms) is not int or not 0 < now_ms <= 2**53 - 1 - PROCESSING_MS
+                or envelope.expires_at_ms > 2**53 - 1 - PROCESSING_MS
+                or not math.isfinite(started)):
+            raise GuardDenied(FAILURE)
+        admission = object.__new__(VerifiedGatewayAdmission)
+        with self._admission_lock:
+            self._admissions[admission] = _Admission(envelope, owner, current_thread(), _task(),
+                now_ms, started, now_ms, started)
+        return admission
+
+    def admitted(self, admission: VerifiedGatewayAdmission, *, owner: object, path: str,
+                 raw: bytes, now_ms: int, start: bool = False) -> GatewayAssertion:
+        # Neither an unregistered object.__new__ handle nor a caller bool/time
+        # grants authority. A handle is native-instance/thread/task/request bound.
+        if type(admission) is not VerifiedGatewayAdmission:
+            raise GuardDenied(FAILURE)
+        current = monotonic()
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if (state is None or state.owner is not owner or state.thread is not current_thread()
+                    or state.task is not _task() or (state.started if start else not state.started)):
+                raise GuardDenied(FAILURE)
+            if start:
+                state.started = True  # Failed or interrupted starts cannot reuse this receipt.
+            if (type(now_ms) is not int or not math.isfinite(current)
+                    or not state.last_ms <= now_ms < state.admitted_ms + PROCESSING_MS
+                    or not state.last_monotonic <= current < state.admitted_monotonic + PROCESSING_MS / 1000
+                    or type(raw) is not bytes or state.envelope.path != path or state.envelope.method != "POST"
+                    or state.envelope.body_sha256 != hashlib.sha256(raw).hexdigest()):
+                raise GuardDenied(FAILURE)
+            state.last_ms, state.last_monotonic = now_ms, current
+            return state.envelope
+
+    def admit_composition(self, encoded: str, signature: str, *, owner: object, path: str,
+                          raw: bytes, now_ms: int) -> VerifiedGatewayAdmission:
+        admission = self.admit(encoded, signature, owner=owner, path=path, raw=raw, now_ms=now_ms)
+        with self._admission_lock:
+            self._admissions[admission].composition_owner = owner
+        return admission
+
+    def bind_composed(self, admission: VerifiedGatewayAdmission, *, construction_owner: object,
+                      native, path: str, raw: bytes, now_ms: int) -> None:
+        # Only the original construction slot may bind this once to the exact
+        # native instance sharing this verifier. No timestamp/bool is authority.
+        if type(native) is not NativeBrowserPairing or native.gateway is not self:
+            raise GuardDenied(FAILURE)
+        if type(admission) is not VerifiedGatewayAdmission:
+            raise GuardDenied(FAILURE)
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            current = monotonic()
+            if (state is None or state.owner is not construction_owner
+                    or state.composition_owner is not construction_owner or state.started
+                    or state.thread is not current_thread() or state.task is not _task()
+                    or type(now_ms) is not int or not math.isfinite(current)
+                    or not state.last_ms <= now_ms < state.admitted_ms + PROCESSING_MS
+                    or not state.last_monotonic <= current < state.admitted_monotonic + PROCESSING_MS / 1000
+                    or type(raw) is not bytes or state.envelope.path != path
+                    or state.envelope.body_sha256 != hashlib.sha256(raw).hexdigest()):
+                raise GuardDenied(FAILURE)
+            state.owner, state.composition_owner = native, None
+            state.last_ms, state.last_monotonic = now_ms, current
+
+    def finish_admission(self, admission: VerifiedGatewayAdmission, *, owner: object) -> None:
+        if type(admission) is not VerifiedGatewayAdmission:
+            return
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if state is not None and state.owner is owner:
+                del self._admissions[admission]
+
 
 class NativeBrowserPairing:
     """One explicitly injected native coordinator, password boundary and gateway pin."""
@@ -184,24 +300,61 @@ class NativeBrowserPairing:
         self.identity = RegisteredPasswordIdentity(coordinator.core.store)
 
     def _consume(self, namespace: str, request_id: str, *, context: CandidateWebSession | None,
-                 issued: int, expires: int | None = None) -> dict | None:
+                 issued: int, expires: int | None = None,
+                 admission: VerifiedGatewayAdmission | None = None, operation: str = "", raw: bytes = b"") -> dict | None:
         captured: list[dict] = []
+        c = self.coordinator
+
+        def admitted(now: int) -> None:
+            if admission is None:
+                if context is not None:
+                    raise GuardDenied(FAILURE)
+                return
+            envelope = self.gateway.admitted(admission, owner=self,
+                path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=now)
+            if (namespace != "browser_gateway_requests" or str(envelope.request_id) != request_id
+                    or envelope.context != context or envelope.issued_at_ms != issued
+                    or envelope.expires_at_ms != expires):
+                raise GuardDenied(FAILURE)
+
+        def before_attempt():
+            admitted(c.now_ms())
+            c.fence.check(c.pin)
+            admitted(c.now_ms())
+
         def transaction(tx: BufferedTransaction) -> None:
-            c = self.coordinator
             c._control(tx)
             now = c.now_ms()
             deadline = issued + WINDOW_MS if expires is None else expires
-            if not issued <= now < deadline <= issued + WINDOW_MS or tx.get(namespace, request_id) is not None:
+            admitted(now)
+            if admission is None and not issued <= now < deadline <= issued + WINDOW_MS:
+                raise GuardDenied(FAILURE)
+            if tx.get(namespace, request_id) is not None:
                 raise GuardDenied(FAILURE)
             if context is not None:
                 retained = self.identity.resolve(_PasswordReadTransaction(tx, c, context),
                     context, c.core, now)
+                current = c.now_ms()
+                admitted(current)
+                if current != now:
+                    # Repeat current-session/expiry checks over the same native
+                    # transaction snapshot after its reads; no expected facts or
+                    # stale identity are substituted for current account state.
+                    fresh = self.identity.resolve(_PasswordReadTransaction(tx, c, context),
+                        context, c.core, current)
+                    if fresh != retained:
+                        raise GuardDenied(FAILURE)
+                admitted(c.now_ms())
                 captured[:] = [retained]
+                # Cover every invocation admitted within the ORIGINAL signed
+                # window, including its maximum bounded processing lease. This
+                # does not extend public assertion reuse or the human review.
+                deadline += PROCESSING_MS
             # No body, password, assertion, cookie, signature or body digest is retained.
             tx.put(namespace, request_id, {"expires_at_ms": deadline}, immutable=True)
-        self.coordinator.registry.run(transaction,
-            before_attempt=lambda: self.coordinator.fence.check(self.coordinator.pin))
+        c.registry.run(transaction, before_attempt=before_attempt)
         self.coordinator.fence.check(self.coordinator.pin)
+        admitted(c.now_ms())
         return captured[0] if captured else None
 
     def _execute(self, command: PairingCommand, parameters: dict) -> dict:
@@ -215,11 +368,24 @@ class NativeBrowserPairing:
         return result.result
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
+        admission = self.admit_candidate(operation, raw, assertion, signature)
+        try:
+            return self.candidate_admitted(operation, raw, admission)
+        finally:
+            self.gateway.finish_admission(admission, owner=self)
+
+    def admit_candidate(self, operation: str, raw: bytes, assertion: str,
+                        signature: str) -> VerifiedGatewayAdmission:
+        return self.gateway.admit(assertion, signature, owner=self,
+            path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=self.coordinator.now_ms())
+
+    def candidate_admitted(self, operation: str, raw: bytes, admission: VerifiedGatewayAdmission) -> dict:
         c = self.coordinator
-        envelope = self.gateway.verify(assertion, signature, path=f"{PREFIX}/candidate/{operation}",
-            raw=raw, now_ms=c.now_ms())
+        envelope = self.gateway.admitted(admission, owner=self,
+            path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms(), start=True)
         if self.paired_devices is not None:
             self.paired_devices.scoped.resolve(envelope.context)
+        self.gateway.admitted(admission, owner=self, path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms())
         data = exact_json(raw)
         if operation in {"challenge", "revoke-challenge"}:
             model = PairingSelection if operation == "challenge" else DeviceSelection
@@ -231,18 +397,22 @@ class NativeBrowserPairing:
         else:
             raise GuardDenied(FAILURE)
         identity = self._consume("browser_gateway_requests", str(envelope.request_id),
-            context=envelope.context, issued=envelope.issued_at_ms, expires=envelope.expires_at_ms)
+            context=envelope.context, issued=envelope.issued_at_ms, expires=envelope.expires_at_ms,
+            admission=admission, operation=operation, raw=raw)
         assert identity is not None
         if operation in {"confirm", "revoke"}:
-            return self.password.execute(envelope.context, data)
-        assert selected is not None
-        parameters = {"subject_id": identity["subject_uuid"], "session_id": identity["session_id"]}
-        if operation == "challenge":
-            parameters["pairing_id"] = str(selected.model_dump()["pairing_id"])
-            result = self._execute("candidate_challenge", parameters)
-            return self._candidate_reply(result)
-        parameters["device_id"] = str(selected.model_dump()["device_id"])
-        return self._candidate_reply(self._execute("revocation_challenge", parameters))
+            result = self.password.execute(envelope.context, data)
+        else:
+            assert selected is not None
+            parameters = {"subject_id": identity["subject_uuid"], "session_id": identity["session_id"]}
+            if operation == "challenge":
+                parameters["pairing_id"] = str(selected.model_dump()["pairing_id"])
+                result = self._candidate_reply(self._execute("candidate_challenge", parameters))
+            else:
+                parameters["device_id"] = str(selected.model_dump()["device_id"])
+                result = self._candidate_reply(self._execute("revocation_challenge", parameters))
+        self.gateway.admitted(admission, owner=self, path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms())
+        return result
 
     @staticmethod
     def _candidate_reply(result: dict) -> dict:

@@ -50,6 +50,25 @@ claim and native own-ACK rules remain required. Missing, changed, unavailable,
 expired or poisoned identity observations refuse output; an old or uncertain
 acknowledgment cannot become new authority.
 
+## Gateway admission during identity observations
+
+The [pairing admission candidate](../delivery/BROWSER_GATEWAY_ADMISSION_CANDIDATE.md)
+separates a valid five-second incoming gateway assertion from the already-admitted
+operation's existing thirty-second processing bound. Its opaque verifier-issued
+receipt is native-instance/thread/task/request bound and single-use, with fixed
+wall/monotonic deadlines and rollback refusal. Atomic gateway nonce retention may
+cover the original signed expiry plus thirty seconds; a new invocation still
+requires an unexpired original signature. This explicitly changes final-consume
+freshness semantics and does not cache a positive native authorization decision.
+
+Current identity/control/session/fence checks, actual human review/password and
+pending-pairing TTLs, original acknowledgements and all fresh signing/export/entry/
+exit barriers remain required. Pairing's existing local clock is not the separate
+provider-clock authority in ADR008. Pure pinned admission precedes cold native
+composition; its construction-owner slot binds once to the exact native/verifier
+under the same processing deadline. Platform delay before admission remains
+subject to the original signed TTL and must not be hidden by a retry or extension.
+
 ## Explicit security tradeoff
 
 This weakens the timing guarantee for **private internal writes**. A pinned

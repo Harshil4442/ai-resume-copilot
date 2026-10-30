@@ -257,7 +257,9 @@ def test_concurrent_same_gateway_request_has_only_one_native_winner(client, nati
         assert statuses == [200, 503] and unavailable == ["abort_budget"]
     # The race outcome is one retained consumption and one native challenge event,
     # regardless of whether the rejected loser sees replay or bounded unavailability.
-    assert native.case.registry.read("browser_gateway_requests", request_id) == {"expires_at_ms": native.case.now + 5_000}
+    # Retain consumption through the last possible admitted processing lease;
+    # this does not make an old public gateway assertion valid at a new entry.
+    assert native.case.registry.read("browser_gateway_requests", request_id) == {"expires_at_ms": native.case.now + 35_000}
     assert native.case.registry.read("head", "global")["sequence"] == before + 1
     assert native.case.registry.read("pairing_requests", request["pairing_id"])["state"] == "REQUESTED"
     assert client.post(f"{PREFIX}/candidate/challenge", content=raw, headers=headers).status_code == 403

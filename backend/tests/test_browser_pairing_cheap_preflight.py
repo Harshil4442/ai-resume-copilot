@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import ValidationError
 
 from app.domains.recovery import browser_pairing_production as production
-from app.domains.recovery.browser_pairing import GatewayVerifier
+from app.domains.recovery.browser_pairing import GatewayVerifier, NativeBrowserPairing
 from app.domains.recovery.contracts import canonical
 from app.domains.recovery.store import GuardDenied
 
@@ -32,8 +32,12 @@ def transport():
 
 def configured(monkeypatch):
     browser = object.__new__(production.ConfiguredBrowserPairing)
-    native = SimpleNamespace(coordinator=SimpleNamespace(now_ms=lambda: NOW),
-        gateway=GatewayVerifier(key=b"a" * 32, issuer="gateway_1", origin="https://example.test"))
+    native = object.__new__(NativeBrowserPairing)
+    native.coordinator = SimpleNamespace(now_ms=lambda: NOW)
+    native.gateway = GatewayVerifier(key=b"a" * 32, issuer="gateway_1", origin="https://example.test")
+    browser._gateway, browser._admission_owner = native.gateway, object()
+    browser._gateway_now_ms = lambda: NOW
+    browser._check_configuration = lambda: None
     browser._service = lambda: native
     browser._observations = lambda _: pytest.fail("untrusted transport entered metadata scope")
     monkeypatch.setattr(production, "configuration", lambda: SimpleNamespace(
