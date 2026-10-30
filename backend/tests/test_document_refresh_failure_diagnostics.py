@@ -1,4 +1,4 @@
-"""Failure presentation is private, bounded and never operation authority."""
+"""Failure diagnostics are sanitized, bounded and never operation authority."""
 from __future__ import annotations
 
 import json
@@ -357,7 +357,7 @@ def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
     steps = workflow["jobs"]["maintenance"]["steps"]
     normal = next(s for s in steps if s.get("name") == "Retain bounded maintenance evidence")
     diagnostic = next(s for s in steps if s.get("name") ==
-                      "Retain private failure diagnostics separately from native custody")
+                      "Retain sanitized failure diagnostics separately from native custody")
     base = "${{ env.OUTPUT_DIRECTORY }}/"
     assert normal["with"]["path"].splitlines() == [base + "**/*.json", "!" + base + "failure-diagnostic.json"]
     assert diagnostic["with"]["path"] == base + "failure-diagnostic.json"
