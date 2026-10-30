@@ -550,3 +550,44 @@ def test_unknown_native_ack_never_replays_or_relabels_old_image(source, monkeypa
         v3.run_successor(identity, journal, adapter=probe)
     assert {p.name: p.read_bytes() for p in journal.iterdir()} == original
     assert calls == (["create"] if phase == "create" else ["create", "run"])
+
+
+@pytest.mark.parametrize("source_revision,full_source", [(False, False), (False, True), (True, True)])
+def test_retained_source_policy_refuses_old_candidate_builds_and_requires_current_upgrade_lane(
+    monkeypatch, tmp_path, source_revision, full_source,
+):
+    calls = []
+    context = object() if source_revision else None
+    identity = {"kind": profile.KIND, "immutable_image": IMAGE}
+
+    def current_candidate(directory, **kwargs):
+        assert source_revision is True and full_source is True
+        assert directory == tmp_path and kwargs == {"publish": True, "now": native.historical.NOW,
+                                                    "nonce": NONCE, "source_revision": True}
+        calls.append("current_overlay_candidate")
+        return {"build_identity": identity}
+
+    promoted = create_autospec(release.promote, return_value={"status": "document_refresh_serving"})
+    modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *a, **k: NONCE),
+        "document_refresh_probe": SimpleNamespace(Clients=lambda: SimpleNamespace(
+            preflight=lambda: {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
+            policy_for_serving=lambda *_: profile.LEGACY_POLICY_SHA256),
+        "document_candidate": SimpleNamespace(POLICY_SHA256=courier.POLICY_SHA256),
+        "document_source_release": SimpleNamespace(promote=promoted)}
+    monkeypatch.setattr(builder, "infra", modules.__getitem__)
+    monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("No provider entry in dispatch regression"))
+    monkeypatch.setattr(builder, "native_build", lambda *a, **k: pytest.fail("No native Build entry"))
+    monkeypatch.setattr(builder, "candidate", lambda *a, **k: pytest.fail("Old source must not dispatch a V2 candidate"))
+    monkeypatch.setattr(builder, "source_definitions_candidate", lambda *a, **k: pytest.fail("Old source must not acquire a child Build"))
+    monkeypatch.setattr(builder, "full_source_candidate", current_candidate)
+    if source_revision:
+        value = builder.refresh(tmp_path, publish=True, now=native.historical.NOW,
+            application_context=context, source_revision=True, full_source=True)
+        assert value["status"] == "document_refresh_serving" and calls == ["current_overlay_candidate"]
+        promoted.assert_called_once_with(identity, tmp_path / "native-proof", tmp_path / "transition",
+                                         application_context=context)
+    else:
+        with pytest.raises(builder.RefreshDenied, match="legacy_source_read_only"):
+            builder.refresh(tmp_path, publish=True, now=native.historical.NOW, full_source=full_source)
+        assert calls == []
+        promoted.assert_not_called()

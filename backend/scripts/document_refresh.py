@@ -354,6 +354,7 @@ document_source_archive_changed
 document_source_file_bound
 document_source_historical_profile_refused
 document_source_legacy_write_refused
+document_refresh_legacy_source_read_only
 document_refresh_source_pre_native_artifact_changed
 document_refresh_source_pre_native_request_changed
 document_refresh_source_pre_native_build_changed
@@ -1429,6 +1430,9 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         preflight.close()
     current_image = serving["template"]["containers"][0]["image"]
     current_policy = probe.policy_for_serving(serving, current_image)
+    from infra.gcp import document_source_candidate as source_profile
+    need(current_policy != source_profile.LEGACY_POLICY_SHA256 or source_revision,
+         "document_refresh_legacy_source_read_only")
     if rescue_expired_v2:
         need(current_policy == probe.POLICY and current_image != probe.BASE_IMAGE,
              "document_refresh_rescue_v2_predecessor_changed")
@@ -1442,8 +1446,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
              "document_refresh_expired_v2_predecessor_required")
         return infra("document_candidate_release").refresh(directory, publish=publish,
             now=now, nonce=nonce, retire_expired_v2=True)
-    from infra.gcp.document_source_candidate import POLICY_SHA256 as source_policy
-    if current_policy == source_policy and not source_revision:
+    if current_policy == source_profile.POLICY_SHA256 and not source_revision:
         need(not full_source and application_context is not None, "document_refresh_source_revision_app_context_required")
         value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce, parent=current_image)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
