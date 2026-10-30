@@ -5,11 +5,28 @@ import { PairingTransport } from "../extension/pairing-transport.js";
 import { PairingRuntime } from "../extension/pairing-runtime.js";
 import { base64url, canonical } from "../extension/protocol.js";
 import { fakeRequestDeadlines } from "./request-deadlines.js";
+import { readinessFixture } from "./pairing-readiness-fixture.js";
 
 const now = 1800000000000, extensionId = "a".repeat(32);
 const bytes = (kind, data) => new TextEncoder().encode(`hirewiz.pairing.${kind}.v2\n${canonical(data)}`);
 const sha = (kind, data) => createHash("sha256").update(bytes(kind, data)).digest("hex");
 const uuid = () => crypto.randomUUID();
+
+// Legacy controls below exercise signed POSTs. Their readiness peer accepts only
+// the exact finite GET contract; new readiness controls exercise both sends.
+function mockPost(t, post) {
+  return t.mock.method(globalThis, "fetch", async (url, options) => {
+    if (options.method === "GET") {
+      assert.match(url, /^https:\/\/www\.hirewizhq\.com\/api\/browser-pairing\/device\/(prepare|inspect-key|status|challenge|refresh-challenge)$/);
+      assert.deepEqual(Object.keys(options).sort(), ["cache", "credentials", "method", "redirect", "signal"]);
+      assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error"); assert.equal(options.cache, "no-store");
+      assert.equal(options.signal.aborted, false);
+      return new Response(null, { status: 204 });
+    }
+    assert.equal(options.method, "POST");
+    return post(url, options);
+  });
+}
 
 async function setup() {
   const device = await webcrypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
@@ -33,12 +50,126 @@ test("disabled production configuration cannot start pairing or request a host p
   assert.throws(() => new PairingTransport({ configuration: { ...fixture.configuration, mode: "disabled" }, identity: {} }), /unavailable/);
 });
 
+for (const operation of ["prepare", "inspect-key", "status", "challenge", "refresh-challenge"]) {
+  test(`ten-second readiness precedes a fresh real signature for ${operation}`, async (t) => {
+    const f = await setup(); let clock = now, signed = 0; const calls = [];
+    f.transport.now = () => clock;
+    const sign = f.transport.sign.bind(f.transport);
+    f.transport.sign = async (...args) => { signed++; return sign(...args); };
+    t.mock.method(globalThis, "fetch", async (url, options) => {
+      calls.push(options.method);
+      assert.equal(new URL(url).search, "");
+      assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error"); assert.equal(options.cache, "no-store");
+      if (options.method === "GET") {
+        assert.equal(url, `${f.configuration.websiteOrigin}/api/browser-pairing/device/${operation}`);
+        assert.deepEqual(Object.keys(options).sort(), ["cache", "credentials", "method", "redirect", "signal"]);
+        assert.equal(signed, 0); clock += 10000;
+        return new Response(null, { status: 204 });
+      }
+      const { signature, ...payload } = JSON.parse(options.body);
+      const create = url.endsWith("/create");
+      if (!create) assert.equal(payload.issued_at_ms, now + 10000);
+      assert.equal(await webcrypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, f.device.publicKey,
+        Buffer.from(signature, "base64url"), bytes(create ? "request" : "transport-request", create ? f.request : payload)), true);
+      if (operation === "prepare") return Response.json(create
+        ? { status: "REQUESTED", pairing_id: f.request.pairing_id, device_id: f.request.device_id }
+        : { request: f.request, nonce: f.nonce });
+      if (operation === "inspect-key") return Response.json({ protocol_version: 2, key_sha256: f.request.key_sha256,
+        extension_id: extensionId, executor_revision: f.configuration.executorRevision, status: "UNCLAIMED" });
+      return Response.json({ status: "EXPIRED" });
+    });
+    if (operation === "prepare") await f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined });
+    else if (operation === "inspect-key") await f.transport.inspectKey();
+    else await f.transport.lookup({ status: "status", challenge: "device_challenge", "refresh-challenge": "refresh_challenge" }[operation], uuid());
+    assert.deepEqual(calls, operation === "prepare" ? ["GET", "POST", "POST"] : ["GET", "POST"]);
+    // The unchanged five-second API rule would reject a timestamp made before
+    // this controlled cold interval; the actual signed timestamp is now fresh.
+    assert.equal(clock - now > 5000, true);
+    assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const failure of [200, 403, 503, "network", "redirect"]) test(`readiness ${failure} sends no signed request`, async (t) => {
+  const f = await setup(); let calls = 0, signed = 0;
+  f.transport.sign = async () => { signed++; throw new Error("Must not sign"); };
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    calls++; assert.equal(options.method, "GET");
+    if (typeof failure === "string") throw new TypeError(failure);
+    return new Response(null, { status: failure });
+  });
+  await assert.rejects(f.transport.lookup("status", uuid()));
+  assert.equal(calls, 1); assert.equal(signed, 0); assert.equal(f.transport.readTiming(), null);
+});
+
+for (const boundary of ["initial-permission", "after-readiness-permission", "sign", "final-permission", "expired-socket"]) {
+  test(`pause/refusal at ${boundary} cannot send a signed POST`, async (t) => {
+    const f = await setup(), deadlines = fakeRequestDeadlines(t); let permissions = 0, calls = 0, signed = 0;
+    const sign = f.transport.sign.bind(f.transport);
+    f.transport.beforePost = async () => {
+      permissions++;
+      if (boundary === "initial-permission" && permissions === 1 || boundary === "after-readiness-permission" && permissions === 2) throw new Error("Permission revoked");
+      if (boundary === "final-permission" && permissions === 3) { await Promise.resolve(); f.transport.cancelReadiness(); }
+    };
+    f.transport.sign = async (...args) => {
+      signed++;
+      if (boundary === "sign") { await Promise.resolve(); f.transport.cancelReadiness(); }
+      return sign(...args);
+    };
+    t.mock.method(globalThis, "fetch", async (_url, options) => {
+      calls++; assert.equal(options.method, "GET");
+      if (boundary === "expired-socket") t.mock.timers.tick(15000);
+      return new Response(null, { status: 204 });
+    });
+    await assert.rejects(f.transport.lookup("status", uuid()));
+    assert.equal(calls, boundary === "initial-permission" ? 0 : 1);
+    assert.equal(signed, ["sign", "final-permission"].includes(boundary) ? 1 : 0);
+    assert.deepEqual(deadlines, boundary === "initial-permission" ? [] : [15000]);
+    assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const boundary of ["readiness", "sign", "final-permission"]) test(`actual runtime inspection Pause during ${boundary} prevents the next signed POST`, async (t) => {
+  const f = await setup(); let checkpoint = null, clock = now, hold = false, entered, release, permissions = 0; const calls = [];
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  f.transport.now = () => clock;
+  const sign = f.transport.sign.bind(f.transport);
+  f.transport.sign = async (...args) => {
+    if (hold && boundary === "sign") { entered(); await gate; }
+    return sign(...args);
+  };
+  f.transport.beforePost = async () => {
+    if (hold && ++permissions === 3 && boundary === "final-permission") { entered(); await gate; }
+  };
+  const runtime = await new PairingRuntime({ transport: f.transport,
+    store: { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } },
+    checkPermission: async () => undefined, now: () => clock }).initialise();
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push(`${options.method}:${url.split("/").at(-1)}`);
+    if (options.method === "GET") {
+      if (hold && boundary === "readiness") {
+        entered(); return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+      }
+      return new Response(null, { status: 204 });
+    }
+    return Response.json(url.endsWith("/prepare") ? { request: f.request, nonce: f.nonce }
+      : { status: "REQUESTED", pairing_id: f.request.pairing_id, device_id: f.request.device_id });
+  });
+  await runtime.start(); clock += 120001; hold = true;
+  assert.equal(f.transport.signal, null);
+  const inspection = runtime.inspectUnknown(); const rejected = assert.rejects(inspection, /paused/);
+  await waiting; await runtime.cancel(); release(); await rejected;
+  assert.deepEqual(calls, ["GET:prepare", "POST:prepare", "POST:create", "GET:status"]);
+  assert.equal(runtime.status().can_archive_restart, false); assert.equal(checkpoint.phase, "unknown");
+  assert.equal(checkpoint.history.length, 0);
+});
+
 for (const delay of [100, 6000]) test(`read timing observes ${delay}ms beforePost delay without refreshing the signed request`, async (t) => {
   const f = await setup(); let clock = now, monotonic = 10, calls = 0;
   f.transport.now = () => clock;
   f.transport.beforePost = async () => { await Promise.resolve(); clock += delay; };
   t.mock.method(performance, "now", () => monotonic);
-  t.mock.method(globalThis, "fetch", async (url, options) => {
+  mockPost(t, async (url, options) => {
     calls++;
     assert.equal(url, `${f.configuration.websiteOrigin}/api/browser-pairing/device/status`);
     assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error");
@@ -50,7 +181,8 @@ for (const delay of [100, 6000]) test(`read timing observes ${delay}ms beforePos
     monotonic += 89;
     return Response.json({ detail: "synthetic-private-body" }, { status: 403 });
   });
-  await assert.rejects(f.transport.lookup("status", uuid()), /Current pairing is unavailable/);
+  const payload = { protocol_version: 2, operation: "status", identity: uuid(), request_id: uuid(), issued_at_ms: now };
+  await assert.rejects(f.transport.post("status", { ...payload, signature: await f.transport.sign("transport-request", payload) }), /Current pairing is unavailable/);
   assert.equal(calls, 1);
   assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: delay, elapsed_ms: 89, http_status: 403 });
   const copy = f.transport.readTiming(); copy.http_status = 200;
@@ -64,14 +196,14 @@ test("read timing preserves a negative age and uses monotonic elapsed after wall
   f.transport.beforePost = async () => { clock -= 7; };
   t.mock.method(performance, "now", () => monotonic);
   const failure = Object.assign(new Error("synthetic-private-key-body"), { transport_timing: { raw: "must-not-copy" } });
-  t.mock.method(globalThis, "fetch", async () => { clock -= 900; monotonic += 12; throw failure; });
-  await assert.rejects(f.transport.lookup("status", uuid()), (error) => error === failure);
+  mockPost(t, async () => { clock -= 900; monotonic += 12; throw failure; });
+  await assert.rejects(f.transport.post("status", { issued_at_ms: now }), (error) => error === failure);
   assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: -7, elapsed_ms: 12, http_status: null });
 });
 
 test("successful reads and a local permission failure clear the earlier RAM diagnostic without another send", async (t) => {
   const f = await setup(); let calls = 0, succeeds = false;
-  t.mock.method(globalThis, "fetch", async () => {
+  mockPost(t, async () => {
     calls++;
     return Response.json(succeeds ? { status: "EXPIRED" } : {}, { status: succeeds ? 200 : 403 });
   });
@@ -88,7 +220,7 @@ test("successful reads and a local permission failure clear the earlier RAM diag
 
 test("only status and key-inspection reads receive timing; mutation/challenge sends keep their original failure", async (t) => {
   const f = await setup(); let calls = 0;
-  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({}, { status: 403 }); });
+  mockPost(t, async () => { calls++; return Response.json({}, { status: 403 }); });
   await assert.rejects(f.transport.inspectKey());
   assert.equal(f.transport.readTiming().http_status, 403);
   for (const operation of ["prepare", "create", "challenge", "complete", "refresh-challenge", "refresh"]) {
@@ -103,7 +235,7 @@ test("an older failed read cannot overwrite a later successful attempt", async (
   const f = await setup(); let rejectFirst, entered;
   const firstEntered = new Promise((resolve) => { entered = resolve; });
   let calls = 0;
-  t.mock.method(globalThis, "fetch", async () => {
+  mockPost(t, async () => {
     if (++calls === 1) { entered(); return new Promise((_, reject) => { rejectFirst = reject; }); }
     return Response.json({ status: "EXPIRED" });
   });
@@ -117,7 +249,7 @@ test("an older failed read cannot overwrite a later successful attempt", async (
 test("invalid diagnostic clocks are unavailable and cannot replace the original HTTP error", async (t) => {
   const f = await setup();
   t.mock.method(performance, "now", () => NaN);
-  t.mock.method(globalThis, "fetch", async () => Response.json({}, { status: 403 }));
+  mockPost(t, async () => Response.json({}, { status: 403 }));
   f.transport.now = () => Infinity;
   await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Current pairing is unavailable/);
   assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: null, elapsed_ms: null, http_status: 403 });
@@ -127,7 +259,7 @@ test("throwing diagnostic clocks preserve the original failure and malformed suc
   const f = await setup();
   f.transport.now = () => { throw new Error("diagnostic-only clock failure"); };
   t.mock.method(performance, "now", () => { throw new Error("diagnostic-only monotonic failure"); });
-  t.mock.method(globalThis, "fetch", async () => Response.json(["synthetic-private-response"]));
+  mockPost(t, async () => Response.json(["synthetic-private-response"]));
   await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Invalid pairing response/);
   assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: null, elapsed_ms: null, http_status: 200 });
 });
@@ -135,7 +267,7 @@ test("throwing diagnostic clocks preserve the original failure and malformed suc
 for (const issued of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "synthetic-private"])
   test(`invalid absolute diagnostic timestamp is unavailable: ${String(issued)}`, async (t) => {
     const f = await setup(); const body = { issued_at_ms: issued };
-    t.mock.method(globalThis, "fetch", async () => Response.json({}, { status: 403 }));
+    mockPost(t, async () => Response.json({}, { status: 403 }));
     await assert.rejects(f.transport.post("status", body), /Current pairing is unavailable/);
     assert.equal(f.transport.readTiming().issued_at_ms, null);
     assert.equal(f.transport.readTiming().issued_age_ms, null);
@@ -145,7 +277,7 @@ for (const issued of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "synthe
 for (const issued of [1, Number.MAX_SAFE_INTEGER])
   test(`positive safe diagnostic timestamp is retained exactly: ${issued}`, async (t) => {
     const f = await setup(); const body = { issued_at_ms: issued };
-    t.mock.method(globalThis, "fetch", async (_url, options) => {
+    mockPost(t, async (_url, options) => {
       assert.equal(JSON.parse(options.body).issued_at_ms, issued);
       return Response.json({}, { status: 403 });
     });
@@ -156,7 +288,7 @@ for (const issued of [1, Number.MAX_SAFE_INTEGER])
 
 test("identity-only client uses raw domain-separated P-256 proofs without bearer or cookies", async (t) => {
   const f = await setup(), calls = [];
-  t.mock.method(globalThis, "fetch", async (url, options) => {
+  mockPost(t, async (url, options) => {
     calls.push(url);
     assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error");
     assert.equal(Object.keys(options.headers).join(","), "Content-Type");
@@ -178,14 +310,14 @@ test("identity-only client uses raw domain-separated P-256 proofs without bearer
 
 test("client refuses changed request key and does not proceed to creation", async (t) => {
   const f = await setup(); let calls = 0;
-  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ request: { ...f.request, key_sha256: "0".repeat(64) }, nonce: f.nonce }); });
+  mockPost(t, async () => { calls++; return Response.json({ request: { ...f.request, key_sha256: "0".repeat(64) }, nonce: f.nonce }); });
   await assert.rejects(f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined }), /exact device/);
   assert.equal(calls, 1);
 });
 
 test("an unknown commit never causes an automatic repeat POST", async (t) => {
   const f = await setup(); let calls = 0;
-  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ status: "UNKNOWN", operation_id: uuid(), retry_allowed: false }); });
+  mockPost(t, async () => { calls++; return Response.json({ status: "UNKNOWN", operation_id: uuid(), retry_allowed: false }); });
   await assert.rejects(f.transport.prepare({ onPrepared: async () => undefined, beforeCreate: async () => undefined }), /retrying.*disabled/);
   assert.equal(calls, 1);
 });
@@ -194,7 +326,7 @@ test("an abort-aware 13.025-second native response settles without the old twelv
   const f = await setup(), deadlines = fakeRequestDeadlines(t);
   let calls = 0, started, signal, outcome = "pending";
   const dispatched = new Promise((resolve) => { started = resolve; });
-  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((resolve, reject) => {
+  mockPost(t, (_url, options) => new Promise((resolve, reject) => {
     calls++; signal = options.signal;
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     setTimeout(() => resolve(Response.json({ status: "EXPIRED" })), 13025);
@@ -223,7 +355,7 @@ test("a forty-second request timeout retains uncertainty and never repeats the P
   const runtime = await new PairingRuntime({ transport: f.transport,
     store: { read: async () => structuredClone(checkpoint), write: async (value) => { checkpoint = structuredClone(value); } },
     checkPermission: async () => undefined, now: () => now }).initialise();
-  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+  mockPost(t, (_url, options) => new Promise((_resolve, reject) => {
     calls++; signal = options.signal;
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     started();
@@ -240,7 +372,7 @@ test("a forty-second request timeout retains uncertainty and never repeats the P
   assert.equal(checkpoint.pairing_id, null);
   await assert.rejects(runtime.start(), /starting another request is blocked/);
   t.mock.timers.tick(100000);
-  assert.deepEqual(deadlines, [40000]);
+  assert.deepEqual(deadlines, [15000, 40000]);
   assert.equal(calls, 1);
   assert.equal(f.transport.claim, null);
 });
@@ -250,7 +382,7 @@ test("explicit pause still aborts a request before its longer transport deadline
   f.transport.signal = pause.signal;
   let calls = 0, started, signal;
   const dispatched = new Promise((resolve) => { started = resolve; });
-  t.mock.method(globalThis, "fetch", (_url, options) => new Promise((_resolve, reject) => {
+  mockPost(t, (_url, options) => new Promise((_resolve, reject) => {
     calls++; signal = options.signal;
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     started();
@@ -277,7 +409,7 @@ test("a genuine pairing-only authority signature grants no employer action", asy
     epoch_id: f.request.epoch_id, epoch_generation: 1, extension_id: extensionId, executor_revision: f.configuration.executorRevision,
     event_sequence: 10, event_sha256: "c".repeat(64), issued_at_ms: now, expires_at_ms: now + 300000 };
   const signature = base64url(await webcrypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, f.authority.privateKey, bytes("device-claim", claim)));
-  t.mock.method(globalThis, "fetch", async (url, options) => {
+  mockPost(t, async (url, options) => {
     const payload = JSON.parse(options.body);
     if (url.endsWith("/challenge")) return Response.json({ payload: challenge, nonce });
     assert.equal(await webcrypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, f.device.publicKey,
@@ -294,7 +426,7 @@ for (const kind of ["timeout", "oversize", "http_error"]) {
       start(controller) { if (kind === "oversize") controller.enqueue(new Uint8Array(16385)); },
       cancel() { cancelled = true; return new Promise(() => undefined); },
     });
-    t.mock.method(globalThis, "fetch", async () => { calls++; return new Response(body, { status: kind === "http_error" ? 503 : 200 }); });
+    mockPost(t, async () => { calls++; return new Response(body, { status: kind === "http_error" ? 503 : 200 }); });
     let timer;
     const outcome = await Promise.race([
       f.transport.post("status", {}).then(() => "resolved", (error) => error.message),
@@ -316,7 +448,7 @@ test("companion cancellation rejection preserves the original response bound fai
     start(controller) { controller.enqueue(new Uint8Array(16385)); },
     cancel() { return Promise.reject(new Error("Owned cancellation refusal")); },
   });
-  t.mock.method(globalThis, "fetch", async () => new Response(body));
+  mockPost(t, async () => new Response(body));
   await assert.rejects(f.transport.post("status", {}), /Pairing response exceeded its bound/);
   assert.equal(body.locked, false);
   await new Promise((resolve) => setImmediate(resolve));
@@ -325,7 +457,7 @@ test("companion cancellation rejection preserves the original response bound fai
 for (const boundary of ["prepared_receipt", "create_intent"]) {
   test(`unacknowledged ${boundary} stops real transport before create`, async (t) => {
     const f = await setup(), calls = [];
-    t.mock.method(globalThis, "fetch", async (url) => { calls.push(url); return Response.json({ request: f.request, nonce: f.nonce }); });
+    mockPost(t, async (url) => { calls.push(url); return Response.json({ request: f.request, nonce: f.nonce }); });
     await assert.rejects(f.transport.prepare({ onPrepared: async (review) => {
       assert.deepEqual(Object.keys(review).sort(), ["device_id", "expires_at_ms", "key_sha256", "pairing_id", "request_sha256", "review_url"]);
       assert.equal(review.request_sha256, sha("request", f.request));
@@ -344,7 +476,7 @@ for (const fault of ["create_ack", "create_checkpoint_ack"]) {
       }
     } };
     const runtime = await new PairingRuntime({ transport: f.transport, store, checkPermission: async () => undefined, now: () => now }).initialise();
-    t.mock.method(globalThis, "fetch", async (url) => {
+    mockPost(t, async (url) => {
       calls.push(url.split("/").at(-1));
       if (url.endsWith("/prepare")) return Response.json({ request: f.request, nonce: f.nonce });
       if (url.endsWith("/create")) {
@@ -372,7 +504,7 @@ for (const fault of ["create_ack", "create_checkpoint_ack"]) {
 for (const change of [null, "CLAIMED", "key", "revision", "extra", "status"]) {
   test(`signed key inspection exact binding: ${change ?? "UNCLAIMED"}`, async (t) => {
     const f = await setup(); let count = 0;
-    t.mock.method(globalThis, "fetch", async (url, options) => {
+    mockPost(t, async (url, options) => {
       count++; assert.match(url, /\/inspect-key$/);
       const { signature, ...payload } = JSON.parse(options.body);
       assert.equal(payload.operation, "key_status"); assert.equal(payload.revision, f.configuration.executorRevision);
@@ -394,7 +526,7 @@ for (const change of [null, "CLAIMED", "key", "revision", "extra", "status"]) {
 
 test("missing durable callbacks fail before any native prepare request", async (t) => {
   const f = await setup(); let calls = 0;
-  t.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("Unexpected network"); });
+  mockPost(t, async () => { calls++; throw new Error("Unexpected network"); });
   await assert.rejects(f.transport.prepare(), /Durable connection checkpoints/); assert.equal(calls, 0);
 });
 
@@ -403,7 +535,7 @@ for (const [keyStatus, historyCount] of [["UNCLAIMED", 0], ["CLAIMED", 0], ["UNC
     const f = await setup(), calls = [];
     let clock = now, checkpoint = null, request = f.request, nonce = f.nonce;
     f.transport.now = () => clock;
-    t.mock.method(globalThis, "fetch", async (url, options) => {
+    mockPost(t, async (url, options) => {
       const operation = new URL(url).pathname.split("/").at(-1);
       calls.push(operation);
       const { signature, ...payload } = JSON.parse(options.body);
@@ -474,3 +606,22 @@ for (const [keyStatus, historyCount] of [["UNCLAIMED", 0], ["CLAIMED", 0], ["UNC
     await assert.rejects(webcrypto.subtle.exportKey("jwk", f.device.privateKey));
   });
 }
+
+test("owned wire readiness accepts only the real finite public GET contract", () => {
+  const website = "https://www.hirewizhq.com", extensionId = "a".repeat(32);
+  const request = { url: `${website}/api/browser-pairing/device/status`, method: "GET", headers: {}, body: null };
+  const check = (value) => readinessFixture(value, website, extensionId);
+  for (const operation of ["prepare", "inspect-key", "status", "challenge", "refresh-challenge"]) {
+    assert.equal(check({ ...request, url: `${website}/api/browser-pairing/device/${operation}` }).status, 204);
+  }
+  assert.equal(check({ ...request, headers: { origin: `chrome-extension://${extensionId}` } }).status, 204);
+  for (const headers of [{ origin: "null" }, { origin: website }, { origin: `chrome-extension://${"b".repeat(32)}` },
+    { cookie: "" }, { authorization: "" }, { "content-type": "application/json" }, { "content-length": "0" }, { "transfer-encoding": "chunked" }]) {
+    assert.equal(check({ ...request, headers }).status, 403);
+  }
+  for (const value of [{ ...request, body: "" }, { ...request, url: `${request.url}?target=other` },
+    { ...request, url: request.url.replace(website, "https://other.example") }, { ...request, url: request.url.replace("status", "create") }]) {
+    assert.deepEqual(check(value), { status: 403, headers: { "Cache-Control": "private, no-store, max-age=0" }, body: "" });
+  }
+  assert.equal(check({ ...request, method: "POST" }), null);
+});
