@@ -33,6 +33,105 @@ test("disabled production configuration cannot start pairing or request a host p
   assert.throws(() => new PairingTransport({ configuration: { ...fixture.configuration, mode: "disabled" }, identity: {} }), /unavailable/);
 });
 
+for (const delay of [100, 6000]) test(`read timing observes ${delay}ms beforePost delay without refreshing the signed request`, async (t) => {
+  const f = await setup(); let clock = now, monotonic = 10, calls = 0;
+  f.transport.now = () => clock;
+  f.transport.beforePost = async () => { await Promise.resolve(); clock += delay; };
+  t.mock.method(performance, "now", () => monotonic);
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls++;
+    assert.equal(url, `${f.configuration.websiteOrigin}/api/browser-pairing/device/status`);
+    assert.equal(options.credentials, "omit"); assert.equal(options.redirect, "error");
+    assert.equal(options.cache, "no-store"); assert.deepEqual(options.headers, { "Content-Type": "application/json" });
+    const { signature, ...payload } = JSON.parse(options.body);
+    assert.equal(payload.issued_at_ms, now);
+    assert.equal(await webcrypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, f.device.publicKey,
+      Buffer.from(signature, "base64url"), bytes("transport-request", payload)), true);
+    monotonic += 89;
+    return Response.json({ detail: "synthetic-private-body" }, { status: 403 });
+  });
+  await assert.rejects(f.transport.lookup("status", uuid()), /Current pairing is unavailable/);
+  assert.equal(calls, 1);
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: delay, elapsed_ms: 89, http_status: 403 });
+  const copy = f.transport.readTiming(); copy.http_status = 200;
+  assert.equal(f.transport.readTiming().http_status, 403);
+  assert.equal(JSON.stringify(f.transport.readTiming()).includes("synthetic-private"), false);
+});
+
+test("read timing preserves a negative age and uses monotonic elapsed after wall-clock rollback", async (t) => {
+  const f = await setup(); let clock = now, monotonic = 100;
+  f.transport.now = () => clock;
+  f.transport.beforePost = async () => { clock -= 7; };
+  t.mock.method(performance, "now", () => monotonic);
+  const failure = Object.assign(new Error("synthetic-private-key-body"), { transport_timing: { raw: "must-not-copy" } });
+  t.mock.method(globalThis, "fetch", async () => { clock -= 900; monotonic += 12; throw failure; });
+  await assert.rejects(f.transport.lookup("status", uuid()), (error) => error === failure);
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: -7, elapsed_ms: 12, http_status: null });
+});
+
+test("successful reads and a local permission failure clear the earlier RAM diagnostic without another send", async (t) => {
+  const f = await setup(); let calls = 0, succeeds = false;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return Response.json(succeeds ? { status: "EXPIRED" } : {}, { status: succeeds ? 200 : 403 });
+  });
+  await assert.rejects(f.transport.lookup("status", uuid()));
+  assert.equal(f.transport.readTiming().http_status, 403);
+  succeeds = true; assert.deepEqual(await f.transport.lookup("status", uuid()), { status: "EXPIRED" });
+  assert.equal(f.transport.readTiming(), null);
+  succeeds = false; await assert.rejects(f.transport.lookup("status", uuid()));
+  const permission = new Error("permission refused");
+  f.transport.beforePost = async () => { throw permission; };
+  await assert.rejects(f.transport.lookup("status", uuid()), (error) => error === permission);
+  assert.equal(calls, 3); assert.equal(f.transport.readTiming(), null);
+});
+
+test("only status and key-inspection reads receive timing; mutation/challenge sends keep their original failure", async (t) => {
+  const f = await setup(); let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({}, { status: 403 }); });
+  await assert.rejects(f.transport.inspectKey());
+  assert.equal(f.transport.readTiming().http_status, 403);
+  for (const operation of ["prepare", "create", "challenge", "complete", "refresh-challenge", "refresh"]) {
+    const next = await setup();
+    await assert.rejects(next.transport.post(operation, { issued_at_ms: now, signature: "synthetic-private" }), /Current pairing is unavailable/);
+    assert.equal(next.transport.readTiming(), null);
+  }
+  assert.equal(calls, 7);
+});
+
+test("an older failed read cannot overwrite a later successful attempt", async (t) => {
+  const f = await setup(); let rejectFirst, entered;
+  const firstEntered = new Promise((resolve) => { entered = resolve; });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    if (++calls === 1) { entered(); return new Promise((_, reject) => { rejectFirst = reject; }); }
+    return Response.json({ status: "EXPIRED" });
+  });
+  const first = f.transport.lookup("status", uuid()); first.catch(() => undefined);
+  await firstEntered;
+  await f.transport.lookup("status", uuid());
+  rejectFirst(new Error("old request failed")); await assert.rejects(first);
+  assert.equal(calls, 2); assert.equal(f.transport.readTiming(), null);
+});
+
+test("invalid diagnostic clocks are unavailable and cannot replace the original HTTP error", async (t) => {
+  const f = await setup();
+  t.mock.method(performance, "now", () => NaN);
+  t.mock.method(globalThis, "fetch", async () => Response.json({}, { status: 403 }));
+  f.transport.now = () => Infinity;
+  await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Current pairing is unavailable/);
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: null, elapsed_ms: null, http_status: 403 });
+});
+
+test("throwing diagnostic clocks preserve the original failure and malformed successful bodies retain only status", async (t) => {
+  const f = await setup();
+  f.transport.now = () => { throw new Error("diagnostic-only clock failure"); };
+  t.mock.method(performance, "now", () => { throw new Error("diagnostic-only monotonic failure"); });
+  t.mock.method(globalThis, "fetch", async () => Response.json(["synthetic-private-response"]));
+  await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Invalid pairing response/);
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: null, elapsed_ms: null, http_status: 200 });
+});
+
 test("identity-only client uses raw domain-separated P-256 proofs without bearer or cookies", async (t) => {
   const f = await setup(), calls = [];
   t.mock.method(globalThis, "fetch", async (url, options) => {
