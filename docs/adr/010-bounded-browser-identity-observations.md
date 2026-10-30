@@ -69,6 +69,13 @@ composition; its construction-owner slot binds once to the exact native/verifier
 under the same processing deadline. Platform delay before admission remains
 subject to the original signed TTL and must not be hidden by a retry or extension.
 
+The exact retained session snapshot validated in the nonce transaction is also
+bound to the opaque gateway admission as a restrictive issued/expiry window.
+Every later pure admission barrier retains that original bound, including after
+Commit/fence, command/reply and observation exit. A longer processing lease never
+extends a session; expiry withholds output while preserving any consumed nonce.
+This uses the buffered native snapshot, not an authorization cache or reread loop.
+
 The [signed-device follow-on](../delivery/SIGNED_DEVICE_ADMISSION_CANDIDATE.md)
 separates its five-second transport entry from the same bounded processing. A
 timing-only capture precedes cold composition/current-key lookup, but cannot

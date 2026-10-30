@@ -39,6 +39,7 @@ from .password_reauth import (
     CandidateWebSession,
     PasswordReauthService,
     RegisteredPasswordIdentity,
+    RetainedWebSession,
 )
 from .store import GuardDenied, GuardUnavailable
 
@@ -146,6 +147,7 @@ class _Admission:
     last_monotonic: float
     started: bool = False
     composition_owner: object | None = None
+    session_window: RetainedWebSession | None = None
 
 
 def _task():
@@ -249,11 +251,29 @@ class GatewayVerifier:
             if (type(now_ms) is not int or not math.isfinite(current)
                     or not state.last_ms <= now_ms < state.admitted_ms + PROCESSING_MS
                     or not state.last_monotonic <= current < state.admitted_monotonic + PROCESSING_MS / 1000
+                    or (state.session_window is not None
+                        and not state.session_window.issued_at_ms <= now_ms < state.session_window.expires_at_ms)
                     or type(raw) is not bytes or state.envelope.path != path or state.envelope.method != "POST"
                     or state.envelope.body_sha256 != hashlib.sha256(raw).hexdigest()):
                 raise GuardDenied(FAILURE)
             state.last_ms, state.last_monotonic = now_ms, current
             return state.envelope
+
+    def restrict_session(self, admission: VerifiedGatewayAdmission, *, owner: object,
+                         session: RetainedWebSession) -> None:
+        """Retain a validated native snapshot as a restriction, never an allow cache."""
+        if type(admission) is not VerifiedGatewayAdmission or type(session) is not RetainedWebSession:
+            raise GuardDenied(FAILURE)
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if (state is None or state.owner is not owner or not state.started
+                    or state.thread is not current_thread() or state.task is not _task()
+                    or session.session_id != state.envelope.context.session_id
+                    or session.account_binding_id != state.envelope.context.account_binding_id
+                    or session.authentication_method != state.envelope.context.authentication_method
+                    or (state.session_window is not None and state.session_window != session)):
+                raise GuardDenied(FAILURE)
+            state.session_window = session
 
     def admit_composition(self, encoded: str, signature: str, *, owner: object, path: str,
                           raw: bytes, now_ms: int) -> VerifiedGatewayAdmission:
@@ -350,18 +370,28 @@ class NativeBrowserPairing:
             if tx.get(namespace, request_id) is not None:
                 raise GuardDenied(FAILURE)
             if context is not None:
-                retained = self.identity.resolve(_PasswordReadTransaction(tx, c, context),
-                    context, c.core, now)
+                reader = _PasswordReadTransaction(tx, c, context)
+                retained = self.identity.resolve(reader, context, c.core, now)
                 current = c.now_ms()
                 admitted(current)
                 if current != now:
                     # Repeat current-session/expiry checks over the same native
                     # transaction snapshot after its reads; no expected facts or
                     # stale identity are substituted for current account state.
-                    fresh = self.identity.resolve(_PasswordReadTransaction(tx, c, context),
-                        context, c.core, current)
+                    fresh = self.identity.resolve(reader, context, c.core, current)
                     if fresh != retained:
                         raise GuardDenied(FAILURE)
+                # This exact row was already read/validated by the identity
+                # resolver. BufferedTransaction supplies the same native
+                # snapshot, without another physical read or an expiry loop.
+                session = RetainedWebSession.model_validate(reader.get("pairing_web_sessions", str(context.session_id)))
+                if (session.subject_uuid != UUID(retained["subject_uuid"])
+                        or session.session_id != UUID(retained["session_id"])
+                        or session.principal_sha256 != retained["principal_sha256"]
+                        or session.auth_generation != retained["auth_generation"]):
+                    raise GuardDenied(FAILURE)
+                assert admission is not None
+                self.gateway.restrict_session(admission, owner=self, session=session)
                 admitted(c.now_ms())
                 captured[:] = [retained]
                 # Cover every invocation admitted within the ORIGINAL signed

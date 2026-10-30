@@ -37,6 +37,17 @@ reads when time advanced; a disabled account, changed identity or expired sessio
 cannot be substituted with an earlier admission snapshot. A later deadline,
 rollback, failure or uncertain outcome never authorizes a retry.
 
+After the current identity resolver finishes, the nonce transaction binds its
+exact validated `RetainedWebSession` snapshot to the opaque admission as a
+restriction. Session/account IDs, authentication method, subject, principal and
+generation must match the resolved identity. The original issued/expiry window
+then applies at every remaining pure admission barrier, including after native
+Commit/fence, command/reply and observation exit. A different subsequent snapshot
+refuses; this bound is never extended or used as an allow decision. The resolver
+has already read this row, so the existing buffered transaction supplies the same
+snapshot without another physical read or an unbounded identity reread loop.
+If later IO crosses expiry, output is withheld and a consumed nonce stays consumed.
+
 Gateway nonce consumption remains atomic and immutable. Its retained expiration
 is the original signed expiration plus at most 30 seconds, covering the latest
 possible request admitted inside that original signed window. This is replay

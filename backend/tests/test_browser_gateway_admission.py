@@ -40,8 +40,11 @@ def case(tmp_path, monkeypatch):
     clock = SimpleNamespace(wall=NOW, mono=100.0)
     monkeypatch.setattr(transport, "monotonic", lambda: clock.mono)
     delays, records, commands, core_replies = {}, {}, [], []
-    account = {"active": True, "expires": NOW + 3_600_000, "identity_reads": 0}
-    context = {"candidate_id": 1, "account_binding_id": str(uuid4()), "session_id": str(uuid4())}
+    account = {"active": True, "issued": NOW - 1000, "expires": NOW + 3_600_000, "identity_reads": 0}
+    context = {"candidate_id": 1, "account_binding_id": str(uuid4()), "session_id": core.session}
+    principal = core.store.transact(lambda tx: tx.get("subjects", core.subject))["principal_sha256"]
+    session_registration = str(uuid4())
+    session_overrides, read_delays = {}, {}
 
     def advance(ms):
         clock.wall += ms
@@ -53,7 +56,17 @@ def case(tmp_path, monkeypatch):
     lock = Lock()
     class Tx:
         def get(self, namespace, key):
-            return records.get((namespace, key))
+            if namespace == "pairing_web_sessions" and key == context["session_id"]:
+                value = {"session_id": core.session, "account_binding_id": context["account_binding_id"],
+                    "subject_uuid": core.subject, "principal_sha256": principal, "auth_generation": 1,
+                    "registration_event_id": session_registration, "issued_at_ms": account["issued"],
+                    "expires_at_ms": account["expires"], "active": account["active"], **session_overrides}
+            elif namespace == "browser_gateway_requests":
+                value = records.get((namespace, key))
+            else:
+                value = core.store.transact(lambda tx: tx.get(namespace, key))
+            advance(read_delays.pop((namespace, key), 0))
+            return value
         def put(self, namespace, key, value, **kwargs):
             records[namespace, key] = value
     class Registry:
@@ -65,7 +78,8 @@ def case(tmp_path, monkeypatch):
         account["identity_reads"] += 1
         if not account["active"] or now >= account["expires"] or value.model_dump(mode="json") != context:
             raise GuardDenied("Synthetic current identity denied")
-        answer = {"subject_uuid": core.subject, "session_id": core.session}
+        answer = {"subject_uuid": core.subject, "session_id": core.session,
+            "principal_sha256": principal, "auth_generation": 1}
         delayed("identity")
         if account.pop("disable_after_read", False):
             account["active"] = False
@@ -109,7 +123,8 @@ def case(tmp_path, monkeypatch):
     browser._observations = observations
     return SimpleNamespace(core=core, request=requested, clock=clock, advance=advance, delays=delays,
         records=records, commands=commands, account=account, context=context, native=native, browser=browser,
-        core_replies=core_replies, pins=pins)
+        core_replies=core_replies, pins=pins, tx=Tx, session_overrides=session_overrides,
+        read_delays=read_delays)
 
 
 def wire(case, *, operation="challenge", body=None, **changes):
@@ -389,3 +404,73 @@ def test_gateway_receipt_cannot_skip_existing_password_boundary(case, operation)
     with pytest.raises(GuardDenied, match="password boundary denied"):
         case.browser.candidate(operation, raw, assertion, signature)
     assert not case.commands
+
+
+def test_session_expiry_during_second_identity_resolution_refuses_before_nonce(case):
+    raw, assertion, signature = wire(case)
+    case.account["expires"] = NOW + 1000
+    original, calls = case.native.identity.resolve, []
+    def delayed_identity(*args):
+        # The second underlying BufferedTransaction read is normally cached;
+        # this is scheduling/CPU movement, not a claim of physical read IO.
+        case.delays["identity"] = 1 if not calls else 1000
+        calls.append(True)
+        return original(*args)
+    case.native.identity.resolve = delayed_identity
+    with pytest.raises(GuardDenied):
+        case.browser.candidate("challenge", raw, assertion, signature)
+    assert len(calls) == 2 and not case.records and not case.commands
+
+
+@pytest.mark.parametrize("phase", ["commit", "fence", "command", "reply", "exit"])
+def test_session_expiry_after_validated_identity_never_exports_or_erases_nonce(case, phase):
+    raw, assertion, signature = wire(case)
+    case.account["expires"] = NOW + 1000
+    if phase in {"commit", "fence"}:
+        original = case.native.coordinator.registry.run
+        def completed(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if phase == "commit":
+                case.advance(1001)
+            else:
+                case.delays["fence"] = 1001
+            return result
+        case.native.coordinator.registry.run = completed
+    elif phase == "reply":
+        original_reply = case.native._candidate_reply
+        def replied(value):
+            result = original_reply(value)
+            case.advance(1001)
+            return result
+        case.native._candidate_reply = replied
+    else:
+        case.delays[phase] = 1001
+    with pytest.raises(GuardDenied):
+        case.browser.candidate("challenge", raw, assertion, signature)
+    expected_commands = [] if phase in {"commit", "fence"} else ["candidate_challenge"]
+    assert case.commands == expected_commands and len(case.records) == 1
+    assert next(iter(case.records.values())) == {"expires_at_ms": NOW + 35_000}
+    with pytest.raises(GuardDenied):
+        case.browser.candidate("challenge", raw, assertion, signature)
+    assert case.commands == expected_commands and len(case.records) == 1
+
+
+@pytest.mark.parametrize("failure", ["future", "expired", "session", "binding", "subject", "principal", "generation", "method"])
+def test_session_snapshot_must_match_current_resolved_identity_and_original_time(case, failure):
+    raw, assertion, signature = wire(case)
+    if failure == "future":
+        case.account["issued"] = NOW + 1
+    elif failure == "expired":
+        case.account["expires"] = NOW
+    elif failure in {"session", "binding", "subject"}:
+        field = {"session": "session_id", "binding": "account_binding_id", "subject": "subject_uuid"}[failure]
+        case.session_overrides[field] = str(uuid4())
+    elif failure == "principal":
+        case.session_overrides["principal_sha256"] = "e" * 64
+    elif failure == "generation":
+        case.session_overrides["auth_generation"] = 2
+    else:
+        case.session_overrides.update(authentication_method="google", verified_proof_sha256="e" * 64)
+    with pytest.raises(GuardDenied):
+        case.browser.candidate("challenge", raw, assertion, signature)
+    assert not case.commands and not case.records
