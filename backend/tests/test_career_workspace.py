@@ -222,18 +222,18 @@ def test_complete_opportunity_evidence_and_resume_version_flow():
         evidence_id = imported.json()["created"][0]["id"]
         approved = client.patch(
             f"/api/v1/evidence-items/{evidence_id}",
-            json={"approval_state": "approved"},
+            json={"approval_state": "approved", "expected_fingerprint": imported.json()["created"][0]["snapshot_fingerprint"]},
         )
         assert approved.status_code == 200
         edited = client.patch(
             f"/api/v1/evidence-items/{evidence_id}",
-            json={"evidence_text": "Reduced API latency by 40 percent after profiling."},
+            json={"evidence_text": "Reduced API latency by 40 percent after profiling.", "expected_fingerprint": approved.json()["snapshot_fingerprint"]},
         )
         assert edited.status_code == 200
         assert edited.json()["approval_state"] == "pending"
         reapproved = client.patch(
             f"/api/v1/evidence-items/{evidence_id}",
-            json={"approval_state": "approved"},
+            json={"approval_state": "approved", "expected_fingerprint": edited.json()["snapshot_fingerprint"]},
         )
         assert reapproved.status_code == 200
 

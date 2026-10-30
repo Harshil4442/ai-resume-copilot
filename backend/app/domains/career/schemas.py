@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 OpportunityStage = Literal[
     "saved",
@@ -145,6 +147,8 @@ class EvidenceCreate(StrictModel):
 
 
 class EvidenceUpdate(StrictModel):
+    # Missing versions from older clients fail closed with a refresh response.
+    expected_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     category: str | None = Field(default=None, min_length=2, max_length=48)
     title: str | None = Field(default=None, min_length=2, max_length=180)
     evidence_text: str | None = Field(default=None, min_length=2, max_length=20_000)
@@ -169,6 +173,20 @@ class EvidenceResponse(BaseModel):
     confidence: str
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic serializes this read-only property.
+    @property
+    def snapshot_fingerprint(self) -> str:
+        """Bind review to every exact returned fact, source and approval field."""
+        return evidence_snapshot_fingerprint(self)
+
+
+def evidence_snapshot_fingerprint(item: object) -> str:
+    """Shared version binding for HTTP review and approved-evidence consumers."""
+    response = item if isinstance(item, EvidenceResponse) else EvidenceResponse.model_validate(item)
+    snapshot = response.model_dump(mode="json", exclude={"snapshot_fingerprint"})
+    raw = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class EvidenceImportResponse(BaseModel):

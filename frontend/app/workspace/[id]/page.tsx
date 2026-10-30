@@ -98,6 +98,16 @@ function requiresTailoringQuoteReview(error: unknown) {
   return detail?.code === "analysis_quote_requires_review";
 }
 
+function evidenceVersion(entry: EvidenceItem): string | null {
+  return typeof entry.snapshot_fingerprint === "string" && /^[0-9a-f]{64}$/.test(entry.snapshot_fingerprint)
+    ? entry.snapshot_fingerprint : null;
+}
+
+function requiresEvidenceRefresh(error: unknown) {
+  return error instanceof ApiError && error.status === 409
+    && (error.detail as { detail?: { code?: unknown } } | null)?.detail?.code === "evidence_refresh_required";
+}
+
 const tabs: { id: Tab; label: string; icon: typeof Target }[] = [
   { id: "overview", label: "Overview", icon: Target },
   { id: "resume", label: "Resume & evidence", icon: FileCheck2 },
@@ -183,7 +193,10 @@ function OpportunityContent() {
   const [outcome, setOutcome] = useState<Outcome>("offer_accepted");
   const [outcomeNotes, setOutcomeNotes] = useState("");
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
+  const [editingEvidenceVersion, setEditingEvidenceVersion] = useState<string | null>(null);
   const [evidenceDraft, setEvidenceDraft] = useState("");
+  const [evidenceEditStale, setEvidenceEditStale] = useState(false);
+  const [evidenceReviewError, setEvidenceReviewError] = useState<string | null>(null);
   const [reviewedVersionIds, setReviewedVersionIds] = useState<Record<string, boolean>>({});
   const trackedTerminalRuns = useRef(new Set<string>());
   const resumeTabRef = useRef<HTMLButtonElement>(null);
@@ -423,22 +436,40 @@ function OpportunityContent() {
     },
   });
   const approveEvidence = useMutation({
-    mutationFn: ({ id, state }: { id: string; state: "approved" | "rejected" }) =>
-      apiPatchJson<EvidenceItem>(`/v1/evidence-items/${id}`, { approval_state: state }),
+    mutationFn: ({ id, state, fingerprint }: { id: string; state: "approved" | "rejected"; fingerprint: string }) =>
+      apiPatchJson<EvidenceItem>(`/v1/evidence-items/${id}`, { approval_state: state, expected_fingerprint: fingerprint }),
+    retry: false,
     onSuccess: (_, variables) => {
+      setEvidenceReviewError(null);
       trackEvent(variables.state === "approved" ? "evidence_approved" : "evidence_rejected", {
         opportunity_id: opportunityId,
       });
       return queryClient.invalidateQueries({ queryKey: ["evidence", opportunity.data?.resume_id] });
     },
+    onError: async (error) => {
+      setEvidenceReviewError(requiresEvidenceRefresh(error)
+        ? "Evidence changed since it was shown. Review the refreshed evidence before approving or rejecting it. No review was saved."
+        : "Could not save the evidence review. Refresh the evidence and try again.");
+      await queryClient.invalidateQueries({ queryKey: ["evidence", opportunity.data?.resume_id] });
+    },
   });
   const editEvidence = useMutation({
-    mutationFn: ({ id, evidenceText }: { id: string; evidenceText: string }) =>
-      apiPatchJson<EvidenceItem>(`/v1/evidence-items/${id}`, { evidence_text: evidenceText }),
+    mutationFn: ({ id, evidenceText, fingerprint }: { id: string; evidenceText: string; fingerprint: string }) =>
+      apiPatchJson<EvidenceItem>(`/v1/evidence-items/${id}`, { evidence_text: evidenceText, expected_fingerprint: fingerprint }),
+    retry: false,
     onSuccess: async () => {
       trackEvent("evidence_edited", { opportunity_id: opportunityId });
       setEditingEvidenceId(null);
+      setEditingEvidenceVersion(null);
       setEvidenceDraft("");
+      setEvidenceReviewError(null);
+      await queryClient.invalidateQueries({ queryKey: ["evidence", opportunity.data?.resume_id] });
+    },
+    onError: async (error) => {
+      setEvidenceEditStale(true);
+      setEvidenceReviewError(requiresEvidenceRefresh(error)
+        ? "Evidence changed while you were editing. Your draft is preserved. Compare it with the latest saved evidence, then cancel and reopen the editor before saving."
+        : "The edit could not be confirmed. Your draft is preserved. Review the latest saved evidence, then cancel and reopen the editor before saving.");
       await queryClient.invalidateQueries({ queryKey: ["evidence", opportunity.data?.resume_id] });
     },
   });
@@ -733,19 +764,55 @@ function OpportunityContent() {
                 </div>
                 {!item.resume_id ? <EmptyState icon={FilePlus2} title="Connect a resume first" description="Edit this opportunity and choose a parsed resume before building evidence." /> : null}
                 {evidence.isLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : null}
-                {evidence.isError ? <p className="mt-4 text-sm text-coral" role="alert">Could not load evidence for this resume. Refresh evidence below to try again.</p> : null}
+                {evidence.isError ? <div className="mt-4"><p className="text-sm text-coral" role="alert">Could not load evidence for this resume. Refresh evidence before editing or approving.</p><Button size="sm" variant="secondary" className="mt-2" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}>Refresh evidence for review</Button></div> : null}
+                {evidenceReviewError ? <p className="mt-4 text-sm text-coral" role="alert">{evidenceReviewError}</p> : null}
                 {item.resume_id && evidence.isSuccess && !(evidence.data || []).length ? <EmptyState icon={ShieldCheck} title="No evidence imported" description="Import the resume sections, then approve only the facts you want HireWiz to reuse." action={<Button onClick={() => importEvidence.mutate()}><FilePlus2 size={16} /> Import evidence</Button>} /> : null}
                 <div className="mt-6 divide-y divide-border border-t border-border">
-                  {(evidence.data || []).map((entry) => (
-                    <article key={entry.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_auto]">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold text-foreground">{entry.title}</h3><StatusBadge tone={entry.approval_state === "approved" ? "teal" : entry.approval_state === "rejected" ? "coral" : "neutral"}>{entry.approval_state}</StatusBadge></div>
-                        {editingEvidenceId === entry.id ? <div className="mt-3"><label className="sr-only" htmlFor={`evidence-${entry.id}`}>Edit {entry.title} evidence</label><textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} onChange={(event) => setEvidenceDraft(event.target.value)} /><p className="mt-2 text-xs text-muted-foreground">Saving a factual edit returns this item to pending review.</p><div className="mt-3 flex gap-2"><Button size="sm" onClick={() => editEvidence.mutate({ id: entry.id, evidenceText: evidenceDraft.trim() })} disabled={evidenceDraft.trim().length < 2 || editEvidence.isPending}>Save edit</Button><Button size="sm" variant="ghost" onClick={() => { setEditingEvidenceId(null); setEvidenceDraft(""); }} disabled={editEvidence.isPending}>Cancel</Button></div></div> : <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{entry.evidence_text}</p>}
-                        {entry.skills.length ? <p className="mt-2 text-xs text-muted-foreground">{entry.skills.slice(0, 8).join(" · ")}</p> : null}
-                      </div>
-                      <div className="flex items-start gap-1"><Button size="icon" variant="ghost" onClick={() => { setEditingEvidenceId(entry.id); setEvidenceDraft(entry.evidence_text); }} aria-label="Edit evidence"><Pencil size={16} /></Button><Button size="icon" variant="ghost" onClick={() => approveEvidence.mutate({ id: entry.id, state: "approved" })} aria-label="Approve evidence"><Check size={17} /></Button><Button size="icon" variant="ghost" onClick={() => approveEvidence.mutate({ id: entry.id, state: "rejected" })} aria-label="Reject evidence"><X size={17} /></Button></div>
-                    </article>
-                  ))}
+                  {(evidence.data || []).map((entry) => {
+                    const fingerprint = evidenceVersion(entry);
+                    const editing = editingEvidenceId === entry.id;
+                    const blocked = !fingerprint || evidence.isFetching || evidence.isError || editEvidence.isPending || approveEvidence.isPending;
+                    return (
+                      <article key={entry.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_auto]">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold text-foreground">{entry.title}</h3>
+                            <StatusBadge tone={entry.approval_state === "approved" ? "teal" : entry.approval_state === "rejected" ? "coral" : "neutral"}>{entry.approval_state}</StatusBadge>
+                          </div>
+                          {editing ? (
+                            <div className="mt-3">
+                              <label className="sr-only" htmlFor={`evidence-${entry.id}`}>Edit {entry.title} evidence</label>
+                              <textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} onChange={(event) => setEvidenceDraft(event.target.value)} />
+                              <p className="mt-2 text-xs text-muted-foreground">Saving a factual edit returns this item to pending review.</p>
+                              {evidenceEditStale ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">Latest saved evidence: {entry.evidence_text}</p> : null}
+                              <div className="mt-3 flex gap-2">
+                                <Button size="sm" onClick={() => {
+                                  if (editingEvidenceVersion) editEvidence.mutate({ id: entry.id, evidenceText: evidenceDraft.trim(), fingerprint: editingEvidenceVersion });
+                                }} disabled={blocked || evidenceDraft.trim().length < 2 || !editingEvidenceVersion || evidenceEditStale}>Save edit</Button>
+                                <Button size="sm" variant="ghost" onClick={() => {
+                                  setEditingEvidenceId(null); setEditingEvidenceVersion(null); setEvidenceDraft(""); setEvidenceEditStale(false);
+                                }} disabled={editEvidence.isPending}>Cancel</Button>
+                              </div>
+                            </div>
+                          ) : <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{entry.evidence_text}</p>}
+                          {entry.skills.length ? <p className="mt-2 text-xs text-muted-foreground">{entry.skills.join(" · ")}</p> : null}
+                          {!fingerprint ? <p className="mt-2 text-xs text-muted-foreground">Refresh this page to load a reviewable evidence version. Editing and approval are unavailable until then.</p> : null}
+                        </div>
+                        <div className="flex items-start gap-1">
+                          <Button size="icon" variant="ghost" disabled={blocked} onClick={() => {
+                            setEditingEvidenceId(entry.id); setEditingEvidenceVersion(fingerprint); setEvidenceDraft(entry.evidence_text);
+                            setEvidenceEditStale(false); setEvidenceReviewError(null);
+                          }} aria-label="Edit evidence"><Pencil size={16} /></Button>
+                          <Button size="icon" variant="ghost" disabled={blocked || editing} onClick={() => {
+                            if (fingerprint) approveEvidence.mutate({ id: entry.id, state: "approved", fingerprint });
+                          }} aria-label="Approve evidence"><Check size={17} /></Button>
+                          <Button size="icon" variant="ghost" disabled={blocked || editing} onClick={() => {
+                            if (fingerprint) approveEvidence.mutate({ id: entry.id, state: "rejected", fingerprint });
+                          }} aria-label="Reject evidence"><X size={17} /></Button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
               {unifiedServices && sourceResume ? <ResumeBulletSuggestions resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined, description: item.job_description }} availability={creditAvailability.data} approvedEvidence={evidence.isSuccess && approvedCount > 0} /> : null}

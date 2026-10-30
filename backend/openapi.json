@@ -2829,6 +2829,12 @@
             "title": "Skills",
             "type": "array"
           },
+          "snapshot_fingerprint": {
+            "description": "Bind review to every exact returned fact, source and approval field.",
+            "readOnly": true,
+            "title": "Snapshot Fingerprint",
+            "type": "string"
+          },
           "source_ref": {
             "anyOf": [
               {
@@ -2863,7 +2869,8 @@
           "approval_state",
           "confidence",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "snapshot_fingerprint"
         ],
         "title": "EvidenceResponse",
         "type": "object"
@@ -2912,6 +2919,18 @@
               }
             ],
             "title": "Evidence Text"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
           },
           "metrics": {
             "anyOf": [

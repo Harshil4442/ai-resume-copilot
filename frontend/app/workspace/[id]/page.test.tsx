@@ -26,7 +26,7 @@ function read(url: string) {
   if (url === "/public/billing/catalog") return Promise.resolve(quote);
   if (url === "/resume/list") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
   if (url === `/v1/opportunities/${state.id}`) return Promise.resolve(opportunity());
-  if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: "Built reliable services.", skills: [] }]);
+  if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: "Built reliable services.", skills: [], snapshot_fingerprint: "a".repeat(64) }]);
   if (url.startsWith("/v1/analysis-runs/")) return Promise.resolve({ id: "run-one", opportunity_id: state.id, operation: "resume_tailor", status: "cancelled", estimated_units: 7, committed_units: 0 });
   throw new Error(`Unexpected local fixture GET ${url}`);
 }
@@ -46,6 +46,72 @@ beforeEach(() => {
   state.get.mockReset().mockImplementation(read); state.post.mockReset(); state.patch.mockReset().mockImplementation(async (_url, body) => { resumeId = body.resume_id; return opportunity(); });
 });
 afterEach(() => { cleanup(); client.clear(); });
+
+it.each([["Approve evidence", "approved"], ["Reject evidence", "rejected"]])("binds %s to the exact rendered evidence version", async (name, reviewState) => {
+  state.patch.mockResolvedValue({});
+  await page();
+  fireEvent.click(await screen.findByRole("button", { name }));
+  await waitFor(() => expect(state.patch).toHaveBeenCalledTimes(1));
+  expect(state.patch).toHaveBeenCalledWith("/v1/evidence-items/evidence-one", {
+    approval_state: reviewState, expected_fingerprint: "a".repeat(64),
+  });
+});
+
+it("keeps mutations locked when conflict refresh fails, until an explicit successful read", async () => {
+  let unavailable = false;
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/evidence-items?") && unavailable
+    ? Promise.reject(new Error("Read unavailable")) : read(url));
+  state.patch.mockRejectedValue(new ApiError("Changed", 409, { detail: { code: "evidence_refresh_required" } }));
+  await page();
+  unavailable = true;
+  fireEvent.click(await screen.findByRole("button", { name: "Approve evidence" }));
+  const refresh = await screen.findByRole("button", { name: "Refresh evidence for review" });
+  for (const name of ["Edit evidence", "Approve evidence", "Reject evidence"]) expect(screen.getByRole("button", { name })).toBeDisabled();
+  expect(state.patch).toHaveBeenCalledTimes(1);
+  unavailable = false;
+  fireEvent.click(refresh);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Approve evidence" })).toBeEnabled());
+  expect(state.patch).toHaveBeenCalledTimes(1);
+});
+
+it("freezes the opened editor version across refetch and preserves a stale draft without retry", async () => {
+  state.patch.mockRejectedValue(new ApiError("Changed", 409, { detail: { code: "evidence_refresh_required" } }));
+  await page();
+  fireEvent.click(await screen.findByRole("button", { name: "Edit evidence" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Edit Approved fact evidence" }), { target: { value: "My unsaved draft." } });
+  await act(async () => { client.setQueryData(["evidence", 1], [{ id: "evidence-one", title: "Approved fact", approval_state: "pending", evidence_text: "Newer saved evidence.", skills: [], snapshot_fingerprint: "b".repeat(64) }]); });
+  expect(screen.getByRole("button", { name: "Approve evidence" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Save edit" }));
+  await screen.findByRole("alert");
+  expect(state.patch).toHaveBeenCalledExactlyOnceWith("/v1/evidence-items/evidence-one", {
+    evidence_text: "My unsaved draft.", expected_fingerprint: "a".repeat(64),
+  });
+  expect(screen.getByRole("textbox", { name: "Edit Approved fact evidence" })).toHaveValue("My unsaved draft.");
+  expect(screen.getByRole("button", { name: "Save edit" })).toBeDisabled();
+});
+
+it("refreshes a stale approval without replay and requires a new click on the new version", async () => {
+  let current = "a";
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/evidence-items?")
+    ? Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "pending", evidence_text: `${current} saved fact.`, skills: [], snapshot_fingerprint: current.repeat(64) }]) : read(url));
+  state.patch.mockRejectedValueOnce(new ApiError("Changed", 409, { detail: { code: "evidence_refresh_required" } })).mockResolvedValue({});
+  await page();
+  current = "b";
+  fireEvent.click(await screen.findByRole("button", { name: "Approve evidence" }));
+  await screen.findByText("b saved fact.");
+  expect(state.patch).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Approve evidence" }));
+  await waitFor(() => expect(state.patch).toHaveBeenCalledTimes(2));
+  expect(state.patch.mock.calls[1][1]).toEqual({ approval_state: "approved", expected_fingerprint: "b".repeat(64) });
+});
+
+it.each([undefined, "", "invalid", "A".repeat(64), 123])("locks evidence mutations without a valid server version %s", async (fingerprint) => {
+  state.get.mockImplementation((url: string) => url.startsWith("/v1/evidence-items?")
+    ? Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "pending", evidence_text: "Unversioned fact.", skills: [], snapshot_fingerprint: fingerprint }]) : read(url));
+  await page();
+  for (const name of ["Edit evidence", "Approve evidence", "Reject evidence"]) expect(await screen.findByRole("button", { name })).toBeDisabled();
+  expect(state.patch).not.toHaveBeenCalled();
+});
 
 it("fetches the free catalog only when the resume tab opens and binds the displayed non-hardcoded price to the click", async () => {
   state.tab = "overview"; await page();

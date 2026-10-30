@@ -530,11 +530,24 @@ def update_evidence(
             models.EvidenceItem.id == evidence_id,
             models.EvidenceItem.user_id == user_id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if not item:
         raise HTTPException(status_code=404, detail="Evidence item not found")
+    current_fingerprint = schemas.evidence_snapshot_fingerprint(item)
+    if payload.expected_fingerprint != current_fingerprint:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "evidence_refresh_required",
+                "message": "This evidence changed or its review version is missing. Refresh and review it before saving or approving.",
+            },
+        )
     updates = payload.model_dump(exclude_unset=True)
+    updates.pop("expected_fingerprint", None)
     factual_fields = {"category", "title", "evidence_text", "metrics", "skills"}
     if factual_fields.intersection(updates) and "approval_state" not in updates:
         item.approval_state = "pending"

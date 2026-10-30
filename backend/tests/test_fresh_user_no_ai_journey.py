@@ -369,7 +369,7 @@ def test_fresh_authenticated_no_ai_discovery_review_and_manual_handoff(journey):
         client.patch(
             "/api/v1/evidence-items/" + evidence["id"],
             headers=owner,
-            json={"approval_state": "approved"},
+            json={"approval_state": "approved", "expected_fingerprint": evidence["snapshot_fingerprint"]},
         )
     )
     assert evidence["approval_state"] == "approved"

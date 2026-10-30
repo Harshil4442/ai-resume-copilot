@@ -3343,6 +3343,11 @@ export interface components {
             resume_id: number | null;
             /** Skills */
             skills: string[];
+            /**
+             * Snapshot Fingerprint
+             * @description Bind review to every exact returned fact, source and approval field.
+             */
+            readonly snapshot_fingerprint: string;
             /** Source Ref */
             source_ref: string | null;
             /** Title */
@@ -3361,6 +3366,8 @@ export interface components {
             category?: string | null;
             /** Evidence Text */
             evidence_text?: string | null;
+            /** Expected Fingerprint */
+            expected_fingerprint?: string | null;
             /** Metrics */
             metrics?: {
                 [key: string]: unknown;
