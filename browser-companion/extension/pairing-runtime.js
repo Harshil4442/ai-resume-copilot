@@ -15,18 +15,20 @@ const MAX_HISTORY_RECORDS = 64;
 const MAX_CHECKPOINT_BYTES = 256 * 1024;
 const nullable = (value, pattern) => value === null || typeof value === "string" && pattern.test(value);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const TIMING_KEYS = "elapsed_ms,http_status,issued_age_ms,version";
+const TIMING_KEYS = "elapsed_ms,http_status,issued_age_ms,issued_at_ms,version";
 const timingNumber = (value, minimum, maximum) => value === null
   || Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 
 export function pairingReadTimingSupport(value) {
   try {
     if (!object(value) || Object.keys(value).sort().join(",") !== TIMING_KEYS || value.version !== 1
+        || !timingNumber(value.issued_at_ms, 1, Number.MAX_SAFE_INTEGER)
         || !timingNumber(value.issued_age_ms, -86400000, 86400000)
         || !timingNumber(value.elapsed_ms, 0, 86400000)
         || !timingNumber(value.http_status, 100, 599)) return null;
     const milliseconds = (number) => number === null ? "unavailable" : `${number} ms`;
-    return `Support code: HW-COMPANION-READ-TIMING. Client age at send: ${milliseconds(value.issued_age_ms)}. `
+    return `Support code: HW-COMPANION-READ-TIMING. Signed issued_at_ms: ${value.issued_at_ms ?? "unavailable"}. `
+      + `Client age at send: ${milliseconds(value.issued_age_ms)}. `
       + `Request elapsed: ${milliseconds(value.elapsed_ms)}. HTTP status: ${value.http_status ?? "unavailable"}. `
       + "Client timing does not establish server freshness. This diagnostic clears on the next read or worker restart.";
   } catch { return null; }
