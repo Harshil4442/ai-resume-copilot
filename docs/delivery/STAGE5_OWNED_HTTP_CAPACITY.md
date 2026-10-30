@@ -54,6 +54,29 @@ Python socket connections deny before send. The emulator's Docker network has no
 external route. Setup downloads in GitHub Actions are separate public dependency
 provisioning, not application/provider workload calls.
 
+The full emulator path requires a native Linux Docker host. Requested
+`HostConfig.PortBindings` is not treated as an effective listener: the tool reads
+`NetworkSettings.Ports`, verifies readiness inside the exact owned container,
+then checks an effective published loopback port when present. If that publication
+is absent/unreachable, it observes the same image/nonce/container/network again
+and derives only its actual private IPv4 endpoint from the internal bridge IPAM
+and current membership. A fixed stdlib child can then relay a newly owned
+127.0.0.1 listener to that one endpoint at port8080. It cannot accept a destination
+from HTTP clients, use DNS, forward outside the observed RFC1918 subnet, add an
+external network or change Docker daemon policy. The application GAPIC still
+connects only to its owned loopback endpoint and must genuinely become ready.
+No transport switch occurs after a native request or failed GAPIC operation.
+The relay has eight connection slots, a 128MiB byte cap and a 900-second lifetime;
+the actual 600-second workload limit remains unchanged. This extra local hop is
+included in local timing and is not provider latency. Desktop is refused rather
+than relaxing isolation. Effective binding/readiness/selected-transport metadata
+is retained in `emulator-transport.json`; it contains no bodies or credentials.
+Docker documents host access to an internal bridge in its
+[port-publishing guide](https://docs.docker.com/engine/network/port-publishing/)
+and the different Desktop bridge boundary in its
+[Desktop networking guide](https://docs.docker.com/desktop/features/networking/networking-how-tos/).
+Those references do not substitute for this run's observed effective transport.
+
 ## Bounds and metrics
 
 The committed `backend/capacity/stage5-owned-http-v1.json` offers 50 requests per
@@ -123,6 +146,9 @@ The native/factory/time/GAPIC fixture context also remains installed through
 HTTP shutdown. A stuck worker retains that context for the failed CLI's lifetime;
 it does not unwind those patches or restore unrestricted egress behind a live
 worker.
+The owned relay must stop before its Docker endpoint/network can be released.
+Unknown process-stop outcomes retain that endpoint and fail cleanup rather than
+allowing its address to be reused behind a live forwarder.
 
 The path-filtered pull-request/manual `.github/workflows/stage5-owned-capacity.yml` prepares the
 existing pinned Redis source/TLS build and exact emulator image, builds official
@@ -133,7 +159,7 @@ only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
 workflow has not been run as part of source preparation. Its PR trigger names
-only the ten finite Stage5 tooling/config/test paths, so this Linux validation
+only the eleven finite Stage5 tooling/config/test paths, so this Linux validation
 can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
 provides PG16, so no host17 path is assumed. The source build uses the
@@ -162,6 +188,14 @@ after matching the retained native system identifier/nonce and observing its
 original PID absent; the crash-recovery state remains in the failure evidence.
 The current source/observer/finalizer checks are separate from actual Linux HTTP
 execution, which remains pending.
+
+The first actual Linux PR run also stopped at GAPIC readiness in both buyer
+scenarios after the pinned dependencies and finite/PG seed checks passed. No
+HTTP workload was measured; its artifacts prove owned cleanup. That failure
+motivated effective-listener diagnostics and the fixed internal-endpoint relay.
+The corrected physical path still needs actual Linux GAPIC/workload success;
+the synthetic relay controls do not replace it. A later Mac Docker image-inspect
+probe timed out before any resource creation and was not repeated.
 
 ## Original acceptance remains open
 

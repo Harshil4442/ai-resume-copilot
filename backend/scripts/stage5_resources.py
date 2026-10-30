@@ -1,18 +1,21 @@
 """Only fresh invocation-owned loopback dependencies; no caller database/Redis URI."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import IO
 from uuid import uuid4
 
 from scripts.run_cold_browser_journey import _owned_status, _spawn_owned, _stop
+from scripts.stage5_relay import validate_target
 
 EMULATOR = ("gcr.io/google.com/cloudsdktool/google-cloud-cli:573.0.0-emulators@sha256:"
             "1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe")
@@ -36,6 +39,36 @@ def require_owned_internal_network(value, *, identity: str, nonce: str) -> None:
             or value[0].get("Internal") is not True or value[0].get("Containers") != {}
             or value[0].get("Labels", {}).get("hirewiz.stage5.owner") != nonce):
         raise RuntimeError("Actual owned internal emulator network differs")
+
+
+def internal_endpoint(container, network, *, container_id, network_id, nonce):
+    values = container.get("NetworkSettings", {}).get("Networks", {})
+    if (container.get("Id") != container_id or len(values) != 1
+            or container.get("Config", {}).get("Labels", {}).get("hirewiz.stage5.owner") != nonce
+            or network.get("Id") != network_id or network.get("Internal") is not True
+            or network.get("Driver") != "bridge"
+            or network.get("Labels", {}).get("hirewiz.stage5.owner") != nonce
+            or set(network.get("Containers", {})) != {container_id}):
+        raise RuntimeError("Current owned emulator membership differs")
+    entry = next(iter(values.values()))
+    subnets = network.get("IPAM", {}).get("Config", [])
+    if entry.get("NetworkID") != network_id or len(subnets) != 1:
+        raise RuntimeError("Current owned emulator subnet differs")
+    address, subnet = entry.get("IPAddress"), subnets[0].get("Subnet")
+    target = validate_target(address, subnet, 8080)
+    if (network["Containers"][container_id].get("IPv4Address") != f"{address}/{subnet.split('/')[1]}"
+            or address == subnets[0].get("Gateway")):
+        raise RuntimeError("Current owned emulator address differs")
+    return target, subnet
+
+
+def effective_publication(container, port):
+    actual = container.get("NetworkSettings", {}).get("Ports", {}).get("8080/tcp")
+    if actual in (None, []):
+        return False
+    if actual != [{"HostIp": "127.0.0.1", "HostPort": str(port)}]:
+        raise RuntimeError("Effective emulator publication is not exact loopback")
+    return True
 
 
 def unused_port() -> int:
@@ -137,6 +170,8 @@ class Resources:
                     "?options=-csearch_path%3Dstage5_owned%20-cstatement_timeout%3D5000")
 
     def start_emulator(self):
+        if sys.platform != "linux":
+            raise RuntimeError("The isolated emulator transport requires a native Linux Docker host")
         value = json.loads(self.command(["docker", "image", "inspect", EMULATOR]))
         configuration_id = pinned_emulator_configuration(value)
         self.network_id = self.command(["docker", "network", "create", "--internal", "--label",
@@ -161,14 +196,82 @@ class Resources:
                 metadata["HostConfig"]["PortBindings"] != {
                     "8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(self.emulator_port)}]}):
             raise RuntimeError("Owned emulator binding differs")
-        self.emulator_identity = {"image": metadata["Image"], "manifest": EMULATOR_REPO_DIGEST,
-                                  "container_id": self.container_id,
-                                  "network_internal": True, "loopback_port": self.emulator_port}
+        diagnostic = {"image": metadata["Image"], "manifest": EMULATOR_REPO_DIGEST,
+                      "container_id": self.container_id, "network_id": self.network_id,
+                      "network_internal": True, "effective_publication": None,
+                      "namespace_tcp_ready": None, "published_host_tcp_ready": None,
+                      "transport": "not_selected"}
+        try:
+            network = json.loads(self.command(["docker", "network", "inspect", self.network_id]))[0]
+            target, subnet = internal_endpoint(metadata, network, container_id=self.container_id,
+                network_id=self.network_id, nonce=self.nonce)
+            diagnostic["effective_publication"] = effective_publication(metadata, self.emulator_port)
+            program = ("import socket,time,json\nend=time.monotonic()+20\n"
+                "while time.monotonic()<end:\n"
+                " try:\n  s=socket.create_connection(('127.0.0.1',8080),timeout=.5);s.close();break\n"
+                " except OSError:time.sleep(.1)\nelse:raise RuntimeError('not_ready')\n"
+                "print(json.dumps({'loopback_tcp_ready':True}))")
+            ready = json.loads(self.command(["docker", "exec", self.container_id, "python3", "-c", program], seconds=25))
+            if ready != {"loopback_tcp_ready": True}:
+                raise RuntimeError("Owned emulator namespace readiness differs")
+            diagnostic["namespace_tcp_ready"] = True
+            published = False
+            if diagnostic["effective_publication"]:
+                try:
+                    with socket.create_connection(("127.0.0.1", self.emulator_port), timeout=2):
+                        published = True
+                except OSError:
+                    pass
+                diagnostic["published_host_tcp_ready"] = published
+            if published:
+                diagnostic["transport"] = "verified_docker_loopback_publication"
+            else:
+                # A new native readback immediately precedes relay selection.
+                metadata = json.loads(self.command(["docker", "inspect", self.container_id]))[0]
+                network = json.loads(self.command(["docker", "network", "inspect", self.network_id]))[0]
+                if metadata["Image"] != configuration_id:
+                    raise RuntimeError("Current emulator image differs")
+                target, subnet = internal_endpoint(metadata, network, container_id=self.container_id,
+                    network_id=self.network_id, nonce=self.nonce)
+                with socket.create_connection(target, timeout=2):
+                    pass
+                self.emulator_port = unused_port()
+                if self.emulator_port in {self.pg_port, self.api_port}:
+                    raise RuntimeError("Owned relay port collision")
+                config = {"target_ip": target[0], "subnet": subnet, "target_port": 8080,
+                          "listen_port": self.emulator_port, "nonce": self.nonce,
+                          "network_id": self.network_id, "container_id": self.container_id}
+                config_path, ready_path = self.directory / "relay-config.json", self.directory / "relay-ready.json"
+                private_json(config_path, config)
+                config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+                child = self.spawn([sys.executable, "-B", str(Path(__file__).with_name("stage5_relay.py")),
+                    str(config_path), config_hash, str(ready_path)], "emulator-relay")
+                deadline = time.monotonic() + 5
+                while not ready_path.exists():
+                    if _owned_status(child) is not None or time.monotonic() >= deadline:
+                        raise RuntimeError("Owned emulator relay readiness failed")
+                    time.sleep(.05)
+                if (_owned_status(child) is not None or json.loads(ready_path.read_text()) != {
+                        "nonce": self.nonce, "pid": child.pid, "port": self.emulator_port}):
+                    raise RuntimeError("Owned emulator relay identity differs")
+                diagnostic.update(transport="owned_fixed_loopback_relay", relay_pid=child.pid,
+                                  target_ip=target[0], target_subnet=subnet)
+            diagnostic["loopback_port"] = self.emulator_port
+            self.emulator_identity = diagnostic
+        finally:
+            private_json(self.directory / "emulator-transport.json", diagnostic)
 
     def close(self):
         # IDs and nonce labels, not names alone, are required before Docker deletion.
         failures = []
-        if self.container_id:
+        # Stop the fixed relay before releasing its container IP for reuse.
+        for process in reversed(self.processes):
+            try:
+                self.cleanup.append(_stop(process))
+            except Exception:
+                failures.append("process_group")
+                self.cleanup.append({"component": "process_group", "cleanup": "refused_or_unknown"})
+        if self.container_id and not failures:
             try:
                 metadata = json.loads(self.command(["docker", "inspect", self.container_id]))[0]
                 if metadata["Id"] != self.container_id or metadata["Config"]["Labels"].get("hirewiz.stage5.owner") != self.nonce:
@@ -179,7 +282,9 @@ class Resources:
             except Exception:
                 failures.append("emulator")
                 self.cleanup.append({"component": "emulator", "cleanup": "refused_or_unknown"})
-        if self.network_id:
+        elif self.container_id:
+            self.cleanup.append({"component": "emulator", "cleanup": "held_for_owned_process_stop"})
+        if self.network_id and not failures:
             try:
                 network = json.loads(self.command(["docker", "network", "inspect", self.network_id]))[0]
                 if network["Id"] != self.network_id or network["Labels"].get("hirewiz.stage5.owner") != self.nonce or network["Containers"]:
@@ -190,12 +295,8 @@ class Resources:
             except Exception:
                 failures.append("network")
                 self.cleanup.append({"component": "network", "cleanup": "refused_or_unknown"})
-        for process in reversed(self.processes):
-            try:
-                self.cleanup.append(_stop(process))
-            except Exception:
-                failures.append("process_group")
-                self.cleanup.append({"component": "process_group", "cleanup": "refused_or_unknown"})
+        elif self.network_id:
+            self.cleanup.append({"component": "network", "cleanup": "held_for_dependency_cleanup"})
         for log in self.logs:
             log.close()
         data = getattr(self, "pg_data", None)
