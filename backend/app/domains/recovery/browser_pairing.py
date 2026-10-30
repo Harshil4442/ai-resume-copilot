@@ -24,10 +24,16 @@ from weakref import WeakKeyDictionary
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .contracts import Digest, Identifier, Timestamp
+from .device_transport_admission import (
+    SIGNED_DEVICE_OPERATIONS,
+    DeviceIngressTiming,
+    DeviceTransportVerifier,
+    VerifiedDeviceAdmission,
+)
 from .gcp_buffer import BufferedTransaction
 from .gcp_pairing import GcpPairingCoordinator, _PasswordReadTransaction
 from .gcp_pairing_contracts import PairingCommand
-from .pairing_auth import key_fingerprint, public_jwk, verify_signature
+from .pairing_auth import key_fingerprint, public_jwk
 from .pairing_contracts import PairingContract, canonical_bytes
 from .password_reauth import (
     CandidateWebSession,
@@ -291,21 +297,33 @@ class GatewayVerifier:
 class NativeBrowserPairing:
     """One explicitly injected native coordinator, password boundary and gateway pin."""
     def __init__(self, coordinator: GcpPairingCoordinator, password: PasswordReauthService,
-                 gateway: GatewayVerifier, *, paired_devices=None):
+                 gateway: GatewayVerifier, *, paired_devices=None, device_transport=None):
         if (type(coordinator) is not GcpPairingCoordinator
                 or type(password) is not PasswordReauthService or password.pairing is not coordinator.core):
             raise GuardUnavailable("Connected native pairing/password boundaries are required")
         self.coordinator, self.password, self.gateway = coordinator, password, gateway
         self.paired_devices = paired_devices
         self.identity = RegisteredPasswordIdentity(coordinator.core.store)
+        if device_transport is not None and type(device_transport) is not DeviceTransportVerifier:
+            raise GuardUnavailable("Exact device transport verifier required")
+        self.device_transport = device_transport if device_transport is not None else DeviceTransportVerifier(now_ms=coordinator.now_ms)
 
     def _consume(self, namespace: str, request_id: str, *, context: CandidateWebSession | None,
                  issued: int, expires: int | None = None,
-                 admission: VerifiedGatewayAdmission | None = None, operation: str = "", raw: bytes = b"") -> dict | None:
+                 admission: VerifiedGatewayAdmission | None = None, operation: str = "", raw: bytes = b"",
+                 device_admission: VerifiedDeviceAdmission | None = None, origin: str = "") -> dict | None:
         captured: list[dict] = []
         c = self.coordinator
 
-        def admitted(now: int) -> None:
+        def admitted(now: int, tx=None) -> None:
+            if device_admission is not None:
+                if admission is not None or context is not None or namespace != "browser_device_requests":
+                    raise GuardDenied(FAILURE)
+                request = self.device_transport.check(device_admission, native=self,
+                    operation=operation, raw=raw, origin=origin, tx=tx)
+                if request.request_id != request_id or request.issued_at_ms != issued or expires is not None:
+                    raise GuardDenied(FAILURE)
+                return
             if admission is None:
                 if context is not None:
                     raise GuardDenied(FAILURE)
@@ -326,8 +344,8 @@ class NativeBrowserPairing:
             c._control(tx)
             now = c.now_ms()
             deadline = issued + WINDOW_MS if expires is None else expires
-            admitted(now)
-            if admission is None and not issued <= now < deadline <= issued + WINDOW_MS:
+            admitted(now, tx)
+            if admission is None and device_admission is None and not issued <= now < deadline <= issued + WINDOW_MS:
                 raise GuardDenied(FAILURE)
             if tx.get(namespace, request_id) is not None:
                 raise GuardDenied(FAILURE)
@@ -350,6 +368,9 @@ class NativeBrowserPairing:
                 # window, including its maximum bounded processing lease. This
                 # does not extend public assertion reuse or the human review.
                 deadline += PROCESSING_MS
+            elif device_admission is not None:
+                deadline += PROCESSING_MS
+            admitted(c.now_ms())
             # No body, password, assertion, cookie, signature or body digest is retained.
             tx.put(namespace, request_id, {"expires_at_ms": deadline}, immutable=True)
         c.registry.run(transaction, before_attempt=before_attempt)
@@ -478,30 +499,52 @@ class NativeBrowserPairing:
             raise GuardDenied(FAILURE)
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
-        data = exact_json(raw)
-        if operation == "inspect-key":
-            inspection = KeyStatusRequest.model_validate(data)
-            self._device_origin(origin, extension_id=inspection.extension_id)
-            key = public_jwk(inspection.key)
-            verify_signature(key, "transport-request", inspection.model_dump(mode="json", exclude={"signature"}), inspection.signature)
-            if self.paired_devices is None:
+        if operation in SIGNED_DEVICE_OPERATIONS:
+            ingress = self.device_transport.capture(operation, raw, origin, owner=self)
+            try:
+                return self.device_captured(operation, raw, origin, ingress)
+            finally:
+                self.device_transport.finish(ingress, owner=self)
+        return self._challenge_device(operation, raw, origin)
+
+    def device_captured(self, operation: str, raw: bytes, origin: str, ingress: DeviceIngressTiming) -> dict:
+        # A captured arrival time is not authority. Actual fresh native origin/
+        # public-key lookup and ECDSA verification happen before this admission.
+        admission = self.device_transport.verify(ingress, native=self, operation=operation, raw=raw, origin=origin)
+        try:
+            if operation == "inspect-key" and self.paired_devices is None:
                 raise GuardUnavailable("Protected device key inspection is unavailable")
-            self._consume("browser_device_requests", str(inspection.request_id), context=None,
-                          issued=inspection.issued_at_ms)
-            status = self.paired_devices.key_status(key, extension_id=inspection.extension_id,
-                                                   executor_revision=inspection.revision)
-            return {"protocol_version": 2, "key_sha256": key_fingerprint(key),
-                    "extension_id": inspection.extension_id, "executor_revision": inspection.revision,
-                    "status": status}
-        if operation == "prepare":
-            prepare = PrepareRequest.model_validate(data)
-            self._device_origin(origin, extension_id=prepare.extension_id)
-            key = public_jwk(prepare.key)
-            verify_signature(key, "transport-request", prepare.model_dump(mode="json", exclude={"signature"}), prepare.signature)
-            self._consume("browser_device_requests", str(prepare.request_id), context=None,
-                          issued=prepare.issued_at_ms)
-            return self._execute("prepare_request", {"key": key, "extension_id": prepare.extension_id,
-                                                     "revision": prepare.revision})
+            proof = self.device_transport.check(admission, native=self, operation=operation, raw=raw, origin=origin)
+            self._consume("browser_device_requests", proof.request_id, context=None,
+                issued=proof.issued_at_ms, device_admission=admission, operation=operation, raw=raw, origin=origin)
+            data = exact_json(raw)
+            if operation == "inspect-key":
+                inspection = KeyStatusRequest.model_validate(data)
+                key = public_jwk(inspection.key)
+                status = self.paired_devices.key_status(key, extension_id=inspection.extension_id,
+                    executor_revision=inspection.revision)
+                result = {"protocol_version": 2, "key_sha256": key_fingerprint(key),
+                    "extension_id": inspection.extension_id, "executor_revision": inspection.revision, "status": status}
+            elif operation == "prepare":
+                prepare = PrepareRequest.model_validate(data)
+                result = self._execute("prepare_request", {"key": public_jwk(prepare.key),
+                    "extension_id": prepare.extension_id, "revision": prepare.revision})
+            else:
+                lookup = DeviceLookup.model_validate(data)
+                if operation == "status":
+                    result = self.coordinator.pairing_status(str(lookup.identity))
+                else:
+                    parameter = "device_id" if operation == "refresh-challenge" else "pairing_id"
+                    result = self._execute(lookup.operation, {parameter: str(lookup.identity)})
+            self.device_transport.check(admission, native=self, operation=operation, raw=raw, origin=origin)
+            return result
+        finally:
+            self.device_transport.finish(admission, owner=self)
+
+    def _challenge_device(self, operation: str, raw: bytes, origin: str) -> dict:
+        # The server challenge proof paths have their own original ten-second
+        # core deadlines, nonce/signature and ACK rules. No transport lease.
+        data = exact_json(raw)
         if operation == "create":
             creation = CreationProof.model_validate(data)
             self._device_origin(origin, pairing_id=str(creation.pairing_id))
@@ -513,20 +556,7 @@ class NativeBrowserPairing:
             return self._execute("complete_device" if operation == "complete" else "refresh_claim",
                 {"challenge_id": str(challenge.challenge_id), "nonce": str(challenge.nonce),
                  "signature": challenge.signature})
-        lookup = DeviceLookup.model_validate(data)
-        expected = {"challenge": "device_challenge", "status": "status", "refresh-challenge": "refresh_challenge"}
-        if expected.get(operation) != lookup.operation:
-            raise GuardDenied(FAILURE)
-        self._device_origin(origin, device_id=str(lookup.identity) if operation == "refresh-challenge" else None,
-                            pairing_id=str(lookup.identity) if operation != "refresh-challenge" else None)
-        key = self._lookup_key(lookup)
-        verify_signature(key, "transport-request", lookup.model_dump(mode="json", exclude={"signature"}), lookup.signature)
-        self._consume("browser_device_requests", str(lookup.request_id), context=None,
-                      issued=lookup.issued_at_ms)
-        if operation == "status":
-            return self.coordinator.pairing_status(str(lookup.identity))
-        parameter = "device_id" if operation == "refresh-challenge" else "pairing_id"
-        return self._execute(lookup.operation, {parameter: str(lookup.identity)})
+        raise GuardDenied(FAILURE)
 
 
 class UnavailableBrowserPairing:

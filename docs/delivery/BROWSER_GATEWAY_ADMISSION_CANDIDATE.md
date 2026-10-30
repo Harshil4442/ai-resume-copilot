@@ -43,7 +43,9 @@ possible request admitted inside that original signed window. This is replay
 record retention, **not** an extension of public assertion validity. Concurrent
 invocations with the same signed nonce still have one native winner.
 
-Device transport's separate five-second freshness is unchanged. The actual
+The separate [signed-device follow-on](SIGNED_DEVICE_ADMISSION_CANDIDATE.md)
+retains five-second incoming device freshness with its own verified bounded
+processing admission. The challenge-based proof paths remain unchanged. The actual
 pending-pairing two-minute limit, candidate review/password-reauth sixty-second
 limits, device proof ten-second limit, current native account state and all
 existing approval/signing/activation boundaries remain. The gateway is still

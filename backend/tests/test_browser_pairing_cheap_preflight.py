@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.domains.recovery import browser_pairing_production as production
 from app.domains.recovery.browser_pairing import GatewayVerifier, NativeBrowserPairing
 from app.domains.recovery.contracts import canonical
+from app.domains.recovery.device_transport_admission import DeviceTransportVerifier
 from app.domains.recovery.store import GuardDenied
 
 EXTENSION = "a" * 32
@@ -37,7 +38,8 @@ def configured(monkeypatch):
     native.gateway = GatewayVerifier(key=b"a" * 32, issuer="gateway_1", origin="https://example.test")
     browser._gateway, browser._admission_owner = native.gateway, object()
     browser._gateway_now_ms = lambda: NOW
-    browser._check_configuration = lambda: None
+    browser._check_configuration = lambda: SimpleNamespace(extension_id=EXTENSION, executor_revision="companion_1")
+    browser._device_transport = DeviceTransportVerifier(now_ms=lambda: NOW)
     browser._service = lambda: native
     browser._observations = lambda _: pytest.fail("untrusted transport entered metadata scope")
     monkeypatch.setattr(production, "configuration", lambda: SimpleNamespace(

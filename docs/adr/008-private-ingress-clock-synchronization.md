@@ -25,6 +25,13 @@ open. This candidate does not change the provider-time/uncertainty/no-fallback
 requirements of the private account-ingress protocol below or introduce a new
 clock authority.
 
+The [signed-device follow-on](../delivery/SIGNED_DEVICE_ADMISSION_CANDIDATE.md)
+uses the same existing pairing clock distinction. Its pre-composition timing
+capture is not authority; fresh native origin/key lookup and actual ECDSA must
+complete before a verified admission can consume a nonce. The public five-second
+incoming window remains; the same thirty-second processing lease is never reset.
+Challenge-based create/complete/refresh retain their original core deadlines.
+
 The website BFF signs native account requests for exactly five seconds. The
 backend independently verifies the signature, physical request, current custody
 and unique nonce against its bounded provider-clock observation. On 22 October,

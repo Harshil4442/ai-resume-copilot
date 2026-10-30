@@ -69,6 +69,15 @@ composition; its construction-owner slot binds once to the exact native/verifier
 under the same processing deadline. Platform delay before admission remains
 subject to the original signed TTL and must not be hidden by a retry or extension.
 
+The [signed-device follow-on](../delivery/SIGNED_DEVICE_ADMISSION_CANDIDATE.md)
+separates its five-second transport entry from the same bounded processing. A
+timing-only capture precedes cold composition/current-key lookup, but cannot
+consume a nonce or run a command. The exact native verifier must check the actual
+ECDSA and fresh current origin/key, then issue a separate opaque admission. Known
+IDs are reread in the nonce transaction; changed key/origin or inactive device
+refuses. No positive identity observation is substituted for these checks. The
+create/complete/refresh ten-second server proof deadlines are unchanged.
+
 ## Explicit security tradeoff
 
 This weakens the timing guarantee for **private internal writes**. A pinned

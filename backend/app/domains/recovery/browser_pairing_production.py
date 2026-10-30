@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 
 from ..candidate_accounts.production import CandidateNativeConfiguration, _pairs
 from .contracts import Contract, Identifier, canonical
+from .device_transport_admission import SIGNED_DEVICE_OPERATIONS, DeviceTransportVerifier
 from .native_diagnostics import native_phase
 from .native_identity_observation import identity_barrier, identity_observation_scope
 from .pairing_auth import PinnedAssertions, public_jwk, verify_signature
@@ -186,6 +187,7 @@ class ConfiguredBrowserPairing:
         self._gateway = GatewayVerifier(key=bytes.fromhex(os.environ["BROWSER_PAIRING_GATEWAY_SECRET"]),
             issuer="hirewiz_bff_v1", origin=self._origin)
         self._admission_owner = object()
+        self._device_transport = DeviceTransportVerifier(now_ms=self._gateway_now_ms)
 
     @staticmethod
     def _gateway_now_ms() -> int:
@@ -237,7 +239,8 @@ class ConfiguredBrowserPairing:
                     credentials=credentials, signer=_IdentityGuardedSigner(
                         RefreshingKmsSigner(current.assertion_key, issuer=current.assertion_issuer)),
                     issuer=current.assertion_issuer)
-                self._native = NativeBrowserPairing(coordinator, password, self._gateway, paired_devices=devices)
+                self._native = NativeBrowserPairing(coordinator, password, self._gateway,
+                    paired_devices=devices, device_transport=self._device_transport)
         assert self._native is not None
         return self._native
 
@@ -290,6 +293,8 @@ class ConfiguredBrowserPairing:
                 gateway.finish_admission(admission, owner=native)
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
+        if operation in SIGNED_DEVICE_OPERATIONS:
+            return self._signed_device(operation, raw, origin)
         native = self._service()
         current = configuration()
         _device_preflight(operation, raw, origin, current, now_ms=native.coordinator.now_ms())
@@ -303,6 +308,30 @@ class ConfiguredBrowserPairing:
                 native.paired_devices.check_claim(claim)
             self._service()
         return result
+
+    def _signed_device(self, operation: str, raw: bytes, origin: str) -> dict:
+        current = self._check_configuration()
+        now = self._gateway_now_ms()
+        _device_preflight(operation, raw, origin, current, now_ms=now)
+        transport = self._device_transport
+        ingress = transport.capture_composition(operation, raw, origin, owner=self._admission_owner)
+        native = None
+        try:
+            native = self._service()
+            self._check_configuration()
+            transport.bind_composed(ingress, construction_owner=self._admission_owner,
+                native=native, operation=operation, raw=raw, origin=origin)
+            with self._observations(native):
+                with native_phase("browser_pairing", "native_operation"):
+                    result = native.device_captured(operation, raw, origin, ingress)
+                self._service()
+            self._check_configuration()  # Exit observations can do IO; recheck pins before export.
+            transport.check_timing(ingress, native=native, operation=operation, raw=raw, origin=origin)
+            return result
+        finally:
+            transport.finish(ingress, owner=self._admission_owner)
+            if native is not None:
+                transport.finish(ingress, owner=native)
 
 
 def production_browser_pairing() -> ConfiguredBrowserPairing:
