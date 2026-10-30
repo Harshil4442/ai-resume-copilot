@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
 from unittest.mock import Mock
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import google.auth
 import grpc
@@ -250,18 +250,28 @@ def configured_accounts(*, engine, directory, endpoint: str, counters):
 
 
 def check_body(path: str, body: dict, *, user_id: int, buyer: bool, heavy: bool) -> bool:
+    from scripts.stage5_seed import owned_opportunity_ids, synthetic_email
+
+    if type(body) is not dict:
+        return False
     if path == "/api/auth/bootstrap":
-        return (body.get("schema_version") == "owned-bootstrap-v1" and
-                body.get("profile", {}).get("email") == f"capacity-{user_id}@example.test" and
+        return (type(body.get("profile")) is dict and type(body.get("credit_wallet")) is dict
+                and body.get("schema_version") == "owned-bootstrap-v1" and
+                body["profile"].get("email") == synthetic_email(user_id) and
                 body.get("unavailable") == [] and
                 body.get("credit_wallet", {}).get("available_credits") == (90 if buyer else 0))
     if path == "/api/resume/list":
         return len(body.get("resumes", [])) == 1 and body["resumes"][0]["id"] == user_id
-    if path.startswith("/api/v1/opportunities"):
-        return (body.get("total") == (500 if heavy else 10)
-                and len(body.get("items", [])) == (50 if heavy else 10) and all(
-            row["user_id"] == user_id for row in body.get("items", []))
-                )
+    if urlsplit(path).path == "/api/v1/opportunities":
+        query = parse_qs(urlsplit(path).query, strict_parsing=True)
+        if set(query) - {"limit", "offset"} or any(len(values) != 1 for values in query.values()):
+            return False
+        expected = owned_opportunity_ids(user_id, limit=int(query.get("limit", ["100"])[0]),
+                                         offset=int(query.get("offset", ["0"])[0]))
+        items = body.get("items", [])
+        return (heavy == (user_id == 8) and body.get("total") == (500 if heavy else 10)
+                and [row.get("id") for row in items] == expected
+                and all(row.get("resume_id") == user_id for row in items))
     if path == "/api/v1/skill-roi":
         return body.get("opportunity_count") == (500 if heavy else 10)
     if path == "/api/v1/credits/wallet":

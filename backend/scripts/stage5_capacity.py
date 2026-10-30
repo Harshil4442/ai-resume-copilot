@@ -93,12 +93,49 @@ def summarize(rows: list[dict]) -> dict:
         "offered": len(rows), "successful_owned_responses": len(successful),
         "status_counts": dict(Counter(str(r["status"]) for r in rows)),
         "contract_failures": sum(r["status"] == 200 and not r.get("contract_valid") for r in rows),
+        "validated_capacity_refusals": sum(r["status"] == 429 and r.get("capacity_refusal_valid") is True for r in rows),
         "response_body_bytes": sum(r["bytes"] for r in rows),
         "all_arrival_to_completion_p95_ms": percentile([r["arrival_to_completion_ms"] for r in rows], .95),
         "success_arrival_to_completion_p95_ms": percentile([r["arrival_to_completion_ms"] for r in successful], .95),
         "queue_p95_ms": percentile([r["queue_ms"] for r in rows], .95),
         "http_p95_ms": percentile([r["http_ms"] for r in rows], .95),
     }
+
+
+def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> bool:
+    return (mode == "list_governed_40" and status == 429
+        and body == {"detail": {"code": "NATIVE_METADATA_CAPACITY",
+            "message": "Request capacity is temporarily allocated. Please try again later."}}
+        and headers.get("retry-after") == "60"
+        and headers.get("cache-control") == "private, no-store"
+        and headers.get("pragma") == "no-cache")
+
+
+def workload_validation(results: list[dict], *, requests_per_phase: int, preflight: dict) -> dict:
+    failures: Counter[str] = Counter()
+    expected = {(mode, concurrency) for mode in ("get_unpaced_diagnostic", "list_governed_40")
+                for concurrency in (1, 10, 25)}
+    actual = [(row.get("mode"), row.get("concurrency")) for row in results]
+    if set(actual) != expected or len(actual) != len(expected):
+        failures["missing_or_duplicate_phase"] += 1
+    if preflight != {"missing_bearer_status": 401, "foreign_resume_status": 404,
+                     "bootstrap_status": 200, "bootstrap_contract_valid": True}:
+        failures["preflight_boundary_or_contract"] += 1
+    for phase in results:
+        if phase.get("state") == "not_started_deadline":
+            failures["unstarted_phase"] += 1
+        rows = phase.get("requests", [])
+        if len(rows) != requests_per_phase or phase.get("offered") != requests_per_phase:
+            failures["request_denominator"] += 1
+        for row in rows:
+            if row["status"] == 200:
+                if row.get("contract_valid") is not True:
+                    failures["owned_response_contract"] += 1
+            elif (row["status"] != 429 or phase["mode"] != "list_governed_40"
+                    or row.get("capacity_refusal_valid") is not True):
+                failures["unexpected_status_or_error"] += 1
+    return {"passed": not failures, "failures": dict(failures),
+            "production_capacity_qualified": False}
 
 
 def finish_owned_http(*, server, thread, guards, finalizers) -> None:

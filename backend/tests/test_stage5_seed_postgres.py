@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from scripts.run_stage5_capacity import migrate
 from scripts.stage5_capacity import Plan
 from scripts.stage5_resources import Resources, private_json
-from scripts.stage5_seed import seed
+from scripts.stage5_seed import seed, synthetic_email
 
 
 @pytest.mark.parametrize("buyers_percent", [20, 25])
@@ -38,7 +38,7 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
         generator = fixture.configured.__wrapped__(monkeypatch, resource.directory)
         case = next(generator)
         for uid in range(1, 9):
-            assert case.accounts.register(email=f"capacity-{uid}@example.test", password=fixture.PASSWORD,
+            assert case.accounts.register(email=synthetic_email(uid), password=fixture.PASSWORD,
                 policy_version="2026-10-08") == uid
         data = seed(engine, Plan(buyers_percent=buyers_percent))
         assert data["opportunities"] == 100490 and data["candidate_password_accounts"] == 8
