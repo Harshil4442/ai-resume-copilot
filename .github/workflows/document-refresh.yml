@@ -15,6 +15,10 @@ on:
         description: Build current committed source and require new V4 native reading-order acceptance
         type: boolean
         default: false
+      resume_completed_source_readback:
+        description: Continue only the exact completed 41108319542 source jobs without another Build or Job
+        type: boolean
+        default: false
       recover_failed_native_job:
         description: Exact failed synthetic Job to reconcile once before a fresh full refresh
         type: string
@@ -58,6 +62,7 @@ jobs:
       RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
       UPGRADE_CURRENT_V2_TO_V3: ${{ github.event_name == 'workflow_dispatch' && inputs.upgrade_current_v2_to_v3 || false }}
       SOURCE_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_revision || false }}
+      RESUME_COMPLETED_SOURCE_READBACK: ${{ github.event_name == 'workflow_dispatch' && inputs.resume_completed_source_readback || false }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Initialize private maintenance paths
@@ -70,6 +75,7 @@ jobs:
           printf '%s\n' "READBACK_DIRECTORY=$RUNNER_TEMP/document-refresh-original-40805300453" >> "$GITHUB_ENV"
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
           printf '%s\n' "CONSUMED_BUNDLE=$RUNNER_TEMP/document-refresh-consumed-audit" >> "$GITHUB_ENV"
+          printf '%s\n' "COMPLETED_SOURCE_ORIGINAL=$RUNNER_TEMP/completed-source-original-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -88,6 +94,19 @@ jobs:
           test "$RESCUE_EXPIRED_V2" != true || test -z "$RECOVER_FAILED_NATIVE_JOB"
           test "$RETIRE_EXPIRED_V2" != true || test "$RESCUE_EXPIRED_V2" != true
           test "$UPGRADE_CURRENT_V2_TO_V3" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true; }
+          test "$RESUME_COMPLETED_SOURCE_READBACK" != true || { test "$REFRESH_MODE" = full-source-refresh && test "$SOURCE_REVISION" = true && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" = false && test "$RESCUE_EXPIRED_V2" = false && test "$UPGRADE_CURRENT_V2_TO_V3" = false; }
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        if: env.RESUME_COMPLETED_SOURCE_READBACK == 'true'
+        with:
+          python-version: "3.12"
+      - name: Verify completed-source continuation before Google auth
+        if: env.RESUME_COMPLETED_SOURCE_READBACK == 'true'
+        run: |
+          python -m pip install --disable-pip-version-check uv==0.11.32
+          uv sync --project backend --frozen --all-groups
+          (cd backend && .venv/bin/pytest -q tests/test_document_source_readback_resume.py)
+          backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode retrieve --original-directory "$COMPLETED_SOURCE_ORIGINAL"
+          backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode verify --original-directory "$COMPLETED_SOURCE_ORIGINAL"
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}
@@ -106,7 +125,7 @@ jobs:
         if: env.REFRESH_MODE == 'monitor'
         run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode monitor --output-directory "$OUTPUT_DIRECTORY"
       - name: Retrieve prior owned native proof journals
-        if: env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'
+        if: env.RESUME_COMPLETED_SOURCE_READBACK != 'true' && (env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -139,11 +158,19 @@ jobs:
           fi
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Normalize only the exact completed source-readback history
+        if: env.RESUME_COMPLETED_SOURCE_READBACK != 'true' && (env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh')
+        run: |
+          normalized="$RUNNER_TEMP/document-history-normalized-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          selected=$(backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode select-history \
+            --history-directory "$HISTORY_DIRECTORY" --output-directory "$normalized")
+          selected_path=$(printf '%s' "$selected" | python -c 'import json,sys; print(json.load(sys.stdin)["history_directory"])')
+          echo "HISTORY_DIRECTORY=$selected_path" >> "$GITHUB_ENV"
       - name: Retrieve exact consumed history for read-only audit when needed
         if: env.REFRESH_MODE == 'audit-consumed-v2-history' || (env.SOURCE_REVISION == 'true' && env.REFRESH_MODE == 'full-source-refresh') || (env.REFRESH_MODE == 'refresh' && env.RETIRE_EXPIRED_V2 != 'true' && env.RESCUE_EXPIRED_V2 != 'true' && env.UPGRADE_CURRENT_V2_TO_V3 != 'true')
         run: |
           args=(--output-directory "$CONSUMED_BUNDLE")
-          if [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then
+          if [[ "$REFRESH_MODE" = audit-consumed-v2-history || "$RESUME_COMPLETED_SOURCE_READBACK" = true ]]; then
             args+=(--force-audit)
           else
             args+=(--prior-history-directory "$HISTORY_DIRECTORY")
@@ -298,8 +325,14 @@ jobs:
             args+=(--reviewed-application-context --consumed-history-bundle "$CONSUMED_BUNDLE")
           fi
           backend/.venv/bin/python backend/scripts/document_refresh.py "${args[@]}"
+      - name: Continue only the exact completed source-native readback
+        if: env.REFRESH_MODE == 'full-source-refresh' && env.SOURCE_REVISION == 'true' && env.RESUME_COMPLETED_SOURCE_READBACK == 'true'
+        run: |
+          backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode resume \
+            --original-directory "$COMPLETED_SOURCE_ORIGINAL" --consumed-history-bundle "$CONSUMED_BUNDLE" \
+            --output-directory "$OUTPUT_DIRECTORY"
       - name: Build full-source inspector, prove native cases and transition exact pins
-        if: env.REFRESH_MODE == 'full-source-refresh'
+        if: env.REFRESH_MODE == 'full-source-refresh' && env.RESUME_COMPLETED_SOURCE_READBACK != 'true'
         run: |
           args=(--mode full-source-refresh --publish-candidate --prior-history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY")
           if [[ "${SOURCE_REVISION:-false}" = true ]]; then
