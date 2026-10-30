@@ -110,7 +110,10 @@ not inflate successful throughput.
 The CLI preserves its report and exits nonzero for failed controls, any bad owned
 200 body, missing phases/requests, unexpected statuses, transport/deadline errors,
 or incomplete cleanup. A governed 429 is accepted only as an explicit refusal
-after checking the actual capacity error body and Retry-After/cache headers;
+after checking the actual capacity error body and Retry-After/cache headers.
+Cache-Control requires exactly the case-insensitive `private` and `no-store`
+directives, independent of order/ordinary whitespace; permissive additions,
+parameters, duplicates or missing directives fail.
 it remains outside successful-response throughput. Even a valid local workload
 keeps `production_capacity_qualified` false.
 
@@ -214,6 +217,13 @@ the public opportunities response. Those original reports remain failed contract
 measurements. Their green workflow exits exposed a missing CLI failure gate;
 physical transport success is separate from workload acceptance. The corrected
 fixture/oracle and mandatory failure gate need a fresh actual Linux result.
+A subsequent run at `3eb7c053` produced 170 valid HTTP200 bodies and 130 governed
+HTTP429 responses in each 300-request scenario, with valid owner controls and
+verified cleanup. Its new gate correctly failed because the oracle compared
+Cache-Control directive order literally: the actual shipping middleware emits
+`no-store, private`. A transport-blocked regression reproduces that exact
+middleware/helper response. Those failed reports remain retained; the bounded
+semantic-header correction still requires a fresh actual Linux result.
 A later Mac Docker image-inspect
 probe timed out before any resource creation and was not repeated.
 
