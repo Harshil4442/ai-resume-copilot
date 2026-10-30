@@ -133,6 +133,13 @@ deployment inputs are additionally hash-bound in `native_runtime_sha256`.
 
 ## Native imports
 
+The separate [development service-capture tool](NATIVE_QUALITY_INPUT_ACQUISITION.md)
+can acquire original service HTTP responses for the frozen 40 development
+inputs under an explicit local permit. Its exports are deliberately unreviewed;
+unknown responses cannot be retried or retrieved. It creates no native Job or
+approval. Held-out acquisition and the full native/page reviews below remain
+pending, and the final 200-case requirement is unchanged.
+
 Inputs are original native bytes from the pinned materialization manifest plus:
 
 1. A hash-bound native-validation map in the existing quality packet format:
