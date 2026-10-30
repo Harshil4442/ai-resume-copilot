@@ -6,7 +6,11 @@ source-only fake subprocess tests do not constitute this qualification.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -15,6 +19,7 @@ from urllib.parse import urlsplit
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
+MAX_REPORT_BYTES = 4 * 1024**2
 SUITES = (
     "tests/test_schema25_app_compatibility_v3_postgres.py",
     "tests/test_evidence_writer_fence_postgres.py",
@@ -42,6 +47,9 @@ REQUIRED_CASES = {
 }
 
 
+PUBLIC_CASES = {'test_schema25_app_compatibility_v3_postgres': ('test_required_ci_missing_postgres_url_fails_before_requesting_any_database', 'test_pinned_historical_and_candidate_processes_exchange_pilot_storage', 'test_actual_processes_read_imported_evidence_without_changing_exact_storage', 'test_candidate_refuses_legacy_missing_or_stale_versions_and_preserves_reviewed_storage', 'test_fenced_historical_writer_cannot_mutate_newer_evidence_without_any_displayed_version'), 'test_evidence_writer_fence_postgres': ('test_required_bridge_never_skips_or_starts_a_service_without_its_url', 'test_catalog_and_installation_preserve_every_owned_customer_row', 'test_unmarked_dml_including_empty_statements_is_denied_without_data_change', 'test_exact_candidate_flush_cannot_arm_a_later_unrelated_pending_item', 'test_actual_candidate_create_update_delete_adapters_use_only_temporary_marker', 'test_scope_commit_rollback_and_reused_connection_never_leak_marker', 'test_preexisting_and_nested_scopes_refuse_and_rollback', 'test_failed_sql_rolls_back_and_preserves_original_error_and_no_marker', 'test_contested_install_times_out_atomically_without_partial_fence', 'test_install_waits_for_real_old_commit_before_new_cas_admission', 'test_already_admitted_pre_sql_old_handler_cannot_write_after_committed_fence'), 'test_schema26_catalog_postgres': ('test_schema26_actual_catalog_preserves_financial_shape_and_old25_reader_refuses', 'test_actual_privileged_fixture_role_is_not_a_qualified_runtime_writer', 'test_actual_catalog_drift_refuses_then_rollback_restores_the_original_fence'), 'test_evidence_review_postgres': ('test_ci_cannot_silently_skip_missing_native_postgres', 'test_one_exact_snapshot_cannot_authorize_two_concurrent_mutations'), 'test_source_transcription_review_postgres': ('test_ci_cannot_silently_skip_missing_native_transcription_postgres', 'test_one_shown_snapshot_authorizes_at_most_one_competing_action', 'test_concurrent_imports_produce_one_server_item_per_exact_source_section', 'test_cached_deferred_source_cannot_hide_rotation_from_context_or_locked_action'), 'test_unified_synchronous_postgres': ('test_concurrent_identical_inline_requests_cannot_generate_or_charge_twice', 'test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres', 'test_unknown_supplier_hold_survives_personal_claim_route_rollback_on_postgres', 'test_changed_source_during_native_dispatch_admission_on_postgres'), 'test_privacy_erasure_postgres': ('test_concurrent_same_fresh_intent_commits_one_erasure_and_one_detached_completion', 'test_rollback_and_unknown_commit_observe_the_same_completion_without_repeating_native', 'test_archived_e23_denial_commit_then_schema26_fence_requires_fresh_owner_intent')}
+SAFE_DIAGNOSTIC_TYPES = frozenset({"AssertionError", "RuntimeError", "ValueError", "TypeError", "IntegrityError", "ProgrammingError", "OperationalError", "HTTPException", "TimeoutError", "TimeoutExpired", "pytest.fail.Exception", "Failed"})
+
 class Compatibility26Denied(RuntimeError):
     pass
 
@@ -51,8 +59,88 @@ def need(value, reason):
         raise Compatibility26Denied("schema26_compatibility_" + reason)
 
 
+def _line_hints(module: str, diagnostic: str) -> list[int]:
+    source = ROOT / "backend/tests" / (module + ".py")
+    if module not in PUBLIC_CASES or source.is_symlink() or not 0 < source.stat().st_size <= 1024**2:
+        return []
+    bound = len(source.read_bytes().splitlines())
+    names = (str(source), "tests/" + source.name, "backend/tests/" + source.name)
+    pattern = re.compile(r"^(?:" + "|".join(re.escape(name) for name in names)
+        + r"):([1-9][0-9]{0,5})(?::|$)", re.MULTILINE)
+    return sorted({int(match[1]) for match in pattern.finditer(diagnostic) if int(match[1]) <= bound})[:3]
+
+
+def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
+    """Case-only observation of the original failed child; never qualification.
+
+    No parameter labels, arbitrary XML attributes, diagnostic text, process
+    streams or filesystem paths leave this reader. The original report remains
+    untouched, including when it is unavailable or its custody changes.
+    """
+    unavailable = {"schema_version": "schema26-ci-failure-v1", "qualified": False,
+        "report_state": "unavailable"}
+    directory_fd = report_fd = None
+    try:
+        if report.name != "junit.xml" or type(returncode) is not int or not -2**31 < returncode < 2**31 or returncode == 0:
+            return unavailable
+        directory_fd = os.open(report.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        directory = os.fstat(directory_fd)
+        if ((directory.st_dev, directory.st_ino, directory.st_uid) != anchor or directory.st_uid != os.getuid()
+                or not stat.S_ISDIR(directory.st_mode) or stat.S_IMODE(directory.st_mode) != 0o700):
+            return unavailable
+        report_fd = os.open(report.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+        before = os.fstat(report_fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or not 0 < before.st_size <= MAX_REPORT_BYTES:
+            return unavailable
+        raw = os.read(report_fd, MAX_REPORT_BYTES + 1)
+        after = os.fstat(report_fd)
+        fields = ("st_dev", "st_ino", "st_uid", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if len(raw) != before.st_size or any(getattr(before, key) != getattr(after, key) for key in fields):
+            return unavailable
+        if b"<!doctype" in raw.lower() or b"<!entity" in raw.lower():
+            return unavailable
+        cases = ElementTree.fromstring(raw).findall(".//testcase")
+        if not 0 < len(cases) <= 256:
+            return unavailable
+        counts = dict.fromkeys(("passed", "failure", "error", "skipped"), 0)
+        failures = []
+        for ordinal, case in enumerate(cases, start=1):
+            module, name = case.get("classname", ""), case.get("name", "").split("[", 1)[0]
+            module = module.removeprefix("backend.tests.") if module.startswith("backend.tests.") else module.removeprefix("tests.")
+            if module not in PUBLIC_CASES or name not in PUBLIC_CASES[module]:
+                return unavailable
+            observed = [kind for kind in ("failure", "error", "skipped") if case.find(kind) is not None]
+            if len(observed) > 1:
+                return unavailable
+            status = observed[0] if observed else "passed"
+            counts[status] += 1
+            if observed:
+                node = case.find(status)
+                assert node is not None
+                diagnostic_type = node.get("type", "")
+                failures.append({"case_id": module + "::" + name, "ordinal": ordinal, "status": status,
+                    "diagnostic_type": diagnostic_type if diagnostic_type in SAFE_DIAGNOSTIC_TYPES else "OTHER",
+                    "source_line_hints": _line_hints(module, "".join(node.itertext())),
+                    "diagnostic_sha256": hashlib.sha256(json.dumps({"case": case.attrib,
+                        "diagnostic": ElementTree.tostring(node, encoding="unicode")},
+                        sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
+        result = {"schema_version": "schema26-ci-failure-v1", "qualified": False,
+            "report_state": "observed_unqualified", "child_returncode": returncode,
+            "counts": counts, "cases": failures}
+        return result if len(json.dumps(result).encode()) <= 65536 else unavailable
+    except Exception:
+        return unavailable
+    finally:
+        for descriptor in (report_fd, directory_fd):
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass  # Diagnostic cleanup must never replace the original child refusal.
+
+
 def validate_report(path: Path):
-    need(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= 4 * 1024**2, "report_required")
+    need(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= MAX_REPORT_BYTES, "report_required")
     cases = ElementTree.parse(path).findall(".//testcase")
     need(bool(cases) and not any(case.find(key) is not None for case in cases
         for key in ("skipped", "failure", "error")), "every_native_case_required")
@@ -91,6 +179,8 @@ def run() -> int:
         # No retry or directory removal. Nested fixture descendants may remain;
         # retain this invocation's report path without claiming their cleanup.
         raise Compatibility26Denied("schema26_compatibility_child_outcome_unknown") from None
+    if result.returncode != 0:
+        print(json.dumps(_failure_summary(report, anchor, result.returncode), sort_keys=True, separators=(",", ":")))
     need(result.returncode == 0, "native_child_failed")
     need(len(result.stdout) <= 4 * 1024**2 and len(result.stderr) <= 4 * 1024**2, "child_output_bound")
     count = validate_report(report)
