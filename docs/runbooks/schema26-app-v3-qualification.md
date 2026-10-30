@@ -15,7 +15,7 @@ nodes, source consumers, evidence fence, exact26 schema/issuer/catalog, operator
 owned-input acquisition tools, privacy recovery, financial successors, frontend
 contracts, native tests and their finite transitive helpers. The final app
 inventory is287 files, SHA256
-`15b71a07e820143ae1b34e4725edf848451599a6d163b1e0344a17223a4352a9`.
+`cc0f5e1fd7b27417f9351baf7b4fc8595e905577fa86e0f066919af43ca6e21b`.
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
 
@@ -108,6 +108,10 @@ infer SQL completion from a missing user or native tombstone. Fresh recovery is
 purpose-bound, one-use, short-lived and erasure-only; it cannot authenticate,
 reactivate or unban an account. Its detached exact completion audit survives the
 transactional deletion of the User/token rows.
+The native configuration commitment hashes the exact validated canonical UTF8
+configuration text. It does not reuse or relax the separate password digest's
+credential-size limit; the actual configured composition's pre/post checks remain
+in place.
 
 Ordinary app rollback retains26 and the fence. Returning an old e23 image is a
 restricted recovery: its evidence/account-erasure writes remain denied. It is not

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -22,6 +24,71 @@ from app.models import (
 from app.routers.privacy_erasure import ErasureConfirm
 
 NOW = datetime.now(UTC)
+
+
+def test_closed_ownership_uses_actual_configured_canonical_text_and_witness_boundary(monkeypatch):
+    """Real configuration/composition shell; retained ownership reads are inert ports."""
+    from app.domains.candidate_accounts import production
+    from app.domains.candidate_accounts.production import (
+        CandidateNativeConfiguration,
+        ConfiguredCandidateAccounts,
+    )
+    from app.domains.candidate_accounts.service import credential_digest
+    from app.domains.recovery.contracts import canonical, fingerprint
+    from app.domains.recovery.gcp_contracts import RegistryPin, WitnessBody, WitnessPin
+    from app.domains.recovery.gcp_partitioned_contracts import PartitionedPin, PartitionedResource
+    from app.domains.recovery.gcp_publication_contracts import PublicationPin
+    from app.domains.recovery.password_reauth import CandidateWebSession
+    from app.domains.recovery.store import GuardDenied
+
+    execution = RegistryPin(database="projects/synthetic-mail-proof/databases/execution", database_uid=uuid4(),
+        authority_id=uuid4(), incarnation=1, epoch_id=uuid4())
+    protected = execution.model_copy(update={"database": "projects/synthetic-mail-proof/databases/protected",
+        "database_uid": uuid4(), "authority_id": uuid4(), "epoch_id": uuid4()})
+    pin = PartitionedPin(authority=PublicationPin(registry=protected, target=execution,
+        journal_bucket="synthetic-mail-proof"), lanes=2, directory_shards=2)
+    resource = PartitionedResource(pin=pin, bucket=pin.authority.journal_bucket, generation="101",
+        sha256=fingerprint(pin.model_dump(mode="json")))
+    body = WitnessBody(registry=execution, state="OPEN", manifest_generation="1",
+        manifest_sha256="a" * 64, partitions_sha256="b" * 64)
+    witness = WitnessPin(registry=execution, bucket=resource.bucket, path="candidate/witness", generation="102",
+        sha256=fingerprint(body.model_dump(mode="json")))
+    config = CandidateNativeConfiguration(execution_witness_pin=witness, execution_witness_body=body,
+        publication_resource=resource, epoch_generation=1)
+    configured = ConfiguredCandidateAccounts(config)
+    assert type(configured._raw) is str and configured._raw == canonical(config.model_dump(mode="json"))
+    assert len(configured._raw.encode()) > 1024
+    with pytest.raises(GuardDenied):
+        credential_digest(configured._raw)  # Password limits are not configuration limits.
+    port = Port()
+    revision = deletion_provenance.closed_revision(port.get(CandidatePasswordAccount, 1), port.get(User, 1))
+    context = CandidateWebSession(candidate_id=revision.candidate_id, account_binding_id=revision.account_binding_id,
+        session_id=uuid4(), authentication_method="password")
+    trace = []
+    first = {"controlled_owned_revision": revision.model_dump(mode="json")}
+    def denied(candidate, *, auth_generation):
+        assert candidate == context and auth_generation == revision.auth_generation
+        trace.append("denial")
+        return True
+    logout = SimpleNamespace(confirm_deleted_cookie=denied)
+    def read(current, shown_revision, email_sha):
+        assert current is logout and shown_revision == revision and email_sha == "d" * 64
+        trace.append("owned-read")
+        return context, first
+    def configuration():
+        trace.append("configuration")
+        return config
+    fence = SimpleNamespace(pin=SimpleNamespace(registry=execution), check=lambda expected: trace.append("witness"))
+    composition = SimpleNamespace(service=SimpleNamespace(cookie_logout=logout), fence=fence)
+    monkeypatch.setattr(production, "_configuration", configuration)
+    monkeypatch.setattr(production, "_build", lambda expected: composition)
+    monkeypatch.setattr(production, "production_candidate_accounts", lambda: configured)
+    monkeypatch.setattr(deletion_provenance, "_read", read)
+    monkeypatch.setenv("APP_RELEASE", "c" * 40)
+    proof = deletion_provenance.read_closed_ownership(revision, "d" * 64)
+    assert proof == fingerprint({"ownership": first, "configuration_sha256": hashlib.sha256(configured._raw.encode()).hexdigest(),
+        "application_source": "c" * 40, "adapter_sha256": hashlib.sha256(Path(deletion_provenance.__file__).read_bytes()).hexdigest()})
+    assert trace == ["configuration", "witness", "owned-read", "denial", "owned-read", "configuration", "witness"]
 
 
 class Query:

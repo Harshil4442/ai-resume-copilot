@@ -92,7 +92,7 @@ def read_closed_ownership(revision: CandidateCredentialRevision, email_sha256: s
         if first != second:
             raise GuardUnavailable("Closed native ownership changed during observation")
         return fingerprint({"ownership": first,
-            "configuration_sha256": credential_digest(configured._raw.decode()),
+            "configuration_sha256": hashlib.sha256(configured._raw.encode()).hexdigest(),
             "application_source": source,
             "adapter_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()})
 

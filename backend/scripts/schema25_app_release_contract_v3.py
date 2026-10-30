@@ -19,7 +19,7 @@ CONTRACT = "hirewiz_schema26_app_rolling_v3"
 PRIOR_RELEASE = "e23c940e6133323c3c1ff11e646a4ca9b2b0b165"
 PRIOR_APP_SHA256 = "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40800a"
 # Exact reviewed-source inventory; this pin is not native qualification.
-CANDIDATE_APP_SHA256 = '15b71a07e820143ae1b34e4725edf848451599a6d163b1e0344a17223a4352a9'
+CANDIDATE_APP_SHA256 = 'cc0f5e1fd7b27417f9351baf7b4fc8595e905577fa86e0f066919af43ca6e21b'
 CANDIDATE_APP_FILES = 287
 COMPATIBILITY_STEP = "Qualify schema26 app v3 compatibility"
 COMPATIBILITY_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_compatibility.py"
@@ -68,7 +68,7 @@ NEW_PATHS = ("backend/scripts/schema25_app_release_contract_v3.py",
     "backend/scripts/review_canary_audience_schema26.py", "backend/tests/test_schema26_operator_successors.py",
     "backend/tests/test_supported_evaluation_services_postgres.py",
     "backend/tests/test_model_cost_result_lifetime_postgres.py",
-    "docs/runbooks/schema26-app-v3-qualification.md")
+    "docs/runbooks/schema26-app-v3-qualification.md", "frontend/lib/ownerProfile.test.tsx")
 
 HTTP_PATHS = {'/api/auth/dashboard': '41015050ca3e00275c84be7c17ac5825fb323aacb81f29d1c7fe59cc3290e8d8', '/api/auth/privacy-erasure/confirm': '5d71115415ee37fd172c9397c936d99e3d89c6360de5e3104dce449740138da3', '/api/auth/privacy-erasure/request': '989596113900a76291cfb29f9d6ce2756552c15ccabfd587b6cedcf070647e56', '/api/v1/evidence-items/transcription-review/{resume_id}': 'ce5716e3b997f80f1a6d2a5f37df1ec259e07e6fd8b0e05ba63edff10f805f6a', '/api/v1/evidence-items/{evidence_id}': '4dc85e1f8a0e249a55c1ecd9eb43c5614c912edeb60e6e9717b02982ce25a68c', '/api/v1/evidence-items/{evidence_id}/transcription-review': 'e4bd0e334ffc3be625c946ff651a1ca3661d13e5a03d982de926e6b31c61ec83'}
 HTTP_SCHEMAS = {'DashboardOpportunities': '0337e64b8cb96f25d9fddbeda5f0fe35484598101da937716980f8de2ee12d27', 'DashboardOpportunity': '8c844a01a334ddc6ff7f66a9c97698f15738f2646139dfb3e08c34054ea5a1d1', 'DashboardReminder': '83979e649ca361f5fabdf30fef3379a0ee361700c15e560612f90b92cd4d195f', 'DashboardResumeSignal': '8cdbecba7f818c7b6cc4b1dfcefcfb9cf89673d49f0a67c6b26c397591a6f274', 'DashboardSummary': '0e36bc6ad4686650753cc08d5700c5743ad565dbe8a3e4591f33b8cc7800a77c', 'ErasureCompleted': 'c979a12a196d3a0e91370b24c0369b02a718481e85701c7cb2e24b7176eded26', 'ErasureConfirm': 'e8ec671f74c32d33e9faabe51a7b90ca0bcab4a3ae9cb136bd0b2ee57abea5ef', 'ErasureRequest': '22f796938f083c3f08c25e59a00b8cd0da086d34daf1f78e2cdd697e8a8f29cf', 'ErasureRequested': '70660ea70a1e3a288b1a325e2a4d20711162f05bb217684260c44ffbb553f570', 'EvidenceResponse': 'c227750a2fda2a980ba30772562e947e72ce9f810ba113405b1e88837146de2e', 'EvidenceUpdate': '61ad43dc56dc413dcc92c6c5a624c5599a4cd46380df761346d400173e7993b3', 'OwnedDashboardView': 'c67e0b406ebbd841f777388383f2d22153cdd95777b6aab914f9226134bd82b6', 'TranscriptionReviewAction': '97d31002f30dac044d837acbdf08b85a0654334eeb0b2131ebca9322c59d04ac', 'TranscriptionReviewResponse': '8fbad92f42eb522ca7865cccf301f049148726c363e5c7ce0debd8846f19194a', 'TranscriptionSectionReview': 'be8c71dd374bf97a93c6750903b7c4d59af848f817a4cbc9ce6246cbd99b2834'}

@@ -212,8 +212,7 @@ jobs:
           scripts/schema25_app_release_contract_v3.py scripts/evidence_writer_schema26_contract.py
           scripts/qualify_schema26_compatibility.py scripts/qualify_schema25_retained_v2.py
           scripts/reconcile_native_expenses_schema26.py scripts/review_canary_audience_schema26.py
-          app/domains/career/evidence_fence_definition.py app/domains/career/evidence_write_fence.py
-          app/domains/credits/reconciliation_schema26.py ../infra/gcp/schema26_app_rolling_v3.py
+          ../infra/gcp/schema26_app_rolling_v3.py
           app/routers/privacy_erasure.py
           scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
           ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py

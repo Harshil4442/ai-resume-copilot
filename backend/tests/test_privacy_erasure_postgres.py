@@ -413,7 +413,7 @@ def test_archived_e23_denial_commit_then_schema26_fence_requires_fresh_owner_int
         result = observe(SimpleNamespace(cookie_logout=logout))
         observations.append("controlled-config-and-witness-after")
         return result
-    configured = SimpleNamespace(_raw=b"synthetic-pinned-config-only", _invoke=controlled_configuration_gate)
+    configured = SimpleNamespace(_raw="synthetic-pinned-config-only", _invoke=controlled_configuration_gate)
     monkeypatch.setattr(production, "production_candidate_accounts", lambda: configured)
     monkeypatch.setenv("APP_RELEASE", "c"*40)  # Synthetic component source binding, never serving identity.
     monkeypatch.setattr(mail, "configured", lambda: True)
