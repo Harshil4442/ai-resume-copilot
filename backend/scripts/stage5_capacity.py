@@ -127,6 +127,10 @@ def workload_validation(results: list[dict], *, requests_per_phase: int, preflig
         rows = phase.get("requests", [])
         if len(rows) != requests_per_phase or phase.get("offered") != requests_per_phase:
             failures["request_denominator"] += 1
+        indices = [row.get("index") for row in rows]
+        if (any(type(index) is not int for index in indices)
+                or sorted(indices) != list(range(requests_per_phase))):
+            failures["request_indices"] += 1
         for row in rows:
             if row["status"] == 200:
                 if row.get("contract_valid") is not True:

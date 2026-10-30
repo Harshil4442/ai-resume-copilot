@@ -200,11 +200,11 @@ def measured_results(count=5):
 def test_workload_validation_preserves_failures_and_expected_refusals_without_capacity_claim(failure):
     results, preflight = measured_results(), dict(PREFLIGHT)
     # A correctly identified governed refusal is never a successful response.
-    results[-1]["requests"][0] = {"status": 429, "contract_valid": False, "capacity_refusal_valid": True}
+    results[-1]["requests"][0] = {"index": 0, "status": 429, "contract_valid": False, "capacity_refusal_valid": True}
     if failure == "contract":
         results[0]["requests"][0]["contract_valid"] = False
     elif failure in {"503", "401", "404", "transport_error", "deadline", "429_unknown", "429_get"}:
-        results[0]["requests"][0] = {"status": int(failure) if failure.isdigit() else
+        results[0]["requests"][0] = {"index": 0, "status": int(failure) if failure.isdigit() else
             (429 if failure.startswith("429") else failure), "capacity_refusal_valid": failure == "429_get"}
     elif failure == "missing_phase":
         results.pop()
@@ -220,6 +220,32 @@ def test_workload_validation_preserves_failures_and_expected_refusals_without_ca
     assert validation["passed"] is (failure is None)
     assert validation["production_capacity_qualified"] is False
     assert bool(validation["failures"]) is (failure is not None)
+
+
+@pytest.mark.parametrize("indices", [
+    [0, 0, 0, 0, 0], [0, 1, 2, 3, None], [False, 1, 2, 3, 4],
+    [-1, 1, 2, 3, 4], [0, 1, 2, 3, 5], [0.0, 1, 2, 3, 4], ["0", 1, 2, 3, 4],
+])
+def test_exact_phase_denominator_refuses_missing_duplicate_noninteger_and_outside_indices(indices):
+    results = measured_results()
+    for phase in results:
+        for row, index in zip(phase["requests"], indices, strict=True):
+            if index is None:
+                del row["index"]
+            else:
+                row["index"] = index
+    validation = workload_validation(results, requests_per_phase=5, preflight=PREFLIGHT)
+    assert validation["passed"] is False and validation["failures"] == {"request_indices": 6}
+    assert validation["production_capacity_qualified"] is False
+
+
+def test_indexed_deadline_and_unknown_rows_stay_in_complete_denominator_but_fail_status():
+    results = measured_results()
+    results[0]["requests"][0].update(status="deadline", contract_valid=False)
+    results[0]["requests"][1].update(status="transport_error", contract_valid=False)
+    validation = workload_validation(results, requests_per_phase=5, preflight=PREFLIGHT)
+    assert validation["failures"] == {"unexpected_status_or_error": 2}
+    assert validation["passed"] is False
 
 
 @pytest.mark.parametrize("failure", [None, "contract", "preflight", "cleanup"])
