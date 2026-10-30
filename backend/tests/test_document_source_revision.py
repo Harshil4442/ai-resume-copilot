@@ -62,7 +62,7 @@ def build(source, *, definitions=False):
         "name": release.prior.PARENT + "/builds/" + native.historical.BUILD_ID, "status": "SUCCESS",
         "sourceProvenance": {"resolvedStorageSource": copy.deepcopy(storage)},
         "results": {"images": [{"name": request["images"][0], "digest": IMAGE.split("@", 1)[1]}]}}
-    recipe = (profile.definition_recipe(PARENT, root) if definitions else (root / builder.FULL_SOURCE_DOCKERFILE).read_bytes())
+    recipe = (profile.definition_recipe(PARENT, root) if definitions else (root / current.dockerfile).read_bytes())
     identity = builder.build_contract(value, NONCE, profile.digest(recipe), full_source=not definitions,
         source_revision=not definitions, source_definitions=definitions, source_parent=PARENT if definitions else None,
         source_commit=current.commit)
@@ -79,9 +79,9 @@ def test_only_reviewed_source_hashes_change_without_weakening_policy():
     current = json.loads(contents[profile.POLICY_PATH])
     assert {key: value for key, value in current.items() if key != "source_sha256"} == {
         key: value for key, value in previous.items() if key != "source_sha256"}
-    assert {name for name in hashes if hashes[name] != previous["source_sha256"][name]} == {
-        "infra/document-processing/processor.py", "backend/app/services/parsing.py"}
-    assert policy != courier.POLICY_SHA256 and len(hashes) == 21
+    assert {name for name in hashes if hashes[name] != previous["source_sha256"].get(name)} == {
+        "infra/document-processing/processor.py", "backend/app/services/parsing.py", profile.DOCKERFILE}
+    assert policy != courier.POLICY_SHA256 and len(hashes) == 22
 
 
 def test_dirty_native_or_unversioned_helper_bytes_never_authorize_new_work(source):
@@ -114,7 +114,7 @@ def test_distinct_full_source_and_definition_child_builds_bind_git_and_archive(s
     value, identity = build(source, definitions=definitions)
     assert identity["kind"] == (profile.DEFINITIONS_KIND if definitions else profile.KIND)
     assert identity["source_commit"] == current.commit and identity["qualification_sha256"] == current.qualification_sha256
-    assert identity["fixed_renderer_base"] == (PARENT if definitions else None)
+    assert identity["fixed_renderer_base"] == (PARENT if definitions else courier.IMAGE)
     if definitions:
         recipe = profile.definition_recipe(PARENT, root)
         assert recipe.count(PARENT.encode()) == 2 and b"apt-get" not in recipe and b"COPY --from=definitions /var/lib/clamav /var/lib/clamav" in recipe

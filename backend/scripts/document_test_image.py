@@ -43,6 +43,7 @@ SOURCES = (
     "backend/evals/assets/courier_prime/CourierPrime-BoldItalic.ttf",
     "backend/evals/assets/courier_prime/OFL.txt",
     "backend/evals/assets/courier_prime/provenance.json",
+    "infra/document-processing/source-fixed-renderer.Dockerfile",
 )
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LABEL = "hirewiz.document-test.source."
@@ -1326,6 +1327,10 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
     _progress("daemon", completed_cases=0)
     docker = docker_command()
     _progress("source_hashes")
+    if type(source_revision) is not bool:
+        raise DocumentImageError()
+    # Bind both recipes as context; build() executes only the public Dockerfile.
+    # A production image additionally requires independent native Build proof.
     hashes = source_hashes()
     _progress("build")
     image = image or build(docker, platform, hashes)

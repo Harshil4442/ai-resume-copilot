@@ -677,3 +677,35 @@ def test_known_pre_native_record_does_not_hide_duplicates_replay_or_other_unknow
         recovery.prepare(target, stopped.history, None, refresh_module=refresh)
     assert not list(target.iterdir())
     assert_no_native_writes(stopped)
+
+
+@pytest.mark.parametrize("current_lane,pin_drift", [(True, False), (False, False), (True, True)])
+def test_exact_source_renderer_refusal_requires_fresh_current_lane_and_unchanged_pins(stopped, current_lane, pin_drift):
+    from test_document_fixed_renderer_source import retained_source_custody
+
+    files, value, archive, identity = retained_source_custody()
+    for name, content in files.items():
+        (stopped.original / name).write_bytes(content)
+    stopped.builds[identity["build_id"]] = value
+    stopped.sources[(identity["source_bucket"], identity["source_object"], identity["source_generation"])] = archive
+    inventory_nonce = recovery.sha(("inventory:" + identity["nonce"]).encode())[:32]
+    stopped.nonces.update((identity["nonce"], inventory_nonce))
+    before = {name: (stopped.original / name).read_bytes() for name in recovery.PRE_NATIVE_FILES}
+    if pin_drift:
+        rows = stopped.native_http.services["ai-resume-parser"]["template"]["containers"][0]["env"]
+        next(row for row in rows if row["name"] == "DOCUMENT_WORKER_IMAGE_DIGEST")["value"] = identity["immutable_image"]
+    target = output(stopped)
+    if current_lane and not pin_drift:
+        assert recovery.prepare(target, stopped.history, None, refresh_module=refresh,
+                                source_revision=True) == NEXT_NONCE
+        receipt = json.loads((target / "pre-native-reconciliations" / identity["nonce"] / "reconciliation.json").read_bytes())
+        assert receipt["native_acceptance"] is False and receipt["promotion_performed"] is False
+        assert receipt["old_build_replayed"] is False and receipt["successor_nonce"] != identity["nonce"]
+        assert len(receipt["absent_native_jobs"]) == 2
+        assert not (target / "terminal-recoveries").exists()
+    else:
+        with pytest.raises((refresh.RefreshDenied, probe.NativeProofDenied)):
+            recovery.prepare(target, stopped.history, None, refresh_module=refresh, source_revision=current_lane)
+        assert not list(target.iterdir())
+    assert {name: (stopped.original / name).read_bytes() for name in recovery.PRE_NATIVE_FILES} == before
+    assert all(method == "GET" for method, _ in stopped.http_calls + stopped.native_calls)

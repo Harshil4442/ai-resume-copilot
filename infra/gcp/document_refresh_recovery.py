@@ -165,7 +165,7 @@ def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
     """Recognize a completed V3 receipt only as consumed-history identity."""
     candidate = build.infra("document_candidate_release")
     profile = candidate.profile
-    identity = binding.get("build_identity") if type(binding) is dict else None
+    identity: Any = binding.get("build_identity") if type(binding) is dict else None
     keys = {"version", "kind", "nonce", "build_id", "build_resource", "builder_service_account",
             "source_bucket", "source_object", "source_generation", "source_archive_sha256",
             "refresh_dockerfile_sha256", "fixed_renderer_base", "immutable_image", "policy_sha256",
@@ -236,7 +236,7 @@ def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
 def completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build):
     """Source-profile history is identity only; current authority is reread later."""
     source_release = build.infra("document_source_release")
-    identity = binding.get("build_identity") if type(binding) is dict else None
+    identity: Any = binding.get("build_identity") if type(binding) is dict else None
     build.need(type(binding) is dict and set(binding) == {"version", "image", "build_identity"}
                and type(binding["version"]) is int and binding["version"] == 4,
                "document_refresh_prior_completed_source_receipt_changed")
@@ -310,7 +310,7 @@ def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
     prior = run / "prior-native-retirement"
     private(prior, build)
     cleanup = build.decode(read(prior / "cleanup.json", build))
-    identity = binding.get("build_identity") if type(binding) is dict else None
+    identity: Any = binding.get("build_identity") if type(binding) is dict else None
     build.need(type(identity) is dict and set(binding) == {"image", "build_identity", "probe_sha256"}
                and type(accepted) is dict and set(accepted) == set(probe.NativeAcceptance.__dataclass_fields__)
                and transition_accepted == accepted and type(complete) is dict
@@ -340,10 +340,51 @@ def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
                "document_rescue_prior_completed_receipt_changed")
 
 
+# Exact five-file artifact of workflow 41065248592: successful Build, local
+# renderer refusal, no proof or Job. This seal grants abandonment only. Native
+# Build/archive and both Job absences are independently reread on every use.
+SOURCE_PRE_NATIVE_MANIFEST = "26f318939b43ecea19e495b8cdb4094dd1a9f312c04bf1dbc0db40147ec2500e"
+
+
+def verify_source_pre_native(files, values, clients, probe, build):
+    profile = build.infra("document_source_candidate")
+    identity = values["native-build-identity.json"]
+    build.need(set(files) == set(PRE_NATIVE_FILES) and manifest(files) == SOURCE_PRE_NATIVE_MANIFEST
+        and identity.get("kind") == profile.LEGACY_KIND
+        and identity.get("source_commit") == "41c57ffb3de9b4553f18c87121b35d4186b7333c"
+        and identity.get("policy_sha256") == profile.LEGACY_POLICY_SHA256
+        and identity.get("qualification_sha256") == "949cbfed439fb42474494d63ec0dcf0c570f6dd99c02070ddcc6095d1aa1389a",
+        "document_refresh_source_pre_native_artifact_changed")
+    nonce = identity["nonce"]
+    source = {"bucket": identity["source_bucket"], "object": identity["source_object"],
+              "generation": identity["source_generation"]}
+    request = build.full_source_build_request(nonce, source, source_revision=True,
+        source_commit=identity["source_commit"], legacy_source=True)
+    build.need(values["build-create-started.json"] == {"nonce": nonce, "automatic_replay": False,
+        "request_sha256": sha(canonical(request))}, "document_refresh_source_pre_native_request_changed")
+    actual = build.verify_current_build(identity["build_id"], nonce, identity["immutable_image"])
+    build.need(actual == identity, "document_refresh_source_pre_native_build_changed")
+    nonces = (nonce, hashlib.sha256(("inventory:" + nonce).encode()).hexdigest()[:32])
+    jobs = [probe.PARENT + "/jobs/hirewiz-doc-six-" + value[:12] for value in nonces]
+    for job in jobs:
+        try:
+            clients.job(job)
+        except clients.errors.HttpError as error:
+            build.need(error.status_code == 404, "document_refresh_pre_native_absence_unverified")
+        else:
+            raise build.RefreshDenied("document_refresh_pre_native_job_exists_reconcile_only")
+    return {"nonce": nonce, "build_id": identity["build_id"], "image": identity["immutable_image"],
+        "manifest_sha256": manifest(files), "native_build_identity_sha256": sha(canonical(actual)),
+        "absent_native_job": jobs[0], "absent_native_jobs": jobs, "native_job_http_status": 404,
+        "historical_v1": False, "source_disposition": "retained_renderer_refusal_abandoned_not_acceptance"}
+
+
 def verify_pre_native(files: dict[str, bytes], clients: Any, probe: Any, build: Any) -> dict[str, Any]:
     """Reconcile a terminal Build and absent Job; never accept its image."""
     values = {name: build.decode(raw) for name, raw in files.items()}
     identity = values["native-build-identity.json"]
+    if type(identity) is dict and identity.get("kind") == build.infra("document_source_candidate").LEGACY_KIND:
+        return verify_source_pre_native(files, values, clients, probe, build)
     keys = {"version", "kind", "nonce", "build_id", "build_resource", "builder_service_account",
             "source_bucket", "source_object", "source_generation", "source_archive_sha256",
             "refresh_dockerfile_sha256", "fixed_renderer_base", "immutable_image"}
@@ -557,8 +598,9 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             resuming_original: Path | None = None, retire_expired_v2: bool = False,
             rescue_expired_v2: bool = False,
             rescue_prior_journal: Path | None = None, consumed_history: Any = None,
-            application_context: Any = None) -> str | None:
+            application_context: Any = None, source_revision: bool = False) -> str | None:
     build = refresh_module
+    build.need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
                and not (retire_expired_v2 and rescue_expired_v2)
                and (not (retire_expired_v2 or rescue_expired_v2)
@@ -702,8 +744,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     clients = probe.Clients()
     try:
         facts = {}
-        for job, (files, raw, original) in records.items():
-            fact = verify_failed(original, files, clients, probe, build)
+        for job, (files, raw, original_path) in records.items():
+            fact = verify_failed(original_path, files, clients, probe, build)
             body = build.decode(raw["disposition.json"])
             build.need(body == {**fact, "version": 1, "status": "terminal_failure_reconciled_not_acceptance",
                 "successor_nonce": body.get("successor_nonce"), "failed_job_replayed": False}
@@ -715,10 +757,12 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             facts[job] = fact
         chosen = None
         if selected is not None:
-            _, files, original = targets[0]
-            chosen = verify_failed(original, files, clients, probe, build)
+            _, files, original_path = targets[0]
+            chosen = verify_failed(original_path, files, clients, probe, build)
         open_rows, verified_pre_native, used_nonces = verify_pre_native_history(
             pre_native, pre_native_receipts, clients, probe, build)
+        build.need(source_revision or not any("source_disposition" in fact for fact, _, _ in open_rows),
+                   "document_refresh_source_pre_native_current_attempt_required")
         failed_jobs = set(facts)
         if chosen is not None:
             assert selected is not None
@@ -728,7 +772,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         if application_context is not None:
             mode["application_context"] = application_context
         if verified_pre_native:
-            failed_jobs.update(fact["absent_native_job"].rsplit("/", 1)[-1] for fact in verified_pre_native)
+            failed_jobs.update(job.rsplit("/", 1)[-1] for fact in verified_pre_native
+                               for job in fact.get("absent_native_jobs", [fact["absent_native_job"]]))
             joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native},
                    **mode)
         else:
@@ -740,8 +785,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             assert nonce is not None
             root = directory / "pre-native-reconciliations"
             root.mkdir(mode=0o700)
-            for fact, files, original in open_rows:
-                build.need(pre_native_snapshot(original, build, history_root=True) == files,
+            for fact, files, original_path in open_rows:
+                build.need(pre_native_snapshot(original_path, build, history_root=True) == files,
                            "document_refresh_pre_native_original_changed")
                 target = root / fact["nonce"]
                 target.mkdir(mode=0o700)

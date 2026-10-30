@@ -988,11 +988,14 @@ class FreshNativeBoundary(release.NativeBoundary):
                     raise release.ReleaseDenied("fresh_document_historical_serving_acceptance_refused")
             source_options = {}
             if qualified_source_revision:
-                from document_source_candidate import POLICY_SHA256
+                from document_source_candidate import LEGACY_POLICY_SHA256, READ_POLICIES
 
-                if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") == POLICY_SHA256
+                if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") in READ_POLICIES
                        for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
                     source_options["source_revision"] = True
+                    if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") == LEGACY_POLICY_SHA256
+                           for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
+                        source_options["legacy_source_revision"] = True
             if source_options and image == documents.ACCEPTED_IMAGE:
                 # The fixed historical image cannot acquire the new source
                 # identity merely by changing its policy environment literal.
