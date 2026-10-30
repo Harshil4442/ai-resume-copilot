@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 from threading import get_ident
+from types import ModuleType
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
@@ -62,10 +63,17 @@ def contract_digest(operation):
 
     if operation not in inputs.OPERATIONS:
         raise ValueError("Only the explicitly implemented production adapters are supported")
-    modules = (operations, service, generation_budget, model_cost_policy, llm_client,
+    modules: tuple[ModuleType, ...] = (operations, service, generation_budget, model_cost_policy, llm_client,
                interview_contract, tailoring_contract, personal_claims, prompt_privacy,
                resume_artifacts, resume_layout, inputs, canary, document_ingestion,
                docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import, matching_contract)
+    if _sync().supports(operation) or operation in {"job_match", "resume_tailor"}:
+        from ...services import provider_input_guard, source_transcription
+        from ..career import transcription_review
+
+        # These actual inputs/dispatch helpers are part of the frozen operation,
+        # even when their direct consumer module bytes have not changed.
+        modules += (source_transcription, transcription_review, provider_input_guard)
     return inputs.digest({"operation": operation, "runner": packet.file_digest(Path(__file__)),
                           "sources": {m.__name__: packet.file_digest(Path(str(m.__file__)))
                                       for m in (*modules, _sync(), *_sync().contract_sources())}})

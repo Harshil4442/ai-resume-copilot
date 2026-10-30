@@ -4,6 +4,7 @@ import contextvars
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from io import BytesIO
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
@@ -11,11 +12,18 @@ import pytest
 from backend.app import models, schemas
 from backend.app.domains.analysis import operations
 from backend.app.domains.analysis import service as analysis
+from backend.app.domains.analysis import supported_evaluation as evaluation
 from backend.app.domains.career import transcription_review as review
 from backend.app.domains.common import payload_fingerprint
 from backend.app.domains.credits import synchronous
 from backend.app.routers import jobs, llm, rag, recommendations, resume
-from backend.app.services import generation_budget
+from backend.app.services import (
+    generation_budget,
+    matching_contract,
+    provider_input_guard,
+    source_transcription,
+    tailoring_contract,
+)
 from backend.app.services.provider_input_guard import guard_provider_inputs
 from backend.tests.fixtures.transcription_source import source_for_text
 from backend.tests.test_source_transcription_review import (
@@ -349,3 +357,41 @@ def test_source_refusal_with_retry_looking_id_cannot_requeue_a_whole_model_worke
     with pytest.raises(review.TranscriptionUnavailable) as error:
         synchronous.owned_context(db, user_id=1, payload=selected)
     assert "503" in str(error.value) and not _retryable(error.value)
+
+
+@pytest.mark.parametrize("operation", ["job_match", "resume_tailor", "resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"])
+@pytest.mark.parametrize("helper", [source_transcription, review, provider_input_guard])
+def test_each_actual_helper_drift_invalidates_affected_frozen_operation_contract(operation, helper, monkeypatch):
+    """Patch only a source-hash read port; no source/native authority is changed."""
+    original = evaluation.packet.file_digest
+    baseline = evaluation.contract_digest(operation)
+    target, observed = Path(helper.__file__).resolve(), []
+    def changed(path):
+        path = Path(path).resolve()
+        observed.append(path)
+        return "0" * 64 if path == target else original(path)
+    monkeypatch.setattr(evaluation.packet, "file_digest", changed)
+    assert evaluation.contract_digest(operation) != baseline
+    assert target in observed
+    version = evaluation._sync().prompt_version(operation) if evaluation._sync().supports(operation) else (
+        matching_contract.PROMPT_VERSION if operation == "job_match" else tailoring_contract.COMPLETE_PROMPT_VERSION)
+    # Minimal frozen metadata for this pure refusal test is not an authorization
+    # or a funding/quality receipt. _current must reject before further work.
+    old_contract = SimpleNamespace(operation=operation,
+        routes={"candidate": SimpleNamespace(prompt_version=version, contract_sha256=baseline)})
+    with pytest.raises(ValueError, match="frozen operation"):
+        evaluation._current(old_contract)
+
+
+@pytest.mark.parametrize("helper", [source_transcription, review, provider_input_guard])
+def test_helper_only_drift_does_not_expand_interview_existing_source_scope(helper, monkeypatch):
+    baseline = evaluation.contract_digest("interview_questions")
+    original = evaluation.packet.file_digest
+    target, observed = Path(helper.__file__).resolve(), []
+    def changed(path):
+        path = Path(path).resolve()
+        observed.append(path)
+        return "0" * 64 if path == target else original(path)
+    monkeypatch.setattr(evaluation.packet, "file_digest", changed)
+    assert evaluation.contract_digest("interview_questions") == baseline
+    assert target not in observed
