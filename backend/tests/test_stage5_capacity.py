@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 from contextlib import ExitStack, contextmanager
@@ -186,6 +187,60 @@ def test_capacity_refusal_requires_actual_typed_body_and_all_response_headers(ch
     elif change:
         del headers[{"retry": "retry-after", "cache": "cache-control", "pragma": "pragma"}[change]]
     assert expected_capacity_refusal(mode, status, body, headers) is (change is None)
+
+
+@pytest.mark.parametrize("cache,valid", [
+    ("private, no-store", True), ("no-store, private", True),
+    ("\tPrIvAtE\t,\tNO-STORE ", True), ("no-store,private", True),
+    ("public, no-store", False), ("private, max-age=0", False), ("no-cache", False),
+    ("no-store", False), ("private", False), ("private, no-store, public", False),
+    ("private, no-store, max-age=0", False), ("private, no-store, no-store", False),
+    ("private, private", False), ("private=token, no-store", False),
+    ("private, no-store=1", False), ("private, no-store,", False),
+    ("private,\nno-store", False), (None, False),
+])
+def test_capacity_cache_directives_require_exact_semantics_without_parameters_or_duplicates(cache, valid):
+    headers = {**CAPACITY_HEADERS, "cache-control": cache}
+    assert expected_capacity_refusal("list_governed_40", 429, CAPACITY_BODY, headers) is valid
+
+
+def test_refusal_oracle_accepts_actual_shipping_middleware_response_without_native_or_auth_changes():
+    # Isolate app.main's import-time logging/configuration from the pytest
+    # process. This exercises its actual header transformation, not account
+    # authorization or an emulator workload. Every transport remains blocked.
+    script = '''
+import asyncio, json
+import pytest
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from tests.fixtures.stage5_native import Counters, install_egress_guard
+guard, counters = pytest.MonkeyPatch(), Counters()
+install_egress_guard(guard, set(), counters)
+from app.main import jwt_validation_middleware
+from app.domains.recovery.native_metadata_admission import MetadataCapacityUnavailable
+from app.routers.native_metadata_http import metadata_http_error
+from scripts.stage5_capacity import expected_capacity_refusal
+error = metadata_http_error(MetadataCapacityUnavailable())
+request = Request({'type':'http','method':'GET','scheme':'https','server':('127.0.0.1',443),
+    'path':'/api/auth/candidate/v1/availability','query_string':b'','headers':[]})
+async def handler(actual):
+    assert actual is request
+    return JSONResponse(status_code=error.status_code, content={'detail':error.detail}, headers=error.headers)
+response = asyncio.run(jwt_validation_middleware(request, handler))
+assert response.headers['cache-control'] == 'no-store, private'
+assert counters.snapshot() == {}
+valid = expected_capacity_refusal('list_governed_40', response.status_code,
+    json.loads(response.body), response.headers)
+print(json.dumps({'valid': valid, 'cache_control':response.headers['cache-control']}))
+assert valid
+'''
+    result = subprocess.run([sys.executable, "-B", "-c", script],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=15,
+        env={"PATH": os.defpath, "APP_ENV": "test", "DATABASE_URL": "sqlite:///:memory:",
+             "JWT_SECRET": "synthetic-stage5-middleware-only-not-a-deployment-secret",
+             "PYTHONDONTWRITEBYTECODE": "1"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {"valid": True, "cache_control": "no-store, private"}
 
 
 def measured_results(count=5):

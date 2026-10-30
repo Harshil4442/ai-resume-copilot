@@ -103,11 +103,14 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> bool:
+    cache = headers.get("cache-control")
+    directives = cache.split(",") if type(cache) is str else []
     return (mode == "list_governed_40" and status == 429
         and body == {"detail": {"code": "NATIVE_METADATA_CAPACITY",
             "message": "Request capacity is temporarily allocated. Please try again later."}}
         and headers.get("retry-after") == "60"
-        and headers.get("cache-control") == "private, no-store"
+        and len(directives) == 2
+        and {directive.strip(" \t").lower() for directive in directives} == {"private", "no-store"}
         and headers.get("pragma") == "no-cache")
 
 
