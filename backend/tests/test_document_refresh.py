@@ -641,7 +641,9 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert 'test "$REFRESH_MODE" = refresh || test "$REFRESH_MODE" = full-source-refresh' in guard["run"]
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
     assert artifact["with"]["name"] == "document-refresh-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}"
-    assert artifact["with"]["path"] == "${{ env.OUTPUT_DIRECTORY }}/**/*.json"
+    assert artifact["with"]["path"].splitlines() == [
+        "${{ env.OUTPUT_DIRECTORY }}/**/*.json",
+        "!${{ env.OUTPUT_DIRECTORY }}/failure-diagnostic.json"]
     assert artifact["with"]["retention-days"] == 14
     summary = next(step for step in job["steps"] if step.get("name") == "Surface required action")
     assert "six-case" not in summary["run"] and "native V2 ten-case acceptance" in summary["run"]

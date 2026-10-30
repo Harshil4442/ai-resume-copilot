@@ -8,6 +8,7 @@ is separate. Vendor output stays in RAM; unknown writes never authorize replay.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import io
@@ -21,7 +22,9 @@ import tarfile
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1859,12 +1862,242 @@ def main() -> None:
 
 def _final_failure_code(error: Exception) -> str:
     """Return only a reviewed literal; never return vendor exception text."""
-    code = str(error)
-    if (type(error) is RefreshDenied
-            or type(error).__name__ in {"NativeProofDenied", "IdentityDenied", "TransitionDenied"}) \
+    args = BaseException.__dict__["args"].__get__(error)
+    code = args[0] if len(args) == 1 and type(args[0]) is str and len(args[0]) <= 180 else ""
+    try:
+        kind = _diagnostic_kind_code(error)[0]
+    except Exception:
+        kind = "unclassified"
+    if kind in {"RefreshDenied", "NativeProofDenied", "IdentityDenied", "TransitionDenied"} \
             and code in FINAL_READ_ONLY_FAILURE_CODES:
         return code
     return "document_refresh_unavailable"
+
+
+# Presentation only. No transport, identity, proof or retry decisions use these
+# diagnostics. Unknown names/messages and external frame paths are never copied.
+FAILURE_DIAGNOSTIC_BYTES = 32768
+FAILURE_DIAGNOSTIC_NODES = 8
+FAILURE_DIAGNOSTIC_FRAMES = 48
+_DIAGNOSTIC_REPO_KINDS = {
+    "backend/scripts/document_refresh.py": ("RefreshDenied", ""),
+    "infra/gcp/document_refresh_probe.py": ("NativeProofDenied", ""),
+    "infra/gcp/document_refresh_auth.py": ("IdentityDenied", ""),
+    "infra/gcp/document_refresh_transition.py": ("TransitionDenied", ""),
+    "infra/gcp/document_application_context.py": ("ApplicationDenied", "document_application_"),
+    "infra/gcp/document_consumed_history.py": ("HistoryDenied", "document_consumed_history_"),
+    "infra/gcp/document_source_candidate.py": ("SourceDenied", "document_source_revision_"),
+}
+_DIAGNOSTIC_VENDOR_KINDS = {
+    "requests.exceptions": {"HTTPError": "HTTPError", "ConnectionError": "ConnectionError",
+                            "Timeout": "Timeout", "SSLError": "SSLError"},
+    "google.auth.exceptions": {"RefreshError": "RefreshError", "DefaultCredentialsError": "DefaultCredentialsError",
+                               "TransportError": "TransportError"},
+    "apitools.base.py.exceptions": {name: "HttpError" for name in (
+        "HttpError", "HttpBadRequestError", "HttpUnauthorizedError", "HttpForbiddenError", "HttpNotFoundError",
+        "HttpConflictError", "HttpTooManyRequestsError", "HttpInternalServerError", "HttpServiceUnavailableError",
+        "HttpGatewayTimeoutError")},
+    "google.api_core.exceptions": {name: "GoogleAPICallError" for name in (
+        "GoogleAPICallError", "BadRequest", "Unauthorized", "Forbidden", "NotFound", "TooManyRequests",
+        "InternalServerError", "ServiceUnavailable", "GatewayTimeout", "DeadlineExceeded")},
+}
+
+
+def _diagnostic_literals(path: Path, prefix: str) -> set[str]:
+    """Only literal need/raise codes in this fixed, source-owned module qualify."""
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 262144:
+        return set()
+    tree = ast.parse(path.read_bytes())
+    values = set()
+    for node in ast.walk(tree):
+        candidates = []
+        if isinstance(node, ast.Call):
+            name = node.func.id if isinstance(node.func, ast.Name) else (
+                node.func.attr if isinstance(node.func, ast.Attribute) else "")
+            if name == "need":
+                candidates.extend(node.args[1:2])
+                candidates.extend(k.value for k in node.keywords if k.arg == "code")
+            elif name.endswith("Denied"):
+                candidates.extend(node.args[:1])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "need":
+            candidates.extend(node.args.defaults)
+        for candidate in candidates:
+            if isinstance(candidate, ast.IfExp):
+                candidates.extend((candidate.body, candidate.orelse))
+            if isinstance(candidate, ast.Constant) and type(candidate.value) is str:
+                value = prefix + candidate.value
+                if re.fullmatch(r"document_[a-z0-9_]{1,170}", value):
+                    values.add(value)
+    return values
+
+
+def _diagnostic_kind_code(error: BaseException) -> tuple[str, str | None]:
+    cls = type(error)
+    builtins = tuple((kind, kind.__name__) for kind in (
+        Exception, RuntimeError, ValueError, TypeError, KeyError, AttributeError, AssertionError,
+        NotImplementedError, OSError, FileNotFoundError, PermissionError, IsADirectoryError,
+        NotADirectoryError, TimeoutError, ConnectionError, json.JSONDecodeError,
+        subprocess.TimeoutExpired, subprocess.CalledProcessError))
+    for known, kind in builtins:
+        if cls is known:
+            return kind, None
+    # Never hash an unknown class or inspect its name/metaclass properties.
+    modules = tuple(module for module in sys.modules.copy().values() if type(module) is ModuleType)
+    for relative, (kind, prefix) in _DIAGNOSTIC_REPO_KINDS.items():
+        path = ROOT / relative
+        for module in modules:
+            namespace = vars(module)
+            filename = namespace.get("__file__")
+            if namespace.get(kind) is not cls or type(filename) is not str or len(filename) > 4096:
+                continue
+            try:
+                if Path(filename).resolve() != path.resolve():
+                    continue
+            except (OSError, ValueError, RuntimeError):
+                continue
+            try:
+                codes = _diagnostic_literals(path, prefix)
+                if kind == "HistoryDenied":
+                    # NativeAudit supplies fixed permission reasons to history.need.
+                    codes |= _diagnostic_literals(ROOT / "infra/gcp/document_consumed_native.py", prefix)
+            except (OSError, ValueError, SyntaxError, RuntimeError):
+                codes = set()
+            args = BaseException.__dict__["args"].__get__(error)
+            value = args[0] if len(args) == 1 and type(args[0]) is str and len(args[0]) <= 180 else ""
+            if kind == "RefreshDenied":
+                codes |= FINAL_READ_ONLY_FAILURE_CODES
+            return kind, value if value in codes else None
+    for module_name, names in _DIAGNOSTIC_VENDOR_KINDS.items():
+        vendor_module = sys.modules.get(module_name)
+        if type(vendor_module) is ModuleType:
+            for name, kind in names.items():
+                if vars(vendor_module).get(name) is cls:
+                    return kind, None
+    return "unclassified", None
+
+
+def _diagnostic_number(value: Any) -> int | None:
+    if type(value) is HTTPStatus:
+        value = int(value)
+    if type(value) is str and re.fullmatch(r"[1-5][0-9]{2}", value):
+        value = int(value)
+    return value if type(value) is int and 100 <= value <= 599 else None
+
+
+def _failure_diagnostics(error: BaseException) -> dict[str, Any]:
+    pending, indices, nodes = [error], {id(error): 0}, []
+    frames_left, truncated = FAILURE_DIAGNOSTIC_FRAMES, False
+    for current in pending:
+        kind, code = _diagnostic_kind_code(current)
+        row: dict[str, Any] = {"kind": kind, "frames": []}
+        if code is not None:
+            row["fixed_code"] = code
+        if issubclass(type(current), OSError):
+            number = OSError.__dict__["errno"].__get__(current)
+            if type(number) is int and 0 <= number <= 4095:
+                row["errno"] = number
+        if type(current) is json.JSONDecodeError:
+            state = vars(current)
+            row["json_position"] = {k: state[k] for k in ("pos", "lineno", "colno")
+                                    if type(state.get(k)) is int and 0 <= state[k] <= 2147483647}
+        if kind in {"HTTPError", "HttpError", "GoogleAPICallError"}:
+            state = vars(current)
+            statuses = [_diagnostic_number(state.get("status_code")), _diagnostic_number(state.get("status")),
+                        _diagnostic_number(vars(type(current)).get("code"))]
+            for key in ("response", "resp"):
+                response = state.get(key)
+                if isinstance(response, dict):
+                    statuses.append(_diagnostic_number(dict.get(response, "status")))
+                elif type(response) is getattr(sys.modules.get("requests.models"), "Response", None):
+                    statuses.append(_diagnostic_number(vars(response).get("status_code")))
+            if any(value is not None for value in statuses):
+                row["http_status"] = next(value for value in statuses if value is not None)
+        tb, scanned, kept = BaseException.__dict__["__traceback__"].__get__(current), 0, 0
+        while tb is not None and scanned < 128:
+            scanned += 1
+            frame = tb.tb_frame.f_code
+            try:
+                if len(frame.co_filename) > 4096:
+                    raise ValueError
+                path = Path(frame.co_filename)
+                relative = path.resolve().relative_to(ROOT.resolve()).as_posix()
+                safe = (not path.is_symlink() and path.is_file() and len(relative) <= 256
+                        and re.fullmatch(r"(?:backend|infra)/[A-Za-z0-9_./-]+\.py", relative))
+            except (OSError, ValueError, RuntimeError):
+                safe = False
+            if safe and frames_left and kept < 12:
+                function = frame.co_name
+                if not (re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,95}", function)
+                        or function in {"<module>", "<lambda>", "<genexpr>", "<listcomp>", "<dictcomp>", "<setcomp>"}):
+                    function = "unclassified"
+                row["frames"].append({"file": relative, "function": function, "line": min(tb.tb_lineno, 9999999)})
+                frames_left -= 1
+                kept += 1
+            elif safe:
+                truncated = True
+            tb = tb.tb_next
+        truncated |= tb is not None
+        row["suppress_context"] = BaseException.__dict__["__suppress_context__"].__get__(current)
+        for field in ("__cause__", "__context__"):
+            child = BaseException.__dict__[field].__get__(current)
+            if child is None:
+                row[field[2:-2]] = None
+            elif id(child) in indices:
+                row[field[2:-2]] = indices[id(child)]
+            elif len(pending) < FAILURE_DIAGNOSTIC_NODES:
+                indices[id(child)] = len(pending)
+                row[field[2:-2]] = len(pending)
+                pending.append(child)
+            else:
+                row[field[2:-2]] = None
+                truncated = True
+        nodes.append(row)
+    return {"schema": "hirewiz_document_failure_diagnostics_v1", "nodes": nodes, "truncated": truncated}
+
+
+def _record_failure_diagnostics(error: Exception, code: str) -> bool:
+    """Create-only local evidence; never create a directory or change a result."""
+    if _cli_option("--mode") not in {"full-source-refresh", "monitor"}:
+        return False
+    output = _cli_option("--output-directory")
+    if output is None:
+        return False
+    directory = Path(output)
+    try:
+        if not directory.is_absolute() or directory.is_symlink() or directory.resolve() != directory:
+            return False
+        before = directory.stat()
+    except (OSError, ValueError, RuntimeError):
+        return False
+    if not stat.S_ISDIR(before.st_mode) or before.st_uid != os.getuid() or stat.S_IMODE(before.st_mode) != 0o700:
+        return False
+    safe_code = _diagnostic_kind_code(error)[1]
+    code = code if code == safe_code else "document_refresh_unavailable"
+    payload = {"status": "maintenance_attention_required", "fixed_code": code,
+               "state_requires_read_only_reconciliation": True, "automatic_replay": False,
+               "diagnostics": _failure_diagnostics(error)}
+    raw = (json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode()
+    if len(raw) > FAILURE_DIAGNOSTIC_BYTES:
+        return False
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        current = os.fstat(descriptor)
+        if ((current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)
+                or current.st_uid != os.getuid() or stat.S_IMODE(current.st_mode) != 0o700):
+            return False
+        try:
+            fd = os.open("failure-diagnostic.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=descriptor)
+        except FileExistsError:
+            return False
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return True
 
 
 def _cli_option(name: str) -> str | None:
@@ -1912,8 +2145,12 @@ def run_cli() -> int:
             except Exception:
                 pass
         final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
-        code = (_final_failure_code(error) if final_mode else
-                str(error) if type(error) is RefreshDenied else "document_refresh_unavailable")
+        code = _final_failure_code(error) if final_mode else "document_refresh_unavailable"
+        if not final_mode and type(error) is RefreshDenied:
+            try:
+                code = _diagnostic_kind_code(error)[1] or code
+            except Exception:
+                pass
         if mode == "audit-consumed-v2-history":
             classes = [(sys.modules.get("document_consumed_history"), "HistoryDenied"),
                        (sys.modules.get("document_application_context"), "ApplicationDenied")]
@@ -1925,6 +2162,12 @@ def run_cli() -> int:
                 _record_final_failure(code)
             except Exception:
                 pass
+        try:
+            _record_failure_diagnostics(error, code)
+        except Exception:
+            # Local diagnostic storage must never change the original outcome,
+            # trigger another native call, or authorize a replay.
+            pass
         print(json.dumps({"status": "maintenance_attention_required", "fixed_code": code,
                           "state_requires_read_only_reconciliation": True, "automatic_replay": False}))
         return 2
