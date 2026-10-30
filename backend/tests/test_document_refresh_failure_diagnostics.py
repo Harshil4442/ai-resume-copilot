@@ -238,6 +238,9 @@ def test_unowned_or_missing_output_is_not_created_or_written(monkeypatch, capsys
     output = tmp_path / "private"
     if shape == "public":
         output.mkdir(mode=0o755)
+        # Establish the unsafe fixture even under a restrictive caller umask.
+        output.chmod(0o755)
+        assert stat.S_IMODE(output.stat().st_mode) == 0o755
     elif shape == "symlink":
         output.symlink_to(actual, target_is_directory=True)
     elif shape == "ancestor_symlink":
