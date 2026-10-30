@@ -17,6 +17,59 @@ from scripts import schema25_app_release_contract_v2 as contract
 rolling = app.rolling
 
 
+@pytest.mark.parametrize("name", ["backend/app/domains/recovery/browser_pairing.py",
+    "backend/app/domains/recovery/browser_pairing_production.py", "backend/app/domains/recovery/device_transport_admission.py",
+    "backend/app/domains/recovery/password_reauth.py", "backend/app/domains/analysis/native_input_acquisition.py",
+    "backend/app/services/native_tex_transport.py", "backend/app/services/native_project.py"])
+def test_combined_native_authority_drift_cannot_reuse_the_complete_app_pin(monkeypatch, name):
+    assert name in contract.TRANSPORT_PATHS
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    contract.source_fingerprint(ROOT, prior)
+    original = Path.read_bytes
+    target = ROOT / name
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# source drift\n"
+        if path == target else original(path))
+    with pytest.raises(Exception, match="candidate_app_unqualified"):
+        contract.source_fingerprint(ROOT, prior)
+
+
+@pytest.mark.parametrize("group,name", [
+    ("PROTOCOL_SUITES", "tests/test_browser_pairing_http.py"),
+    ("PROTOCOL_SUITES", "tests/test_native_input_acquisition.py"),
+    ("PROTOCOL_FIXTURES", "backend/tests/fixtures/stage5_native.py"),
+    ("PROTOCOL_FIXTURES", "backend/tests/expense_policy_fixtures.py"),
+    ("QUALIFICATION_PATHS", "backend/scripts/acquire_native_quality_inputs.py"),
+    ("QUALIFICATION_PATHS", "backend/scripts/stage5_resources.py"),
+])
+def test_combined_qualification_and_proof_helper_drift_changes_the_fingerprint(monkeypatch, group, name):
+    assert name in getattr(contract, group)
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    before = contract.source_fingerprint(ROOT, prior)
+    original = Path.read_bytes
+    target = ROOT / ("backend/" + name if group == "PROTOCOL_SUITES" else name)
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# source drift\n"
+        if path == target else original(path))
+    assert contract.source_fingerprint(ROOT, prior) != before
+
+
+def test_an_added_app_module_is_not_hidden_by_the_finite_transport_list(monkeypatch):
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    contract.source_fingerprint(ROOT, prior)
+    added = ROOT / "backend/app/unqualified_added_module.py"
+    assert not added.exists()
+    original_files, original_file, original_read = Path.rglob, Path.is_file, Path.read_bytes
+    def files(path, pattern):
+        yield from original_files(path, pattern)
+        if path == ROOT / "backend/app":
+            yield added
+    monkeypatch.setattr(Path, "rglob", files)
+    monkeypatch.setattr(Path, "is_file", lambda path: True if path == added else original_file(path))
+    monkeypatch.setattr(Path, "read_bytes", lambda path: b"value = 'unqualified source'\n"
+        if path == added else original_read(path))
+    with pytest.raises(Exception, match="candidate_app_unqualified"):
+        contract.source_fingerprint(ROOT, prior)
+
+
 def test_final_polling_dependencies_and_tests_are_bound_into_the_source_fingerprint(monkeypatch):
     required = {"frontend/lib/boundedStatusPolling.ts", "frontend/lib/boundedStatusPolling.test.ts",
         "frontend/lib/readQueryPolicy.ts", "frontend/lib/readQueryPolicy.test.ts", "frontend/lib/api.ts",
