@@ -19,7 +19,7 @@ from app.domains.candidate_accounts import service as account_service
 from app.domains.credits import availability
 from app.domains.credits import service as credit_service
 from app.domains.credits.models import CreditAccount, CreditGrant, CreditReservation
-from app.domains.recovery.store import GuardDenied
+from app.domains.recovery.store import GuardDenied, GuardUnavailable
 from app.feature_flags import decisions_for_user
 from app.models import CandidatePasswordAccount, User, UserProfile
 from app.routers import auth
@@ -27,6 +27,35 @@ from tests.test_candidate_production_factory import PASSWORD, configured  # noqa
 
 PATH = "/api/auth/bootstrap"
 EMAIL = "bootstrap-owner@example.com"
+
+
+def _synthetic_account_session(c, monkeypatch):
+    """Use virtual elapsed time only for intercepted account fixture setup.
+
+    These SDKs are in-memory test ports. Scheduler elapsed time is not their
+    simulated transport latency. Restore the actual composed registry clocks
+    before the caller exercises any HTTP/native validation behavior.
+    """
+    composition = c.accounts._composition()
+    registries = (composition.lifetime.registry, composition.scoped.publication.registry)
+    originals = tuple(registry.monotonic for registry in registries)
+    ticks = 0
+
+    def elapsed():
+        nonlocal ticks
+        ticks += 1
+        return ticks / 1000
+
+    try:
+        with monkeypatch.context() as setup_clock:
+            for registry in registries:
+                assert registry.deadline_seconds == 5.0 and registry.max_attempts == 3
+                setup_clock.setattr(registry, "monotonic", elapsed)
+            owner = c.accounts.register(email=EMAIL, password=PASSWORD, policy_version="2026-10-08")
+            session = c.accounts.login(email=EMAIL, password=PASSWORD)
+    finally:
+        assert all(registry.monotonic is original for registry, original in zip(registries, originals, strict=True))
+    return owner, session
 
 
 @pytest.fixture
@@ -37,8 +66,7 @@ def api(configured, monkeypatch):  # noqa: F811
     monkeypatch.delenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", raising=False)
     monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false")
     monkeypatch.setenv("CANDIDATE_METADATA_ADMISSION_ENABLED", "false")
-    owner = c.accounts.register(email=EMAIL, password=PASSWORD, policy_version="2026-10-08")
-    session = c.accounts.login(email=EMAIL, password=PASSWORD)
+    owner, session = _synthetic_account_session(c, monkeypatch)
     token = security.create_access_token(subject=str(owner), candidate_lifetime={
         "version": 1, "context": session.context.model_dump(mode="json"), "auth_generation": 1})
     validation = Mock(wraps=c.accounts.validate)
@@ -75,6 +103,39 @@ def _reads_only(engine):
 
 def _request(api):
     return api.client.get(PATH, headers=api.headers)
+
+
+def test_setup_clock_restores_even_when_login_setup_refuses(configured, monkeypatch):  # noqa: F811
+    c = configured
+    composition = c.accounts._composition()
+    registries = (composition.lifetime.registry, composition.scoped.publication.registry)
+    originals = tuple(registry.monotonic for registry in registries)
+
+    def refused(**_kwargs):
+        assert all(registry.monotonic is not original for registry, original in zip(registries, originals, strict=True))
+        raise GuardUnavailable("Synthetic setup refusal")
+
+    monkeypatch.setattr(c.accounts, "login", refused)
+    with pytest.raises(GuardUnavailable, match="Synthetic setup refusal"):
+        _synthetic_account_session(c, monkeypatch)
+    assert all(registry.monotonic is original for registry, original in zip(registries, originals, strict=True))
+
+
+def test_restored_registry_keeps_the_exact_five_second_deadline(api, monkeypatch):
+    registry = api.c.accounts._composition().lifetime.registry
+    original = registry.monotonic
+    calls = list(api.c.native.calls)
+    transport = api.c.native.sdk.client.transport
+    methods = ("begin_transaction", "batch_get_documents", "commit", "rollback")
+    rpc_counts = {name: getattr(transport, name).call_count for name in methods}
+    times = iter((0.0, 5.0))
+    with monkeypatch.context() as deadline_clock:
+        deadline_clock.setattr(registry, "monotonic", lambda: next(times))
+        with pytest.raises(GuardUnavailable, match="Transaction retry deadline exceeded"):
+            registry.run(lambda _tx: pytest.fail("Expired transaction entered its callback"))
+    assert registry.monotonic is original and registry.deadline_seconds == 5.0
+    assert api.c.native.calls == calls
+    assert {name: getattr(transport, name).call_count for name in methods} == rpc_counts
 
 
 def test_one_real_native_authorization_per_request_and_second_request_is_fresh(api):
