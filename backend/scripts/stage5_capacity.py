@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 VERSION = "stage5-owned-http-v1"
+_RETAINED_NATIVE_CONTEXTS: list = []
 PATHS = (
     "/api/auth/bootstrap", "/api/resume/list", "/api/v1/opportunities?limit=50",
     "/api/v1/skill-roi", "/api/v1/credits/wallet",
@@ -129,3 +130,15 @@ def finish_owned_http(*, server, thread, guards, finalizers) -> None:
             failures.append("guard_restore")
     if not terminal or failures:
         raise RuntimeError("Owned HTTP or dependency finalization is incomplete")
+
+
+def release_native_context(context, terminal: bool) -> None:
+    """Do not unwind native fixtures while HTTP can still call their factories.
+
+    A failed CLI keeps the stack alive until process termination. No background
+    retry, deferred factory restore or new native request is scheduled here.
+    """
+    if terminal:
+        context.close()
+    else:
+        _RETAINED_NATIVE_CONTEXTS.append(context)

@@ -70,6 +70,10 @@ allow at most 2,997 total HTTP requests including controls and 600 seconds of
 measurement; concurrency is fixed at 1/10/25, and buyers at 20% or 25%. A global
 deadline cancels in-flight requests and records unsent requests explicitly. No
 new request is sent after it. Unknown outcomes never become retries.
+Entire later phases that cannot start are retained as `not_started_deadline`,
+with their planned/unsent counts, no samples and null performance estimates.
+They perform no extra Redis/native observations and cannot disappear from the
+six-phase experiment denominator.
 
 Arrivals are scheduled before semaphore admission. Arrival-to-completion latency
 includes the client queue; HTTP service latency and queue delay are reported
@@ -111,10 +115,16 @@ exact nonce label/ID before manual cleanup; do not repeat the create or delete b
 an unverified name. Unknown cleanup prevents a successful completion report.
 Owned PG scratch is removed only after its original process has stopped, the
 creation nonce/path/native PG17 control identity match, and its state is shut
-down. A failure cannot skip later Redis/PG finalizers. Egress remains blocked if
+down. The native system identifier is anchored immediately after the owned
+initdb, before startup, and both SQL migration readback and shutdown control data
+must match it. A failure cannot skip later Redis/PG finalizers. Egress remains blocked if
 the HTTP worker has not become terminal; such a run cannot report success.
+The native/factory/time/GAPIC fixture context also remains installed through
+HTTP shutdown. A stuck worker retains that context for the failed CLI's lifetime;
+it does not unwind those patches or restore unrestricted egress behind a live
+worker.
 
-The separate manual `.github/workflows/stage5-owned-capacity.yml` prepares the
+The path-filtered pull-request/manual `.github/workflows/stage5-owned-capacity.yml` prepares the
 existing pinned Redis source/TLS build and exact emulator image, builds official
 SHA-pinned PostgreSQL17.11 into RUNNER_TEMP only, and runs both 20%/25% data scenarios on
 separate ephemeral runners. It has contents:read only, no WIF/id-token grant,
@@ -122,7 +132,9 @@ production environment, cloud credentials, secrets or provider action. It upload
 only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
-manual workflow has not been dispatched as part of source preparation.
+workflow has not been run as part of source preparation. Its PR trigger names
+only the ten finite Stage5 tooling/config/test paths, so this Linux validation
+can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
 provides PG16, so no host17 path is assumed. The source build uses the
 [official PG17.11 release/checksum](https://www.postgresql.org/ftp/source/v17.11/),
@@ -155,7 +167,7 @@ execution, which remains pending.
 
 The existing target remains about one million authenticated requests/month plus
 separately measured peaks. The shared Firestore quota bucket is
-`sharedDatabaseOperationsPerMinutePerProject`, metric
+`DatabaseOperationsPerMinutePerProject`, metric
 `firestore.googleapis.com/database_operation_requests`, unit `1/min/{project}`.
 Actual Service Usage readback reports effective/default 60 with no override; it
 does not declare the bucket List-only or prove producer adjustability. Previous
