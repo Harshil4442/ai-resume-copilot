@@ -399,3 +399,93 @@ def test_operator_identity_binds_actual_working_files(monkeypatch, tmp_path):
     assert resume.operator_contract(root, "HEAD") == expected
     with pytest.raises(resume.ResumeDenied, match="operator_working_bytes_changed"):
         resume.operator_contract(root, "HEAD", working=True)
+
+
+def real_history(monkeypatch, tmp_path):
+    history = tmp_path / "genuine-history"
+    history.mkdir(mode=0o700)
+    raw = b'{"synthetic-original":true}'
+    monkeypatch.setattr(resume, "FILES", {"marker.json": resume.sha(raw)})
+    original = history / str(resume.ORIGINAL_ARTIFACT)
+    write(original / "marker.json", raw)
+    return history, original
+
+
+def test_unchanged_required_function_uses_real_history_tree_not_forced_bundle(monkeypatch, tmp_path):
+    consumed = importlib.import_module("infra.gcp.document_consumed_native")
+    history, original = real_history(monkeypatch, tmp_path)
+    assert resume.genuine_history(history) == [original]
+    assert consumed.history.required(history) is False
+    hold = history / "12852818465"
+    write(hold / "required-marker.json", {"exact": "tree"})
+    monkeypatch.setattr(consumed.history, "ARTIFACTS", (SimpleNamespace(
+        tree_sha256=consumed.history.tree(consumed.history.read_tree(hold))),))
+    assert consumed.history.required(history) is True
+    write(hold / "required-marker.json", {"different": "tree"})
+    assert consumed.history.required(history) is False
+
+
+@pytest.mark.parametrize("kind", ["empty", "missing-original", "changed-original"])
+def test_empty_or_fake_history_cannot_choose_non_audit_branch(monkeypatch, tmp_path, kind):
+    history, original = real_history(monkeypatch, tmp_path)
+    if kind == "empty":
+        (original / "marker.json").unlink()
+        original.rmdir()
+    elif kind == "missing-original":
+        original.rename(history / "123456")
+    else:
+        write(original / "marker.json", b"changed")
+    with pytest.raises(resume.ResumeDenied):
+        resume.genuine_history(history)
+
+
+@pytest.mark.parametrize("kind", ["only-original", "completed", "unknown", "open-pre-native", "fake-audit"])
+def test_other_real_history_holds_are_preserved_without_extra_old_retention(monkeypatch, tmp_path, kind):
+    recovery = importlib.import_module("infra.gcp.document_refresh_recovery")
+    history, original = real_history(monkeypatch, tmp_path)
+    calls = []
+    class Recovery:
+        PRE_NATIVE_FILES = recovery.PRE_NATIVE_FILES
+        read = staticmethod(recovery.read)
+        def pre_native_reconciliations(self, path, build):
+            return [("old", {"saved": b"original"}, {"receipt": "unchanged"})] if path == original else []
+        def verify_pre_native_history(self, rows, receipts, *args):
+            calls.append((rows, receipts))
+            return (["unconsumed"] if kind == "open-pre-native" else [], [], set())
+        def pre_native_snapshot(self, path, build, *, history_root):
+            assert history_root
+            return {name: (path / name).read_bytes() for name in self.PRE_NATIVE_FILES}
+        def completed_serving(self, *args, **kwargs):
+            pytest.fail("Stock does not reverify unrelated completed source without a carried pre-native receipt")
+    build = SimpleNamespace(infra=lambda _: Recovery(), decode=json.loads, need=resume.need, MAX_OUTPUT=resume.MAX_BYTES)
+    if kind == "completed":
+        write(history / "123456" / "result.json", {"status": "document_refresh_serving", "admission_restored": True})
+    elif kind in {"unknown", "fake-audit"}:
+        write(history / "123456" / "unclassified.json", {})
+    elif kind == "open-pre-native":
+        for name in recovery.PRE_NATIVE_FILES:
+            write(history / "123456" / name, {})
+    if kind in {"unknown", "open-pre-native", "fake-audit"}:
+        with pytest.raises(resume.ResumeDenied):
+            resume.verify_history(history, original, SimpleNamespace(matches=lambda _: True) if kind == "fake-audit" else None,
+                                  object(), object(), build)
+    else:
+        resume.verify_history(history, original, None, object(), object(), build)
+        assert len(calls) == 1 and calls[0][1][0][0] == resume.NONCE
+
+
+def test_workflow_keeps_stock_conditional_bundle_and_genuine_history():
+    text = (ROOT / ".github/workflows/document-refresh.yml").read_text()
+    workflow = yaml.safe_load(text)
+    steps = workflow["jobs"]["maintenance"]["steps"]
+    retrieve = next(s for s in steps if s.get("name") == "Retrieve prior owned native proof journals")
+    assert "RESUME_COMPLETED_SOURCE_READBACK" not in retrieve["if"]
+    bundle = next(s for s in steps if s.get("name") == "Retrieve exact consumed history for read-only audit when needed")
+    assert 'if [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then' in bundle["run"]
+    assert "RESUME_COMPLETED_SOURCE_READBACK" not in bundle["run"]
+    handler = next(s for s in steps if s.get("name") == "Continue only the exact completed source-native readback")
+    assert '--history-directory "$HISTORY_DIRECTORY"' in handler["run"]
+    code = (ROOT / "infra/gcp/document_source_readback_resume.py").read_text()
+    assert "required = consumed.history.required(history)" in code
+    assert "NativeAudit(root, bundle if required else None" in code
+    assert "consumed.history.audit(bundle, boundary) if required else None" in code

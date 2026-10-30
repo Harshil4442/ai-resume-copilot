@@ -291,7 +291,55 @@ def claim_body(identity, native, preimage, context):
             "automatic_replay": False, "new_build_or_job": False}
 
 
-def resume(original, output, bundle, *, root):
+def genuine_history(history):
+    need(history.is_absolute() and history.resolve() == history and history.is_dir(), "genuine_history_required")
+    runs = list(history.iterdir())
+    need(1 <= len(runs) <= 3 and all(row.is_dir() and not row.is_symlink()
+         and re.fullmatch(r"[1-9][0-9]{0,18}", row.name) for row in runs), "genuine_history_required")
+    originals = [row for row in runs if row.name == str(ORIGINAL_ARTIFACT)]
+    need(len(originals) == 1, "genuine_original_history_required")
+    exact(read_tree(originals[0]))
+    return runs
+
+
+def verify_history(history, original, audited, clients, prior, build):
+    """Preserve stock conditional holds without replaying prepare's new writes."""
+    from infra.gcp import document_consumed_native as consumed
+    need(audited is None or type(audited) is consumed.history.AuditedDisposition, "fresh_consumed_audit_required")
+    recovery = build.infra("document_refresh_recovery")
+    receipts = [(NONCE, old, saved, receipt) for old, saved, receipt
+                in recovery.pre_native_reconciliations(original, build)]
+    pending = []
+    for run in genuine_history(history):
+        if run.name == str(ORIGINAL_ARTIFACT):
+            continue
+        if audited is not None and audited.matches(run):
+            continue
+        result = run / "result.json"
+        if result.exists():
+            saved = build.decode(recovery.read(result, build))
+            need(type(saved) is dict and saved.get("status") == "document_refresh_serving"
+                 and saved.get("admission_restored") is True, "prior_unknown_reconcile_only")
+            if (run / "pre-native-reconciliations").exists():
+                recovery.completed_serving(run, saved, run / "native-proof", build, prior, allow_v3=True)
+                nonce = build.decode(recovery.read(run / "native-proof/binding.json", build))["build_identity"]["nonce"]
+                receipts.extend((nonce, old, files, receipt) for old, files, receipt
+                                in recovery.pre_native_reconciliations(run, build))
+            continue
+        names = {entry.name for entry in run.iterdir()}
+        need(names in (set(recovery.PRE_NATIVE_FILES), set(recovery.PRE_NATIVE_FILES) | {"pre-native-reconciliations"}),
+             "prior_unknown_reconcile_only")
+        files = recovery.pre_native_snapshot(run, build, history_root=True)
+        pending.append((files, run))
+        if "pre-native-reconciliations" in names:
+            nonce = build.decode(files["native-build-identity.json"])["nonce"]
+            receipts.extend((nonce, old, saved, receipt) for old, saved, receipt
+                            in recovery.pre_native_reconciliations(run, build))
+    opened, _, _ = recovery.verify_pre_native_history(pending, receipts, clients, prior, build)
+    need(not opened, "prior_unconsumed_pre_native_reconcile_only")
+
+
+def resume(original, output, bundle, history, *, root):
     context = trusted_context(root)
     files = exact(read_tree(original))
     build, probe, identity = verify_local(files, root)
@@ -299,17 +347,22 @@ def resume(original, output, bundle, *, root):
     retain(files, output)
     from infra.gcp import document_consumed_native as consumed
     from infra.gcp import document_refresh_recovery as recovery
+    genuine_history(history)
+    required = consumed.history.required(history)
+    need(not required or bundle is not None and bundle.is_dir(), "exact_consumed_history_bundle_required")
+    if required:
+        consumed.history.load_bundle(bundle)
     clients, http = None, None
     try:
         clients = build.infra("document_refresh_probe").Clients()
         http = build.native_http()
-        boundary = consumed.NativeAudit(root, bundle, clients, http, build.infra("document_refresh_probe"))
-        consumed.history.audit(bundle, boundary)
+        boundary = consumed.NativeAudit(root, bundle if required else None, clients, http, build.infra("document_refresh_probe"))
+        audited = consumed.history.audit(bundle, boundary) if required else None
+        if audited is not None:
+            build.write_new(output / "consumed-history-audit.json", audited.report())
         before = {"applications": boundary.verify_current_applications(), "document": boundary.verify_current_document(None)}
         need(before["document"]["current_native_acceptance"]["image"] != IMAGE, "candidate_already_serving_reconcile_only")
-        receipts = [(NONCE, old, saved, receipt) for old, saved, receipt in recovery.pre_native_reconciliations(original, build)]
-        opened, facts, _ = recovery.verify_pre_native_history([], receipts, clients, build.infra("document_refresh_probe"), build)
-        need(not opened and len(facts) == 1, "prior_disposition_changed")
+        verify_history(history, original, audited, clients, build.infra("document_refresh_probe"), build)
         recovery.joined(clients, build.infra("document_refresh_probe"), build, set(), {IMAGE}, application_context=boundary.applications)
         native = empty_event_retry(lambda: verify_operations(clients, files, probe))
         accepted = empty_event_retry(lambda: probe.verify_successor(IMAGE, identity, output / "native-proof"))

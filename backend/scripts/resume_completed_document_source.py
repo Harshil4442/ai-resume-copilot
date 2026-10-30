@@ -25,16 +25,19 @@ def main():
         from infra.gcp import document_source_readback_resume as resume
 
         if args.mode in {"retrieve", "verify", "resume"}:
-            resume.need(args.original_directory is not None and args.history_directory is None, "arguments_refused")
+            resume.need(args.original_directory is not None, "arguments_refused")
         if args.mode == "retrieve":
-            resume.need(args.output_directory is None and args.consumed_history_bundle is None, "arguments_refused")
+            resume.need(args.output_directory is None and args.consumed_history_bundle is None
+                        and args.history_directory is None, "arguments_refused")
             resume.retrieve(args.original_directory)
         elif args.mode == "verify":
-            resume.need(args.output_directory is None and args.consumed_history_bundle is None, "arguments_refused")
+            resume.need(args.output_directory is None and args.consumed_history_bundle is None
+                        and args.history_directory is None, "arguments_refused")
             resume.verify_local(resume.read_tree(args.original_directory), ROOT)
         elif args.mode == "resume":
-            resume.need(args.output_directory is not None and args.consumed_history_bundle is not None, "arguments_refused")
-            resume.resume(args.original_directory, args.output_directory, args.consumed_history_bundle, root=ROOT)
+            resume.need(args.output_directory is not None and args.history_directory is not None, "arguments_refused")
+            resume.resume(args.original_directory, args.output_directory, args.consumed_history_bundle,
+                          args.history_directory, root=ROOT)
         else:
             resume.need(args.original_directory is None and args.consumed_history_bundle is None
                         and args.history_directory is not None and args.output_directory is not None, "arguments_refused")

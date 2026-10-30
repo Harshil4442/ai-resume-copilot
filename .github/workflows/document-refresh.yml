@@ -125,7 +125,7 @@ jobs:
         if: env.REFRESH_MODE == 'monitor'
         run: backend/.venv/bin/python backend/scripts/document_refresh.py --mode monitor --output-directory "$OUTPUT_DIRECTORY"
       - name: Retrieve prior owned native proof journals
-        if: env.RESUME_COMPLETED_SOURCE_READBACK != 'true' && (env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh')
+        if: env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -170,7 +170,7 @@ jobs:
         if: env.REFRESH_MODE == 'audit-consumed-v2-history' || (env.SOURCE_REVISION == 'true' && env.REFRESH_MODE == 'full-source-refresh') || (env.REFRESH_MODE == 'refresh' && env.RETIRE_EXPIRED_V2 != 'true' && env.RESCUE_EXPIRED_V2 != 'true' && env.UPGRADE_CURRENT_V2_TO_V3 != 'true')
         run: |
           args=(--output-directory "$CONSUMED_BUNDLE")
-          if [[ "$REFRESH_MODE" = audit-consumed-v2-history || "$RESUME_COMPLETED_SOURCE_READBACK" = true ]]; then
+          if [[ "$REFRESH_MODE" = audit-consumed-v2-history ]]; then
             args+=(--force-audit)
           else
             args+=(--prior-history-directory "$HISTORY_DIRECTORY")
@@ -330,7 +330,7 @@ jobs:
         run: |
           backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode resume \
             --original-directory "$COMPLETED_SOURCE_ORIGINAL" --consumed-history-bundle "$CONSUMED_BUNDLE" \
-            --output-directory "$OUTPUT_DIRECTORY"
+            --history-directory "$HISTORY_DIRECTORY" --output-directory "$OUTPUT_DIRECTORY"
       - name: Build full-source inspector, prove native cases and transition exact pins
         if: env.REFRESH_MODE == 'full-source-refresh' && env.RESUME_COMPLETED_SOURCE_READBACK != 'true'
         run: |

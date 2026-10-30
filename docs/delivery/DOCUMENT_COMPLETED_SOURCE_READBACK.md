@@ -27,9 +27,14 @@ API, Build or Job provisioning is added.
 
 1. Retrieve the exact original artifact and verify its native GitHub metadata,
    ZIP digest and every original file hash before WIF access.
-2. Reconstruct the original NativeAudit/current Applications and consumed-history
-   authority through existing factories in genuine GitHub main context. Reverify
-   the carried pre-native disposition and the current prior document/caller pins.
+2. Retrieve the genuine bounded prior history, including exact original artifact
+   `13003047976`. Reuse unchanged `history.required(history)`: only the exact old
+   consumed V2 tree requires the five-artifact audit. Otherwise use NativeAudit
+   without that unrelated historical bundle, as original run 41108319542 did.
+   Reconstruct current Applications/document authority through existing factories
+   in genuine GitHub main context. Reverify carried pre-native dispositions and
+   other real history holds; unknown or unconsumed rows refuse. Never substitute
+   empty history, ignore an actual required audit or create a new disposition.
 3. Read all four original Create/Run LROs and require the exact two Job and two
    execution UIDs, one execution per Job, original intents and native templates.
    Stock verify_successor must freshly verify Build/archive, native inventory,
