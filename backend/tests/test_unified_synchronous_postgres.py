@@ -4,11 +4,11 @@ from threading import Barrier
 
 import pytest
 from backend.app import models
-from backend.app.database import Base
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.tests import test_unified_synchronous as synchronous_checks
+from backend.tests.fixtures.evidence_fence import install_owned_fence
 from backend.tests.test_employer_admissions_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_unified_synchronous import (
     configure,
@@ -25,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 @pytest.fixture
 def factory():
     for engine in owned_pg_engine.__wrapped__():
-        Base.metadata.create_all(engine)
+        install_owned_fence(engine)
         maker = sessionmaker(engine, autoflush=False)
         with maker() as db:
             db.add_all([models.User(id=1, email="sync-pg@example.invalid", ai_credits=17),

@@ -52,7 +52,11 @@ def setup(factory, monkeypatch):
             source_format="pdf", source_document=source_for_text("Built 2 Python APIs and Docker services.")))
         db.flush()
         db.add(models.JobMatch(id=1, user_id=1, resume_id=1, job_title="Backend engineer", company="Example", job_description="Build reliable Python APIs and Docker services.", true_gaps=["Docker"], required_skills=["Python", "Docker"], partial_matches=[], match_score=75, fit_summary="Relevant Python experience", dimension_scores=[], improvement_tips=[], full_matches=[]))
-        db.add(models.EvidenceItem(id="evidence-1", user_id=1, resume_id=1, category="experience", title="API work", evidence_text="Built 2 Python APIs and Docker services.", approval_state="approved", source_ref="resume:1", skills=["Python", "Docker"], metrics={}))
+        from backend.app.domains.career.evidence_write_fence import flush_evidence_writes
+
+        evidence = models.EvidenceItem(id="evidence-1", user_id=1, resume_id=1, category="experience", title="API work", evidence_text="Built 2 Python APIs and Docker services.", approval_state="approved", source_ref="resume:1", skills=["Python", "Docker"], metrics={})
+        db.add(evidence)
+        flush_evidence_writes(db, [evidence])
         db.commit()
     return factory, monkeypatch
 

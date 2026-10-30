@@ -17,6 +17,7 @@ from ... import models
 from ...services import source_transcription as core
 from ..common import public_id, utcnow
 from . import schemas
+from .evidence_write_fence import flush_evidence_writes
 
 _MARKER = "\ntranscription-review:v1:"
 _MAX_EVIDENCE = 1000
@@ -255,6 +256,7 @@ def record_review(db: Session, user_id: int, evidence_id: str,
     item.approval_state = "approved"
     item.source_ref = reference
     item.updated_at = now
+    flush_evidence_writes(db, [item])
     db.commit()
     db.refresh(item)
     return item

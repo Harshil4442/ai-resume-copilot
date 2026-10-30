@@ -8,6 +8,7 @@ from backend.app import models
 from backend.app.database import Base
 from backend.app.domains.career import schemas, service
 from backend.app.domains.career import transcription_review as review
+from backend.app.domains.career.evidence_write_fence import flush_evidence_writes
 from backend.app.services import source_transcription as core
 from backend.tests.test_evidence_review_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_source_transcription_review import CORRECTED, ORIGINAL, PersistencePort
@@ -37,7 +38,10 @@ def seeded_factory(pg_engine):
         db.add(models.User(id=1, email="transcription-race@example.invalid"))
         db.commit()
         for row in (synthetic.resume, synthetic.item):
-            db.add(type(row)(**{column.name: getattr(row, column.name) for column in row.__table__.columns}))
+            copy = type(row)(**{column.name: getattr(row, column.name) for column in row.__table__.columns})
+            db.add(copy)
+            if isinstance(copy, models.EvidenceItem):
+                flush_evidence_writes(db, [copy])
             db.commit()
     return factory
 
@@ -88,7 +92,9 @@ def test_one_shown_snapshot_authorizes_at_most_one_competing_action(pg_engine, c
 def test_concurrent_imports_produce_one_server_item_per_exact_source_section(pg_engine):
     factory = seeded_factory(pg_engine)
     with factory() as db:
-        db.delete(db.get(models.EvidenceItem, "evd_synthetic"))
+        item = db.get(models.EvidenceItem, "evd_synthetic")
+        db.delete(item)
+        flush_evidence_writes(db, [item])
         db.commit()
     barrier = Barrier(2)
     def import_sections(_):

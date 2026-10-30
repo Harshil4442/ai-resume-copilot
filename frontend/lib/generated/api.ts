@@ -10808,7 +10808,9 @@ export interface operations {
     };
     delete_evidence_api_v1_evidence_items__evidence_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                expected_fingerprint?: string | null;
+            };
             header?: never;
             path: {
                 evidence_id: string;

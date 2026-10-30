@@ -17226,6 +17226,23 @@
               "title": "Evidence Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "expected_fingerprint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Fingerprint"
+            }
           }
         ],
         "responses": {

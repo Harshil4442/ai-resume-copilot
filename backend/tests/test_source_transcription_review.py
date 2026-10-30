@@ -84,6 +84,14 @@ class PersistencePort:
     def query(self, model):
         return Query(self, model)
 
+    def get_bind(self):
+        # Explicit non-native persistence port; this does not exercise the PG
+        # marker/trigger. Those require the separately mandatory native suite.
+        return SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+
+    def flush(self, items):
+        assert items and all(isinstance(item, models.EvidenceItem) for item in items)
+
     def commit(self):
         self.commits += 1
 

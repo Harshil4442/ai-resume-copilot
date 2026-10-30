@@ -12,6 +12,7 @@ from ..domains.candidate_accounts.bootstrap import OwnedBootstrapView, bootstrap
 from ..domains.candidate_accounts.dashboard import OwnedDashboardView, dashboard_view
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
 from ..domains.candidate_accounts.profile_view import profile_view
+from ..domains.career.evidence_write_fence import evidence_write_scope
 from ..domains.notifications import enqueue_notification
 from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
 from ..domains.recovery.store import GuardDenied
@@ -468,7 +469,10 @@ def delete_account(
     db.query(UsageEvent).filter(UsageEvent.user_id == uid).delete(synchronize_session=False)
     db.query(ApplicationEvent).filter(ApplicationEvent.user_id == uid).delete(synchronize_session=False)
     db.query(ResumeVersion).filter(ResumeVersion.user_id == uid).delete(synchronize_session=False)
-    db.query(EvidenceItem).filter(EvidenceItem.user_id == uid).delete(synchronize_session=False)
+    # The account/lifetime owner checks above authorize only this exact privacy
+    # deletion. Do not carry its write marker into the remaining erasure work.
+    with evidence_write_scope(db):
+        db.query(EvidenceItem).filter(EvidenceItem.user_id == uid).delete(synchronize_session=False)
     db.query(Reminder).filter(Reminder.user_id == uid).delete(synchronize_session=False)
     db.query(OpportunityContact).filter(OpportunityContact.user_id == uid).delete(synchronize_session=False)
     db.query(CareerMemoryEntry).filter(CareerMemoryEntry.user_id == uid).delete(synchronize_session=False)

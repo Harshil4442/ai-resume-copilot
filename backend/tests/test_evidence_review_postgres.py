@@ -7,6 +7,7 @@ import pytest
 from backend.app.database import Base
 from backend.app.domains.career import schemas, service
 from backend.app.models import EvidenceItem
+from backend.tests.fixtures.evidence_fence import install_owned_fence
 from backend.tests.test_employer_admissions_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_evidence_review import seed
 from fastapi import HTTPException
@@ -17,7 +18,9 @@ from sqlalchemy.orm import sessionmaker
 def pg_engine():
     if os.getenv("CI") == "true":
         assert os.getenv("HIREWIZ_TEST_POSTGRES_URL"), "CI evidence review requires its owned PostgreSQL URL"
-    yield from owned_pg_engine.__wrapped__()
+    for engine in owned_pg_engine.__wrapped__():
+        install_owned_fence(engine)
+        yield engine
 
 
 def test_ci_cannot_silently_skip_missing_native_postgres(monkeypatch):

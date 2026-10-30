@@ -12,6 +12,7 @@ from ...services.matching import score_to_grade
 from ..common import public_id, utcnow
 from . import schemas
 from . import transcription_review as transcription
+from .evidence_write_fence import flush_evidence_writes
 
 VALID_STAGES = {
     "saved",
@@ -449,6 +450,7 @@ def create_evidence(
         updated_at=utcnow(),
     )
     db.add(item)
+    flush_evidence_writes(db, [item])
     db.commit()
     db.refresh(item)
     return item
@@ -505,6 +507,8 @@ def import_resume_evidence(
         )
         db.add(item)
         created.append(item)
+    if created:
+        flush_evidence_writes(db, created)
     db.commit()
     for item in created:
         db.refresh(item)
@@ -563,22 +567,29 @@ def update_evidence(
     for name, value in updates.items():
         setattr(item, name, value)
     item.updated_at = utcnow()
+    flush_evidence_writes(db, [item])
     db.commit()
     db.refresh(item)
     return item
 
 
-def delete_evidence(db: Session, user_id: int, evidence_id: str) -> None:
+def delete_evidence(db: Session, user_id: int, evidence_id: str, *, expected_fingerprint: str | None = None) -> None:
     item = (
         db.query(models.EvidenceItem)
         .filter(
             models.EvidenceItem.id == evidence_id,
             models.EvidenceItem.user_id == user_id,
         )
+        .populate_existing()
+        .with_for_update()
         .first()
     )
     if not item:
         raise HTTPException(status_code=404, detail="Evidence item not found")
+    if expected_fingerprint != schemas.evidence_snapshot_fingerprint(item):
+        db.rollback()
+        raise HTTPException(409, {"code": "evidence_refresh_required", "message":
+            "This evidence changed or its review version is missing. Refresh and review it before deleting it."})
     referenced = (
         db.query(models.ResumeVersion.id)
         .filter(models.ResumeVersion.user_id == user_id)
@@ -591,6 +602,7 @@ def delete_evidence(db: Session, user_id: int, evidence_id: str) -> None:
         item.updated_at = utcnow()
     else:
         db.delete(item)
+    flush_evidence_writes(db, [item])
     db.commit()
 
 
