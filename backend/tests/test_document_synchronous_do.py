@@ -556,11 +556,13 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(p
         # separately reviewed parser. Its exact source checks remain mandatory.
         contents = source.historical_v3_contents(ROOT)
         policy_path, policy_digest = legacy.POLICY_PATH, legacy.POLICY_SHA256
+        expected_sources = legacy.SOURCES
     else:
         # The prospective source policy must bind the actual working files;
         # historical content cannot substitute for this current-source check.
         contents, _, policy_digest = source.working_snapshot(ROOT)
         policy_path = source.POLICY_PATH
+        expected_sources = source.SOURCES
         assert policy_digest == source.POLICY_SHA256
     raw = contents[policy_path]
     assert hashlib.sha256(raw).hexdigest() == policy_digest
@@ -581,9 +583,8 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(p
     assert value["deployment_proven"] is False
     assert value["scope"]["host_parser_fallback"] is False
     assert value["required_native_deployment_controls"]["forced_owned_sandbox_delete_before_release"] is True
-    from infra.gcp.document_candidate import SOURCES
-
-    assert set(value["source_sha256"]) == SOURCES
+    assert source.SOURCES == legacy.SOURCES | {source.DOCKERFILE}
+    assert set(value["source_sha256"]) == expected_sources
     assert "backend/app/services/native_project.py" in value["source_sha256"]
     assert value["docx_layout"]["processor_mode"] == "--docx-layout-stdin"
     assert value["docx_layout"]["max_success_response_bytes"] == 32768
