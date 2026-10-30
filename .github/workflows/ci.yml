@@ -283,9 +283,54 @@ jobs:
           APP_ENV: test
           DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test
         run: |
-          .venv/bin/alembic upgrade head
+          # Preserve the original reversible migration rehearsal before the
+          # intentionally irreversible evidence/privacy fence is introduced.
+          .venv/bin/alembic upgrade 20261028_0025
           .venv/bin/alembic downgrade 20260803_0001
-          .venv/bin/alembic upgrade head
+          .venv/bin/alembic upgrade 20261028_0025
+          .venv/bin/python - <<'PY'
+          from alembic import command
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          from sqlalchemy import create_engine, text
+          from app.database import DATABASE_URL
+          from scripts import evidence_writer_schema26_contract as contract
+
+          configuration = Config("alembic.ini")
+          assert ScriptDirectory.from_config(configuration).get_current_head() == contract.SCHEMA
+          command.upgrade(configuration, contract.SCHEMA)
+          engine = create_engine(DATABASE_URL, hide_parameters=True)
+          def snapshot():
+              with engine.connect() as connection:
+                  observed = contract.observe(connection)
+                  fence = connection.execute(text(
+                      "SELECT c.oid,c.relowner,c.relacl,t.oid,t.tgenabled,p.oid,p.proowner,p.proacl,"
+                      "pg_catalog.pg_get_triggerdef(t.oid),pg_catalog.pg_get_functiondef(p.oid) "
+                      "FROM pg_catalog.pg_namespace n JOIN pg_catalog.pg_class c ON c.relnamespace=n.oid "
+                      "JOIN pg_catalog.pg_trigger t ON t.tgrelid=c.oid "
+                      "JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid "
+                      "WHERE n.nspname='public' AND c.relname='evidence_items' "
+                      "AND t.tgname='evidence_writer_fence' AND NOT t.tgisinternal"
+                  )).one()
+                  return observed, tuple(fence)
+          try:
+              before = snapshot()
+              try:
+                  command.downgrade(configuration, "20260803_0001")
+              except RuntimeError as error:
+                  refusal = (
+                      "Evidence writer fence downgrade is unsupported: a reviewed safe replacement "
+                      "must retain old-writer denial before this fence can be removed; live privacy "
+                      "tokens, outbox deliveries and unknown completion obligations also block safe removal"
+                  )
+                  assert type(error) is RuntimeError and str(error) == refusal
+              else:
+                  raise AssertionError("Schema26 downgrade unexpectedly succeeded")
+              assert snapshot() == before, "Refused downgrade changed schema26 or its exact evidence fence"
+          finally:
+              engine.dispose()
+          print("Historical25 round trip passed; schema26 refused downgrade with its exact fence unchanged")
+          PY
       - name: Provision disposable Lever pacing Redis
         id: lever-redis
         timeout-minutes: 3

@@ -1,0 +1,54 @@
+{
+  "observed_at": "2026-10-30T22:57:54.051386+00:00",
+  "report_date_local": "2026-10-31",
+  "timezone": "Asia/Kolkata",
+  "scope": "20 reviewed employer origins and Razorpay/Greenhouse candidate-reviewed pilot; worldwide expansion and final employer submission deferred",
+  "stage7_deployment_item": {
+    "status": "complete",
+    "stage7_overall_complete": false,
+    "backend_source": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+    "app_services_at_100_percent": 3,
+    "frontend_source": "3cb27683ac884f5861a13d3cead2e3278bc7f3b6",
+    "frontend_promoted": true,
+    "companion_public_version": "0.8.5",
+    "temporary_health_permission_removed": true,
+    "manual_frontend_promotion_retained": true,
+    "estimated_effort": null,
+    "actual_effort_minutes_approximate": 100,
+    "effort_note": "Approximate elapsed rollout work; no earlier retained estimate. Not total project effort."
+  },
+  "worker_qualification": {
+    "github_run": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/41119586258",
+    "conclusion": "success",
+    "accepted_definition_proof_expires_at": "2026-11-02T06:26:48Z"
+  },
+  "pending_source": {
+    "pull_request": "https://github.com/Harshil4442/ai-resume-copilot/pull/83",
+    "schema26_migrated": false,
+    "deployed": false,
+    "qualification_complete": false
+  },
+  "browser_acceptance": {
+    "owner_setup_page_signed_in": true,
+    "same_identity_extension_reloaded": true,
+    "signed_connection_status_http": 403,
+    "connection_review_cancel_revoke_complete": false,
+    "employer_form_first_name_and_email_empty": true,
+    "resume_attached_to_employer": false,
+    "employer_application_submitted": false
+  },
+  "remaining_gates": [
+    "Representative native/model and independent human quality acceptance",
+    "Native10,000-user workload, peaks and cost capacity",
+    "Funded seven-day and200-operation shadow accounting",
+    "Legacy mapping, invoice/tax reconciliation and commercial owner decision",
+    "Browser review, cancellation and exact-device revocation"
+  ],
+  "commercial": {
+    "hosting_upgrade_purchased": false,
+    "new_sales_enabled": false,
+    "checkout_enabled": false,
+    "worldwide_coverage_claimed": false
+  },
+  "evidence_handling": "Native receipts and owner-specific diagnostics are retained privately. No credentials, candidate content, balances or private invoices are included in this public status record."
+}

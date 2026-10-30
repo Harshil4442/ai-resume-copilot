@@ -19,7 +19,12 @@ test.beforeEach(async ({ page }) => {
   browserErrors.set(page, errors);
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error" && !/Failed to load resource: the server responded with a status of (404|503)/.test(message.text())) errors.push(message.text());
+    // This exact documented read refuses absent original bytes; all other
+    // console errors and every unrecognized request remain failures.
+    const missingSourceAssessment = /Failed to load resource: the server responded with a status of 422/.test(message.text())
+      && /\/api\/backend\/v1\/evidence-items\/transcription-review\/[1-9]\d*$/.test(message.location().url);
+    if (message.type() === "error" && !missingSourceAssessment
+      && !/Failed to load resource: the server responded with a status of (404|503)/.test(message.text())) errors.push(message.text());
   });
 });
 
@@ -33,7 +38,7 @@ function createFixture() {
     { id: 2, filename: sourceFile.name, created_at: now, source_available: true, source_format: "pdf" },
   ];
   const evidence = [
-    { id: "evi_old", title: "Earlier service performance work", category: "work", confidence: "high", approval_state: "approved", resume_id: 1, evidence_text: "Improved API response time by 20% through query tuning.", skills: ["PostgreSQL"], metrics: {}, provenance: "resume", source_ref: "experience", created_at: now, updated_at: now },
+    { id: "evi_old", title: "Earlier service performance work", category: "work", confidence: "high", approval_state: "approved", resume_id: 1, evidence_text: "Improved API response time by 20% through query tuning.", skills: ["PostgreSQL"], metrics: {}, provenance: "resume", source_ref: "experience", created_at: now, updated_at: now, snapshot_fingerprint: "a".repeat(64) },
   ];
   const opportunity = {
     id: opportunityId, title: "Software Engineer, Search", company: "Example Studio", location: "Remote",
@@ -110,15 +115,30 @@ function createFixture() {
         }
       } else if (path === "/v1/opportunities") value = { items: [opportunity], total: 1 };
       else if (path === "/v1/evidence-items") value = evidence.filter((entry) => entry.resume_id === Number(url.searchParams.get("resume_id")));
+      else if (path.startsWith("/v1/evidence-items/transcription-review/") && method === "GET") {
+        const resume = resumes.find((item) => item.id === Number(path.split("/").at(-1)));
+        if (!resume) { status = 404; value = { detail: "Resume not found." }; }
+        else if (!resume.source_available || !resume.source_format) {
+          status = 422;
+          value = { detail: { code: "transcription_source_required", message: "The complete original source and extracted sections are required for transcription review." } };
+        } else value = { resume_id: resume.id, filename: resume.filename, source_format: resume.source_format,
+          source_sha256: "b".repeat(64), assessment_fingerprint: "c".repeat(64), status: "not_required", sections: [], unmapped_text: null } satisfies components["schemas"]["TranscriptionReviewResponse"];
+      }
       else if (path.startsWith("/v1/evidence-items/import-resume/") && method === "POST") {
         const resumeId = Number(path.split("/").at(-1));
-        const imported = { ...evidence[0], id: `evi_upload_${resumeId}`, title: "New upload service performance work", approval_state: "pending", resume_id: resumeId };
+        const imported = { ...evidence[0], id: `evi_upload_${resumeId}`, title: "New upload service performance work", approval_state: "pending", resume_id: resumeId, snapshot_fingerprint: "d".repeat(64) };
         evidence.push(imported);
         value = { created: [imported], skipped: 0 };
       } else if (path.startsWith("/v1/evidence-items/") && method === "PATCH") {
         const entry = evidence.find((item) => item.id === path.split("/").at(-1));
         if (!entry) { status = 404; value = { detail: "Evidence not found." }; }
-        else { Object.assign(entry, body); value = entry; }
+        else {
+          expect(body.expected_fingerprint).toBe(entry.snapshot_fingerprint);
+          const { expected_fingerprint: shown, ...changes } = body;
+          expect(shown).toMatch(/^[a-f0-9]{64}$/);
+          Object.assign(entry, changes, { snapshot_fingerprint: "e".repeat(64) });
+          value = entry;
+        }
       } else if (path === "/v1/resume-versions" && method === "POST") {
         value = { id: "rsv_snapshot", version_number: 1, approval_state: "draft", generation_run_id: null, rendered_artifact_ref: null, submitted_at: null, created_at: now, ...body };
         opportunity.resume_versions.push(value as Record<string, unknown>);
@@ -346,7 +366,7 @@ test("choosing a retained upload loads its own facts and does not transfer the e
   await expect(generate).toBeDisabled();
   await page.getByRole("button", { name: "Approve evidence", exact: true }).click();
   await expect(generate).toBeEnabled();
-  expect(fixture.requests.find((request) => request.path === "/v1/evidence-items/evi_upload_2" && request.method === "PATCH")?.body).toEqual({ approval_state: "approved" });
+  expect(fixture.requests.find((request) => request.path === "/v1/evidence-items/evi_upload_2" && request.method === "PATCH")?.body).toEqual({ approval_state: "approved", expected_fingerprint: "d".repeat(64) });
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
 });
