@@ -24,6 +24,7 @@ class Query:
     def __init__(self, db, model):
         self.db, self.model, self.conditions = db, model, []
         self.load_options = []
+        self.row_limit = None
         self.fresh = self.locked = False
 
     def filter(self, *conditions):
@@ -32,6 +33,10 @@ class Query:
 
     def options(self, *options):
         self.load_options.extend(options)
+        return self
+
+    def limit(self, limit):
+        self.row_limit = limit
         return self
 
     def populate_existing(self):
@@ -46,9 +51,14 @@ class Query:
         statement = select(self.model).options(*self.load_options).where(*self.conditions)
         if self.locked:
             statement = statement.with_for_update()
+        if self.row_limit is not None:
+            statement = statement.limit(self.row_limit)
+            compiled = statement.compile(dialect=postgresql.dialect())
+            self.db.limits.append((str(compiled), compiled.params))
         self.db.queries.append((str(statement.compile(dialect=postgresql.dialect())), self.fresh, self.locked))
-        return [row for row in self.db.rows if isinstance(row, self.model)
+        rows = [row for row in self.db.rows if isinstance(row, self.model)
             and all(getattr(row, condition.left.key) == condition.right.value for condition in self.conditions)]
+        return rows[:self.row_limit] if self.row_limit is not None else rows
 
     def first(self):
         return next(iter(self.all()), None)
@@ -69,6 +79,7 @@ class PersistencePort:
         self.rows = [self.resume, self.item]
         self.commits = self.rollbacks = 0
         self.queries = []
+        self.limits = []
 
     def query(self, model):
         return Query(self, model)
@@ -312,3 +323,61 @@ def test_actual_additive_http_routes_and_missing_version_conflict_without_databa
         assert client.get("/v1/evidence-items/transcription-review/3").json()["status"] == "reviewed"
     operation = app.openapi()["paths"]["/v1/evidence-items/{evidence_id}/transcription-review"]["post"]
     assert operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/TranscriptionReviewAction")
+
+
+def scope_rows(db, count):
+    offset = len(db.rows)
+    for index in range(count - 1):
+        db.rows.append(models.EvidenceItem(**{**{column.name: getattr(db.item, column.name)
+            for column in models.EvidenceItem.__table__.columns}, "id": f"evd_extra_{offset + index}",
+            "provenance": "user", "source_ref": None}))
+
+
+@pytest.mark.parametrize("path", ["context", "snapshot", "action"])
+def test_scope_overflow_uses_sentinel_and_refuses_before_context_response_or_commit(path, monkeypatch):
+    db = PersistencePort()
+    request = payload(db)
+    scope_rows(db, 1200)
+    original_fingerprint = schemas.evidence_snapshot_fingerprint(db.item)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Overflow reached stamp/context construction")
+    monkeypatch.setattr(review, "load_explicit_reviews", forbidden)
+    monkeypatch.setattr(core, "resolve_transcription", forbidden)
+    with pytest.raises(HTTPException) as error:
+        if path == "context":
+            review.load_effective_transcription(db, 1, 3)
+        elif path == "snapshot":
+            review.review_snapshot(db, 1, 3)
+        else:
+            review.record_review(db, 1, db.item.id, request)
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "transcription_evidence_scope_exceeded"
+    assert len(db.limits) == 1 and "LIMIT" in db.limits[0][0]
+    assert 1001 in db.limits[0][1].values()
+    assert db.commits == 0 and schemas.evidence_snapshot_fingerprint(db.item) == original_fingerprint
+
+
+@pytest.mark.parametrize("path", ["context", "snapshot", "action"])
+def test_exact_1000_scope_remains_complete_and_the_next_row_cannot_be_accepted_as_a_prefix(path):
+    db = PersistencePort()
+    scope_rows(db, 1000)
+    if path == "action":
+        review.record_review(db, 1, db.item.id, payload(db))
+        assert db.commits == 1
+    else:
+        review.record_review(db, 1, db.item.id, payload(db))
+        if path == "context":
+            assert review.load_effective_transcription(db, 1, 3).status == "ready"
+        else:
+            assert review.review_snapshot(db, 1, 3).status == "reviewed"
+    assert all(1001 in params.values() for _, params in db.limits)
+    scope_rows(db, 2)  # Exactly 1001 current owned rows now exceeds the scope.
+    with pytest.raises(HTTPException) as error:
+        if path == "context":
+            review.load_effective_transcription(db, 1, 3)
+        elif path == "snapshot":
+            review.review_snapshot(db, 1, 3)
+        else:
+            review.record_review(db, 1, db.item.id, payload(db))
+    assert error.value.detail["code"] == "transcription_evidence_scope_exceeded"
+    assert db.commits == 1

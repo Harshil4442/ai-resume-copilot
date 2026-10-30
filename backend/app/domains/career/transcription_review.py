@@ -19,6 +19,7 @@ from ..common import public_id, utcnow
 from . import schemas
 
 _MARKER = "\ntranscription-review:v1:"
+_MAX_EVIDENCE = 1000
 _KEYS = {"record_id", "user_id", "resume_id", "evidence_id", "source_sha256", "section",
          "original_section_sha256", "approved_text_sha256", "assessment_fingerprint", "reviewed_at", "action"}
 
@@ -123,6 +124,17 @@ def _owned_resume(db: Session, user_id: int, resume_id: int, *, locked: bool = F
     return resume
 
 
+def _bounded_evidence(db: Session, user_id: int, resume_id: int) -> list[models.EvidenceItem]:
+    # Fetch one sentinel beyond the core's finite scope, never an accepted
+    # prefix. Refuse before decoding stamps, constructing context or responding.
+    rows = db.query(models.EvidenceItem).filter(models.EvidenceItem.user_id == user_id,
+        models.EvidenceItem.resume_id == resume_id).populate_existing().limit(_MAX_EVIDENCE + 1).all()
+    if len(rows) > _MAX_EVIDENCE:
+        raise HTTPException(422, {"code": "transcription_evidence_scope_exceeded", "message":
+            "This resume exceeds the complete transcription review evidence limit."})
+    return rows
+
+
 def load_effective_transcription(db: Session, user_id: int, resume_id: int, *,
                                  expected_context_fingerprint: str | None = None) -> core.ResolvedTranscription:
     """Fresh owned persistence entrypoint for later quote/dispatch/commit wiring.
@@ -131,8 +143,7 @@ def load_effective_transcription(db: Session, user_id: int, resume_id: int, *,
     explicit actions stay needs_review; an expected old context fails closed.
     """
     assessment = assess_resume(_owned_resume(db, user_id, resume_id), user_id)
-    rows = db.query(models.EvidenceItem).filter(models.EvidenceItem.user_id == user_id,
-        models.EvidenceItem.resume_id == resume_id).populate_existing().all()
+    rows = _bounded_evidence(db, user_id, resume_id)
     return core.resolve_transcription(assessment, rows, load_explicit_reviews(assessment, rows),
         expected_context_fingerprint=expected_context_fingerprint)
 
@@ -140,8 +151,7 @@ def load_effective_transcription(db: Session, user_id: int, resume_id: int, *,
 def review_snapshot(db: Session, user_id: int, resume_id: int) -> schemas.TranscriptionReviewResponse:
     resume = _owned_resume(db, user_id, resume_id)
     assessment = assess_resume(resume, user_id)
-    evidence = db.query(models.EvidenceItem).filter(models.EvidenceItem.user_id == user_id,
-        models.EvidenceItem.resume_id == resume_id).populate_existing().all()
+    evidence = _bounded_evidence(db, user_id, resume_id)
     records = load_explicit_reviews(assessment, evidence)
     resolved = core.resolve_transcription(assessment, evidence, records)
     sections = []
@@ -182,6 +192,7 @@ def record_review(db: Session, user_id: int, evidence_id: str,
     assessment = assess_resume(resume, user_id)
     if payload.expected_assessment_fingerprint != assessment.fingerprint:
         _conflict(db)
+    rows = _bounded_evidence(db, user_id, item.resume_id)
     affected = {binding.section: binding for binding in assessment.affected_sections}
     if (assessment.editable_source_required or payload.section not in affected
             or original_reference(item) != import_reference(item.resume_id, payload.section)):
@@ -208,8 +219,6 @@ def record_review(db: Session, user_id: int, evidence_id: str,
     values = schemas.EvidenceResponse.model_validate(item).model_dump(exclude={"snapshot_fingerprint"})
     draft = SimpleNamespace(**{**values, "user_id": user_id, "evidence_text": payload.evidence_text,
         "approval_state": "approved", "source_ref": reference, "updated_at": now})
-    rows = db.query(models.EvidenceItem).filter(models.EvidenceItem.user_id == user_id,
-        models.EvidenceItem.resume_id == item.resume_id).populate_existing().all()
     prospective = [draft if row.id == item.id else row for row in rows]
     check = core.resolve_transcription(assessment, prospective, load_explicit_reviews(assessment, prospective))
     if check.status != "ready" and check.reason != "explicit_transcription_review_required":
