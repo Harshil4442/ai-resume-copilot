@@ -1447,7 +1447,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         need(not full_source and application_context is not None, "document_refresh_source_revision_app_context_required")
         value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce, parent=current_image)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
-            directory / "transition", application_context=application_context, source_revision=source_revision)
+            directory / "transition", application_context=application_context)
     if source_revision:
         value = full_source_candidate(directory, publish=publish, now=now, nonce=nonce, source_revision=True)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",

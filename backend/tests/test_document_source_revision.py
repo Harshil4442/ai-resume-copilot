@@ -9,6 +9,7 @@ import sys
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 import test_document_candidate_probe as native
@@ -476,21 +477,28 @@ def test_scheduled_refresh_uses_only_source_definition_child_without_downgrade(m
         assert kwargs["publish"] is True and kwargs["nonce"] == NONCE
         calls.append("definitions_child")
         return {"build_identity": identity}
-    def promote(actual, native_journal, transition_journal, **kwargs):
-        assert actual is identity and kwargs["application_context"] is context
+    def promote(actual, native_journal, transition_journal, *, application_context, root=profile.ROOT):
+        assert actual is identity and application_context is context
+        assert native_journal == tmp_path / "native-proof" and transition_journal == tmp_path / "transition"
         calls.append("native_and_transition")
         return {"status": "document_refresh_serving"}
+    # Validate the actual production entry-point signature before the synthetic
+    # promotion body can run; permissive **kwargs would hide dispatch defects.
+    promoted = create_autospec(release.promote, side_effect=promote)
     modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *a, **k: NONCE),
         "document_refresh_probe": SimpleNamespace(Clients=lambda: SimpleNamespace(
             preflight=lambda: {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
             policy_for_serving=lambda *_: profile.POLICY_SHA256),
-        "document_source_release": SimpleNamespace(promote=promote)}
+        "document_source_release": SimpleNamespace(promote=promoted)}
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
+    monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("Dispatch regression must not call providers"))
     monkeypatch.setattr(builder, "source_definitions_candidate", selected)
     monkeypatch.setattr(builder, "candidate", lambda *a, **k: pytest.fail("No V2 downgrade"))
     monkeypatch.setattr(builder, "full_source_candidate", lambda *a, **k: pytest.fail("No daily full-source rebuild"))
     result = builder.refresh(tmp_path, publish=True, now=native.historical.NOW, application_context=context)
     assert result["status"] == "document_refresh_serving" and calls == ["definitions_child", "native_and_transition"]
+    promoted.assert_called_once_with(identity, tmp_path / "native-proof", tmp_path / "transition",
+                                     application_context=context)
 
 
 def test_unknown_source_policy_is_refused_without_a_build(monkeypatch):
