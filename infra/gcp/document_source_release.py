@@ -37,15 +37,19 @@ class SourceProbe:
                    and type(build) is dict and set(build) == keys | ({"local_native_proof_sha256"}
                        if "local_native_proof_sha256" in build else set())
                    and type(build.get("version")) is int and build["version"] == 1
-                   and build.get("kind") in {profile.KIND, profile.DEFINITIONS_KIND}
-                   and (build.get("kind") == profile.KIND and build.get("fixed_renderer_base") is None
-                        or build.get("kind") == profile.DEFINITIONS_KIND
+                   and build.get("kind") in profile.READ_KINDS
+                   and (build.get("kind") not in {profile.LEGACY_KIND, profile.LEGACY_DEFINITIONS_KIND} or serving_read)
+                   and (build.get("kind") == profile.KIND and build.get("fixed_renderer_base") == courier.IMAGE
+                        or build.get("kind") == profile.LEGACY_KIND and build.get("fixed_renderer_base") is None
+                        or build.get("kind") in {profile.DEFINITIONS_KIND, profile.LEGACY_DEFINITIONS_KIND}
                         and type(build.get("fixed_renderer_base")) is str
                         and prior.IMAGE.fullmatch(build["fixed_renderer_base"])
                         and build["fixed_renderer_base"] not in {courier.IMAGE, build.get("immutable_image")}),
                    "document_source_revision_wrong_build_kind")
         self.root = root
-        self.source = profile.committed(build.get("source_commit"), root=root)
+        self.source = profile.committed(build.get("source_commit"), root=root,
+            legacy=build.get("kind") in {profile.LEGACY_KIND, profile.LEGACY_DEFINITIONS_KIND})
+        self.POLICY = self.source.policy
         prior.need(build.get("source_sha256") == self.source.sources
                    and build.get("policy_sha256") == self.source.policy
                    and build.get("qualification_sha256") == self.source.qualification_sha256
@@ -59,7 +63,7 @@ class SourceProbe:
         self.profile, self.candidate = courier, self
 
     def source_contract(self):
-        current = profile.committed(self.source.commit, root=self.root)
+        current = profile.committed(self.source.commit, root=self.root, legacy=self.source.legacy)
         prior.need(current.identity == self.source.identity, "document_source_revision_sources_changed")
         if not self.serving_read:
             profile.require_working_contract(current, self.root)
@@ -168,9 +172,9 @@ class SourceProbe:
         containers = metadata.get("template", {}).get("containers", []) if type(metadata) is dict else []
         if len(containers) == 1 and containers[0].get("image") == image:
             rows = [row for row in containers[0].get("env", []) if row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"]
-            if rows == [{"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": profile.POLICY_SHA256}]:
+            if len(rows) == 1 and rows[0] in [{"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": value} for value in profile.READ_POLICIES]:
                 prior.need(prior.IMAGE.fullmatch(image) and image != courier.IMAGE, "document_source_revision_cross_profile_image")
-                return profile.POLICY_SHA256
+                return rows[0]["value"]
         return prior.policy_for_serving(metadata, image)
 
     def verify_current_successor(self, image, metadata):

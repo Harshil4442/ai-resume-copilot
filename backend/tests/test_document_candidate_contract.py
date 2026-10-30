@@ -20,7 +20,8 @@ from scripts import document_test_image as engines
 def test_candidate_exact_inventory_includes_installed_fonts_and_notices():
     contents, hashes, policy = refresh.full_source_snapshot(source_revision=True)
     assert len(candidate.SOURCES) == 21 and len(candidate.RUNTIME) == 20
-    assert set(hashes) == candidate.SOURCES == set(engines.SOURCES)
+    assert set(hashes) == source_profile.SOURCES == set(engines.SOURCES)
+    assert candidate.SOURCES == source_profile.SOURCES - {source_profile.DOCKERFILE}
     assert candidate.RUNTIME == engines.RUNTIME
     assert candidate.POLICY_SHA256 == worker.CANDIDATE_POLICY_SHA256
     assert policy == source_profile.POLICY_SHA256 != candidate.POLICY_SHA256

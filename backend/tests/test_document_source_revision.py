@@ -9,6 +9,7 @@ import sys
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import create_autospec
 
 import pytest
 import test_document_candidate_probe as native
@@ -62,7 +63,7 @@ def build(source, *, definitions=False):
         "name": release.prior.PARENT + "/builds/" + native.historical.BUILD_ID, "status": "SUCCESS",
         "sourceProvenance": {"resolvedStorageSource": copy.deepcopy(storage)},
         "results": {"images": [{"name": request["images"][0], "digest": IMAGE.split("@", 1)[1]}]}}
-    recipe = (profile.definition_recipe(PARENT, root) if definitions else (root / builder.FULL_SOURCE_DOCKERFILE).read_bytes())
+    recipe = (profile.definition_recipe(PARENT, root) if definitions else (root / current.dockerfile).read_bytes())
     identity = builder.build_contract(value, NONCE, profile.digest(recipe), full_source=not definitions,
         source_revision=not definitions, source_definitions=definitions, source_parent=PARENT if definitions else None,
         source_commit=current.commit)
@@ -79,9 +80,9 @@ def test_only_reviewed_source_hashes_change_without_weakening_policy():
     current = json.loads(contents[profile.POLICY_PATH])
     assert {key: value for key, value in current.items() if key != "source_sha256"} == {
         key: value for key, value in previous.items() if key != "source_sha256"}
-    assert {name for name in hashes if hashes[name] != previous["source_sha256"][name]} == {
-        "infra/document-processing/processor.py", "backend/app/services/parsing.py"}
-    assert policy != courier.POLICY_SHA256 and len(hashes) == 21
+    assert {name for name in hashes if hashes[name] != previous["source_sha256"].get(name)} == {
+        "infra/document-processing/processor.py", "backend/app/services/parsing.py", profile.DOCKERFILE}
+    assert policy != courier.POLICY_SHA256 and len(hashes) == 22
 
 
 def test_dirty_native_or_unversioned_helper_bytes_never_authorize_new_work(source):
@@ -114,7 +115,7 @@ def test_distinct_full_source_and_definition_child_builds_bind_git_and_archive(s
     value, identity = build(source, definitions=definitions)
     assert identity["kind"] == (profile.DEFINITIONS_KIND if definitions else profile.KIND)
     assert identity["source_commit"] == current.commit and identity["qualification_sha256"] == current.qualification_sha256
-    assert identity["fixed_renderer_base"] == (PARENT if definitions else None)
+    assert identity["fixed_renderer_base"] == (PARENT if definitions else courier.IMAGE)
     if definitions:
         recipe = profile.definition_recipe(PARENT, root)
         assert recipe.count(PARENT.encode()) == 2 and b"apt-get" not in recipe and b"COPY --from=definitions /var/lib/clamav /var/lib/clamav" in recipe
@@ -476,21 +477,28 @@ def test_scheduled_refresh_uses_only_source_definition_child_without_downgrade(m
         assert kwargs["publish"] is True and kwargs["nonce"] == NONCE
         calls.append("definitions_child")
         return {"build_identity": identity}
-    def promote(actual, native_journal, transition_journal, **kwargs):
-        assert actual is identity and kwargs["application_context"] is context
+    def promote(actual, native_journal, transition_journal, *, application_context, root=profile.ROOT):
+        assert actual is identity and application_context is context
+        assert native_journal == tmp_path / "native-proof" and transition_journal == tmp_path / "transition"
         calls.append("native_and_transition")
         return {"status": "document_refresh_serving"}
+    # Validate the actual production entry-point signature before the synthetic
+    # promotion body can run; permissive **kwargs would hide dispatch defects.
+    promoted = create_autospec(release.promote, side_effect=promote)
     modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *a, **k: NONCE),
         "document_refresh_probe": SimpleNamespace(Clients=lambda: SimpleNamespace(
             preflight=lambda: {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
             policy_for_serving=lambda *_: profile.POLICY_SHA256),
-        "document_source_release": SimpleNamespace(promote=promote)}
+        "document_source_release": SimpleNamespace(promote=promoted)}
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
+    monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("Dispatch regression must not call providers"))
     monkeypatch.setattr(builder, "source_definitions_candidate", selected)
     monkeypatch.setattr(builder, "candidate", lambda *a, **k: pytest.fail("No V2 downgrade"))
     monkeypatch.setattr(builder, "full_source_candidate", lambda *a, **k: pytest.fail("No daily full-source rebuild"))
     result = builder.refresh(tmp_path, publish=True, now=native.historical.NOW, application_context=context)
     assert result["status"] == "document_refresh_serving" and calls == ["definitions_child", "native_and_transition"]
+    promoted.assert_called_once_with(identity, tmp_path / "native-proof", tmp_path / "transition",
+                                     application_context=context)
 
 
 def test_unknown_source_policy_is_refused_without_a_build(monkeypatch):
@@ -542,3 +550,44 @@ def test_unknown_native_ack_never_replays_or_relabels_old_image(source, monkeypa
         v3.run_successor(identity, journal, adapter=probe)
     assert {p.name: p.read_bytes() for p in journal.iterdir()} == original
     assert calls == (["create"] if phase == "create" else ["create", "run"])
+
+
+@pytest.mark.parametrize("source_revision,full_source", [(False, False), (False, True), (True, True)])
+def test_retained_source_policy_refuses_old_candidate_builds_and_requires_current_upgrade_lane(
+    monkeypatch, tmp_path, source_revision, full_source,
+):
+    calls = []
+    context = object() if source_revision else None
+    identity = {"kind": profile.KIND, "immutable_image": IMAGE}
+
+    def current_candidate(directory, **kwargs):
+        assert source_revision is True and full_source is True
+        assert directory == tmp_path and kwargs == {"publish": True, "now": native.historical.NOW,
+                                                    "nonce": NONCE, "source_revision": True}
+        calls.append("current_overlay_candidate")
+        return {"build_identity": identity}
+
+    promoted = create_autospec(release.promote, return_value={"status": "document_refresh_serving"})
+    modules = {"document_refresh_recovery": SimpleNamespace(prepare=lambda *a, **k: NONCE),
+        "document_refresh_probe": SimpleNamespace(Clients=lambda: SimpleNamespace(
+            preflight=lambda: {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
+            policy_for_serving=lambda *_: profile.LEGACY_POLICY_SHA256),
+        "document_candidate": SimpleNamespace(POLICY_SHA256=courier.POLICY_SHA256),
+        "document_source_release": SimpleNamespace(promote=promoted)}
+    monkeypatch.setattr(builder, "infra", modules.__getitem__)
+    monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("No provider entry in dispatch regression"))
+    monkeypatch.setattr(builder, "native_build", lambda *a, **k: pytest.fail("No native Build entry"))
+    monkeypatch.setattr(builder, "candidate", lambda *a, **k: pytest.fail("Old source must not dispatch a V2 candidate"))
+    monkeypatch.setattr(builder, "source_definitions_candidate", lambda *a, **k: pytest.fail("Old source must not acquire a child Build"))
+    monkeypatch.setattr(builder, "full_source_candidate", current_candidate)
+    if source_revision:
+        value = builder.refresh(tmp_path, publish=True, now=native.historical.NOW,
+            application_context=context, source_revision=True, full_source=True)
+        assert value["status"] == "document_refresh_serving" and calls == ["current_overlay_candidate"]
+        promoted.assert_called_once_with(identity, tmp_path / "native-proof", tmp_path / "transition",
+                                         application_context=context)
+    else:
+        with pytest.raises(builder.RefreshDenied, match="legacy_source_read_only"):
+            builder.refresh(tmp_path, publish=True, now=native.historical.NOW, full_source=full_source)
+        assert calls == []
+        promoted.assert_not_called()

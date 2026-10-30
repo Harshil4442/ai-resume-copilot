@@ -94,13 +94,13 @@ in 35 seconds, before page, result or terminal refresh reads. Employer search
 preparation uses the same bounded delays, normally starting after five seconds.
 Hidden pages and capacity errors stop those automatic polls.
 
-The existing legacy and unified payment-status loops each permit 24 reads at
-2.5-second intervals, after a user starts that check. A continuously pending
-loop alone can require 48 List/96 default Get units in about 57.5 seconds, above
-the proposed 40-unit project budget. Request duration may lower the actual rate;
-it is not a capacity guarantee. Unknown outcomes still require status/reconcile,
-never another payment or application submission. This candidate does not change
-those loops; their demand needs a separately reviewed reduction/measurement.
+The separately qualified legacy and unified payment-status loops now permit
+eight adaptive automatic reads at 0,5,15,35,65,95,125,155 seconds absent request
+duration, plus one explicit manual status read. The historical 24-at-2.5-second
+estimate is superseded. Hidden/capacity/unknown states pause automatic reads;
+unknown outcomes require status/reconcile, never another payment or application
+submission. Aggregate demand still needs measurement; see
+`STAGE5_OWNED_HTTP_CAPACITY.md` for the bounded owned-local plan and its limits.
 
 The current companion popup `status`/`pairing_status` path reads local runtime
 state; no automatic HTTP polling timer was found there. Review-page timers only

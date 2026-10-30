@@ -6,33 +6,47 @@ native password boundary. No SQL/bearer bootstrap, action permit or credit opera
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
+import math
 import re
+from dataclasses import dataclass
+from threading import Lock, current_thread
+from time import monotonic
 from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .contracts import Digest, Identifier, Timestamp
+from .device_transport_admission import (
+    SIGNED_DEVICE_OPERATIONS,
+    DeviceIngressTiming,
+    DeviceTransportVerifier,
+    VerifiedDeviceAdmission,
+)
 from .gcp_buffer import BufferedTransaction
 from .gcp_pairing import GcpPairingCoordinator, _PasswordReadTransaction
 from .gcp_pairing_contracts import PairingCommand
-from .pairing_auth import key_fingerprint, public_jwk, verify_signature
+from .pairing_auth import key_fingerprint, public_jwk
 from .pairing_contracts import PairingContract, canonical_bytes
 from .password_reauth import (
     CandidateWebSession,
     PasswordReauthService,
     RegisteredPasswordIdentity,
+    RetainedWebSession,
 )
 from .store import GuardDenied, GuardUnavailable
 
 MAX_BODY = 8_192
 MAX_RESPONSE = 16_384
 WINDOW_MS = 5_000
+PROCESSING_MS = 30_000
 PREFIX = "/api/v1/browser-pairing"
 FAILURE = "Browser pairing request was rejected"
 
@@ -113,6 +127,36 @@ class DeviceSelection(HttpContract):
     device_id: UUID
 
 
+class VerifiedGatewayAdmission:
+    """Opaque, process-local receipt; only its verifier can issue a usable one."""
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls):
+        raise TypeError("Gateway admissions are verifier-issued only")
+
+
+@dataclass(repr=False)
+class _Admission:
+    envelope: GatewayAssertion
+    owner: object
+    thread: object
+    task: object | None
+    admitted_ms: int
+    admitted_monotonic: float
+    last_ms: int
+    last_monotonic: float
+    started: bool = False
+    composition_owner: object | None = None
+    session_window: RetainedWebSession | None = None
+
+
+def _task():
+    try:
+        return asyncio.current_task()
+    except RuntimeError:
+        return None
+
+
 def exact_json(raw: bytes) -> dict:
     """Reject duplicate keys, floats, oversized bodies and nonobject JSON without echo."""
     def pairs(items: list[tuple[str, object]]) -> dict:
@@ -146,6 +190,8 @@ class GatewayVerifier:
                 or any(c.isspace() for c in origin) or re.fullmatch(r"[A-Za-z0-9_-]{1,160}", issuer) is None):
             raise GuardUnavailable("A fixed HTTPS candidate origin is required")
         self._key, self.issuer, self.origin = key, issuer, origin
+        self._admissions: WeakKeyDictionary[VerifiedGatewayAdmission, _Admission] = WeakKeyDictionary()
+        self._admission_lock = Lock()
 
     def verify(self, encoded: str, signature: str, *, path: str, raw: bytes,
                now_ms: int) -> GatewayAssertion:
@@ -171,37 +217,195 @@ class GatewayVerifier:
         except (ValidationError, ValueError, TypeError, UnicodeError):
             raise GuardDenied(FAILURE) from None
 
+    def admit(self, encoded: str, signature: str, *, owner: object, path: str,
+              raw: bytes, now_ms: int) -> VerifiedGatewayAdmission:
+        # This retains pairing's existing local wall-clock authority, not
+        # ADR008's separately provider-anchored account-ingress clock.
+        started = monotonic()
+        envelope = self.verify(encoded, signature, path=path, raw=raw, now_ms=now_ms)
+        exact_json(raw)
+        if (type(now_ms) is not int or not 0 < now_ms <= 2**53 - 1 - PROCESSING_MS
+                or envelope.expires_at_ms > 2**53 - 1 - PROCESSING_MS
+                or not math.isfinite(started)):
+            raise GuardDenied(FAILURE)
+        admission = object.__new__(VerifiedGatewayAdmission)
+        with self._admission_lock:
+            self._admissions[admission] = _Admission(envelope, owner, current_thread(), _task(),
+                now_ms, started, now_ms, started)
+        return admission
+
+    def admitted(self, admission: VerifiedGatewayAdmission, *, owner: object, path: str,
+                 raw: bytes, now_ms: int, start: bool = False) -> GatewayAssertion:
+        # Neither an unregistered object.__new__ handle nor a caller bool/time
+        # grants authority. A handle is native-instance/thread/task/request bound.
+        if type(admission) is not VerifiedGatewayAdmission:
+            raise GuardDenied(FAILURE)
+        current = monotonic()
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if (state is None or state.owner is not owner or state.thread is not current_thread()
+                    or state.task is not _task() or (state.started if start else not state.started)):
+                raise GuardDenied(FAILURE)
+            if start:
+                state.started = True  # Failed or interrupted starts cannot reuse this receipt.
+            if (type(now_ms) is not int or not math.isfinite(current)
+                    or not state.last_ms <= now_ms < state.admitted_ms + PROCESSING_MS
+                    or not state.last_monotonic <= current < state.admitted_monotonic + PROCESSING_MS / 1000
+                    or (state.session_window is not None
+                        and not state.session_window.issued_at_ms <= now_ms < state.session_window.expires_at_ms)
+                    or type(raw) is not bytes or state.envelope.path != path or state.envelope.method != "POST"
+                    or state.envelope.body_sha256 != hashlib.sha256(raw).hexdigest()):
+                raise GuardDenied(FAILURE)
+            state.last_ms, state.last_monotonic = now_ms, current
+            return state.envelope
+
+    def restrict_session(self, admission: VerifiedGatewayAdmission, *, owner: object,
+                         session: RetainedWebSession) -> None:
+        """Retain a validated native snapshot as a restriction, never an allow cache."""
+        if type(admission) is not VerifiedGatewayAdmission or type(session) is not RetainedWebSession:
+            raise GuardDenied(FAILURE)
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if (state is None or state.owner is not owner or not state.started
+                    or state.thread is not current_thread() or state.task is not _task()
+                    or session.session_id != state.envelope.context.session_id
+                    or session.account_binding_id != state.envelope.context.account_binding_id
+                    or session.authentication_method != state.envelope.context.authentication_method
+                    or (state.session_window is not None and state.session_window != session)):
+                raise GuardDenied(FAILURE)
+            state.session_window = session
+
+    def admit_composition(self, encoded: str, signature: str, *, owner: object, path: str,
+                          raw: bytes, now_ms: int) -> VerifiedGatewayAdmission:
+        admission = self.admit(encoded, signature, owner=owner, path=path, raw=raw, now_ms=now_ms)
+        with self._admission_lock:
+            self._admissions[admission].composition_owner = owner
+        return admission
+
+    def bind_composed(self, admission: VerifiedGatewayAdmission, *, construction_owner: object,
+                      native, path: str, raw: bytes, now_ms: int) -> None:
+        # Only the original construction slot may bind this once to the exact
+        # native instance sharing this verifier. No timestamp/bool is authority.
+        if type(native) is not NativeBrowserPairing or native.gateway is not self:
+            raise GuardDenied(FAILURE)
+        if type(admission) is not VerifiedGatewayAdmission:
+            raise GuardDenied(FAILURE)
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            current = monotonic()
+            if (state is None or state.owner is not construction_owner
+                    or state.composition_owner is not construction_owner or state.started
+                    or state.thread is not current_thread() or state.task is not _task()
+                    or type(now_ms) is not int or not math.isfinite(current)
+                    or not state.last_ms <= now_ms < state.admitted_ms + PROCESSING_MS
+                    or not state.last_monotonic <= current < state.admitted_monotonic + PROCESSING_MS / 1000
+                    or type(raw) is not bytes or state.envelope.path != path
+                    or state.envelope.body_sha256 != hashlib.sha256(raw).hexdigest()):
+                raise GuardDenied(FAILURE)
+            state.owner, state.composition_owner = native, None
+            state.last_ms, state.last_monotonic = now_ms, current
+
+    def finish_admission(self, admission: VerifiedGatewayAdmission, *, owner: object) -> None:
+        if type(admission) is not VerifiedGatewayAdmission:
+            return
+        with self._admission_lock:
+            state = self._admissions.get(admission)
+            if state is not None and state.owner is owner:
+                del self._admissions[admission]
+
 
 class NativeBrowserPairing:
     """One explicitly injected native coordinator, password boundary and gateway pin."""
     def __init__(self, coordinator: GcpPairingCoordinator, password: PasswordReauthService,
-                 gateway: GatewayVerifier, *, paired_devices=None):
+                 gateway: GatewayVerifier, *, paired_devices=None, device_transport=None):
         if (type(coordinator) is not GcpPairingCoordinator
                 or type(password) is not PasswordReauthService or password.pairing is not coordinator.core):
             raise GuardUnavailable("Connected native pairing/password boundaries are required")
         self.coordinator, self.password, self.gateway = coordinator, password, gateway
         self.paired_devices = paired_devices
         self.identity = RegisteredPasswordIdentity(coordinator.core.store)
+        if device_transport is not None and type(device_transport) is not DeviceTransportVerifier:
+            raise GuardUnavailable("Exact device transport verifier required")
+        self.device_transport = device_transport if device_transport is not None else DeviceTransportVerifier(now_ms=coordinator.now_ms)
 
     def _consume(self, namespace: str, request_id: str, *, context: CandidateWebSession | None,
-                 issued: int, expires: int | None = None) -> dict | None:
+                 issued: int, expires: int | None = None,
+                 admission: VerifiedGatewayAdmission | None = None, operation: str = "", raw: bytes = b"",
+                 device_admission: VerifiedDeviceAdmission | None = None, origin: str = "") -> dict | None:
         captured: list[dict] = []
+        c = self.coordinator
+
+        def admitted(now: int, tx=None) -> None:
+            if device_admission is not None:
+                if admission is not None or context is not None or namespace != "browser_device_requests":
+                    raise GuardDenied(FAILURE)
+                request = self.device_transport.check(device_admission, native=self,
+                    operation=operation, raw=raw, origin=origin, tx=tx)
+                if request.request_id != request_id or request.issued_at_ms != issued or expires is not None:
+                    raise GuardDenied(FAILURE)
+                return
+            if admission is None:
+                if context is not None:
+                    raise GuardDenied(FAILURE)
+                return
+            envelope = self.gateway.admitted(admission, owner=self,
+                path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=now)
+            if (namespace != "browser_gateway_requests" or str(envelope.request_id) != request_id
+                    or envelope.context != context or envelope.issued_at_ms != issued
+                    or envelope.expires_at_ms != expires):
+                raise GuardDenied(FAILURE)
+
+        def before_attempt():
+            admitted(c.now_ms())
+            c.fence.check(c.pin)
+            admitted(c.now_ms())
+
         def transaction(tx: BufferedTransaction) -> None:
-            c = self.coordinator
             c._control(tx)
             now = c.now_ms()
             deadline = issued + WINDOW_MS if expires is None else expires
-            if not issued <= now < deadline <= issued + WINDOW_MS or tx.get(namespace, request_id) is not None:
+            admitted(now, tx)
+            if admission is None and device_admission is None and not issued <= now < deadline <= issued + WINDOW_MS:
+                raise GuardDenied(FAILURE)
+            if tx.get(namespace, request_id) is not None:
                 raise GuardDenied(FAILURE)
             if context is not None:
-                retained = self.identity.resolve(_PasswordReadTransaction(tx, c, context),
-                    context, c.core, now)
+                reader = _PasswordReadTransaction(tx, c, context)
+                retained = self.identity.resolve(reader, context, c.core, now)
+                current = c.now_ms()
+                admitted(current)
+                if current != now:
+                    # Repeat current-session/expiry checks over the same native
+                    # transaction snapshot after its reads; no expected facts or
+                    # stale identity are substituted for current account state.
+                    fresh = self.identity.resolve(reader, context, c.core, current)
+                    if fresh != retained:
+                        raise GuardDenied(FAILURE)
+                # This exact row was already read/validated by the identity
+                # resolver. BufferedTransaction supplies the same native
+                # snapshot, without another physical read or an expiry loop.
+                session = RetainedWebSession.model_validate(reader.get("pairing_web_sessions", str(context.session_id)))
+                if (session.subject_uuid != UUID(retained["subject_uuid"])
+                        or session.session_id != UUID(retained["session_id"])
+                        or session.principal_sha256 != retained["principal_sha256"]
+                        or session.auth_generation != retained["auth_generation"]):
+                    raise GuardDenied(FAILURE)
+                assert admission is not None
+                self.gateway.restrict_session(admission, owner=self, session=session)
+                admitted(c.now_ms())
                 captured[:] = [retained]
+                # Cover every invocation admitted within the ORIGINAL signed
+                # window, including its maximum bounded processing lease. This
+                # does not extend public assertion reuse or the human review.
+                deadline += PROCESSING_MS
+            elif device_admission is not None:
+                deadline += PROCESSING_MS
+            admitted(c.now_ms())
             # No body, password, assertion, cookie, signature or body digest is retained.
             tx.put(namespace, request_id, {"expires_at_ms": deadline}, immutable=True)
-        self.coordinator.registry.run(transaction,
-            before_attempt=lambda: self.coordinator.fence.check(self.coordinator.pin))
+        c.registry.run(transaction, before_attempt=before_attempt)
         self.coordinator.fence.check(self.coordinator.pin)
+        admitted(c.now_ms())
         return captured[0] if captured else None
 
     def _execute(self, command: PairingCommand, parameters: dict) -> dict:
@@ -215,11 +419,24 @@ class NativeBrowserPairing:
         return result.result
 
     def candidate(self, operation: str, raw: bytes, assertion: str, signature: str) -> dict:
+        admission = self.admit_candidate(operation, raw, assertion, signature)
+        try:
+            return self.candidate_admitted(operation, raw, admission)
+        finally:
+            self.gateway.finish_admission(admission, owner=self)
+
+    def admit_candidate(self, operation: str, raw: bytes, assertion: str,
+                        signature: str) -> VerifiedGatewayAdmission:
+        return self.gateway.admit(assertion, signature, owner=self,
+            path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=self.coordinator.now_ms())
+
+    def candidate_admitted(self, operation: str, raw: bytes, admission: VerifiedGatewayAdmission) -> dict:
         c = self.coordinator
-        envelope = self.gateway.verify(assertion, signature, path=f"{PREFIX}/candidate/{operation}",
-            raw=raw, now_ms=c.now_ms())
+        envelope = self.gateway.admitted(admission, owner=self,
+            path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms(), start=True)
         if self.paired_devices is not None:
             self.paired_devices.scoped.resolve(envelope.context)
+        self.gateway.admitted(admission, owner=self, path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms())
         data = exact_json(raw)
         if operation in {"challenge", "revoke-challenge"}:
             model = PairingSelection if operation == "challenge" else DeviceSelection
@@ -231,18 +448,22 @@ class NativeBrowserPairing:
         else:
             raise GuardDenied(FAILURE)
         identity = self._consume("browser_gateway_requests", str(envelope.request_id),
-            context=envelope.context, issued=envelope.issued_at_ms, expires=envelope.expires_at_ms)
+            context=envelope.context, issued=envelope.issued_at_ms, expires=envelope.expires_at_ms,
+            admission=admission, operation=operation, raw=raw)
         assert identity is not None
         if operation in {"confirm", "revoke"}:
-            return self.password.execute(envelope.context, data)
-        assert selected is not None
-        parameters = {"subject_id": identity["subject_uuid"], "session_id": identity["session_id"]}
-        if operation == "challenge":
-            parameters["pairing_id"] = str(selected.model_dump()["pairing_id"])
-            result = self._execute("candidate_challenge", parameters)
-            return self._candidate_reply(result)
-        parameters["device_id"] = str(selected.model_dump()["device_id"])
-        return self._candidate_reply(self._execute("revocation_challenge", parameters))
+            result = self.password.execute(envelope.context, data)
+        else:
+            assert selected is not None
+            parameters = {"subject_id": identity["subject_uuid"], "session_id": identity["session_id"]}
+            if operation == "challenge":
+                parameters["pairing_id"] = str(selected.model_dump()["pairing_id"])
+                result = self._candidate_reply(self._execute("candidate_challenge", parameters))
+            else:
+                parameters["device_id"] = str(selected.model_dump()["device_id"])
+                result = self._candidate_reply(self._execute("revocation_challenge", parameters))
+        self.gateway.admitted(admission, owner=self, path=f"{PREFIX}/candidate/{operation}", raw=raw, now_ms=c.now_ms())
+        return result
 
     @staticmethod
     def _candidate_reply(result: dict) -> dict:
@@ -308,30 +529,52 @@ class NativeBrowserPairing:
             raise GuardDenied(FAILURE)
 
     def device(self, operation: str, raw: bytes, origin: str) -> dict:
-        data = exact_json(raw)
-        if operation == "inspect-key":
-            inspection = KeyStatusRequest.model_validate(data)
-            self._device_origin(origin, extension_id=inspection.extension_id)
-            key = public_jwk(inspection.key)
-            verify_signature(key, "transport-request", inspection.model_dump(mode="json", exclude={"signature"}), inspection.signature)
-            if self.paired_devices is None:
+        if operation in SIGNED_DEVICE_OPERATIONS:
+            ingress = self.device_transport.capture(operation, raw, origin, owner=self)
+            try:
+                return self.device_captured(operation, raw, origin, ingress)
+            finally:
+                self.device_transport.finish(ingress, owner=self)
+        return self._challenge_device(operation, raw, origin)
+
+    def device_captured(self, operation: str, raw: bytes, origin: str, ingress: DeviceIngressTiming) -> dict:
+        # A captured arrival time is not authority. Actual fresh native origin/
+        # public-key lookup and ECDSA verification happen before this admission.
+        admission = self.device_transport.verify(ingress, native=self, operation=operation, raw=raw, origin=origin)
+        try:
+            if operation == "inspect-key" and self.paired_devices is None:
                 raise GuardUnavailable("Protected device key inspection is unavailable")
-            self._consume("browser_device_requests", str(inspection.request_id), context=None,
-                          issued=inspection.issued_at_ms)
-            status = self.paired_devices.key_status(key, extension_id=inspection.extension_id,
-                                                   executor_revision=inspection.revision)
-            return {"protocol_version": 2, "key_sha256": key_fingerprint(key),
-                    "extension_id": inspection.extension_id, "executor_revision": inspection.revision,
-                    "status": status}
-        if operation == "prepare":
-            prepare = PrepareRequest.model_validate(data)
-            self._device_origin(origin, extension_id=prepare.extension_id)
-            key = public_jwk(prepare.key)
-            verify_signature(key, "transport-request", prepare.model_dump(mode="json", exclude={"signature"}), prepare.signature)
-            self._consume("browser_device_requests", str(prepare.request_id), context=None,
-                          issued=prepare.issued_at_ms)
-            return self._execute("prepare_request", {"key": key, "extension_id": prepare.extension_id,
-                                                     "revision": prepare.revision})
+            proof = self.device_transport.check(admission, native=self, operation=operation, raw=raw, origin=origin)
+            self._consume("browser_device_requests", proof.request_id, context=None,
+                issued=proof.issued_at_ms, device_admission=admission, operation=operation, raw=raw, origin=origin)
+            data = exact_json(raw)
+            if operation == "inspect-key":
+                inspection = KeyStatusRequest.model_validate(data)
+                key = public_jwk(inspection.key)
+                status = self.paired_devices.key_status(key, extension_id=inspection.extension_id,
+                    executor_revision=inspection.revision)
+                result = {"protocol_version": 2, "key_sha256": key_fingerprint(key),
+                    "extension_id": inspection.extension_id, "executor_revision": inspection.revision, "status": status}
+            elif operation == "prepare":
+                prepare = PrepareRequest.model_validate(data)
+                result = self._execute("prepare_request", {"key": public_jwk(prepare.key),
+                    "extension_id": prepare.extension_id, "revision": prepare.revision})
+            else:
+                lookup = DeviceLookup.model_validate(data)
+                if operation == "status":
+                    result = self.coordinator.pairing_status(str(lookup.identity))
+                else:
+                    parameter = "device_id" if operation == "refresh-challenge" else "pairing_id"
+                    result = self._execute(lookup.operation, {parameter: str(lookup.identity)})
+            self.device_transport.check(admission, native=self, operation=operation, raw=raw, origin=origin)
+            return result
+        finally:
+            self.device_transport.finish(admission, owner=self)
+
+    def _challenge_device(self, operation: str, raw: bytes, origin: str) -> dict:
+        # The server challenge proof paths have their own original ten-second
+        # core deadlines, nonce/signature and ACK rules. No transport lease.
+        data = exact_json(raw)
         if operation == "create":
             creation = CreationProof.model_validate(data)
             self._device_origin(origin, pairing_id=str(creation.pairing_id))
@@ -343,20 +586,7 @@ class NativeBrowserPairing:
             return self._execute("complete_device" if operation == "complete" else "refresh_claim",
                 {"challenge_id": str(challenge.challenge_id), "nonce": str(challenge.nonce),
                  "signature": challenge.signature})
-        lookup = DeviceLookup.model_validate(data)
-        expected = {"challenge": "device_challenge", "status": "status", "refresh-challenge": "refresh_challenge"}
-        if expected.get(operation) != lookup.operation:
-            raise GuardDenied(FAILURE)
-        self._device_origin(origin, device_id=str(lookup.identity) if operation == "refresh-challenge" else None,
-                            pairing_id=str(lookup.identity) if operation != "refresh-challenge" else None)
-        key = self._lookup_key(lookup)
-        verify_signature(key, "transport-request", lookup.model_dump(mode="json", exclude={"signature"}), lookup.signature)
-        self._consume("browser_device_requests", str(lookup.request_id), context=None,
-                      issued=lookup.issued_at_ms)
-        if operation == "status":
-            return self.coordinator.pairing_status(str(lookup.identity))
-        parameter = "device_id" if operation == "refresh-challenge" else "pairing_id"
-        return self._execute(lookup.operation, {parameter: str(lookup.identity)})
+        raise GuardDenied(FAILURE)
 
 
 class UnavailableBrowserPairing:

@@ -1,10 +1,12 @@
 import { CONFIG } from "./config.js";
 import { decode64 } from "./protocol.js";
 import { nativeStorageOrigin } from "./greenhouse-native-network.js";
+import { showStartupFailure, startupDiagnostic, startupStatus } from "./startup-diagnostics.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
 let assistance = null;
+let recoveryReview = null;
 const nativeAssistance = CONFIG.mode === "reviewed_assistance" && CONFIG.nativePairing != null;
 async function request(message) {
   const result = await chrome.runtime.sendMessage(message);
@@ -168,6 +170,65 @@ function assistanceAction(id, type) {
     catch (failure) { await showAssistance(await request({ type: "assistance_status" })); throw failure; }
   });
 }
+function enableRecovery(failure) {
+  const code = startupDiagnostic(failure).code;
+  if (!["HW-COMPANION-START-KEY-MISSING-RETAINED", "HW-COMPANION-START-RECOVERY"].includes(code)) return;
+  element("lost-key-recovery").hidden = false;
+  element("recovery-inspect").disabled = false;
+  element("recovery-review").disabled = code !== "HW-COMPANION-START-KEY-MISSING-RETAINED";
+}
+function showRecovery(value) {
+  const list = element("recovery-summary"); list.replaceChildren();
+  for (const [label, data] of [["Local recovery", value.recovery_id || "Not started"], ["Local state", value.phase],
+    ["Retained archive", value.archive_bytes == null ? "Not created" : `${value.archive_bytes} bytes`]]) pair(list, label, data);
+  if (value.snapshot_digest) pair(list, "Reviewed snapshot SHA-256", value.snapshot_digest);
+  const devices = element("recovery-old-devices"); devices.replaceChildren();
+  for (const id of value.old_device_ids || []) {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)) continue;
+    const button = document.createElement("button"); button.textContent = `Review old device ${id} on HireWiz`;
+    button.addEventListener("click", async (event) => {
+      if (!event.isTrusted) return;
+      await chrome.tabs.create({ url: `${CONFIG.websiteOrigin}/browser-companion?native_device=${id}` });
+    });
+    devices.append(button);
+  }
+  element("recovery-info").textContent = value.phase === "active"
+    ? "The new local identity is stored separately. Close and reopen this popup, then start a new connection and approve its new fingerprints. No application action or old-device revocation occurred."
+    : value.phase === "pending" && value.snapshot_digest ? value.warning
+    : "Inspection never creates or resumes an identity. Detected changes permanently lock this recovery's journal. Pending or blocked recovery cannot be retried. Old application outcomes and server-device status remain unresolved.";
+}
+function recoveryAction(id, operation) {
+  element(id).addEventListener("click", async (event) => {
+    if (!event.isTrusted) return;
+    element(id).disabled = true;
+    try { await operation(); }
+    catch {
+      recoveryReview = null;
+      const failure = new Error("Local lost-key recovery needs inspection. No application action is enabled.");
+      showStartupFailure(document, failure); enableRecovery(failure);
+    }
+  });
+}
+recoveryAction("recovery-review", async () => {
+  recoveryReview = await request({ type: "lost_key_review" }); showRecovery(recoveryReview);
+  element("recovery-confirmation").hidden = false; element("recovery-ack").disabled = false;
+  element("recovery-ack").checked = false; element("recovery-confirm").disabled = true;
+});
+element("recovery-ack").addEventListener("change", () => {
+  element("recovery-confirm").disabled = !recoveryReview || !element("recovery-ack").checked;
+});
+recoveryAction("recovery-confirm", async () => {
+  if (!recoveryReview || !element("recovery-ack").checked) return;
+  const reviewed = recoveryReview; recoveryReview = null;
+  element("recovery-ack").disabled = true; element("recovery-confirmation").hidden = true;
+  showRecovery(await request({ type: "lost_key_commit", recovery_id: reviewed.recovery_id, acknowledged: true }));
+  element("recovery-review").disabled = true;
+});
+recoveryAction("recovery-inspect", async () => {
+  recoveryReview = null; element("recovery-confirmation").hidden = true;
+  showRecovery(await request({ type: "lost_key_inspect" }));
+  element("recovery-inspect").disabled = false;
+});
 action("assistance-permission", async () => {
   const granted = await chrome.permissions.request({ origins: [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`] });
   if (!granted) throw new Error("The exact HireWiz and Greenhouse permissions were not granted.");
@@ -199,7 +260,7 @@ assistanceAction("assistance-reconcile", "assistance_reconcile");
 assistanceAction("assistance-fill", "assistance_fill");
 assistanceAction("assistance-cancel", "assistance_cancel");
 try {
-  const status = await request({ type: "status" });
+  const status = await startupStatus((message) => chrome.runtime.sendMessage(message));
   element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available."
     : status.mode === "local_fixture" ? "Local synthetic fixtures only. No real employer adapter is enabled."
     : status.mode === "local_native_fixture" ? "Controlled local native connection test. Production remains disabled."
@@ -215,6 +276,9 @@ try {
     if (status.assistance) await showAssistance(status.assistance);
   } else if (status.mode === "reviewed_assistance") await showAssistance(status);
   if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
-} catch {
-  element("mode").textContent = "Browser connection unavailable. No application action is enabled.";
+} catch (failure) {
+  let version;
+  try { version = chrome.runtime.getManifest().version; } catch { /* Keep unavailable metadata out of the diagnostic. */ }
+  showStartupFailure(document, failure, version);
+  enableRecovery(failure);
 }

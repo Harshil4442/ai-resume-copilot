@@ -16,18 +16,27 @@ from pathlib import Path
 from infra.gcp import document_candidate as courier
 
 ROOT = Path(__file__).resolve().parents[2]
-KIND = "native_cloud_build_source_revision_v1"
-DEFINITIONS_KIND = "native_cloud_build_source_definitions_v1"
-POLICY_PATH = "infra/document-processing/policy.source-revision.json"
-POLICY_SHA256 = "6a080773cc96cd7eca35160ef2e20e299d8dc458e8696b782f40b722d30c2fb1"
+LEGACY_KIND = "native_cloud_build_source_revision_v1"
+KIND = "native_cloud_build_source_fixed_renderer_v1"
+LEGACY_DEFINITIONS_KIND = "native_cloud_build_source_definitions_v1"
+DEFINITIONS_KIND = "native_cloud_build_fixed_renderer_definitions_v1"
+LEGACY_POLICY_PATH = "infra/document-processing/policy.source-revision.json"
+POLICY_PATH = "infra/document-processing/policy.source-fixed-renderer.json"
+DOCKERFILE = "infra/document-processing/source-fixed-renderer.Dockerfile"
+SOURCES = frozenset({*courier.SOURCES, DOCKERFILE})
+LEGACY_POLICY_SHA256 = "6a080773cc96cd7eca35160ef2e20e299d8dc458e8696b782f40b722d30c2fb1"
+POLICY_SHA256 = "22a012f2fb7b6d3b696d8772563e9363566b9f03fb83385cfeffbc84a26459eb"
+READ_POLICIES = frozenset({POLICY_SHA256, LEGACY_POLICY_SHA256})
+READ_KINDS = frozenset({KIND, DEFINITIONS_KIND, LEGACY_KIND, LEGACY_DEFINITIONS_KIND})
 CONTRACT_VERSION = 4
-CONTRACT_PATHS = ("infra/gcp/document_source_candidate.py", "infra/gcp/document_source_payload.py",
+LEGACY_CONTRACT_PATHS = ("infra/gcp/document_source_candidate.py", "infra/gcp/document_source_payload.py",
                   "infra/gcp/document_source_receipt.py", "infra/gcp/document_source_release.py",
                   "backend/scripts/document_test_image.py", "backend/scripts/document_refresh.py",
                   "infra/gcp/document_candidate_probe.py", "infra/gcp/document_candidate_release.py",
                   "infra/gcp/document_refresh_transition.py", "infra/gcp/document_worker.py",
                   "infra/gcp/document_refresh_probe.py", "infra/gcp/document_refresh_recovery.py",
                   "infra/gcp/document_application_context.py")
+CONTRACT_PATHS = (*LEGACY_CONTRACT_PATHS, "infra/gcp/fresh_monetary_release.py")
 BASE_PAYLOAD_SHA256 = "bd3d526e421356527cffd1660170bca9bedb3eae2b3959c6ae5d25cb83b62a32"
 # Reconstruct exact historical bytes, not new execution or a claim about the
 # historical Build's Git provenance. Every member is checked against frozen V3.
@@ -68,8 +77,9 @@ def frozen_v3(root=ROOT):
     return raw, value
 
 
-def validate_policy(raw, root=ROOT):
-    need(type(raw) is bytes and 0 < len(raw) <= 256 * 1024 and digest(raw) == POLICY_SHA256,
+def validate_policy(raw, root=ROOT, *, legacy=False):
+    need(type(legacy) is bool, "profile_invalid")
+    need(type(raw) is bytes and 0 < len(raw) <= 256 * 1024 and digest(raw) == (LEGACY_POLICY_SHA256 if legacy else POLICY_SHA256),
          "policy_changed")
     value = json.loads(raw)
     _, previous = frozen_v3(root)
@@ -77,7 +87,7 @@ def validate_policy(raw, root=ROOT):
          == {key: row for key, row in previous.items() if key != "source_sha256"},
          "policy_semantics_changed")
     sources = value.get("source_sha256")
-    need(type(sources) is dict and set(sources) == set(courier.SOURCES)
+    need(type(sources) is dict and set(sources) == set(courier.SOURCES if legacy else SOURCES)
          and all(type(row) is str and re.fullmatch(r"[a-f0-9]{64}", row) for row in sources.values()),
          "inventory_changed")
     return sources
@@ -89,6 +99,19 @@ class Source:
     sources: dict[str, str]
     policy_raw: bytes
     qualification_sha256: str
+    legacy: bool = False
+
+    @property
+    def kind(self):
+        return LEGACY_KIND if self.legacy else KIND
+
+    @property
+    def policy_path(self):
+        return LEGACY_POLICY_PATH if self.legacy else POLICY_PATH
+
+    @property
+    def dockerfile(self):
+        return courier.DOCKERFILE if self.legacy else DOCKERFILE
 
     @property
     def policy(self):
@@ -100,19 +123,20 @@ class Source:
 
     @property
     def identity(self):
-        return {"kind": KIND, "source_commit": self.commit, "policy_sha256": self.policy,
+        return {"kind": self.kind, "source_commit": self.commit, "policy_sha256": self.policy,
                 "qualification_sha256": self.qualification_sha256, "source_sha256": self.sources}
 
 
-def committed(commit=None, *, root=ROOT, clean=False):
+def committed(commit=None, *, root=ROOT, clean=False, legacy=False):
+    need(type(legacy) is bool and not (legacy and clean), "legacy_write_refused")
     observed = git(root, "rev-parse", "HEAD").decode().strip()
     commit = observed if commit is None else commit
     need(type(commit) is str and re.fullmatch(r"[a-f0-9]{40}", commit), "commit_invalid")
     if clean:
         need(commit == observed and not git(root, "status", "--porcelain", "--untracked-files=no"),
              "committed_clean_source_required")
-    raw = git(root, "show", commit + ":" + POLICY_PATH)
-    sources = validate_policy(raw, root)
+    raw = git(root, "show", commit + ":" + (LEGACY_POLICY_PATH if legacy else POLICY_PATH))
+    sources = validate_policy(raw, root, legacy=legacy)
     for name, expected in sources.items():
         content = git(root, "show", commit + ":" + name)
         need(digest(content) == expected, "git_source_changed")
@@ -120,11 +144,11 @@ def committed(commit=None, *, root=ROOT, clean=False):
             path = root / name
             need(path.is_file() and not path.is_symlink() and path.read_bytes() == content,
                  "working_source_changed")
-    contracts = {name: digest(git(root, "show", commit + ":" + name)) for name in CONTRACT_PATHS}
+    contracts = {name: digest(git(root, "show", commit + ":" + name)) for name in (LEGACY_CONTRACT_PATHS if legacy else CONTRACT_PATHS)}
     if clean:
         need(all(digest((root / name).read_bytes()) == expected for name, expected in contracts.items()),
              "working_contract_changed")
-    return Source(commit, sources, raw, digest(canonical(contracts)))
+    return Source(commit, sources, raw, digest(canonical(contracts)), legacy)
 
 
 def working_snapshot(root=ROOT):
@@ -160,6 +184,7 @@ def definition_recipe(parent_image, root=ROOT):
 
 
 def require_working_contract(source, root=ROOT):
+    need(not source.legacy, "legacy_write_refused")
     expected = {name: digest(git(root, "show", source.commit + ":" + name)) for name in CONTRACT_PATHS}
     need(digest(canonical(expected)) == source.qualification_sha256
          and all(not (root / name).is_symlink() and digest((root / name).read_bytes()) == stamp

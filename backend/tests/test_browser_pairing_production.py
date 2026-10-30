@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -136,6 +137,77 @@ def test_genuine_registration_pairing_protected_device_no_operator_grant(pairing
     assert device(c, "inspect-key", transport(c, "key_status"))["status"] == "CLAIMED"
 
 
+@pytest.mark.parametrize("phase", ["last_identity_read", "nonce_commit", "command", "observation_exit"])
+def test_registered_native_session_expiry_is_retained_through_final_export(pairing, monkeypatch, phase):
+    """Actual registered session/native adapters; SDK network remains intercepted."""
+    from app.domains.candidate_accounts import production
+    from app.domains.candidate_accounts.service import revision_from_row
+    from app.domains.recovery.gcp_buffer import BufferedTransaction
+    from app.domains.recovery.store import GuardDenied
+    from app.models import CandidatePasswordAccount, User
+
+    c = pairing
+    context, prepared, _ = start(c)
+    with c.accounts.sessions() as db:
+        revision = revision_from_row(db.get(CandidatePasswordAccount, context.candidate_id),
+            db.get(User, context.candidate_id).password_hash)
+    short = c.accounts.retention.issue(revision, expires_at_ms=NOW + 1000)
+    assert short is not None
+    native = c.browser._service()
+    # These facts came from the original enrollment/session writers and their
+    # actual SDK-intercepted ACK flow, not a fabricated resolver return value.
+    session = c.execution_registry.read("pairing_web_sessions", str(short.session_id))
+    assert session["expires_at_ms"] == NOW + 1000
+    clock, fired = [NOW], []
+    monkeypatch.setattr(production.time, "time_ns", lambda: clock[0] * 1_000_000)
+    def expire():
+        if not fired:
+            fired.append(True)
+            clock[0] = NOW + 1001
+    if phase == "last_identity_read":
+        path = BufferedTransaction(c.execution_registry.rpc, b"synthetic-path-only").path("pairing_sessions", str(short.session_id))
+        sdk_read = c.native.sdk.client.transport.batch_get_documents
+        original_read = sdk_read.side_effect
+        def delayed_read(request, **kwargs):
+            result = original_read(request, **kwargs)
+            if path in request.documents:
+                expire()
+            return result
+        monkeypatch.setattr(sdk_read, "side_effect", delayed_read)
+    elif phase == "nonce_commit":
+        original_run = native.coordinator.registry.run
+        def committed(*args, **kwargs):
+            before = len(c.native.calls)
+            result = original_run(*args, **kwargs)
+            if any("browser_gateway_requests" in names for names in c.native.calls[before:]):
+                expire()
+            return result
+        monkeypatch.setattr(native.coordinator.registry, "run", committed)
+    elif phase == "command":
+        original_execute = native._execute
+        def completed(*args, **kwargs):
+            result = original_execute(*args, **kwargs)
+            expire()
+            return result
+        monkeypatch.setattr(native, "_execute", completed)
+    else:
+        original_scope = c.browser._observations
+        @contextmanager
+        def exited(value):
+            with original_scope(value):
+                yield
+            expire()
+        monkeypatch.setattr(c.browser, "_observations", exited)
+    before_nonce = {path for path, (raw, _) in c.native.data.items()
+        if json.loads(raw)["namespace"] == "browser_gateway_requests"}
+    with pytest.raises(GuardDenied):
+        candidate(c, short, "challenge", {"pairing_id": prepared["request"]["pairing_id"]})
+    after_nonce = {path for path, (raw, _) in c.native.data.items()
+        if json.loads(raw)["namespace"] == "browser_gateway_requests"}
+    assert fired and len(after_nonce - before_nonce) == (0 if phase == "last_identity_read" else 1)
+    assert not c.native.views
+
+
 def test_factory_is_structural_and_resource_mismatch_closed(pairing,monkeypatch):
     c = pairing
     assert all(client.call_count == 0 for client in c.clients)
@@ -249,7 +321,9 @@ def test_key_inspection_is_exact_signed_read_with_only_replay_consume(pairing):
         "extension_id": EXTENSION, "executor_revision": REVISION, "status": "UNCLAIMED"}
     added = [json.loads(c.native.data[path][0]) for path in set(c.native.data) - before]
     assert len(added) == 1 and added[0]["namespace"] == "browser_device_requests"
-    assert added[0]["value"] == {"expires_at_ms": NOW + 5000}
+    # Retain replay consumption through the final possible bounded processing
+    # lease; old public signatures still cannot enter a new HTTP invocation.
+    assert added[0]["value"] == {"expires_at_ms": NOW + 35_000}
     assert c.native.calls == [{"browser_device_requests"}]
     assert not c.kms.calls and not c.native.views
     assert not c.browser._service().coordinator._issued

@@ -211,6 +211,9 @@ jobs:
           ../infra/gcp/email_password_schema21_release.py
       - name: Compile backend
         run: backend/.venv/bin/python -m compileall -q backend/app
+      - name: Check canonical document policy source profiles
+        working-directory: backend
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_document_synchronous_do.py::test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds
       - name: Configure verified public cache without restarting PostgreSQL
         timeout-minutes: 2
         env:
@@ -371,6 +374,7 @@ jobs:
       - name: Run backend tests
         working-directory: backend
         env:
+          PYTEST_ADDOPTS: "--durations=50"
           CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_TRANSFER_POSTGRES_REQUIRED: "true"

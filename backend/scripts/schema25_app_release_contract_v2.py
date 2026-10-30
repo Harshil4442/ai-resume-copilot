@@ -15,7 +15,7 @@ from scripts import schema25_app_release_contract as v1
 CONTRACT = "hirewiz_schema25_app_rolling_v2"
 PRIOR_RELEASE = "ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2"
 PRIOR_APP_SHA256 = "5d09318281793a9d9f46827ca19194164579f1c45e78b36d2d48b4655b326b89"
-CANDIDATE_APP_SHA256 = "1db7f750644b8d2dc701ceab51a977e2298582a1465417f280c74e01058edbbe"
+CANDIDATE_APP_SHA256 = "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40800a"
 COMPATIBILITY_STEP = "Qualify schema25 app v2 compatibility"
 PROTOCOL_STEP = "Qualify schema25 app v2 native protocol"
 COMPATIBILITY_COMMAND = ".venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py"
@@ -36,17 +36,37 @@ TRANSPORT_PATHS = (
     "backend/app/domains/recovery/native_metadata_admission.py", "backend/app/domains/recovery/native_diagnostics.py",
     "backend/app/domains/recovery/gcp_partitioned_publication.py", "backend/app/rate_limiter.py",
     "backend/app/security.py", "backend/app/routers/native_metadata_http.py", "backend/app/routers/auth.py",
-    "backend/app/routers/candidate_accounts.py", "backend/app/routers/candidate_ingress.py")
+    "backend/app/routers/candidate_accounts.py", "backend/app/routers/candidate_ingress.py",
+    "backend/app/domains/recovery/browser_pairing.py", "backend/app/domains/recovery/browser_pairing_production.py",
+    "backend/app/domains/recovery/device_transport_admission.py", "backend/app/domains/recovery/password_reauth.py",
+    "backend/app/domains/recovery/gcp_pairing.py", "backend/app/domains/recovery/gcp_buffer.py",
+    "backend/app/domains/recovery/pairing_service.py", "backend/app/domains/recovery/pairing_auth.py",
+    "backend/app/domains/recovery/gcp_password.py", "backend/app/domains/analysis/native_input_acquisition.py",
+    "backend/app/domains/analysis/supported_evaluation_native.py", "backend/app/domains/analysis/supported_evaluation_plan.py",
+    "backend/app/domains/analysis/development_runner.py", "backend/app/domains/analysis/quality_packet.py",
+    "backend/app/domains/analysis/quality_materialization.py", "backend/app/services/document_ingestion.py",
+    "backend/app/services/native_tex.py", "backend/app/services/native_tex_transport.py",
+    "backend/app/services/native_project.py", "backend/app/services/resume_layout.py")
 QUALIFICATION_PATHS = ("backend/scripts/schema25_app_release_contract_v2.py",
     "backend/tests/test_schema25_app_compatibility_v2_postgres.py", "backend/tests/test_schema25_app_protocol_v2.py",
     "backend/tests/test_schema25_app_rolling_v2.py", "backend/tests/test_schema25_app_alias_retirement.py",
     "infra/gcp/schema25_app_rolling_release.py", "infra/gcp/schema25_app_alias_retirement.py",
     "infra/gcp/rolling_release.py", "infra/gcp/fresh_monetary_release.py",
     ".github/workflows/ci.yml", "backend/uv.lock", "backend/tests/conftest.py",
-    "backend/scripts/qualify_schema25_retained_v1.py")
+    "backend/scripts/qualify_schema25_retained_v1.py", "backend/scripts/acquire_native_quality_inputs.py",
+    "backend/scripts/run_stage5_capacity.py", "backend/scripts/stage5_capacity.py",
+    "backend/scripts/stage5_resources.py", "backend/scripts/stage5_relay.py", "backend/scripts/stage5_seed.py",
+    "backend/scripts/run_cold_browser_journey.py", "backend/capacity/stage5-owned-http-v1.json",
+    "backend/tests/test_stage5_seed_postgres.py", "backend/tests/fixtures/cold_browser_app.py",
+    "backend/tests/fixtures/cold_browser_credit_policy.py", ".github/workflows/stage5-owned-capacity.yml")
 PROTOCOL_SUITES = ("tests/test_firestore_identity_list.py", "tests/test_candidate_validation_identity_list.py",
     "tests/test_native_metadata_admission.py", "tests/test_native_metadata_admission_redis.py",
-    "tests/test_gcp_rpc_emulator.py", "tests/test_candidate_web_lifecycle.py")
+    "tests/test_gcp_rpc_emulator.py", "tests/test_candidate_web_lifecycle.py",
+    "tests/test_browser_gateway_admission.py", "tests/test_device_transport_admission.py",
+    "tests/test_browser_pairing_cheap_preflight.py", "tests/test_browser_pairing_production.py",
+    "tests/test_browser_pairing_identity_observation.py", "tests/test_browser_pairing_http.py",
+    "tests/test_native_failure_diagnostics.py",
+    "tests/test_native_input_acquisition.py", "tests/test_stage5_capacity.py", "tests/test_stage5_native_fixture.py")
 PROTOCOL_FIXTURES = ("backend/tests/test_candidate_production_factory.py", "backend/tests/test_browser_submit_native.py",
     "backend/tests/fixtures/firestore_emulator.py", "backend/tests/test_candidate_scoped_lifecycle_emulator.py",
     "backend/tests/test_gcp_pairing_emulator.py", "backend/tests/test_gcp_password_lifetime_emulator.py",
@@ -55,7 +75,11 @@ PROTOCOL_FIXTURES = ("backend/tests/test_candidate_production_factory.py", "back
     "backend/tests/test_pairing_kms.py", "backend/tests/test_employer_admissions_postgres.py",
     "backend/tests/fixtures/gcp_publication.py", "backend/tests/fixtures/gcp_partitioned_publication.py",
     "backend/tests/fixtures/gcp_closure.py", "backend/tests/fixtures/pairing_authority.py",
-    "backend/tests/fixtures/candidate_ingress.py", "backend/pyproject.toml")
+    "backend/tests/fixtures/candidate_ingress.py", "backend/pyproject.toml",
+    "backend/tests/fixtures/stage5_native.py", "backend/tests/test_supported_evaluation.py",
+    "backend/tests/model_cost_fixtures.py", "backend/tests/expense_policy_fixtures.py",
+    "backend/tests/test_document_processor.py", "backend/tests/test_employer_admissions.py",
+    "backend/tests/test_employer_services.py")
 BOOTSTRAP_PATHS = ("backend/app/domains/candidate_accounts/bootstrap.py", "backend/app/domains/candidate_accounts/profile_view.py",
     "backend/app/domains/credits/availability.py", "backend/app/domains/credits/service.py", "backend/app/routers/auth.py",
     "backend/app/routers/credits.py", "backend/openapi.json", "backend/tests/test_owned_bootstrap.py",

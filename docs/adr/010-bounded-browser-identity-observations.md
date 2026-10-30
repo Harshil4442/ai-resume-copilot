@@ -50,6 +50,41 @@ claim and native own-ACK rules remain required. Missing, changed, unavailable,
 expired or poisoned identity observations refuse output; an old or uncertain
 acknowledgment cannot become new authority.
 
+## Gateway admission during identity observations
+
+The [pairing admission candidate](../delivery/BROWSER_GATEWAY_ADMISSION_CANDIDATE.md)
+separates a valid five-second incoming gateway assertion from the already-admitted
+operation's existing thirty-second processing bound. Its opaque verifier-issued
+receipt is native-instance/thread/task/request bound and single-use, with fixed
+wall/monotonic deadlines and rollback refusal. Atomic gateway nonce retention may
+cover the original signed expiry plus thirty seconds; a new invocation still
+requires an unexpired original signature. This explicitly changes final-consume
+freshness semantics and does not cache a positive native authorization decision.
+
+Current identity/control/session/fence checks, actual human review/password and
+pending-pairing TTLs, original acknowledgements and all fresh signing/export/entry/
+exit barriers remain required. Pairing's existing local clock is not the separate
+provider-clock authority in ADR008. Pure pinned admission precedes cold native
+composition; its construction-owner slot binds once to the exact native/verifier
+under the same processing deadline. Platform delay before admission remains
+subject to the original signed TTL and must not be hidden by a retry or extension.
+
+The exact retained session snapshot validated in the nonce transaction is also
+bound to the opaque gateway admission as a restrictive issued/expiry window.
+Every later pure admission barrier retains that original bound, including after
+Commit/fence, command/reply and observation exit. A longer processing lease never
+extends a session; expiry withholds output while preserving any consumed nonce.
+This uses the buffered native snapshot, not an authorization cache or reread loop.
+
+The [signed-device follow-on](../delivery/SIGNED_DEVICE_ADMISSION_CANDIDATE.md)
+separates its five-second transport entry from the same bounded processing. A
+timing-only capture precedes cold composition/current-key lookup, but cannot
+consume a nonce or run a command. The exact native verifier must check the actual
+ECDSA and fresh current origin/key, then issue a separate opaque admission. Known
+IDs are reread in the nonce transaction; changed key/origin or inactive device
+refuses. No positive identity observation is substituted for these checks. The
+create/complete/refresh ten-second server proof deadlines are unchanged.
+
 ## Explicit security tradeoff
 
 This weakens the timing guarantee for **private internal writes**. A pinned

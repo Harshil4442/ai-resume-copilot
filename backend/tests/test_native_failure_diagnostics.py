@@ -28,7 +28,7 @@ from app.domains.recovery import gcp_journal as journal
 from app.domains.recovery import native_diagnostics as diagnostics
 from app.domains.recovery.contracts import canonical
 from app.domains.recovery.gcp_rpc import FirestoreRpc
-from app.domains.recovery.store import GuardUnavailable
+from app.domains.recovery.store import GuardDenied, GuardUnavailable
 from app.observability import JsonFormatter, correlation_id_var
 
 
@@ -193,13 +193,13 @@ def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(
         c.accounts.register(email=email, password=PASSWORD, policy_version="2026-10-08")
         context = c.accounts.login(email=email, password=PASSWORD).context
     calls = []
+    captured = []  # Keep the real opaque handle alive through the cleanup check.
     error = PermissionDenied("synthetic private resource")
-    def native_call(*args):
+    def native_call():
         calls.append("native_operation")
         if failure:
             raise error
         return {"status": "synthetic"}
-    monkeypatch.setattr(native, operation, native_call)
     def service():
         calls.append("service")
         return original_service()
@@ -217,8 +217,25 @@ def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(
             calls.append("preflight")
             return original_preflight(*args, **kwargs)
         monkeypatch.setattr(native.gateway, "verify", candidate_preflight)
+        original_capture = native.gateway.admit_composition
+        def candidate_capture(*args, **kwargs):
+            admission = original_capture(*args, **kwargs)
+            calls.append("capture")
+            captured.append(admission)
+            return admission
+        monkeypatch.setattr(native.gateway, "admit_composition", candidate_capture)
+        candidate_body = {"pairing_id": str(uuid4())}
+        body = canonical(candidate_body).encode()
+        def candidate_admitted(current_operation, raw, admission):
+            assert current_operation == "challenge" and raw == body and captured == [admission]
+            envelope = native.gateway.admitted(admission, owner=native,
+                path=f"/api/v1/browser-pairing/candidate/{current_operation}", raw=raw,
+                now_ms=native.coordinator.now_ms(), start=True)
+            assert envelope.context == context
+            return native_call()
+        monkeypatch.setattr(native, "candidate_admitted", candidate_admitted)
         def invoke():
-            return candidate_request(c, context, "challenge", {"pairing_id": str(uuid4())})
+            return candidate_request(c, context, "challenge", candidate_body)
     else:
         original_preflight = pairing._device_preflight
         def device_preflight(*args, **kwargs):
@@ -226,9 +243,26 @@ def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(
             return original_preflight(*args, **kwargs)
         monkeypatch.setattr(pairing, "_device_preflight", device_preflight)
         body = canonical(transport(c, "status", str(uuid4()))).encode()
+        origin = f"chrome-extension://{c.factory_config['extension_id']}"
+        original_capture = native.device_transport.capture_composition
+        def device_capture(*args, **kwargs):
+            ingress = original_capture(*args, **kwargs)
+            calls.append("capture")
+            captured.append(ingress)
+            return ingress
+        monkeypatch.setattr(native.device_transport, "capture_composition", device_capture)
+        def device_captured(current_operation, raw, current_origin, ingress):
+            assert current_operation == "status" and raw == body and current_origin == origin
+            assert captured == [ingress]
+            # Timing is not device authority: this diagnostic stops before the
+            # native key lookup, ECDSA/nonce checks and business command.
+            native.device_transport.check_timing(ingress, native=native,
+                operation=current_operation, raw=raw, origin=current_origin)
+            return native_call()
+        monkeypatch.setattr(native, "device_captured", device_captured)
         def invoke():
-            return instance.device("status", body, f"chrome-extension://{c.factory_config['extension_id']}")
-    entry = ["service", "preflight", "identity.execution", "identity.protected", "native_operation"]
+            return instance.device("status", body, origin)
+    entry = ["preflight", "capture", "service", "identity.execution", "identity.protected", "native_operation"]
     final = ["identity.execution", "identity.protected"]
     prior_native_writes = len(c.native.calls)
     if failure:
@@ -241,6 +275,18 @@ def test_pairing_native_call_is_never_replayed_and_postcheck_stays_in_order(
         assert invoke() == {"status": "synthetic"}
         assert calls == [*entry, "service", *final] and events == []
     assert calls.count("native_operation") == 1
+    assert len(captured) == 1
+    if operation == "candidate":
+        assert not native.gateway._admissions
+        with pytest.raises(GuardDenied):
+            native.gateway.admitted(captured[0], owner=native,
+                path="/api/v1/browser-pairing/candidate/challenge", raw=body,
+                now_ms=native.coordinator.now_ms(), start=True)
+    else:
+        assert not native.device_transport._timings and not native.device_transport._admissions
+        with pytest.raises(GuardDenied):
+            native.device_transport.check_timing(captured[0], native=native,
+                operation="status", raw=body, origin=origin)
     assert len(c.native.calls) == prior_native_writes and c.kms.calls == []
 
 
