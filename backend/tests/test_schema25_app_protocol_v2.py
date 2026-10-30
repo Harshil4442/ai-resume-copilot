@@ -46,8 +46,8 @@ def local_proof_helpers(root, source):
                 base = source.parent
                 for _ in range(node.level - 1):
                     base = base.parent
-                relative = base.relative_to(root / "backend").as_posix().replace("/", ".")
-                module = relative + ("." + module if module else "")
+                relative = ".".join(base.relative_to(root / "backend").parts)
+                module = ".".join(part for part in (relative, module) if part)
             if module == "backend.tests" or module.startswith("backend.tests."):
                 relative = module.removeprefix("backend.")
             elif module == "tests" or module.startswith(("tests.", "test_")):
@@ -156,12 +156,13 @@ def test_entry_suite_ancestors_are_bound_even_without_local_imports(tmp_path, an
     assert proof_closure(tmp_path, ("tests/test_entry.py",), (ancestor,)) == {source, initializer}
 
 
-def test_declared_package_ancestor_cannot_hide_a_transitive_helper(tmp_path):
+@pytest.mark.parametrize("statement", ["from backend.tests import hidden", "from .tests import hidden"])
+def test_declared_package_ancestor_cannot_hide_a_transitive_helper(tmp_path, statement):
     source = tmp_path / "backend/tests/test_entry.py"
     source.parent.mkdir(parents=True)
     source.write_text("value = 'entry suite'\n")
     initializer = tmp_path / "backend/__init__.py"
-    initializer.write_text("from backend.tests import hidden\n")
+    initializer.write_text(statement + "\n")
     hidden = tmp_path / "backend/tests/hidden.py"
     hidden.write_text("value = 'transitive initializer dependency'\n")
     suites, fixtures = ("tests/test_entry.py",), ("backend/__init__.py",)
