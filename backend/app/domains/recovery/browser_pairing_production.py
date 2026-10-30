@@ -284,6 +284,7 @@ class ConfiguredBrowserPairing:
                 with native_phase("browser_pairing", "native_operation"):
                     result = native.candidate_admitted(operation, raw, admission)
                 self._service()
+            self._check_configuration()  # Observation exit can do IO; fence pins again before export.
             native.gateway.admitted(admission, owner=native, path=f"{PREFIX}/candidate/{operation}",
                 raw=raw, now_ms=native.coordinator.now_ms())
             return result

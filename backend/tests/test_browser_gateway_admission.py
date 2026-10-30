@@ -292,6 +292,30 @@ def test_expired_or_changed_composition_never_binds_authority(case, monkeypatch,
     assert not case.records and not case.commands and not case.native.gateway._admissions
 
 
+@pytest.mark.parametrize("failure", ["configuration", "key", "origin"])
+def test_configuration_drift_during_observation_exit_refuses_export(case, monkeypatch, failure):
+    raw, assertion, signature = wire(case)
+    def checked_service():
+        case.browser._check_configuration()
+        return case.native
+    case.browser._service = checked_service
+    @contextmanager
+    def changed_exit(value):
+        yield
+        if failure == "configuration":
+            case.pins["synthetic_configuration"] = "changed"
+        elif failure == "key":
+            monkeypatch.setenv("BROWSER_PAIRING_GATEWAY_SECRET", "ab" * 32)
+        else:
+            monkeypatch.setenv("BROWSER_PAIRING_WEBSITE_ORIGIN", "https://changed.example.invalid")
+    case.browser._observations = changed_exit
+    with pytest.raises(GuardDenied, match="configuration changed"):
+        case.browser.candidate("challenge", raw, assertion, signature)
+    # A prior internal command is not replayed/adopted after output is withheld.
+    assert len(case.records) == 1 and case.commands == ["candidate_challenge"]
+    assert not case.native.gateway._admissions
+
+
 def test_construction_slot_can_bind_only_once_to_exact_native_verifier(case):
     raw, assertion, signature = wire(case)
     gateway, slot = case.native.gateway, object()
