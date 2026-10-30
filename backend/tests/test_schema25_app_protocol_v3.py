@@ -5,6 +5,7 @@ import ast
 import importlib.metadata
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import pytest
 
@@ -104,6 +106,53 @@ def test_protocol_fingerprint_binds_the_finite_transitive_local_proof_helpers():
     from scripts import qualify_schema26_compatibility
     assert qualify_schema26_compatibility.SUITES == contract.NATIVE_SUITES
     assert "backend/pyproject.toml" in contract.PROTOCOL_FIXTURES
+
+
+def companion_proof_closure(root, roots, declared):
+    """Exact relative ES imports used by these finite source/wire proof roots.
+
+    Runtime browser imports resolve among the separately bound full20 inventory.
+    Package imports are pinned by the unchanged frontend and companion locks.
+    """
+    pending, seen = list(roots), set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        assert name in declared, f"Unbound companion proof helper: {name}"
+        source = root / name
+        assert source.is_file() and not source.is_symlink()
+        seen.add(name)
+        for relative in re.findall(r'''(?:from\s*|import\s*\(\s*|import\s*)["'](\.[^"']+)["']''', source.read_text()):
+            helper = (source.parent / relative.split("?", 1)[0]).resolve()
+            pending.append(str(helper.relative_to(root)))
+    return seen
+
+
+def test_pairing_source_package_and_actual_wire_proof_dependencies_are_bound():
+    declared = set(contract.NEW_PATHS)
+    observed = companion_proof_closure(ROOT, contract.COMPANION_PROOF_ROOTS, declared)
+    assert {"browser-companion/tests/pairing-readiness-fixture.js",
+        "browser-companion/tests/request-deadlines.js", "browser-companion/tests/native-https-fixture.js"} <= observed
+    source = ROOT / "browser-companion/extension"
+    assert set(contract.COMPANION_EXTENSION_PATHS) == {str(path.relative_to(ROOT)) for path in source.iterdir()}
+    archive = ROOT / "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip"
+    with ZipFile(archive) as package:
+        assert package.namelist() == ["hirewiz-browser-companion/" + Path(name).name
+            for name in contract.COMPANION_EXTENSION_PATHS]
+        for name in contract.COMPANION_EXTENSION_PATHS:
+            assert package.read("hirewiz-browser-companion/" + Path(name).name) == (ROOT / name).read_bytes()
+    assert json.loads((source / "manifest.json").read_text())["version"] == "0.8.6"
+    assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.6"
+
+
+@pytest.mark.parametrize("missing", ["browser-companion/tests/pairing-readiness-fixture.js",
+    "browser-companion/tests/request-deadlines.js", "browser-companion/scripts/native-fixture-build.js",
+    "browser-companion/fixtures/authority.js"])
+def test_companion_relative_imports_cannot_hide_unbound_proof_helpers(missing):
+    with pytest.raises(AssertionError, match="Unbound companion proof helper"):
+        companion_proof_closure(ROOT, contract.COMPANION_PROOF_ROOTS,
+            set(contract.NEW_PATHS) - {missing})
 
 
 @pytest.mark.parametrize("missing", ["backend/tests/test_schema25_app_rolling_release.py",

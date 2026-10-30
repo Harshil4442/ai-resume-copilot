@@ -19,6 +19,18 @@ inventory is287 files, SHA256
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
 
+The finite current-source closure also binds all20 companion0.8.6 delivered
+files, its package/dependency metadata and reproducible public ZIP, the exact
+download component, existing device BFF route and its gateway/timeout helpers,
+the actual unit/owned-Chrome/paired-wire proof sources and their relative local
+imports, and the Python paired-SQL bridge with its existing transitive helpers.
+All12 older public ZIPs through0.8.5 remain unchanged. The public bodyless
+readiness GET is an availability experiment before signing; it grants no device,
+session, clock or submission authority. The original signed5-second admission,
+native30-second and action10-second limits are unchanged. No reduction of the
+observed client-to-API delay is claimed by these source controls. Publish and
+verify the BFF readiness route before replacing an installed owner companion.
+
 The current source runs its own mandatory owned PostgreSQL17 compatibility gate,
 including CAS2, explicit transcription5, consumer accounting2, real catalog and
 archived-e23 delayed writer/drain controls. Privacy recovery adds one concurrent

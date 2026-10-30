@@ -91,7 +91,12 @@ runpy.run_path(SCRIPT, run_name='__main__')
 
 
 @pytest.mark.parametrize("name", ["backend/tests/test_schema25_app_rolling_release.py",
-    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py"])
+    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py",
+    "frontend/app/api/browser-pairing/device/[operation]/route.ts",
+    "browser-companion/extension/pairing-transport.js", "browser-companion/extension/pairing-runtime.js",
+    "browser-companion/tests/pairing-readiness-fixture.js", "backend/tests/browser_paired_assistance_chrome_bridge.py",
+    "browser-companion/scripts/package-reviewed.py", "browser-companion/package-lock.json",
+    "frontend/components/BrowserAssistanceReview.tsx", "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip"])
 def test_changed_rolling_proof_helper_cannot_reuse_a_previous_plan(monkeypatch, name):
     original = Path.read_bytes
     prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
