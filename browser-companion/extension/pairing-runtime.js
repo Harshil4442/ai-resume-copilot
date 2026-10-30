@@ -15,6 +15,22 @@ const MAX_HISTORY_RECORDS = 64;
 const MAX_CHECKPOINT_BYTES = 256 * 1024;
 const nullable = (value, pattern) => value === null || typeof value === "string" && pattern.test(value);
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const TIMING_KEYS = "elapsed_ms,http_status,issued_age_ms,version";
+const timingNumber = (value, minimum, maximum) => value === null
+  || Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+
+export function pairingReadTimingSupport(value) {
+  try {
+    if (!object(value) || Object.keys(value).sort().join(",") !== TIMING_KEYS || value.version !== 1
+        || !timingNumber(value.issued_age_ms, -86400000, 86400000)
+        || !timingNumber(value.elapsed_ms, 0, 86400000)
+        || !timingNumber(value.http_status, 100, 599)) return null;
+    const milliseconds = (number) => number === null ? "unavailable" : `${number} ms`;
+    return `Support code: HW-COMPANION-READ-TIMING. Client age at send: ${milliseconds(value.issued_age_ms)}. `
+      + `Request elapsed: ${milliseconds(value.elapsed_ms)}. HTTP status: ${value.http_status ?? "unavailable"}. `
+      + "Client timing does not establish server freshness. This diagnostic clears on the next read or worker restart.";
+  } catch { return null; }
+}
 
 export class PairingRuntime {
   constructor({ transport, store, checkPermission, now = () => Date.now() }) {
@@ -123,13 +139,16 @@ export class PairingRuntime {
     const state = this.state;
     const current = this.transport.claim?.payload;
     const inspected = this.inspection?.state === state ? this.inspection : null;
+    let timing;
+    try { timing = this.transport.readTiming?.(); } catch { /* Timing cannot replace connection status. */ }
     return { phase: state.phase, busy: this.busy, connected: state.phase === "paired" && Boolean(current && current.expires_at_ms > this.now()),
       pairing_id: state.pairing_id, device_id: state.device_id, key_sha256: state.key_sha256,
       request_sha256: state.request_sha256, expires_at_ms: state.expires_at_ms, review_url: state.review_url,
       resume_phase: state.resume_phase, message, allowed_actions: [], observed_status: inspected?.status ?? null,
       can_inspect_connection: UNKNOWN.has(state.phase) || this.pendingCreation(state),
       can_resume_existing: inspected?.kind === "existing",
-      can_archive_restart: ["unclaimed", "expired_unclaimed"].includes(inspected?.kind) };
+      can_archive_restart: ["unclaimed", "expired_unclaimed"].includes(inspected?.kind),
+      ...(pairingReadTimingSupport(timing) === null ? {} : { transport_timing: timing }) };
   }
   pendingCreation(state = this.state) {
     return state.send_kind === "create" && (state.phase === "awaiting_candidate"
