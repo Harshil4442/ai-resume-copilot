@@ -192,6 +192,20 @@ def test_http_shutdown_failure_keeps_egress_guard_and_still_closes_every_owned_d
         ("SQL", False), ("Redis", False), ("keys", False)]
 
 
+@pytest.mark.parametrize("interruption", [KeyboardInterrupt, SystemExit])
+def test_http_shutdown_interruption_cannot_skip_guarded_finalizers(interruption):
+    calls = []
+    def interrupted(**kwargs):
+        raise interruption()
+    with pytest.raises(RuntimeError, match="finalization is incomplete"):
+        finish_owned_http(server=SimpleNamespace(should_exit=False),
+            thread=SimpleNamespace(join=interrupted, is_alive=lambda: True),
+            guards=SimpleNamespace(undo=lambda: calls.append("unrestricted")),
+            finalizers=[lambda terminal: calls.append(("native_held", terminal)),
+                        lambda terminal: calls.append(("Redis_closed", terminal))])
+    assert calls == [("native_held", False), ("Redis_closed", False)]
+
+
 def test_a_failed_owned_finalizer_does_not_skip_later_cleanup_and_restores_only_terminal_guard():
     calls = []
     def failed(terminal):
