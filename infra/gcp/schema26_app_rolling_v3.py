@@ -21,6 +21,7 @@ from typing import Literal
 sys.path[:0] = [
     str(Path(__file__).resolve().parent),
     str(Path(__file__).resolve().parents[2] / "backend"),
+    str(Path(__file__).resolve().parents[2]),
 ]
 import rolling_release as rolling  # noqa: E402
 import schema25_app_rolling_release as historical  # noqa: E402

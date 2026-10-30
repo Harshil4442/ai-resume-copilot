@@ -100,11 +100,19 @@ def proof_closure(root, suites, fixtures):
 
 
 def test_protocol_fingerprint_binds_the_finite_transitive_local_proof_helpers():
-    proof_closure(ROOT, SUITES, contract.PROTOCOL_FIXTURES)
-    proof_closure(ROOT, contract.NATIVE_SUITES, contract.PROTOCOL_FIXTURES)
+    proof_closure(ROOT, contract.PROOF_ROOTS, contract.PROTOCOL_FIXTURES)
     from scripts import qualify_schema26_compatibility
     assert qualify_schema26_compatibility.SUITES == contract.NATIVE_SUITES
     assert "backend/pyproject.toml" in contract.PROTOCOL_FIXTURES
+
+
+@pytest.mark.parametrize("missing", ["backend/tests/test_schema25_app_rolling_release.py",
+    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py"])
+def test_actual_rolling_proof_roots_cannot_omit_their_executable_helpers(missing):
+    assert missing in contract.PROTOCOL_FIXTURES
+    with pytest.raises(AssertionError, match="Unbound local proof helper"):
+        proof_closure(ROOT, contract.PROOF_ROOTS,
+            tuple(name for name in contract.PROTOCOL_FIXTURES if name != missing))
 
 
 @pytest.mark.parametrize("missing", ["backend/tests/fixtures/pairing_authority.py",

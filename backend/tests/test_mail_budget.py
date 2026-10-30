@@ -14,7 +14,14 @@ from app.domains.notifications import mail_budget as budget
 from app.domains.notifications import password_reset as reset_mail
 from app.domains.notifications import privacy_erasure as privacy_mail
 from app.domains.notifications import service
-from app.models import AdminAuditEvent, NotificationOutbox, PasswordResetToken, User
+from app.models import (
+    AdminAuditEvent,
+    EntitlementLedger,
+    NotificationOutbox,
+    PasswordResetToken,
+    PaymentOrder,
+    User,
+)
 
 NOW = datetime(2026, 10, 31, 6, tzinfo=UTC)
 RECEIPT = hashlib.sha256(b"synthetic bounded provider receipt").hexdigest()
@@ -24,6 +31,7 @@ class Store:
     def __init__(self):
         self.rows = {}
         self.outbox = []
+        self.business = []
         self.trace = []
         self.active = 0
         self.commits = 0
@@ -45,6 +53,8 @@ class Query:
         for condition in conditions:
             if getattr(condition.left, "key", None) == "created_at":
                 self.since = condition.right.value
+            elif getattr(condition.left, "key", None) in {"idempotency_key", "source_order_id", "id"}:
+                self.values[condition.left.key] = condition.right.value
         return self
 
     def filter_by(self, **values):
@@ -69,11 +79,19 @@ class Query:
         if self.model is AdminAuditEvent:
             rows = [row for row in self.port.store.rows.values() if row.action == budget.RESERVATION
                 and (self.since is None or row.created_at >= self.since)]
+        elif self.model is User:
+            rows = [self.port.store.user]
+        elif self.model is EntitlementLedger:
+            rows = [row for row in self.port.store.business + self.port.new if isinstance(row, EntitlementLedger)
+                and all(getattr(row, key) == value for key, value in self.values.items())]
         else:
             rows = [row for row in self.port.store.outbox if all(getattr(row, key) == value for key, value in self.values.items())]
         return rows if self.maximum is None else rows[:self.maximum]
 
     def one_or_none(self):
+        return next(iter(self.all()), None)
+
+    def first(self):
         return next(iter(self.all()), None)
 
     def one(self):
@@ -128,6 +146,8 @@ class Port:
             if isinstance(row, AdminAuditEvent):
                 assert row.id not in self.store.rows
                 self.store.rows[row.id] = row
+            elif not isinstance(row, NotificationOutbox):
+                self.store.business.append(row)
         self.new.clear()
         self.store.trace.append("commit")
         if self.store.fail_commit == self.store.commits:
@@ -181,6 +201,164 @@ def test_shared_daily_attempt_cap_defers_new_work_and_never_revokes_existing_env
         assert error.value.mail_outcome == "deferred"
         existing = budget.reserve_messages(db, ["synthetic-0"], category="lifecycle")
         assert existing[0].expires_at == NOW+timedelta(hours=24) and len(reservations(store)) == 33
+
+
+@pytest.mark.parametrize("kind", ["payment_receipt", "analysis_completed", "welcome", "account_recovery_requested"])
+def test_optional_production_enqueue_at_cap_preserves_caller_transaction_without_unfunded_outbox(monkeypatch, kind):
+    store = Store()
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+            budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
+        db.commit()
+        pending_business = EntitlementLedger(user_id=1, source_order_id=12, status="active")
+        db.add(pending_business)
+        monkeypatch.setattr(db, "rollback", lambda: pytest.fail("Optional cap must not roll back caller business work"))
+        assert service.enqueue_notification(db, user_id=1, notification_type=kind, recipient=store.user.email,
+            payload={}, idempotency_key="unaccepted-optional:"+kind) is None
+        assert db.new == [pending_business] and not store.outbox
+        db.commit()
+    assert store.business == [pending_business]
+    assert len(reservations(store)) == 33 and sum(row.after_state["units"] for row in reservations(store)) == 99
+
+
+def test_paid_entitlement_actual_grant_finishes_when_optional_receipt_cannot_be_funded(monkeypatch):
+    from app.billing.service import _grant_entitlement
+    store = Store()
+    store.user.ai_credits = 7
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+            budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
+        db.commit()
+        order = PaymentOrder(id=12, public_id="synthetic-captured-order", user_id=1, provider="synthetic",
+            sku="synthetic-analysis", entitlement_kind="analysis_units", entitlement_quantity=3,
+            gross_amount_minor=100, currency="INR", status="paid")
+        monkeypatch.setattr(db, "rollback", lambda: pytest.fail("Receipt quota cannot reverse a captured purchase"))
+        assert _grant_entitlement(db, order, NOW) is True
+        db.commit()
+    assert store.user.ai_credits == 10 and order.status == "paid"
+    assert len(store.business) == 1 and store.business[0].source_order_id == order.id
+    assert store.business[0].status == "active" and store.business[0].quantity == 3
+    assert not store.outbox and len(reservations(store)) == 33
+
+
+def test_optional_cap_preserves_previously_accepted_unfunded_outbox_without_adopting_it(monkeypatch):
+    store = Store()
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    old = NotificationOutbox(id="accepted-legacy-item", notification_type="welcome", recipient=store.user.email,
+        idempotency_key="accepted-legacy-unfunded", payload={"synthetic": "retained obligation"}, status="pending")
+    store.outbox.append(old)
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+            budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
+        db.commit()
+        assert service.enqueue_notification(db, user_id=1, notification_type="welcome", recipient=store.user.email,
+            payload={}, idempotency_key=old.idempotency_key) is None
+        assert db.new == [] and store.outbox == [old]
+        assert old.status == "pending" and old.payload == {"synthetic": "retained obligation"}
+        assert len(reservations(store)) == 33
+
+
+@pytest.mark.parametrize("outcome", ["unknown", "permanent"])
+def test_optional_enqueue_does_not_hide_corrupt_or_invalid_budget_authority(monkeypatch, outcome):
+    store = Store()
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    def refuse(*args, **kwargs):
+        raise budget.MailBudgetError(outcome)
+    monkeypatch.setattr(budget, "reserve_messages", refuse)
+    with store.session() as db:
+        with pytest.raises(budget.MailBudgetError) as error:
+            service.enqueue_notification(db, user_id=1, notification_type="welcome", recipient=store.user.email,
+                payload={}, idempotency_key="bad-budget")
+        assert error.value.mail_outcome == outcome and db.new == [] and not store.outbox
+
+
+def test_actual_day_one_onboarding_enqueue_has_a_fixed_delivery_window_after_due(monkeypatch):
+    store, calls = Store(), []
+    due = NOW+timedelta(hours=24)
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        item = service.enqueue_notification(db, user_id=1, notification_type="onboarding_reminder", recipient=store.user.email,
+            payload={}, idempotency_key="user:1:onboarding:day-1", available_at=due)
+        db.commit()
+    envelope = reservations(store)[0]
+    original = dict(envelope.after_state)
+    expiry = datetime.fromisoformat(envelope.after_state["expires_at"])
+    assert item.available_at == due and expiry == due+timedelta(hours=24)
+    assert expiry > item.available_at and envelope.after_state["funding_day"] == NOW.date().isoformat()
+    monkeypatch.setattr(budget, "utcnow", lambda: due+timedelta(seconds=1))
+    def provider():
+        calls.append("controlled-provider")
+        return budget.ProviderResult("sent", RECEIPT, 200)
+    assert budget.guarded_send(item.idempotency_key, provider, category="lifecycle", session_factory=store.session).outcome == "sent"
+    assert calls == ["controlled-provider"] and len(reservations(store)) == 1
+    assert reservations(store)[0].after_state == original
+
+
+@pytest.mark.parametrize("late", [timedelta(0), timedelta(seconds=1)])
+def test_scheduled_onboarding_at_original_expiry_has_no_attempt_or_refund(monkeypatch, late):
+    store = Store()
+    due = NOW+timedelta(hours=24)
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        item = service.enqueue_notification(db, user_id=1, notification_type="onboarding_reminder", recipient=store.user.email,
+            payload={}, idempotency_key="scheduled-expired", available_at=due)
+        db.commit()
+    original = dict(reservations(store)[0].after_state)
+    monkeypatch.setattr(budget, "utcnow", lambda: due+timedelta(hours=24)+late)
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send(item.idempotency_key, lambda: pytest.fail("Expired schedule cannot send"),
+            category="lifecycle", session_factory=store.session)
+    assert error.value.mail_outcome == "permanent"
+    assert [row.action for row in store.rows.values()] == [budget.RESERVATION]
+    assert reservations(store)[0].after_state == original
+
+
+@pytest.mark.parametrize("due", [NOW+timedelta(hours=24, microseconds=1), NOW.replace(tzinfo=None), "tomorrow"])
+def test_unbounded_or_unzoned_optional_schedule_is_not_accepted_or_funded(monkeypatch, due):
+    store = Store()
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        assert service.enqueue_notification(db, user_id=1, notification_type="onboarding_reminder", recipient=store.user.email,
+            payload={}, idempotency_key="invalid-schedule", available_at=due) is None
+        assert db.new == [] and not store.outbox and not store.rows and not store.trace
+
+
+def test_existing_day_one_envelope_never_gains_a_later_expiry_or_fresh_funding(monkeypatch):
+    store = Store()
+    key, due = "accepted-before-fix", NOW+timedelta(hours=24)
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        prior = budget.reserve_messages(db, [key], category="lifecycle")[0]
+        db.commit()
+        assert prior.expires_at == due
+        assert service.enqueue_notification(db, user_id=1, notification_type="onboarding_reminder", recipient=store.user.email,
+            payload={}, idempotency_key=key, available_at=due) is None
+        db.commit()
+    assert len(reservations(store)) == 1 and not store.outbox
+    assert datetime.fromisoformat(reservations(store)[0].after_state["expires_at"]) == prior.expires_at
+    monkeypatch.setattr(budget, "utcnow", lambda: due+timedelta(seconds=1))
+    with pytest.raises(budget.MailBudgetError):
+        budget.guarded_send(key, lambda: pytest.fail("An old expired envelope cannot be reauthorized"),
+            category="lifecycle", session_factory=store.session)
+
+
+def test_existing_accepted_day_one_outbox_is_preserved_even_when_original_window_has_expired(monkeypatch):
+    store = Store()
+    key, due = "already-accepted-before-fix", NOW+timedelta(hours=24)
+    old = NotificationOutbox(id="original-accepted", notification_type="onboarding_reminder", recipient=store.user.email,
+        idempotency_key=key, payload={"synthetic": "original obligation"}, status="pending", available_at=due)
+    store.outbox.append(old)
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
+    with store.session() as db:
+        original = budget.reserve_messages(db, [key], category="lifecycle")[0]
+        db.commit()
+        assert service.enqueue_notification(db, user_id=1, notification_type="onboarding_reminder", recipient=store.user.email,
+            payload={}, idempotency_key=key, available_at=due) is old
+        assert store.outbox == [old] and old.payload == {"synthetic": "original obligation"}
+        assert len(reservations(store)) == 1
+        assert datetime.fromisoformat(reservations(store)[0].after_state["expires_at"]) == original.expires_at
 
 
 def test_final_send_defers_unfunded_legacy_work_but_uses_original_accepted_envelope():

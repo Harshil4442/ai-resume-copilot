@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import copy
 import importlib
+import json
+import os
+import subprocess
 import sys
 from dataclasses import asdict, fields, replace
 from pathlib import Path
@@ -55,6 +58,54 @@ def test_complete_frozen_app_and_disjoint_schema26_source_is_required():
     assert contract.source_fingerprint(ROOT, prior)
     assert app.PRIOR.release == contract.PRIOR_RELEASE
     assert app.PRIOR.image_digest.startswith("sha256:df4618fa")
+
+
+def test_standalone_source_entrypoint_uses_only_the_trusted_checkout(tmp_path):
+    # -I removes pytest's repo-root injection and all PYTHONPATH authority.
+    # A hostile CWD must not satisfy an accidentally missing package bootstrap.
+    for name in ("infra.py", "scripts.py", "rolling_release.py"):
+        (tmp_path / name).write_text("raise AssertionError('Untrusted CWD imported')\n")
+    script = ROOT / "infra/gcp/schema26_app_rolling_v3.py"
+    program = """
+import runpy, socket, sys
+from sqlalchemy.engine import Engine
+def deny(*args, **kwargs):
+    raise AssertionError('No database/network in source-only entrypoint')
+for name in ('connect', 'connect_ex', 'bind', 'listen'):
+    setattr(socket.socket, name, deny)
+socket.getaddrinfo = socket.create_connection = Engine.connect = deny
+sys.argv = [SCRIPT, 'source']
+runpy.run_path(SCRIPT, run_name='__main__')
+""".replace("SCRIPT", repr(str(script)))
+    result = subprocess.run([sys.executable, "-I", "-B", "-"], cwd=tmp_path, input=program,
+        text=True, capture_output=True, timeout=30, check=False,
+        env={"PATH": os.defpath, "APP_ENV": "test", "DATABASE_URL": "sqlite://",
+            "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(tmp_path)})
+    assert result.returncode == 0, result.stderr[-2048:]
+    assert not result.stderr
+    assert json.loads(result.stdout) == {
+        "source_sha256": contract.source_fingerprint(ROOT, app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)),
+        "serving_prior_observed": False, "schema26_applied": False,
+        "migration_authority": False, "rollout_authority": False,
+    }
+
+
+@pytest.mark.parametrize("name", ["backend/tests/test_schema25_app_rolling_release.py",
+    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py"])
+def test_changed_rolling_proof_helper_cannot_reuse_a_previous_plan(monkeypatch, name):
+    original = Path.read_bytes
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    baseline = contract.source_fingerprint(ROOT, prior)
+    case = V3Fixture()
+    plan = replace(case.plan, compatibility_sha256=baseline)
+    native = object.__new__(app.NativeApp26Boundary)
+    native.root = ROOT
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# unreviewed proof helper\n"
+        if path == ROOT / name else original(path))
+    assert contract.source_fingerprint(ROOT, prior) != baseline
+    # No observer or command seam is installed: source drift must stop first.
+    with pytest.raises(rolling.RollingDenied, match="compatibility_source_changed"):
+        native._compatibility(plan)
 
 
 @pytest.mark.parametrize("name", ["backend/app/domains/career/evidence_write_fence.py",

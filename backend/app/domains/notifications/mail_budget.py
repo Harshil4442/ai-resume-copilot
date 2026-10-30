@@ -30,6 +30,8 @@ OUTCOME = "provider_mail_attempt_outcome_v1"
 VERSION = "provider-mail-envelope-v1"
 TTL = {"privacy_erasure": timedelta(minutes=10), "password_reset": timedelta(minutes=15),
     "lifecycle": timedelta(hours=24)}
+LIFECYCLE_SCHEDULE_LIMIT = timedelta(hours=24)
+MAX_TTL = {**TTL, "lifecycle": TTL["lifecycle"] + LIFECYCLE_SCHEDULE_LIMIT}
 
 
 class MailBudgetError(RuntimeError):
@@ -104,7 +106,7 @@ def _reservation(row, message: str, category: str | None = None) -> Reservation:
         raise MailBudgetError("unknown") from None
     if (expires.tzinfo is None or value["funding_day"] != created.date().isoformat()
             or value["funding_month"] != created.strftime("%Y-%m")
-            or not created < expires <= created + TTL[value["category"]]):
+            or not created < expires <= created + MAX_TTL[value["category"]]):
         raise MailBudgetError("unknown")
     return Reservation(message, value["category"], expires)
 
@@ -119,7 +121,9 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
     # Lock contention can cross the funding period or an explicit expiry. Only
     # the deterministic test seam may supply a time from before acquisition.
     current = _stamp(now if now is not None else utcnow())
-    deadline = min(_stamp(expires_at), current + TTL[category]) if expires_at is not None else current + TTL[category]
+    # Lifecycle admission may reserve a bounded future schedule plus its normal
+    # delivery window. Existing envelopes retain their original exact expiry.
+    deadline = min(_stamp(expires_at), current + MAX_TTL[category]) if expires_at is not None else current + TTL[category]
     found, missing = {}, []
     for key in keys:
         message = _digest(key)

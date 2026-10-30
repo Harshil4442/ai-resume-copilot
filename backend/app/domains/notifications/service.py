@@ -39,8 +39,21 @@ def enqueue_notification(
 ) -> models.NotificationOutbox | None:
     if not lifecycle_email_enabled():
         return None
-    from .mail_budget import reserve_messages
-    reserve_messages(db, [idempotency_key], category="lifecycle")
+    from .mail_budget import LIFECYCLE_SCHEDULE_LIMIT, TTL, MailBudgetError, reserve_messages
+    now = utcnow()
+    if available_at is not None and (not isinstance(available_at, datetime) or available_at.utcoffset() is None):
+        return None
+    due = max(now, available_at.astimezone(UTC)) if available_at is not None else now
+    if due > now + LIFECYCLE_SCHEDULE_LIMIT:
+        return None
+    try:
+        funded = reserve_messages(db, [idempotency_key], category="lifecycle", expires_at=due + TTL["lifecycle"])[0]
+    except MailBudgetError as error:
+        if error.mail_outcome != "deferred":
+            raise
+        # This optional message has not been accepted. Keep the caller's paid
+        # grant, generated result, registration or recovery transaction intact.
+        return None
     pending = next(
         (
             item
@@ -59,7 +72,8 @@ def enqueue_notification(
     )
     if existing:
         return existing
-    now = utcnow()
+    if funded.expires_at <= due:
+        return None  # An immutable older envelope cannot fund a new expired schedule.
     item = models.NotificationOutbox(
         id=public_id("ntf"),
         user_id=user_id,
@@ -70,7 +84,7 @@ def enqueue_notification(
         idempotency_key=idempotency_key,
         status="pending",
         attempt_count=0,
-        available_at=available_at or now,
+        available_at=due,
         created_at=now,
         updated_at=now,
     )

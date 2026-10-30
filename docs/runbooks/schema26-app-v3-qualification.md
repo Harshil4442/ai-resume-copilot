@@ -15,7 +15,7 @@ nodes, source consumers, evidence fence, exact26 schema/issuer/catalog, operator
 owned-input acquisition tools, privacy recovery, financial successors, frontend
 contracts, native tests and their finite transitive helpers. The final app
 inventory is287 files, SHA256
-`646ef2a53e826e7ae690434ed76d9eb2e9feb03eb40cc1ecd5394b1e3971c850`.
+`15b71a07e820143ae1b34e4725edf848451599a6d163b1e0344a17223a4352a9`.
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
 
@@ -56,6 +56,20 @@ mail reserves attempt allowances before accepting proofs/outbox work and retains
 unknown/accepted obligations. It does not establish a provider-wide cap until
 old-sender retirement and outstanding-work reconciliation are actually proved.
 No credential rotation or current mail configuration change is authorized here.
+An exhausted optional lifecycle-mail allowance declines the message before any
+outbox acceptance and does not roll back the billing, generated result or other
+core transaction. A scheduled lifecycle message may be due at most 24 hours after
+admission; its original funded expiry is fixed at due plus 24 hours, at most 48
+hours after admission. Immediate messages retain 24 hours. Existing envelopes
+keep their original expiry, funding period and three-attempt limit; neither
+delay, rollover nor an unknown outcome renews or refunds them.
+
+The standalone source entrypoint bootstraps only its resolved checkout paths,
+including the repository namespace; it also runs under isolated Python from an
+untrusted current directory. The finite qualification closure includes the new
+rolling test's actual `AppFixture` and `FixtureBoundary` executable helpers.
+Changed helpers invalidate the captured compatibility fingerprint before any
+observer command. These are source controls and grant no native authority.
 
 ## Runtime and native boundaries
 
