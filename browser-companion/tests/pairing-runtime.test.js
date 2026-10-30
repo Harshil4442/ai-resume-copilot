@@ -6,11 +6,12 @@ import { canonical, digest } from "../extension/protocol.js";
 const uuid = () => crypto.randomUUID();
 
 test("popup timing support accepts only finite numeric fields and cannot expose arbitrary diagnostic content", () => {
-  const valid = { version: 1, issued_age_ms: 6000, elapsed_ms: 989, http_status: 403 };
+  const valid = { version: 1, issued_at_ms: 1800000000000, issued_age_ms: 6000, elapsed_ms: 989, http_status: 403 };
   assert.match(pairingReadTimingSupport(valid), /HW-COMPANION-READ-TIMING.*6000 ms.*989 ms.*403/);
+  assert.match(pairingReadTimingSupport(valid), /Signed issued_at_ms: 1800000000000/);
   assert.match(pairingReadTimingSupport({ ...valid, issued_age_ms: -7 }), /-7 ms/);
-  assert.match(pairingReadTimingSupport({ version: 1, issued_age_ms: null, elapsed_ms: null, http_status: null }), /unavailable/);
-  for (const value of [null, [], {}, { ...valid, raw: "synthetic-private" }, { ...valid, issued_at_ms: 1800000000000 },
+  assert.match(pairingReadTimingSupport({ version: 1, issued_at_ms: null, issued_age_ms: null, elapsed_ms: null, http_status: null }), /unavailable/);
+  for (const value of [null, [], {}, { ...valid, raw: "synthetic-private" }, { ...valid, request_id: "synthetic-private" },
     { ...valid, issued_age_ms: "synthetic-private" }, { ...valid, elapsed_ms: Infinity }, { ...valid, elapsed_ms: -1 },
     { ...valid, http_status: 0 }, { ...valid, version: 2 }, { ...valid, issued_age_ms: 86400001 }]) {
     assert.equal(pairingReadTimingSupport(value), null);
@@ -18,6 +19,8 @@ test("popup timing support accepts only finite numeric fields and cannot expose 
   const hostile = { ...valid };
   Object.defineProperty(hostile, "issued_age_ms", { enumerable: true, get() { throw new Error("synthetic-private"); } });
   assert.equal(pairingReadTimingSupport(hostile), null);
+  for (const issued_at_ms of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "synthetic-private"])
+    assert.equal(pairingReadTimingSupport({ ...valid, issued_at_ms }), null);
 });
 async function fixture(stored = null, configChanges = {}) {
   let checkpoint = stored, permission = true, clock = Date.now();
@@ -43,13 +46,14 @@ async function fixture(stored = null, configChanges = {}) {
 test("local popup status forwards timing without saving it or changing any connection authority", async () => {
   const f = await fixture(); await f.runtime.start();
   const before = f.checkpoint();
-  f.transport.readTiming = () => ({ version: 1, issued_age_ms: 6000, elapsed_ms: 989, http_status: 403 });
+  f.transport.readTiming = () => ({ version: 1, issued_at_ms: 1800000000000, issued_age_ms: 6000, elapsed_ms: 989, http_status: 403 });
   const status = f.runtime.status();
   assert.equal(status.transport_timing.issued_age_ms, 6000);
   assert.equal(status.phase, "awaiting_candidate"); assert.equal(status.connected, false);
   assert.equal(status.can_archive_restart, false); assert.deepEqual(status.allowed_actions, []);
   assert.deepEqual(f.calls, ["prepare"]); assert.deepEqual(f.checkpoint(), before);
   assert.equal(JSON.stringify(before).includes("transport_timing"), false);
+  assert.equal(JSON.stringify(before).includes("issued_at_ms"), false);
   await assert.rejects(f.runtime.start(), /blocked/);
   const reloaded = await fixture(before);
   assert.equal("transport_timing" in reloaded.runtime.status(), false);

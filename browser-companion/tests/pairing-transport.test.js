@@ -52,7 +52,7 @@ for (const delay of [100, 6000]) test(`read timing observes ${delay}ms beforePos
   });
   await assert.rejects(f.transport.lookup("status", uuid()), /Current pairing is unavailable/);
   assert.equal(calls, 1);
-  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: delay, elapsed_ms: 89, http_status: 403 });
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: delay, elapsed_ms: 89, http_status: 403 });
   const copy = f.transport.readTiming(); copy.http_status = 200;
   assert.equal(f.transport.readTiming().http_status, 403);
   assert.equal(JSON.stringify(f.transport.readTiming()).includes("synthetic-private"), false);
@@ -66,7 +66,7 @@ test("read timing preserves a negative age and uses monotonic elapsed after wall
   const failure = Object.assign(new Error("synthetic-private-key-body"), { transport_timing: { raw: "must-not-copy" } });
   t.mock.method(globalThis, "fetch", async () => { clock -= 900; monotonic += 12; throw failure; });
   await assert.rejects(f.transport.lookup("status", uuid()), (error) => error === failure);
-  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: -7, elapsed_ms: 12, http_status: null });
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: -7, elapsed_ms: 12, http_status: null });
 });
 
 test("successful reads and a local permission failure clear the earlier RAM diagnostic without another send", async (t) => {
@@ -120,7 +120,7 @@ test("invalid diagnostic clocks are unavailable and cannot replace the original 
   t.mock.method(globalThis, "fetch", async () => Response.json({}, { status: 403 }));
   f.transport.now = () => Infinity;
   await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Current pairing is unavailable/);
-  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: null, elapsed_ms: null, http_status: 403 });
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: null, elapsed_ms: null, http_status: 403 });
 });
 
 test("throwing diagnostic clocks preserve the original failure and malformed successful bodies retain only status", async (t) => {
@@ -129,8 +129,30 @@ test("throwing diagnostic clocks preserve the original failure and malformed suc
   t.mock.method(performance, "now", () => { throw new Error("diagnostic-only monotonic failure"); });
   t.mock.method(globalThis, "fetch", async () => Response.json(["synthetic-private-response"]));
   await assert.rejects(f.transport.post("status", { issued_at_ms: now }), /Invalid pairing response/);
-  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_age_ms: null, elapsed_ms: null, http_status: 200 });
+  assert.deepEqual(f.transport.readTiming(), { version: 1, issued_at_ms: now, issued_age_ms: null, elapsed_ms: null, http_status: 200 });
 });
+
+for (const issued of [0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "synthetic-private"])
+  test(`invalid absolute diagnostic timestamp is unavailable: ${String(issued)}`, async (t) => {
+    const f = await setup(); const body = { issued_at_ms: issued };
+    t.mock.method(globalThis, "fetch", async () => Response.json({}, { status: 403 }));
+    await assert.rejects(f.transport.post("status", body), /Current pairing is unavailable/);
+    assert.equal(f.transport.readTiming().issued_at_ms, null);
+    assert.equal(f.transport.readTiming().issued_age_ms, null);
+    assert.equal(Object.is(body.issued_at_ms, issued), true);
+  });
+
+for (const issued of [1, Number.MAX_SAFE_INTEGER])
+  test(`positive safe diagnostic timestamp is retained exactly: ${issued}`, async (t) => {
+    const f = await setup(); const body = { issued_at_ms: issued };
+    t.mock.method(globalThis, "fetch", async (_url, options) => {
+      assert.equal(JSON.parse(options.body).issued_at_ms, issued);
+      return Response.json({}, { status: 403 });
+    });
+    await assert.rejects(f.transport.post("status", body), /Current pairing is unavailable/);
+    assert.equal(f.transport.readTiming().issued_at_ms, issued);
+    assert.equal(body.issued_at_ms, issued);
+  });
 
 test("identity-only client uses raw domain-separated P-256 proofs without bearer or cookies", async (t) => {
   const f = await setup(), calls = [];

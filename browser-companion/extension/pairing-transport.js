@@ -55,10 +55,14 @@ export class PairingTransport {
     if (attempt) { this.#readAttempt = attempt; this.#readTiming = null; }
     await this.beforePost();
     if (this.signal?.aborted) throw new Error("Connection request was paused");
-    let age = null;
+    let issued = null, age = null;
     if (attempt) {
       try {
-        if (Number.isSafeInteger(body?.issued_at_ms)) age = timingInteger(this.now() - body.issued_at_ms);
+        const timestamp = body?.issued_at_ms;
+        if (Number.isSafeInteger(timestamp) && timestamp > 0) {
+          issued = timestamp;
+          age = timingInteger(this.now() - timestamp);
+        }
       } catch { /* Diagnostics cannot replace the original transport outcome. */ }
     }
     const started = attempt ? monotonicTiming() : null;
@@ -107,7 +111,7 @@ export class PairingTransport {
     } catch (failure) {
       if (attempt && this.#readAttempt === attempt) {
         const ended = monotonicTiming();
-        this.#readTiming = Object.freeze({ version: 1, issued_age_ms: age,
+        this.#readTiming = Object.freeze({ version: 1, issued_at_ms: issued, issued_age_ms: age,
           elapsed_ms: started === null || ended === null ? null : timingInteger(Math.round(ended - started), 0),
           http_status: status });
       }
