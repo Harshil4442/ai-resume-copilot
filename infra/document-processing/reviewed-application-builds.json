@@ -2,6 +2,12 @@
   "version": 1,
   "sources": [
     {
+      "release": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+      "image_digest": "sha256:df4618fa19a05645384a4e0aba92ad691e5f40c55344b34da55c95fc1b44c77f",
+      "build_id": "3a251d77-44e7-4b7a-9987-2c991c8e6d89",
+      "ci_run_id": 41095660943
+    },
+    {
       "release": "de78a8fa4ca47aeaf550b146ba0ce20ca0cbfcb5",
       "image_digest": "sha256:2334d3fd116c7da83276b7cd29a3687ef5efeaa9a47f1662f41113acc572c44b",
       "build_id": "34bec60d-b92d-4285-bd9b-2aa22e6ce1a0",
