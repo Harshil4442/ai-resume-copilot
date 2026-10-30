@@ -321,7 +321,9 @@ def test_key_inspection_is_exact_signed_read_with_only_replay_consume(pairing):
         "extension_id": EXTENSION, "executor_revision": REVISION, "status": "UNCLAIMED"}
     added = [json.loads(c.native.data[path][0]) for path in set(c.native.data) - before]
     assert len(added) == 1 and added[0]["namespace"] == "browser_device_requests"
-    assert added[0]["value"] == {"expires_at_ms": NOW + 5000}
+    # Retain replay consumption through the final possible bounded processing
+    # lease; old public signatures still cannot enter a new HTTP invocation.
+    assert added[0]["value"] == {"expires_at_ms": NOW + 35_000}
     assert c.native.calls == [{"browser_device_requests"}]
     assert not c.kms.calls and not c.native.views
     assert not c.browser._service().coordinator._issued
