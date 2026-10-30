@@ -259,6 +259,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owned Dashboard */
+        get: operations["get_owned_dashboard_api_auth_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/delete-account": {
         parameters: {
             query?: never;
@@ -3191,6 +3208,58 @@ export interface components {
              */
             server_time: string;
         };
+        /** DashboardOpportunities */
+        DashboardOpportunities: {
+            /** Items */
+            items: components["schemas"]["DashboardOpportunity"][];
+            /** Total */
+            total: number;
+        };
+        /** DashboardOpportunity */
+        DashboardOpportunity: {
+            /** Company */
+            company: string;
+            /** Id */
+            id: string;
+            /** Next Action */
+            next_action: string | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "saved" | "evaluating" | "preparing" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | "archived";
+            /** Title */
+            title: string;
+        };
+        /** DashboardReminder */
+        DashboardReminder: {
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+        };
+        /** DashboardResumeSignal */
+        DashboardResumeSignal: {
+            /** Evidenced Skills */
+            evidenced_skills: number;
+            /** Verification Rate */
+            verification_rate: number;
+        };
+        /** DashboardSummary */
+        DashboardSummary: {
+            /** Applications Count */
+            applications_count: number;
+            /** Average Match Score */
+            average_match_score: number;
+            /** Resume Count */
+            resume_count: number;
+            resume_quality: components["schemas"]["DashboardResumeSignal"];
+        };
         /** DimensionScore */
         DimensionScore: {
             /** Evidence Ids */
@@ -4258,6 +4327,22 @@ export interface components {
             schema_version: "owned-bootstrap-v1";
             /** Unavailable */
             unavailable: ("profile" | "features" | "credit_availability" | "credit_wallet")[];
+        };
+        /** OwnedDashboardView */
+        OwnedDashboardView: {
+            bootstrap: components["schemas"]["OwnedBootstrapView"];
+            opportunities: components["schemas"]["DashboardOpportunities"] | null;
+            /** Reminders */
+            reminders: components["schemas"]["DashboardReminder"][] | null;
+            /**
+             * Schema Version
+             * @default owned-dashboard-v1
+             * @constant
+             */
+            schema_version: "owned-dashboard-v1";
+            summary: components["schemas"]["DashboardSummary"] | null;
+            /** Unavailable */
+            unavailable: ("summary" | "opportunities" | "reminders")[];
         };
         /** PackageUpdate */
         PackageUpdate: {
@@ -6757,6 +6842,26 @@ export interface operations {
                         /** @constant */
                         detail: "Invalid authentication request";
                     };
+                };
+            };
+        };
+    };
+    get_owned_dashboard_api_auth_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnedDashboardView"];
                 };
             };
         };

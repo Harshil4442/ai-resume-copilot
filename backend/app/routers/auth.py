@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..billing.signup import NEW_ACCOUNT_LEGACY_ANALYSIS_UNITS, NEW_ACCOUNT_LEGACY_SERVICE_CREDITS
 from ..database import get_db
 from ..domains.candidate_accounts.bootstrap import OwnedBootstrapView, bootstrap_view
+from ..domains.candidate_accounts.dashboard import OwnedDashboardView, dashboard_view
 from ..domains.candidate_accounts.google import google_id_token as google_id_token
 from ..domains.candidate_accounts.profile_view import profile_view
 from ..domains.notifications import enqueue_notification
@@ -341,6 +342,26 @@ def get_owned_bootstrap(request: Request, response: Response,
         return bootstrap_view(db, current_user)
     except GuardDenied:
         raise HTTPException(401, "Not authenticated") from None
+
+
+@router.get("/dashboard", response_model=OwnedDashboardView)
+def get_owned_dashboard(request: Request, response: Response,
+                        db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if (request.url.query or request.headers.get("content-encoding") or request.headers.get("transfer-encoding")
+            or request.headers.get("content-length", "0") != "0"):
+        raise HTTPException(422, "Owned dashboard accepts only an empty GET")
+    response.headers.update({"Cache-Control": "private, no-store", "Pragma": "no-cache"})
+    try:
+        return dashboard_view(db, current_user)
+    except GuardDenied:
+        raise HTTPException(401, "Not authenticated") from None
+    except HTTPException as exc:
+        # Only an absent route is a compatibility 404, never an owned-reader
+        # refusal after this endpoint has already been selected.
+        if exc.status_code == 404:
+            raise HTTPException(503, "Owned dashboard is unavailable") from None
+        raise
+
 
 @router.put("/profile", response_model=UserProfileResponse)
 def update_profile(

@@ -2345,6 +2345,165 @@
         "title": "CreditWalletView",
         "type": "object"
       },
+      "DashboardOpportunities": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardOpportunity"
+            },
+            "maxItems": 8,
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "DashboardOpportunities",
+        "type": "object"
+      },
+      "DashboardOpportunity": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "stage": {
+            "enum": [
+              "saved",
+              "evaluating",
+              "preparing",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn",
+              "archived"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "company",
+          "stage",
+          "next_action"
+        ],
+        "title": "DashboardOpportunity",
+        "type": "object"
+      },
+      "DashboardReminder": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 240,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "due_at"
+        ],
+        "title": "DashboardReminder",
+        "type": "object"
+      },
+      "DashboardResumeSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "evidenced_skills": {
+            "minimum": 0.0,
+            "title": "Evidenced Skills",
+            "type": "integer"
+          },
+          "verification_rate": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Verification Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evidenced_skills",
+          "verification_rate"
+        ],
+        "title": "DashboardResumeSignal",
+        "type": "object"
+      },
+      "DashboardSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "applications_count": {
+            "minimum": 0.0,
+            "title": "Applications Count",
+            "type": "integer"
+          },
+          "average_match_score": {
+            "title": "Average Match Score",
+            "type": "number"
+          },
+          "resume_count": {
+            "minimum": 0.0,
+            "title": "Resume Count",
+            "type": "integer"
+          },
+          "resume_quality": {
+            "$ref": "#/components/schemas/DashboardResumeSignal"
+          }
+        },
+        "required": [
+          "resume_count",
+          "applications_count",
+          "average_match_score",
+          "resume_quality"
+        ],
+        "title": "DashboardSummary",
+        "type": "object"
+      },
       "DimensionScore": {
         "properties": {
           "evidence_ids": {
@@ -5426,6 +5585,76 @@
           "unavailable"
         ],
         "title": "OwnedBootstrapView",
+        "type": "object"
+      },
+      "OwnedDashboardView": {
+        "additionalProperties": false,
+        "properties": {
+          "bootstrap": {
+            "$ref": "#/components/schemas/OwnedBootstrapView"
+          },
+          "opportunities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardOpportunities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DashboardReminder"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminders"
+          },
+          "schema_version": {
+            "const": "owned-dashboard-v1",
+            "default": "owned-dashboard-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailable": {
+            "items": {
+              "enum": [
+                "summary",
+                "opportunities",
+                "reminders"
+              ],
+              "type": "string"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bootstrap",
+          "summary",
+          "opportunities",
+          "reminders",
+          "unavailable"
+        ],
+        "title": "OwnedDashboardView",
         "type": "object"
       },
       "PackageUpdate": {
@@ -10851,6 +11080,32 @@
         "summary": "Logout Cookie",
         "tags": [
           "candidate-password-lifecycle"
+        ]
+      }
+    },
+    "/api/auth/dashboard": {
+      "get": {
+        "operationId": "get_owned_dashboard_api_auth_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnedDashboardView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Owned Dashboard",
+        "tags": [
+          "auth"
         ]
       }
     },
