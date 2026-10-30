@@ -123,7 +123,10 @@ def companion_proof_closure(root, roots, declared):
         source = root / name
         assert source.is_file() and not source.is_symlink()
         seen.add(name)
-        for relative in re.findall(r'''(?:from\s*|import\s*\(\s*|import\s*)["'](\.[^"']+)["']''', source.read_text()):
+        # These actual module declarations are single-line. Inline source
+        # strings written into synthetic extensions are not host-module imports;
+        # every such extension file is independently bound by the full20 list.
+        for relative in re.findall(r'''(?m)^import\s+(?:[^;\n]+?\s+from\s+)?["'](\.[^"']+)["']''', source.read_text()):
             helper = (source.parent / relative.split("?", 1)[0]).resolve()
             pending.append(str(helper.relative_to(root)))
     return seen
@@ -146,9 +149,27 @@ def test_pairing_source_package_and_actual_wire_proof_dependencies_are_bound():
     assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.6"
 
 
+def test_companion_actual_ci_entrypoints_and_literal_bridge_inputs_are_bound():
+    import yaml
+
+    package = json.loads((ROOT / "browser-companion/package.json").read_text())
+    commands = [package["scripts"][name] for name in ("test", "test:browser", "test:native-runtime", "test:assistance")]
+    steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]["browser-companion"]["steps"]
+    commands += [step.get("run", "") for step in steps]
+    actual = {"browser-companion/" + name for command in commands
+        for name in re.findall(r"tests/[\w-]+\.test\.js", command)}
+    assert actual <= set(contract.COMPANION_PROOF_ROOTS)
+    assert {"browser-companion/tests/browser.test.js", "browser-companion/tests/assistance-browser.test.js"} <= actual
+    assert {"backend/tests/browser_assistance_chrome_bridge.py", "backend/tests/browser_submit_chrome_bridge.py",
+        "backend/tests/browser_submit_owned.py", "backend/tests/test_browser_assistance_isolated.py",
+        "browser-companion/fixtures/razorpay/adapter.js", "frontend/lib/cn.ts",
+        "frontend/vitest.config.mts", "frontend/vitest.setup.ts"} <= set(contract.NEW_PATHS)
+
+
 @pytest.mark.parametrize("missing", ["browser-companion/tests/pairing-readiness-fixture.js",
     "browser-companion/tests/request-deadlines.js", "browser-companion/scripts/native-fixture-build.js",
-    "browser-companion/fixtures/authority.js"])
+    "browser-companion/fixtures/authority.js", "browser-companion/scripts/fixture-build.js",
+    "browser-companion/fixtures/razorpay/form.js", "browser-companion/fixtures/razorpay/server.js"])
 def test_companion_relative_imports_cannot_hide_unbound_proof_helpers(missing):
     with pytest.raises(AssertionError, match="Unbound companion proof helper"):
         companion_proof_closure(ROOT, contract.COMPANION_PROOF_ROOTS,
@@ -156,7 +177,7 @@ def test_companion_relative_imports_cannot_hide_unbound_proof_helpers(missing):
 
 
 @pytest.mark.parametrize("missing", ["backend/tests/test_schema25_app_rolling_release.py",
-    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py"])
+    "backend/tests/test_rolling_release.py", "backend/tests/test_document_worker_deployment.py", "backend/tests/browser_submit_owned.py"])
 def test_actual_rolling_proof_roots_cannot_omit_their_executable_helpers(missing):
     assert missing in contract.PROTOCOL_FIXTURES
     with pytest.raises(AssertionError, match="Unbound local proof helper"):

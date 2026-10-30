@@ -22,8 +22,12 @@ qualification; no old contract or native receipt is relabeled.
 The finite current-source closure also binds all20 companion0.8.6 delivered
 files, its package/dependency metadata and reproducible public ZIP, the exact
 download component, existing device BFF route and its gateway/timeout helpers,
-the actual unit/owned-Chrome/paired-wire proof sources and their relative local
-imports, and the Python paired-SQL bridge with its existing transitive helpers.
+the actual CI unit/browser/assistance entrypoints, additional owned-Chrome and
+paired-wire proof sources and their relative local imports, the browser-loaded
+synthetic adapter, and the three Python SQL bridges with their existing helpers.
+Frontend test configuration and the download button's actual class helper are
+also source-bound. Additional hosted/paired-wire sources are not relabeled as
+executed by the existing companion CI commands.
 All12 older public ZIPs through0.8.5 remain unchanged. The public bodyless
 readiness GET is an availability experiment before signing; it grants no device,
 session, clock or submission authority. The original signed5-second admission,

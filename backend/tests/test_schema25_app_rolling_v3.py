@@ -96,7 +96,9 @@ runpy.run_path(SCRIPT, run_name='__main__')
     "browser-companion/extension/pairing-transport.js", "browser-companion/extension/pairing-runtime.js",
     "browser-companion/tests/pairing-readiness-fixture.js", "backend/tests/browser_paired_assistance_chrome_bridge.py",
     "browser-companion/scripts/package-reviewed.py", "browser-companion/package-lock.json",
-    "frontend/components/BrowserAssistanceReview.tsx", "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip"])
+    "frontend/components/BrowserAssistanceReview.tsx", "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip",
+    "frontend/lib/cn.ts", "browser-companion/tests/browser.test.js",
+    "browser-companion/tests/assistance-browser.test.js", "backend/tests/browser_submit_owned.py"])
 def test_changed_rolling_proof_helper_cannot_reuse_a_previous_plan(monkeypatch, name):
     original = Path.read_bytes
     prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
