@@ -314,8 +314,18 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: document-refresh-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.OUTPUT_DIRECTORY }}/**/*.json
+          path: |
+            ${{ env.OUTPUT_DIRECTORY }}/**/*.json
+            !${{ env.OUTPUT_DIRECTORY }}/failure-diagnostic.json
           if-no-files-found: warn
+          retention-days: 14
+      - name: Retain private failure diagnostics separately from native custody
+        if: always() && env.OUTPUT_DIRECTORY != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: document-refresh-diagnostics-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.OUTPUT_DIRECTORY }}/failure-diagnostic.json
+          if-no-files-found: ignore
           retention-days: 14
       - name: Surface required action
         if: always()

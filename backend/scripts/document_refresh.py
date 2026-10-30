@@ -1864,8 +1864,11 @@ def _final_failure_code(error: Exception) -> str:
     """Return only a reviewed literal; never return vendor exception text."""
     args = BaseException.__dict__["args"].__get__(error)
     code = args[0] if len(args) == 1 and type(args[0]) is str and len(args[0]) <= 180 else ""
-    if (type(error) is RefreshDenied
-            or type(error).__name__ in {"NativeProofDenied", "IdentityDenied", "TransitionDenied"}) \
+    try:
+        kind = _diagnostic_kind_code(error)[0]
+    except Exception:
+        kind = "unclassified"
+    if kind in {"RefreshDenied", "NativeProofDenied", "IdentityDenied", "TransitionDenied"} \
             and code in FINAL_READ_ONLY_FAILURE_CODES:
         return code
     return "document_refresh_unavailable"
@@ -1930,34 +1933,47 @@ def _diagnostic_literals(path: Path, prefix: str) -> set[str]:
 
 def _diagnostic_kind_code(error: BaseException) -> tuple[str, str | None]:
     cls = type(error)
-    builtins = {kind: kind.__name__ for kind in (
+    builtins = tuple((kind, kind.__name__) for kind in (
         Exception, RuntimeError, ValueError, TypeError, KeyError, AttributeError, AssertionError,
         NotImplementedError, OSError, FileNotFoundError, PermissionError, IsADirectoryError,
         NotADirectoryError, TimeoutError, ConnectionError, json.JSONDecodeError,
-        subprocess.TimeoutExpired, subprocess.CalledProcessError)}
-    if cls in builtins:
-        return builtins[cls], None
-    module_name = type.__getattribute__(cls, "__module__")
-    name = type.__getattribute__(cls, "__name__")
-    if type(module_name) is not str or len(module_name) > 160 or len(name) > 80:
-        return "unclassified", None
-    module = sys.modules.get(module_name)
-    if type(module) is not ModuleType or vars(module).get(name) is not cls:
-        return "unclassified", None
-    namespace = vars(module)
+        subprocess.TimeoutExpired, subprocess.CalledProcessError))
+    for known, kind in builtins:
+        if cls is known:
+            return kind, None
+    # Never hash an unknown class or inspect its name/metaclass properties.
+    modules = tuple(module for module in sys.modules.copy().values() if type(module) is ModuleType)
     for relative, (kind, prefix) in _DIAGNOSTIC_REPO_KINDS.items():
         path = ROOT / relative
-        if name == kind and namespace.get("__file__") and Path(namespace["__file__"]).resolve() == path.resolve():
+        for module in modules:
+            namespace = vars(module)
+            filename = namespace.get("__file__")
+            if namespace.get(kind) is not cls or type(filename) is not str or len(filename) > 4096:
+                continue
+            try:
+                if Path(filename).resolve() != path.resolve():
+                    continue
+            except (OSError, ValueError, RuntimeError):
+                continue
+            try:
+                codes = _diagnostic_literals(path, prefix)
+                if kind == "HistoryDenied":
+                    # NativeAudit supplies fixed permission reasons to history.need.
+                    codes |= _diagnostic_literals(ROOT / "infra/gcp/document_consumed_native.py", prefix)
+            except (OSError, ValueError, SyntaxError, RuntimeError):
+                codes = set()
             args = BaseException.__dict__["args"].__get__(error)
             value = args[0] if len(args) == 1 and type(args[0]) is str and len(args[0]) <= 180 else ""
-            codes = _diagnostic_literals(path, prefix)
-            if kind == "HistoryDenied":
-                # NativeAudit supplies the two fixed 403 reasons to history.need.
-                codes |= _diagnostic_literals(ROOT / "infra/gcp/document_consumed_native.py", prefix)
             if kind == "RefreshDenied":
                 codes |= FINAL_READ_ONLY_FAILURE_CODES
             return kind, value if value in codes else None
-    return _DIAGNOSTIC_VENDOR_KINDS.get(module_name, {}).get(name, "unclassified"), None
+    for module_name, names in _DIAGNOSTIC_VENDOR_KINDS.items():
+        vendor_module = sys.modules.get(module_name)
+        if type(vendor_module) is ModuleType:
+            for name, kind in names.items():
+                if vars(vendor_module).get(name) is cls:
+                    return kind, None
+    return "unclassified", None
 
 
 def _diagnostic_number(value: Any) -> int | None:
@@ -1976,7 +1992,7 @@ def _failure_diagnostics(error: BaseException) -> dict[str, Any]:
         row: dict[str, Any] = {"kind": kind, "frames": []}
         if code is not None:
             row["fixed_code"] = code
-        if OSError in type.__getattribute__(type(current), "__mro__"):
+        if issubclass(type(current), OSError):
             number = OSError.__dict__["errno"].__get__(current)
             if type(number) is int and 0 <= number <= 4095:
                 row["errno"] = number
@@ -2070,7 +2086,8 @@ def _record_failure_diagnostics(error: Exception, code: str) -> bool:
                 or current.st_uid != os.getuid() or stat.S_IMODE(current.st_mode) != 0o700):
             return False
         try:
-            fd = os.open("failure.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=descriptor)
+            fd = os.open("failure-diagnostic.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=descriptor)
         except FileExistsError:
             return False
         with os.fdopen(fd, "wb") as stream:

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
 
 import pytest
 import requests
+import yaml
 
 from scripts import document_refresh as refresh
 
@@ -48,7 +50,7 @@ def test_original_failure_outcome_and_single_heartbeat_are_preserved_with_privat
     assert calls == ["original operation once", {"mode": "monitor", "definitions": {"status": "unavailable"}}]
     assert console == {"status": "maintenance_attention_required", "fixed_code": "document_refresh_unavailable",
                        "state_requires_read_only_reconciliation": True, "automatic_replay": False}
-    path = output / "failure.json"
+    path = output / "failure-diagnostic.json"
     raw = path.read_text()
     assert SECRET not in raw and "https://" not in raw and str(refresh.ROOT) not in raw
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
@@ -67,7 +69,7 @@ def test_source_owned_literal_codes_remain_unchanged(monkeypatch, capsys, tmp_pa
     output = tmp_path / "private"
     output.mkdir(mode=0o700)
     _, console = cli_failure(monkeypatch, capsys, output, refresh.RefreshDenied(code))
-    value = json.loads((output / "failure.json").read_text())
+    value = json.loads((output / "failure-diagnostic.json").read_text())
     assert console["fixed_code"] == value["fixed_code"] == code
     assert value["diagnostics"]["nodes"][0]["fixed_code"] == code
 
@@ -97,7 +99,7 @@ def test_unreviewed_first_party_message_is_redacted_on_console_and_disk(monkeypa
     output = tmp_path / "private"
     output.mkdir(mode=0o700)
     _, console = cli_failure(monkeypatch, capsys, output, refresh.RefreshDenied(message))
-    raw = (output / "failure.json").read_text()
+    raw = (output / "failure-diagnostic.json").read_text()
     assert console["fixed_code"] == "document_refresh_unavailable"
     assert SECRET not in raw and "fixed_code" not in json.loads(raw)["diagnostics"]["nodes"][0]
 
@@ -110,7 +112,7 @@ def test_unknown_class_name_and_hooks_are_never_inspected_or_printed(monkeypatch
     output = tmp_path / "private"
     output.mkdir(mode=0o700)
     _, console = cli_failure(monkeypatch, capsys, output, cls(SECRET))
-    raw = (output / "failure.json").read_text()
+    raw = (output / "failure-diagnostic.json").read_text()
     assert SECRET not in raw and console["fixed_code"] == "document_refresh_unavailable"
     assert json.loads(raw)["diagnostics"]["nodes"][0]["kind"] == "unclassified"
 
@@ -126,6 +128,32 @@ def test_large_untrusted_kind_and_message_do_not_expand_metadata():
     value = refresh._failure_diagnostics(cls(SECRET * 100000))
     assert value["nodes"][0]["kind"] == "unclassified"
     assert len(json.dumps(value)) < 1000 and SECRET not in json.dumps(value)
+
+
+@pytest.mark.parametrize("mode", ["full-source-refresh", "reconcile-final-v2-transition"])
+def test_unknown_exception_metaclass_cannot_run_display_hooks(monkeypatch, capsys, tmp_path, mode):
+    class Meta(type):
+        def __hash__(cls):
+            pytest.fail("untrusted class hash executed")
+        def __eq__(cls, other):
+            pytest.fail("untrusted class equality executed")
+        def __getattribute__(cls, name):
+            if name in {"__name__", "__module__", "__mro__"}:
+                pytest.fail("untrusted class metadata hook executed")
+            return super().__getattribute__(name)
+    class Unknown(RuntimeError, metaclass=Meta):
+        pass
+    output = tmp_path / "private"
+    output.mkdir(mode=0o700)
+    _, console = cli_failure(monkeypatch, capsys, output, Unknown(SECRET), mode=mode)
+    path = output / ("failure-diagnostic.json" if mode == "full-source-refresh" else "failure.json")
+    value = json.loads(path.read_text())
+    if mode == "full-source-refresh":
+        assert value["diagnostics"]["nodes"][0]["kind"] == "unclassified"
+    else:
+        assert "diagnostics" not in value
+    assert console["fixed_code"] == "document_refresh_unavailable"
+    assert SECRET not in json.dumps(value)
 
 
 @pytest.mark.parametrize("status", [403, 429, 503])
@@ -221,7 +249,7 @@ def test_unowned_or_missing_output_is_not_created_or_written(monkeypatch, capsys
         monkeypatch.setattr(refresh.os, "getuid", lambda: -1)
     calls, console = cli_failure(monkeypatch, capsys, output, RuntimeError(SECRET))
     assert calls[0] == "original operation once" and console["automatic_replay"] is False
-    assert not (output / "failure.json").exists() and not (actual / "failure.json").exists()
+    assert not (output / "failure-diagnostic.json").exists() and not (actual / "failure-diagnostic.json").exists()
     if shape == "absent":
         assert not output.exists()
 
@@ -232,7 +260,7 @@ def test_existing_failure_is_never_replaced(monkeypatch, capsys, tmp_path, exist
     output.mkdir(mode=0o700)
     secret = tmp_path / "source"
     secret.write_text(SECRET)
-    failure = output / "failure.json"
+    failure = output / "failure-diagnostic.json"
     if existing == "file":
         failure.write_text("original custody")
     elif existing == "symlink":
@@ -262,7 +290,7 @@ def test_directory_replacement_is_refused_before_create(monkeypatch, tmp_path):
         return original_open(path, flags, *args, **kwargs)
     monkeypatch.setattr(refresh.os, "open", swap)
     assert refresh._record_failure_diagnostics(RuntimeError(SECRET), "document_refresh_unavailable") is False
-    assert not (moved / "failure.json").exists() and not (output / "failure.json").exists()
+    assert not (moved / "failure-diagnostic.json").exists() and not (output / "failure-diagnostic.json").exists()
 
 
 def test_diagnostic_storage_failure_does_not_change_original_outcome_or_call_count(monkeypatch, capsys, tmp_path):
@@ -281,7 +309,7 @@ def test_exhausted_metadata_byte_budget_does_not_write_or_change_outcome(monkeyp
     monkeypatch.setattr(refresh, "FAILURE_DIAGNOSTIC_BYTES", 1)
     calls, console = cli_failure(monkeypatch, capsys, output, RuntimeError(SECRET))
     assert len(calls) == 2 and console["automatic_replay"] is False
-    assert not (output / "failure.json").exists()
+    assert not (output / "failure-diagnostic.json").exists()
 
 
 @pytest.mark.parametrize("shape", ["missing", "duplicate", "relative"])
@@ -297,7 +325,7 @@ def test_unusable_cli_output_selection_does_not_write(monkeypatch, capsys, tmp_p
     monkeypatch.setattr(sys, "argv", argv)
     monkeypatch.setattr(refresh, "main", lambda: (_ for _ in ()).throw(RuntimeError(SECRET)))
     monkeypatch.setattr(refresh, "emit_status", lambda _: None)
-    assert refresh.run_cli() == 2 and not (output / "failure.json").exists()
+    assert refresh.run_cli() == 2 and not (output / "failure-diagnostic.json").exists()
     assert SECRET not in capsys.readouterr().out
 
 
@@ -315,9 +343,39 @@ def test_read_only_audited_modes_keep_no_heartbeat_and_existing_receipt_shape(mo
     output.mkdir(mode=0o700)
     calls, console = cli_failure(monkeypatch, capsys, output, RuntimeError(SECRET), mode=mode)
     assert calls == ["original operation once"] and console["automatic_replay"] is False
+    assert not (output / "failure-diagnostic.json").exists()
     path = output / "failure.json"
     if mode == "audit-consumed-v2-history":
         assert not path.exists()
     else:
         assert json.loads(path.read_text()) == console
         assert "diagnostics" not in console
+
+
+def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    steps = workflow["jobs"]["maintenance"]["steps"]
+    normal = next(s for s in steps if s.get("name") == "Retain bounded maintenance evidence")
+    diagnostic = next(s for s in steps if s.get("name") ==
+                      "Retain private failure diagnostics separately from native custody")
+    base = "${{ env.OUTPUT_DIRECTORY }}/"
+    assert normal["with"]["path"].splitlines() == [base + "**/*.json", "!" + base + "failure-diagnostic.json"]
+    assert diagnostic["with"]["path"] == base + "failure-diagnostic.json"
+    assert normal["uses"] == diagnostic["uses"] == "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+    assert normal["if"] == diagnostic["if"] == "always() && env.OUTPUT_DIRECTORY != ''"
+    assert diagnostic["with"]["retention-days"] == normal["with"]["retention-days"] == 14
+    assert diagnostic["with"]["if-no-files-found"] == "ignore"
+    assert diagnostic["with"]["name"] == (
+        "document-refresh-diagnostics-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}")
+    prefixes = set()
+    for step in steps:
+        prefixes.update(re.findall(r'startswith\("([^"\n]+)"\)', step.get("run", "")))
+    assert prefixes == {"document-refresh-refresh-", "document-refresh-full-source-refresh-",
+                        "document-refresh-resume-full-source-refresh-"}
+    for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh", "monitor",
+                 "audit-consumed-v2-history", "reconcile-final-v2-transition"):
+        name = f"document-refresh-diagnostics-{mode}-123456-1"
+        assert all(not name.startswith(prefix) for prefix in prefixes)
+    # Native evidence is still retained under its exact original prefixes.
+    for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh"):
+        assert sum(f"document-refresh-{mode}-123456-1".startswith(prefix) for prefix in prefixes) == 1
