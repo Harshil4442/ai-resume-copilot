@@ -12,6 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 RUNNER_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 RUNNER_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
 COMPONENT_PATHS = (
