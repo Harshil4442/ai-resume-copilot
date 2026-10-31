@@ -65,9 +65,6 @@ class ConsumerPort(PersistencePort):
     def query(self, model):
         return ConsumerQuery(self, model)
 
-    def get_bind(self):
-        return "fake-persistence-port-never-a-database"
-
 
 def request(operation):
     inputs = {"resume_enrichment": {"resume_id": 3},
