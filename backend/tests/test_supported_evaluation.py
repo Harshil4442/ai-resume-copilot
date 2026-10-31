@@ -76,6 +76,28 @@ def materialized_development_bytes(case):
     return result
 
 
+def materialized_development_batch(cases):
+    """Reuse one real recipe binding only within this immutable fixture batch.
+
+    No files, review receipts or authorizations may be published until the final
+    source/font/callable/tool-version comparison succeeds. The standalone helper
+    keeps its per-call before/after checks for direct callers and drift tests.
+    """
+    assert len(cases) == 40 and all(case["split"] == "development" for case in cases)
+    font = Path(reportlab.__file__).parent / "fonts/Vera.ttf"
+    binding = _materialization_binding(font)
+    try:
+        result = tuple(_materialized_development_bytes(packet.canonical(case), binding, font)
+                       for case in cases)
+        assert _materialization_binding(font) == binding, "Synthetic materializer changed during fixture batch"
+        assert all(type(item) is tuple and type(item[0]) is bytes
+                   and (item[1] is None or type(item[1]) is bytes) for item in result)
+    except BaseException:
+        _materialized_development_bytes.cache_clear()
+        raise
+    return result
+
+
 def write(root, name, value):
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,9 +128,9 @@ def evaluation(tmp_path, monkeypatch):
     evidence.mkdir()
     rows, receipts, captures = [], {}, {}
     cases = inputs.selected_cases(ROOT, "development")[1]
-    for case in cases:
+    prepared = materialized_development_batch(cases)
+    for case, (content, compiled_pdf) in zip(cases, prepared, strict=True):
         identity, kind = case["case_id"], case["source_format"]
-        content, compiled_pdf = materialized_development_bytes(case)
         path = source_root / (identity + "." + kind)
         path.write_bytes(content)
         sha = packet.file_digest(path)

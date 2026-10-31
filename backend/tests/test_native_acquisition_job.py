@@ -370,3 +370,75 @@ def test_development_byte_cache_refuses_helper_drift_during_generation(monkeypat
         assert cache.cache_info().currsize == 0
     finally:
         cache.cache_clear()
+
+
+def test_fixture_batch_uses_two_actual_complete_bindings_and_preserves_cache_keys(monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cases = fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1]
+    original, bindings = fixtures._materialization_binding, []
+    def observed(font):
+        value = original(font)
+        bindings.append(value)
+        return value
+    monkeypatch.setattr(fixtures, "_materialization_binding", observed)
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        first = fixtures.materialized_development_batch(cases)
+        cold = cache.cache_info()
+        second = fixtures.materialized_development_batch(cases)
+        warm = cache.cache_info()
+        assert len(first) == len(second) == 40 and first == second
+        assert len(bindings) == 4 and all(value == bindings[0] for value in bindings)
+        assert cold.misses == warm.misses == 40 and warm.hits == cold.hits + 40
+        # The unchanged standalone helper uses the exact same complete key.
+        assert fixtures.materialized_development_bytes(cases[0]) == first[0]
+        assert len(bindings) == 6 and cache.cache_info().hits == warm.hits + 1
+    finally:
+        cache.cache_clear()
+
+
+@pytest.mark.parametrize("change", ["helper", "source", "font", "tool_version", "exception"])
+def test_fixture_batch_drift_or_failure_clears_bytes_before_publishing_any_authority(change, tmp_path, monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    original = fixtures._materialized_development_bytes
+    cache = original
+    cache.cache_clear()
+    calls = []
+    source_copy = tmp_path / "fixture-source.py"
+    source_copy.write_bytes(Path(fixtures.__file__).read_bytes())
+    font = tmp_path / "fonts/Vera.ttf"
+    font.parent.mkdir()
+    font.write_bytes((Path(fixtures.reportlab.__file__).parent / "fonts/Vera.ttf").read_bytes())
+    if change == "source":
+        monkeypatch.setattr(fixtures, "__file__", str(source_copy))
+    if change == "font":
+        monkeypatch.setattr(fixtures.reportlab, "__file__", str(tmp_path / "__init__.py"))
+    prepared = []
+    def materialized(*args):
+        # Only the first byte preparation is real. Later values are deliberately
+        # inert duplicates inside a batch that MUST refuse before any file write.
+        result = original(*args) if not prepared else prepared[0]
+        prepared.append(result)
+        calls.append(1)
+        if len(calls) == 1:
+            if change == "helper":
+                monkeypatch.setattr(fixtures.materialize, "_tex", lambda value: b"changed synthetic helper")
+            elif change == "source":
+                source_copy.write_bytes(source_copy.read_bytes() + b"\n# changed source\n")
+            elif change == "font":
+                font.write_bytes(font.read_bytes() + b"synthetic changed font bytes")
+            elif change == "tool_version":
+                monkeypatch.setattr(fixtures, "version", lambda name: "changed-synthetic-version")
+            else:
+                raise ValueError("synthetic generation failure")
+        return result
+    materialized.cache_clear = cache.cache_clear
+    monkeypatch.setattr(fixtures, "_materialized_development_bytes", materialized)
+    monkeypatch.setattr(fixtures, "write", lambda *a, **k: pytest.fail("Published authority before batch binding check"))
+    with pytest.raises((AssertionError, ValueError)):
+        fixtures.evaluation.__wrapped__(tmp_path, monkeypatch)
+    assert cache.cache_info().currsize == 0
+    assert not list((tmp_path / "native").iterdir()) and not list((tmp_path / "evidence").iterdir())
