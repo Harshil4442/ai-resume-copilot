@@ -23,6 +23,9 @@ def upgrade():
         with op.batch_alter_table("password_reset_tokens") as batch:
             batch.add_column(sa.Column("purpose", sa.String(24), nullable=False, server_default="password_reset"))
             batch.create_check_constraint("ck_password_reset_purpose", "purpose IN ('password_reset','privacy_erasure')")
+        with op.batch_alter_table("browser_assistance_reviews") as batch:
+            batch.drop_constraint("ck_browser_review_protocol", type_="check")
+            batch.create_check_constraint("ck_browser_review_protocol", "review_protocol_version BETWEEN 1 AND 5")
         # SQLite supports local development; it provides no native fence proof.
         return
     namespace = connection.scalar(sa.text("SELECT current_schema()"))
@@ -33,6 +36,10 @@ def upgrade():
         server_default="password_reset"), schema=namespace)
     op.create_check_constraint("ck_password_reset_purpose", "password_reset_tokens",
         "purpose IN ('password_reset','privacy_erasure')", schema=namespace)
+    connection.execute(sa.text(f"LOCK TABLE {quoted}.browser_assistance_reviews IN ACCESS EXCLUSIVE MODE"))
+    op.drop_constraint("ck_browser_review_protocol", "browser_assistance_reviews", type_="check", schema=namespace)
+    op.create_check_constraint("ck_browser_review_protocol", "browser_assistance_reviews",
+        "review_protocol_version BETWEEN 1 AND 5", schema=namespace)
 
 
 def downgrade():
