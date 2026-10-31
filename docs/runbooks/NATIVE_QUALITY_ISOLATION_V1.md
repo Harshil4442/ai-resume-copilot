@@ -12,7 +12,12 @@ in source identity metadata with `eligible=false`. It is never the current runne
 pin. Do not relabel that failure, substitute an old image or fabricate a UID.
 
 The independent controller fingerprint binds exactly these five new code/test/
-runbook paths and the finite historical execution dependency inventory. It does
+runbook paths, the finite historical execution dependency inventory, and the
+three actual default-pytest inputs `backend/tests/conftest.py`,
+`expense_policy_fixtures.py` and `model_cost_fixtures.py`. Those proof inputs must
+remain exact historical bytes. The five currently absent package initializers
+listed by `ABSENT_ANCESTORS` must remain absent; a newly executable ancestor
+refuses rather than silently entering the import closure. It does
 not include a future runner SHA, receipt, CI ID or image, so a genuine external
 runner receipt can renew context without rebuilding the app merely to insert its
 own future commit. All baseline execution code, Dockerfile, locks, CI workflow,

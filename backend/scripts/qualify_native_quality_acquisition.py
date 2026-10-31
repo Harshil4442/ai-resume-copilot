@@ -34,6 +34,11 @@ RUNNER_PATHS = (
     "backend/app/services/document_ingestion.py", "backend/app/services/native_tex_transport.py",
 )
 
+PROOF_PATHS = ("backend/tests/conftest.py", "backend/tests/expense_policy_fixtures.py",
+               "backend/tests/model_cost_fixtures.py")
+ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
+                    "infra/__init__.py", "infra/gcp/__init__.py")
+
 
 def need(value, code):
     if not value:
@@ -64,8 +69,25 @@ def component_hashes(root: Path) -> dict[str, str]:
     return entries
 
 
+def ancestor_fence(root: Path) -> None:
+    need(all(not (root / name).exists() and not (root / name).is_symlink()
+             for name in ABSENT_ANCESTORS), "undeclared_package_ancestor")
+
+
+def proof_hashes(root: Path) -> dict[str, str]:
+    entries = {}
+    for name in PROOF_PATHS:
+        path = root / name
+        need(path.is_file() and path.resolve() == path and not path.is_symlink(), "proof_input_path")
+        raw = path.read_bytes()
+        need(raw == git(root, "show", HISTORICAL_RELEASE + ":" + name), "historical_proof_input_changed")
+        entries[name] = hashlib.sha256(raw).hexdigest()
+    return entries
+
+
 def dependency_hashes(root: Path) -> dict[str, str]:
     """A finite historical code inventory, never a wildcard for future code."""
+    ancestor_fence(root)
     objects = {}
     for row in git(root, "ls-tree", "-r", "-z", "--full-tree", HISTORICAL_RELEASE).split(b"\0"):
         if row:
@@ -101,7 +123,8 @@ def source_identity(root: Path) -> dict:
     entries = component_hashes(root)
     dependencies = dependency_hashes(root)
     body = {"schema_version": "native-quality-component-v2", "component_paths": entries,
-            "execution_dependencies": dependencies, "full_ci_suites": list(SUITES)}
+            "execution_dependencies": dependencies, "proof_inputs": proof_hashes(root),
+            "absent_package_ancestors": list(ABSENT_ANCESTORS), "full_ci_suites": list(SUITES)}
     return {**body, "controller_sha256": digest(body), "runtime_dependencies_sha256": digest(dependencies),
         "runner_entry_sha256": ENTRY_SHA256,
         "historical_baseline": {"release": HISTORICAL_RELEASE, "qualification_sha256": HISTORICAL_FINGERPRINT,

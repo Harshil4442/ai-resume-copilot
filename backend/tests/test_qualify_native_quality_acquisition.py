@@ -23,6 +23,8 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["full_ci_suites"] == list(q.SUITES)
     assert value["runner_entry_sha256"] == q.ENTRY_SHA256
     assert value["runtime_dependencies_sha256"] == q.digest(value["execution_dependencies"])
+    assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
+    assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert "runner_release" not in value and "runner_app_and_contract_sha256" not in value
 
 
@@ -210,3 +212,29 @@ def test_receipt_custody_hash_must_match_fresh_original_metadata(field, native_p
     p = p.model_copy(update={"qualified_runner_receipt_sha256": hashlib.sha256(raw).hexdigest()})
     with pytest.raises(ValueError, match="metadata_custody_changed"):
         q.verify_qualified_runner(p, raw, runner_root=ROOT, controller_ci_run_id=2)
+
+
+@pytest.mark.parametrize("name", q.PROOF_PATHS)
+def test_actual_default_pytest_fixture_drift_refuses_controller_identity(monkeypatch, name):
+    original = Path.read_bytes
+    reads = []
+    def changed(path):
+        raw = original(path)
+        if path == ROOT / name:
+            reads.append(str(path))
+            return raw + b"\n# unreviewed proof-input drift\n"
+        return raw
+    monkeypatch.setattr(Path, "read_bytes", changed)
+    with pytest.raises(ValueError, match="historical_proof_input_changed"):
+        q.proof_hashes(ROOT)
+    assert reads == [str(ROOT / name)]
+
+
+@pytest.mark.parametrize("name", q.ABSENT_ANCESTORS)
+def test_new_executable_package_ancestor_is_refused_without_import(tmp_path, name):
+    q.ancestor_fence(tmp_path)
+    target = tmp_path / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('raise AssertionError("must_never_import")\n')
+    with pytest.raises(ValueError, match="undeclared_package_ancestor"):
+        q.ancestor_fence(tmp_path)
