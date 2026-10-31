@@ -20,7 +20,15 @@ listed by `ABSENT_ANCESTORS` must remain absent; a newly executable ancestor
 refuses rather than silently entering the import closure. It does
 not include a future runner SHA, receipt, CI ID or image, so a genuine external
 runner receipt can renew context without rebuilding the app merely to insert its
-own future commit. All baseline execution code, Dockerfile, locks, CI workflow,
+own future commit. The exact current CI proof observer
+`backend/scripts/qualify_schema26_compatibility.py` is separately bound by current
+HEAD-exact bytes in `current_proof_inputs`. It is not imported by the acquisition
+entry. Its source is also bound by the actual runner V3 qualification fingerprint;
+its fresh child-computed hash must match the controller's current proof context.
+This one explicit reclassification preserves immutable comparisons for the other
+464 historical execution inputs; it does not exempt any other script or permit
+an old receipt/CI to approve changed proof bytes. All baseline execution code,
+Dockerfile, locks, CI workflow,
 original App289/605 and entry8eef must remain byte-exact. Additional executable
 modules in those execution namespaces refuse; original default two-caller
 contracts and all signed/native deadlines are unchanged.
@@ -94,6 +102,8 @@ separate credential-free HOME/environment, isolated Python, fresh pycache path,
 network/DNS/gRPC/ADC/SQL denial and only read-only local Git commands. The child's
 validators come from the controller's pinned historical source; foreign runner
 code is never imported/executed. Its output contains only source hashes/counts.
+The runner and controller may use the SAME actual clean head and all-five CI
+run; no distinct-head requirement or extra controller-only app Build exists.
 The QFP may legitimately change with reviewed test-only repairs even while
 App289/605 and entry8eef remain identical. The child does not spoof CI variables
 or run any native suite. Unknown/timeout/dirty or changed source refuses.

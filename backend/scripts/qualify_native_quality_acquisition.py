@@ -36,6 +36,7 @@ RUNNER_PATHS = (
 
 PROOF_PATHS = ("backend/tests/conftest.py", "backend/tests/expense_policy_fixtures.py",
                "backend/tests/model_cost_fixtures.py")
+CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
 ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
                     "infra/__init__.py", "infra/gcp/__init__.py")
 
@@ -85,6 +86,19 @@ def proof_hashes(root: Path) -> dict[str, str]:
     return entries
 
 
+def current_proof_hashes(root: Path) -> dict[str, str]:
+    """Current CI observer is source-bound data, never acquisition runtime code."""
+    entries = {}
+    for name in CURRENT_PROOF_PATHS:
+        path = root / name
+        need(path.is_file() and path.resolve() == path and not path.is_symlink()
+             and 0 < path.stat().st_size <= 512 * 1024, "current_proof_path")
+        raw = path.read_bytes()
+        need(raw == git(root, "show", "HEAD:" + name), "uncommitted_current_proof_changed")
+        entries[name] = hashlib.sha256(raw).hexdigest()
+    return entries
+
+
 def dependency_hashes(root: Path) -> dict[str, str]:
     """A finite historical code inventory, never a wildcard for future code."""
     ancestor_fence(root)
@@ -98,7 +112,7 @@ def dependency_hashes(root: Path) -> dict[str, str]:
     paths = sorted({*RUNNER_PATHS, *(name for name in names if
         name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                          "infra/document-processing/", "infra/native-tex/"))
-        and Path(name).suffix in {".py", ".json"})})
+        and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS))
     current = set(git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
     code_roots = ("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                   "infra/document-processing/", "infra/native-tex/")
@@ -124,6 +138,7 @@ def source_identity(root: Path) -> dict:
     dependencies = dependency_hashes(root)
     body = {"schema_version": "native-quality-component-v2", "component_paths": entries,
             "execution_dependencies": dependencies, "proof_inputs": proof_hashes(root),
+            "current_proof_inputs": current_proof_hashes(root),
             "absent_package_ancestors": list(ABSENT_ANCESTORS), "full_ci_suites": list(SUITES)}
     return {**body, "controller_sha256": digest(body), "runtime_dependencies_sha256": digest(dependencies),
         "runner_entry_sha256": ENTRY_SHA256,
@@ -160,7 +175,8 @@ def _runner_source(root: Path) -> dict:
     return {"release": head, "qualification_sha256": fingerprint,
         "app_sha256": contract.CANDIDATE_APP_SHA256, "app_files": contract.CANDIDATE_APP_FILES,
         "entry_sha256": hashlib.sha256((root / ENTRY).read_bytes()).hexdigest(),
-        "runtime_dependencies_sha256": digest(dependencies)}
+        "runtime_dependencies_sha256": digest(dependencies),
+        "current_proof_sha256": digest(current_proof_hashes(root))}
 
 
 def _child_guards(runner_root: Path):
@@ -228,7 +244,7 @@ def runner_source(root: Path) -> dict:
         need(result.returncode == 0 and 0 < len(result.stdout) <= 65536 and not result.stderr, "runner_source_child_refused")
         value = json.loads(result.stdout)
         need(type(value) is dict and set(value) == {"release", "qualification_sha256", "app_sha256", "app_files",
-             "entry_sha256", "runtime_dependencies_sha256"}, "runner_source_child_shape")
+             "entry_sha256", "runtime_dependencies_sha256", "current_proof_sha256"}, "runner_source_child_shape")
         return value
 
 
@@ -262,9 +278,13 @@ def verify_qualified_runner(plan, raw: bytes, *, runner_root: Path, controller_c
     identity = source_identity(ROOT)
     need(plan.controller_sha256 == identity["controller_sha256"], "controller_plan_changed")
     observed = runner_source(runner_root)
-    expected = {key: getattr(receipt, key) for key in observed}
-    need(observed == expected and observed["runtime_dependencies_sha256"] == identity["runtime_dependencies_sha256"],
+    fields = {"release", "qualification_sha256", "app_sha256", "app_files", "entry_sha256", "runtime_dependencies_sha256"}
+    expected = {key: getattr(receipt, key) for key in fields}
+    need({key: observed[key] for key in fields} == expected
+         and observed["runtime_dependencies_sha256"] == identity["runtime_dependencies_sha256"],
          "runner_receipt_source_changed")
+    need(observed["current_proof_sha256"] == digest(identity["current_proof_inputs"]),
+         "runner_controller_current_proof_context_changed")
     need(receipt.release != HISTORICAL_RELEASE, "failed_historical_runner_ineligible")
     native, contract, _ = _source_modules()
     observer = native.Source26Boundary(runner_root)

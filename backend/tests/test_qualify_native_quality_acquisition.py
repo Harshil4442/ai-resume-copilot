@@ -25,6 +25,8 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["runtime_dependencies_sha256"] == q.digest(value["execution_dependencies"])
     assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
+    assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
+    assert len(value["execution_dependencies"]) == 464 and len(q.CURRENT_PROOF_PATHS) == 1
     assert "runner_release" not in value and "runner_app_and_contract_sha256" not in value
 
 
@@ -70,7 +72,9 @@ def native_ports(monkeypatch):
     raw = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
     p = plan(controller_sha256="f" * 64, qualified_runner_receipt_sha256=hashlib.sha256(raw).hexdigest())
     identity = {"controller_sha256": "f" * 64, "runtime_dependencies_sha256": "b" * 64}
-    state = {"ci": ci, "build": build, "observed": observed, "controller_head": controller_head,
+    observed["current_proof_sha256"] = q.digest({q.CURRENT_PROOF_PATHS[0]: "8" * 64})
+    identity["current_proof_inputs"] = {q.CURRENT_PROOF_PATHS[0]: "8" * 64}
+    state = {"ci": ci, "build": build, "observed": observed, "controller_head": controller_head, "controller_ci_head": controller_head,
              "controller_conclusion": "success", "commands": [], "source_calls": 0}
 
     def command(self, executable, *args):
@@ -83,10 +87,10 @@ def native_ports(monkeypatch):
             return json.dumps(state["ci"]).encode()
         if args[:3] == ("run", "view", "2"):
             body = copy.deepcopy(ci)
-            body.update(headSha=state["controller_head"], conclusion=state["controller_conclusion"])
+            body.update(headSha=state["controller_ci_head"], conclusion=state["controller_conclusion"])
             return json.dumps(body).encode()
         assert args[0] == "api"
-        return json.dumps({"path": ".github/workflows/ci.yml", "head_sha": release if args[1].endswith("/1") else state["controller_head"],
+        return json.dumps({"path": ".github/workflows/ci.yml", "head_sha": release if args[1].endswith("/1") else state["controller_ci_head"],
             "event": "push", "repository": {"full_name": "Harshil4442/ai-resume-copilot"}}).encode()
 
     def source(root):
@@ -99,7 +103,7 @@ def native_ports(monkeypatch):
     monkeypatch.setattr(native.Source26Boundary, "_command", command)
     monkeypatch.setattr(q, "source_identity", lambda root: copy.deepcopy(identity))
     monkeypatch.setattr(q, "runner_source", source)
-    monkeypatch.setattr(q, "git", lambda root, *args: b"" if args[0] == "status" else controller_head.encode())
+    monkeypatch.setattr(q, "git", lambda root, *args: b"" if args[0] == "status" else state["controller_head"].encode())
     monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
     monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "false")
     return p, raw, state, identity, receipt
@@ -167,7 +171,8 @@ def test_wrong_raw_receipt_controller_crossbinding_and_failed_historical_source(
 
 def test_source_child_has_no_credential_env_and_is_bounded(monkeypatch, tmp_path):
     observed = dict(release="c" * 40, qualification_sha256="a" * 64, app_sha256=q.APP_SHA256,
-        app_files=289, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64)
+        app_files=289, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64,
+        current_proof_sha256="8" * 64)
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/never/read")
     monkeypatch.setenv("GH_TOKEN", "synthetic-not-a-token")
     def run(command, **kwargs):
@@ -238,3 +243,47 @@ def test_new_executable_package_ancestor_is_refused_without_import(tmp_path, nam
     target.write_text('raise AssertionError("must_never_import")\n')
     with pytest.raises(ValueError, match="undeclared_package_ancestor"):
         q.ancestor_fence(tmp_path)
+
+
+
+def test_current_observer_only_committed_drift_changes_controller_not_runtime(monkeypatch):
+    before = q.source_identity(ROOT)
+    name = q.CURRENT_PROOF_PATHS[0]
+    original_read, original_git = Path.read_bytes, q.git
+    changed = (ROOT / name).read_bytes() + b"\n# synthetic current CI observer change\n"
+    def read(path):
+        return changed if path == ROOT / name else original_read(path)
+    def git(root, *args):
+        return changed if args == ("show", "HEAD:" + name) else original_git(root, *args)
+    monkeypatch.setattr(Path, "read_bytes", read)
+    with pytest.raises(ValueError, match="uncommitted_current_proof_changed"):
+        q.source_identity(ROOT)
+    monkeypatch.setattr(q, "git", git)
+    after = q.source_identity(ROOT)
+    assert before["controller_sha256"] != after["controller_sha256"]
+    assert before["current_proof_inputs"] != after["current_proof_inputs"]
+    assert before["execution_dependencies"] == after["execution_dependencies"]
+    assert before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
+
+
+def test_current_observer_context_must_match_both_actual_roots(native_ports):
+    p, raw, state, _, _ = native_ports
+    state["observed"]["current_proof_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="current_proof_context_changed"):
+        q.verify_qualified_runner(p, raw, runner_root=ROOT, controller_ci_run_id=2)
+    assert state["commands"] == []
+
+
+def test_new_controller_context_cannot_reuse_stale_CI_head(native_ports):
+    p, raw, state, _, _ = native_ports
+    state["controller_head"] = "e" * 40  # Actual source advanced; returned CI stays at d.
+    with pytest.raises(ValueError, match="controller_exact_head_CI_required"):
+        q.verify_qualified_runner(p, raw, runner_root=ROOT, controller_ci_run_id=2)
+
+
+def test_same_actual_head_and_CI_can_bind_both_independent_roles(native_ports):
+    p, raw, state, _, _ = native_ports
+    state["controller_head"] = state["controller_ci_head"] = state["observed"]["release"]
+    out = q.verify_qualified_runner(p, raw, runner_root=ROOT, controller_ci_run_id=1)
+    assert out["controller_head"] == out["runner_release"]
+    assert out["fresh_source_CI_Build_verified"] and not out["processing_authorized"]
