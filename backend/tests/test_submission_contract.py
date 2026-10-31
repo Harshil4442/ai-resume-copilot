@@ -108,6 +108,14 @@ def test_billing_is_exact_units_and_closed_shape(field, value):
         c.SubmissionBilling.model_validate(data)
 
 
+@pytest.mark.parametrize("field", tuple(c.SubmissionBilling.model_fields))
+def test_every_wire_billing_key_is_explicit_without_inferred_defaults(field):
+    data = vector()["unified5"]["review_response"]["billing"]
+    del data[field]
+    with pytest.raises(ValidationError):
+        c.SubmissionBilling.model_validate(data)
+
+
 @pytest.mark.parametrize("value", [False, 1, "true", None])
 def test_approval_requires_literal_human_confirmation(value):
     data = vector()["unified5"]["approve_request"]

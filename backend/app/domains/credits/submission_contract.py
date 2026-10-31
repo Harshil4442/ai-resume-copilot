@@ -31,10 +31,10 @@ class Closed(BaseModel):
 
 
 class PriceCore(Closed):
-    billing_currency: Literal["credits"] = "credits"
-    operation: Literal["verified_submission"] = "verified_submission"
-    credits: Literal[3] = 3
-    tariff_version: Literal["credit-services-2026-10-27-v1"] = TARIFF_VERSION
+    billing_currency: Literal["credits"]
+    operation: Literal["verified_submission"]
+    credits: Literal[3]
+    tariff_version: Literal["credit-services-2026-10-27-v1"]
     route_id: Identifier
     route_version: Identifier
     delivery_contract_sha256: Digest
@@ -49,7 +49,7 @@ class PriceCore(Closed):
 
 
 class SubmissionBilling(PriceCore):
-    schema_version: Literal["unified-browser-submission-v1"] = BILLING_VERSION
+    schema_version: Literal["unified-browser-submission-v1"]
     quote_id: Annotated[str, Field(pattern=r"^csq_[a-f0-9]{32}$")]
     input_fingerprint: Digest
     quote_contract_sha256: Digest
