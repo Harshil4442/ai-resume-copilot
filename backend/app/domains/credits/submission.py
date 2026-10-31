@@ -29,6 +29,7 @@ DELIVERY_SOURCES = (
     "backend/app/domains/credits/service_quotes.py",
     "backend/app/domains/credits/service.py",
     "backend/app/domains/credits/runtime.py",
+    "backend/app/domains/credits/canary.py",
     "backend/app/domains/credits/finance.py",
     "backend/app/domains/credits/pricing.py",
     "backend/app/domains/credits/availability.py",

@@ -17,6 +17,7 @@ from backend.app.domains.employer import models as employer
 from backend.tests.browser_submission_unified_fixture import approve, configure, review
 from backend.tests.test_browser_submit_postgres import candidate, device
 from backend.tests.test_browser_submit_postgres import pg_submit as pg_submit
+from backend.tests.test_employer_admissions_postgres import pg_engine as pg_engine
 
 
 @pytest.fixture
