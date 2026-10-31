@@ -16,12 +16,17 @@ function fakeDocument() {
   const elements = new Map();
   for (const match of html.matchAll(/<(\w+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
     elements.set(match[3], {
-      tag: match[1], hidden: /\bhidden\b/.test(match[2]), disabled: /\bdisabled\b/.test(match[2]),
-      checked: false, value: "", textContent: "", addEventListener() {}, append() {}, replaceChildren() {},
+      tag: match[1], hidden: /\bhidden\b/.test(match[2]), _disabled: /\bdisabled\b/.test(match[2]),
+      get disabled() { return this._disabled; }, set disabled(value) { this._disabled = Boolean(value); },
+      checked: false, value: "", textContent: "", listeners: new Map(),
+      addEventListener(type, listener) { this.listeners.set(type, listener); },
+      append() {}, replaceChildren() {},
+      querySelectorAll() { return [...elements.entries()].filter(([id, item]) => id.startsWith(match[3] + "-") && ["button", "input"].includes(item.tag)).map(([, item]) => item); },
     });
   }
   return {
     getElementById: (id) => elements.get(id),
+    createElement: () => ({ textContent: "", append() {} }),
     querySelectorAll: () => [...elements.values()].filter((item) => ["button", "input", "select", "textarea"].includes(item.tag)),
     elements,
   };
@@ -228,4 +233,265 @@ test("a late status rejection after timeout is consumed without retry or raw err
   await Promise.resolve(); await Promise.resolve();
   assert.equal(startupDiagnostic(failure, "0.8.4").code, code("TIMEOUT"));
   assert.equal(calls, 1);
+});
+
+
+const activeAssistance = () => ({ phase: "active", busy: false, review_id: null,
+  key_sha256: "a".repeat(64), filled_count: 0, can_fill: false, can_reconcile: false, native_upload: false });
+const pairedConnection = () => ({ phase: "paired", busy: false, connected: true,
+  key_sha256: "a".repeat(64), can_inspect_connection: false });
+const currentConnectionError = "Check current native browser connection before application assistance";
+async function assistancePopup(sendMessage, run, initial = activeAssistance()) {
+  const document = fakeDocument(), calls = [];
+  await withPopup(document, {
+    sendMessage: async (message) => {
+      calls.push(message);
+      if (message.type === "status") return { ok: true, value: { mode: "reviewed_assistance",
+        native_pairing: true, connection: pairedConnection(), assistance: initial } };
+      return sendMessage(message);
+    },
+  }, async (load) => {
+    globalThis.chrome.permissions = { contains: async () => true };
+    await load();
+    const click = async (id) => {
+      const control = document.getElementById(id);
+      assert.equal(control.disabled, false, id + " must be enabled for the explicit user click");
+      return control.listeners.get("click")();
+    };
+    await run(document, calls, click);
+  });
+}
+function assertAssistanceUnavailable(document) {
+  assert.match(document.getElementById("assistance-state").textContent, /Application status is unavailable/);
+  assert.match(document.getElementById("assistance-state").textContent, /earlier action may still be active/);
+  assert.doesNotMatch(document.getElementById("assistance-state").textContent, /Working/);
+  assert.ok(document.getElementById("assistance").querySelectorAll().every((item) => item.disabled));
+  assert.equal(document.getElementById("native-pause").disabled, false);
+  assert.equal(document.getElementById("native-refresh").disabled, false);
+}
+
+test("actual popup ends optimistic Working and stays locked when action and status both fail", async () => {
+  const response = deferred();
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return response.promise;
+    if (type === "assistance_status") return { ok: false, error: "Synthetic current-status denial" };
+    assert.fail("No automatic action or retry: " + type);
+  }, async (document, calls, click) => {
+    document.getElementById("assistance-application").value = "apply_synthetic";
+    const pending = click("assistance-prepare");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(document.getElementById("assistance-state").textContent, /Working/);
+    response.resolve({ ok: false, error: currentConnectionError });
+    await pending;
+    assertAssistanceUnavailable(document);
+    assert.equal(document.getElementById("error").textContent, currentConnectionError);
+    assert.deepEqual(calls, [{ type: "status" },
+      { type: "assistance_prepare", application_id: "apply_synthetic" }, { type: "assistance_status" }]);
+  });
+});
+
+test("only fresh authoritative status after explicit connection check restores normal controls", async () => {
+  let checked = false;
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return { ok: false, error: currentConnectionError };
+    if (type === "pairing_refresh") { checked = true; return { ok: true, value: pairedConnection() }; }
+    if (type === "assistance_status") return checked
+      ? { ok: true, value: activeAssistance() } : { ok: false, error: currentConnectionError };
+    assert.fail("No automatic action or retry: " + type);
+  }, async (document, calls, click) => {
+    await click("assistance-prepare");
+    assertAssistanceUnavailable(document);
+    await click("native-refresh");
+    assert.equal(document.getElementById("assistance-prepare").disabled, false);
+    assert.equal(document.getElementById("assistance-application").disabled, false);
+    assert.equal(document.getElementById("assistance-fill").disabled, true);
+    assert.match(document.getElementById("assistance-state").textContent, /Current state: active/);
+    assert.deepEqual(calls.map(({ type }) => type), ["status", "assistance_prepare", "assistance_status", "pairing_refresh", "assistance_status"]);
+  });
+});
+
+test("possible-send failure is never replayed or unlocked from stale approval when status is unavailable", async () => {
+  const approved = { ...activeAssistance(), phase: "approved", review_id: "synthetic-retained-review",
+    can_fill: true, review_protocol_version: 4 };
+  let checked = false;
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_fill") return { ok: false, error: "Synthetic possible-send outcome unavailable" };
+    if (type === "pairing_refresh") { checked = true; return { ok: true, value: pairedConnection() }; }
+    if (type === "assistance_status") return checked
+      ? { ok: true, value: { ...approved, phase: "unknown", can_fill: false, can_reconcile: true,
+        message: "The previous outcome is unverified. Automatic replay is blocked." } }
+      : { ok: false, error: currentConnectionError };
+    assert.fail("No automatic inspection, fill or retry: " + type);
+  }, async (document, calls, click) => {
+    await click("assistance-fill");
+    assertAssistanceUnavailable(document);
+    assert.equal(document.getElementById("assistance-review").disabled, true);
+    await click("native-refresh");
+    assert.equal(document.getElementById("assistance-fill").disabled, true);
+    assert.equal(document.getElementById("assistance-prepare").disabled, true);
+    assert.equal(document.getElementById("assistance-reconcile").disabled, false);
+    assert.match(document.getElementById("assistance-state").textContent, /unverified/);
+    assert.equal(calls.filter(({ type }) => type === "assistance_fill").length, 1);
+    assert.equal(calls.filter(({ type }) => type.startsWith("assistance_prepare")).length, 0);
+  }, approved);
+});
+
+test("an authoritative still-busy status stays busy and never invents an idle completion", async () => {
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return { ok: false, error: "Synthetic interrupted response" };
+    if (type === "assistance_status") return { ok: true,
+      value: { ...activeAssistance(), busy: true, message: "The worker still reports an active operation." } };
+    assert.fail("No automatic action or retry: " + type);
+  }, async (document, calls, click) => {
+    await click("assistance-prepare");
+    assert.match(document.getElementById("assistance-state").textContent, /worker still reports an active operation/);
+    assert.equal(document.getElementById("assistance-prepare").disabled, true);
+    assert.equal(document.getElementById("assistance-fill").disabled, true);
+    assert.deepEqual(calls.map(({ type }) => type), ["status", "assistance_prepare", "assistance_status"]);
+  });
+});
+
+
+test("an older status reply cannot repaint or unlock after the newer unavailable lock", async () => {
+  const operation = deferred(), oldStatus = deferred();
+  let reads = 0;
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return operation.promise;
+    if (type === "pairing_refresh" || type === "pairing_status") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") return ++reads === 1
+      ? oldStatus.promise : { ok: false, error: currentConnectionError };
+    assert.fail("No automatic request: " + type);
+  }, async (document, calls, click) => {
+    const action = click("assistance-prepare");
+    await new Promise((resolve) => setImmediate(resolve));
+    operation.resolve({ ok: false, error: currentConnectionError });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(reads, 1); // The original action still owned its one reconciliation read.
+    await click("native-refresh"); // A newer explicit read now refuses and locks the view.
+    assertAssistanceUnavailable(document);
+    oldStatus.resolve({ ok: true, value: activeAssistance() });
+    await action;
+    assertAssistanceUnavailable(document);
+    assert.deepEqual(calls.map(({ type }) => type), ["status", "assistance_prepare", "assistance_status", "pairing_refresh", "assistance_status", "pairing_status"]);
+  });
+});
+
+test("an older action reply cannot replace a newer unavailable status or send again", async () => {
+  const operation = deferred();
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return operation.promise;
+    if (type === "pairing_refresh") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") return { ok: false, error: currentConnectionError };
+    if (type === "pairing_status") return { ok: true, value: pairedConnection() };
+    assert.fail("No automatic request: " + type);
+  }, async (document, calls, click) => {
+    const action = click("assistance-prepare");
+    await new Promise((resolve) => setImmediate(resolve));
+    await click("native-refresh");
+    assertAssistanceUnavailable(document);
+    operation.resolve({ ok: true, value: activeAssistance() });
+    await action;
+    assertAssistanceUnavailable(document);
+    assert.equal(calls.filter(({ type }) => type === "assistance_prepare").length, 1);
+    assert.equal(calls.filter(({ type }) => type === "assistance_fill").length, 0);
+  });
+});
+
+for (const stage of ["origins", "storage"]) test(`an old render awaiting ${stage} permission cannot enable controls after a newer status refusal`, async () => {
+  const permission = deferred();
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_check") return { ok: true, value: { ...activeAssistance(),
+      storage_origin: stage === "storage" ? "https://synthetic-bucket.s3.amazonaws.com" : null } };
+    if (type === "pairing_refresh" || type === "pairing_status") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") return { ok: false, error: currentConnectionError };
+    assert.fail("No automatic request: " + type);
+  }, async (document, calls, click) => {
+    globalThis.chrome.permissions.contains = async ({ origins }) =>
+      (stage === "origins" ? origins.length === 2 : origins[0].includes("synthetic-bucket.s3.amazonaws.com")) ? permission.promise : true;
+    const check = click("assistance-check");
+    await new Promise((resolve) => setImmediate(resolve));
+    await click("native-refresh");
+    assertAssistanceUnavailable(document);
+    permission.resolve(true);
+    await check;
+    assertAssistanceUnavailable(document);
+    assert.equal(calls.filter(({ type }) => type === "assistance_check").length, 1);
+    assert.equal(calls.filter(({ type }) => type.startsWith("assistance_prepare") || type === "assistance_fill").length, 0);
+  });
+});
+
+
+test("a pending optimistic permission render sends no inspection after a newer status lock", async () => {
+  const permission = deferred();
+  await assistancePopup(async ({ type }) => {
+    if (type === "pairing_refresh" || type === "pairing_status") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") return { ok: false, error: currentConnectionError };
+    assert.fail("No inspection, fill or replay after view ownership changed: " + type);
+  }, async (document, calls, click) => {
+    globalThis.chrome.permissions.contains = async ({ origins }) => origins.length === 2 ? permission.promise : true;
+    const action = click("assistance-prepare");
+    await new Promise((resolve) => setImmediate(resolve));
+    await click("native-refresh");
+    assertAssistanceUnavailable(document);
+    permission.resolve(true);
+    await action;
+    assertAssistanceUnavailable(document);
+    assert.equal(calls.filter(({ type }) => type.startsWith("assistance_prepare") || type === "assistance_fill").length, 0);
+  });
+});
+
+test("a native-upload permission grant cannot send an action after its popup view was invalidated", async () => {
+  const permission = deferred();
+  await assistancePopup(async ({ type }) => {
+    if (type === "pairing_refresh" || type === "pairing_status") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") return { ok: false, error: currentConnectionError };
+    assert.fail("No native upload, inspection or fill after view ownership changed: " + type);
+  }, async (document, calls, click) => {
+    globalThis.chrome.permissions.request = async () => permission.promise;
+    const action = click("assistance-prepare-native-upload");
+    await new Promise((resolve) => setImmediate(resolve));
+    await click("native-refresh");
+    assertAssistanceUnavailable(document);
+    permission.resolve(true);
+    await action;
+    assertAssistanceUnavailable(document);
+    assert.equal(calls.filter(({ type }) => type.startsWith("assistance_prepare") || type === "assistance_fill").length, 0);
+  }, { ...activeAssistance(), native_upload_available: true });
+});
+
+
+for (const newer of ["unavailable", "current"]) test(`an older action failure cannot start reconciliation over a newer ${newer} view`, async () => {
+  const operation = deferred();
+  let statusReads = 0;
+  const authoritative = { ...activeAssistance(), phase: "unknown", review_id: "synthetic-retained-review",
+    can_fill: false, can_reconcile: true, message: "Fresh authoritative unknown outcome." };
+  await assistancePopup(async ({ type }) => {
+    if (type === "assistance_prepare") return operation.promise;
+    if (type === "pairing_refresh" || type === "pairing_status") return { ok: true, value: pairedConnection() };
+    if (type === "assistance_status") {
+      statusReads++;
+      if (statusReads > 1) return { ok: true, value: activeAssistance() };
+      return newer === "unavailable" ? { ok: false, error: currentConnectionError }
+        : { ok: true, value: authoritative };
+    }
+    assert.fail("No automatic action or replay: " + type);
+  }, async (document, calls, click) => {
+    const action = click("assistance-prepare");
+    await new Promise((resolve) => setImmediate(resolve));
+    await click("native-refresh");
+    if (newer === "unavailable") assertAssistanceUnavailable(document);
+    else assert.equal(document.getElementById("assistance-state").textContent, authoritative.message);
+    operation.resolve({ ok: false, error: "Older synthetic action response failed" });
+    await action;
+    assert.equal(statusReads, 1, "An older failure cannot allocate a new status-read owner");
+    if (newer === "unavailable") assertAssistanceUnavailable(document);
+    else {
+      assert.equal(document.getElementById("assistance-state").textContent, authoritative.message);
+      assert.equal(document.getElementById("assistance-prepare").disabled, true);
+      assert.equal(document.getElementById("assistance-fill").disabled, true);
+    }
+    assert.equal(document.getElementById("error").textContent, "Older synthetic action response failed");
+    assert.equal(calls.filter(({ type }) => type === "assistance_prepare").length, 1);
+    assert.equal(calls.filter(({ type }) => type === "assistance_fill").length, 0);
+  });
 });

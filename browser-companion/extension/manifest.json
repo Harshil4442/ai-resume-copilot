@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HireWiz — reviewed Razorpay assistance",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "minimum_chrome_version": "144",
   "description": "Review Razorpay answers, resume attachment or one final submit click with separate approvals. Final submission reserves 20 credits.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAknIUS4zTpI4aNq+Cpabv4nASrKkuNXI2Qk4PlrgX9jRReFJLSJussXl1vEMV2RqyHYIRdPpTqeWUlwvQmYZU1vy+/88KBMxUVaN4rqGI2wOr6gMEjkJregrc/0TCgkLtmvflQVtO64u4lvOpK3pBU47eBoXzmjGFSmcx/UUw7s0AXg1jznHLNEs6Ywm/xjsBeVYtCPZPjR6XWzIXye4SLtUCyPPVmXKO05/iG6Hq4HqvVhbYP6bFc6fplSg8wpbhbZv23s7bFBV9eWTiS7rRoMweO068MMh8Af8tH/VMrG+4KQpT/fqdvGGFVgh7aQ4TcM09I/U63aFluOnsjp6GGQIDAQAB",
