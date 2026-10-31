@@ -51,7 +51,7 @@ PROTOCOL_SUITES = (*v2.PROTOCOL_SUITES, "tests/test_evidence_writer_adapters.py"
     "tests/test_submission_canary.py", "tests/test_submission_source_package.py",
     "tests/test_schema26_maintenance_guard.py", "tests/test_schema26_lifecycle_join.py",
     "tests/test_schema26_native_read_ports.py", "tests/test_schema26_native_migration.py",
-    "tests/test_schema26_admin_graph_constructor.py")
+    "tests/test_schema26_admin_graph_constructor.py", "tests/test_schema26_schedule_resume.py")
 PROOF_ROOTS = (*PROTOCOL_SUITES, *NATIVE_SUITES,
     "tests/test_schema25_app_rolling_v3.py", "tests/test_schema25_app_protocol_v3.py",
     "tests/test_qualify_schema25_retained_v2.py", "tests/browser_paired_assistance_chrome_bridge.py",
@@ -115,7 +115,8 @@ MIGRATION26_PATHS = ('backend/alembic.ini', 'backend/scripts/evidence_writer_sch
 NEW_PATHS = (*MIGRATION26_PATHS, *PAIRING_PATHS,
     'backend/tests/fixtures/browser_submission_v5.json', 'frontend/app/api/browser-assistance/candidate/[operation]/route.ts', 'frontend/app/api/browser-assistance/device/[operation]/route.ts', 'frontend/components/ui/LoadingBlock.tsx', 'frontend/lib/candidateAuthServer.ts', 'frontend/lib/candidateIngressFetch.ts', 'frontend/lib/employerJobs.ts', 'frontend/lib/resumeSource.ts', 'frontend/lib/searchPreferences.ts', 'frontend/lib/types.ts', 'frontend/lib/useProgressQuery.ts', "Dockerfile", ".dockerignore",
     "infra/gcp/v3_readonly_adapter.py", "infra/gcp/schema26_maintenance_guard.py",
-    "infra/gcp/schema26_lifecycle_join.py", "infra/gcp/schema26_native_migration.py", "backend/scripts/schema25_app_release_contract_v3.py",
+    "infra/gcp/schema26_lifecycle_join.py", "infra/gcp/schema26_native_migration.py",
+    "infra/gcp/schema26_schedule_resume.py", "backend/scripts/schema25_app_release_contract_v3.py",
     "infra/gcp/schema26_app_rolling_v3.py", "backend/tests/test_schema25_app_rolling_v3.py",
     "backend/tests/test_schema25_app_compatibility_v3_postgres.py", "backend/tests/test_schema25_app_protocol_v3.py",
     "backend/scripts/qualify_schema26_compatibility.py", "backend/tests/test_qualify_schema26_compatibility.py",

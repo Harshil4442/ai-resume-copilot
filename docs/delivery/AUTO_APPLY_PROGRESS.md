@@ -29,12 +29,22 @@ commercial launch and the new credit/quality program retain their separate gates
 | Document inspector | Image `sha256:e2880102f6149cd62c800fbd33c775ed371c98a2ca74dce4935374685488fbef` | Accepted native continuation `41119586258`, original build `0d685ff9-d002-4e4b-912d-a8b64c6592ea`, and accepted serving proof. Definition proof expires `2026-11-02T06:26:48Z`. This is not the representative 200-case quality gate. |
 | Companion | Public/source files **0.8.7**; native loaded version last observed **0.8.6** | Same browser installation, keys and permissions retained. Repaired pairing succeeded. The 0.8.7 reload and review/cancel/revoke require fresh verification; 26 October acceptance below remains historical. |
 
-Schema26 remains source-only in PR83. Its latest exact-source check retained all 54
-PostgreSQL cases and the prior v1/v2 checks, then stopped when the inner protocol
-selection reached 240 seconds. Its active case was not retained. The reviewed
-follow-up adds source-allowlisted timeout diagnostics without changing that limit
-or removing required cases. Separate maintenance closure, retired-revision and
-typed account-operation checks remain required before any database upgrade.
+Schema26 remains source-only in PR83. Exact-source CI41172074414 retained all61
+PostgreSQL cases and prior v1/v2 checks, then stopped at the unchanged240-second
+native protocol limit. Its safe observer recorded a started malformed-input-path
+test; isolated execution refused the path immediately. Profiling found repeated
+40-document synthetic fixture preparation. The reviewed follow-up reuses only
+fully bound immutable test bytes, retaining every case and fresh per-test records;
+its actual Linux deadline acceptance is still pending.
+
+A read-only production check confirmed that all three maintenance schedules are
+ENABLED. The source follow-up adds a distinct26 continuation to restore those
+same states after their required migration pause. It uses original maintenance
+and completed app journals and never resends unknown writes. No schedules were
+paused or resumed during this source work. Typed account-operation checks,
+retired-revision custody and the reviewed migration remain required. Generic V3
+rollback after schedule restoration remains unqualified and is not presented as
+restored service or RTO evidence.
 
 The combined source candidate adds explicit three-credit browser-submission quotes,
 central wallet/cash holds, current-quote canary admission and matching companion0.8.8

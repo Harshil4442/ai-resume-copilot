@@ -57,6 +57,14 @@ security tests exercise the real fence. A named25+current-fence hybrid fixture
 tests current erasure and a historical monetary guard without claiming a pristine
 historical catalog or production receipt.
 
+The acquisition fixture keeps all40 development cases while reusing only their
+immutable synthetic source/compiler bytes within one test process. Complete
+case content, materializer/helper source and callable identity, font bytes and
+installed dependency versions bind that cache. Every test still receives fresh
+files, authorization, funding, receipts, stores and transports. This reduces
+fixture work; it grants no native/model/retail evidence and does not extend the
+240-second protocol deadline.
+
 The native protocol gate retains the original installed SDK, owned emulator,
 TLS-Redis and no-skipped-case requirements and adds the new finite proof-source
 closure. Local pure ports, SQLite, authored native tests or a branch-level green
