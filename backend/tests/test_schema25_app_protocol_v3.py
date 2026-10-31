@@ -282,7 +282,7 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
                      "HIREWIZ_METADATA_PACING_REQUIRED": "true", "HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true",
                      "HIREWIZ_EXPENSE_POLICY_JSON": json.dumps(synthetic_expense_policy()),
                      "LLM_MODEL_COST_POLICY_JSON": json.dumps(synthetic_policy())},
-                capture_output=True, timeout=240)
+                capture_output=True, timeout=300)
         except subprocess.TimeoutExpired as error:
             from scripts.qualify_schema26_compatibility import protocol_timeout_summary
             print(json.dumps(protocol_timeout_summary(error), sort_keys=True, separators=(",", ":")))
@@ -362,7 +362,7 @@ def test_selected_protocol_requires_every_case_without_optional_child_prerequisi
         assert env["HIREWIZ_OWNED_REDIS_SERVER"] == str(binary)
         assert json.loads(env["HIREWIZ_EXPENSE_POLICY_JSON"])["provenance"] == "synthetic_test"
         assert json.loads(env["LLM_MODEL_COST_POLICY_JSON"])["version"] == "synthetic-policy-v1"
-        assert kwargs["cwd"] == ROOT / "backend" and kwargs["timeout"] == 240
+        assert kwargs["cwd"] == ROOT / "backend" and kwargs["timeout"] == 300
         root = ElementTree.Element("testsuite")
         if outcome != "empty":
             case = ElementTree.SubElement(root, "testcase", name="synthetic-protocol-control")

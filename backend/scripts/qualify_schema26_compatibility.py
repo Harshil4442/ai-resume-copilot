@@ -110,7 +110,7 @@ def protocol_timeout_summary(error: subprocess.TimeoutExpired) -> dict:
     try:
         if (type(error) is not subprocess.TimeoutExpired
                 or type(error.timeout) not in (int, float) or not math.isfinite(error.timeout)
-                or not 0 < error.timeout <= 240 or type(error.stdout) is not bytes
+                or not 0 < error.timeout <= 300 or type(error.stdout) is not bytes
                 or not 0 < len(error.stdout) <= MAX_REPORT_BYTES):
             return unknown
         lines = error.stdout.decode("utf-8", errors="strict").split("\n")

@@ -62,8 +62,14 @@ immutable synthetic source/compiler bytes within one test process. Complete
 case content, materializer/helper source and callable identity, font bytes and
 installed dependency versions bind that cache. Every test still receives fresh
 files, authorization, funding, receipts, stores and transports. This reduces
-fixture work; it grants no native/model/retail evidence and does not extend the
-240-second protocol deadline.
+fixture work; it grants no native/model/retail evidence. The current V3 batch
+has a 300-second CI child deadline for all41 unchanged suites. Its original
+240-second bound was inherited from the smaller16-suite V2 batch. The original
+7be CI protocol gate completed in237.35s, while original0cc and b67 children
+reached the240-second bound. The extra CI scheduling margin changes no runtime
+financial, provider-attempt, signature or approval deadline. Historical V1/V2
+contracts retain their original bounds. Every current case must still pass;
+the earlier timeouts remain failed evidence.
 
 The native protocol gate retains the original installed SDK, owned emulator,
 TLS-Redis and no-skipped-case requirements and adds the new finite proof-source

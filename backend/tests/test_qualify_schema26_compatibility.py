@@ -400,7 +400,7 @@ def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or
         expected = protocol_report(path, failures=int(failed))
         calls.append((argv, kwargs, path, expected))
         assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-vv"]
-        assert tuple(argv[7:-2]) == SUITES and kwargs["timeout"] == 240 and kwargs["capture_output"] is True
+        assert tuple(argv[7:-2]) == SUITES and kwargs["timeout"] == 300 and kwargs["capture_output"] is True
         assert kwargs["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"
         return SimpleNamespace(returncode=int(failed), stdout=b"SYNTHETIC_PRIVATE_STDOUT", stderr=b"SYNTHETIC_PRIVATE_STDERR")
     monkeypatch.setattr(gate.subprocess, "run", child)
@@ -431,12 +431,12 @@ def _public_progress_case():
 def test_timeout_observes_only_public_identity_and_phase_without_parameters_or_streams(ending, phase):
     node = _public_progress_case()
     progress = ("collecting ... collected 2 items\n" + node + "[SYNTHETIC_PRIVATE_PARAMETER]" + ending).encode()
-    failure = gate.subprocess.TimeoutExpired(["original-owned-child"], 240,
+    failure = gate.subprocess.TimeoutExpired(["original-owned-child"], 300,
         output=progress, stderr=b"SYNTHETIC_PRIVATE_STDERR")
     result = gate.protocol_timeout_summary(failure)
     assert result == {"schema_version": "schema26-ci-timeout-v1", "qualified": False,
         "observation_scope": "native_protocol", "child_outcome": "timeout",
-        "report_state": "observed_unqualified", "timeout_seconds": 240,
+        "report_state": "observed_unqualified", "timeout_seconds": 300,
         "last_observed_case_id": node.removeprefix("tests/").replace(".py::", "::"),
         "last_observed_phase": phase}
     assert "SYNTHETIC_PRIVATE" not in json.dumps(result)
@@ -469,7 +469,7 @@ def test_timeout_missing_truncated_malformed_or_unallowlisted_progress_remains_u
         raw = raw.split(b"\n", 1)[1]
     if mode == "control":
         raw += b"\x1b"
-    error = gate.subprocess.TimeoutExpired(["owned"], 241 if mode == "timeout" else 240,
+    error = gate.subprocess.TimeoutExpired(["owned"], 301 if mode == "timeout" else 300,
         output=raw, stderr=b"SYNTHETIC_PRIVATE_STDERR")
     assert gate.protocol_timeout_summary(error) == {"schema_version": "schema26-ci-timeout-v1",
         "qualified": False, "observation_scope": "native_protocol", "child_outcome": "timeout",
@@ -481,7 +481,7 @@ def test_timeout_does_not_treat_failure_body_as_a_started_case():
     raw = ("collected 2 items\n" + node + " PASSED [ 50%]\n"
         "================= FAILURES =================\n"
         "tests/test_unknown.py::test_SYNTHETIC_PRIVATE ").encode()
-    result = gate.protocol_timeout_summary(gate.subprocess.TimeoutExpired(["owned"], 240, output=raw))
+    result = gate.protocol_timeout_summary(gate.subprocess.TimeoutExpired(["owned"], 300, output=raw))
     assert result["last_observed_phase"] == "completed" and "SYNTHETIC_PRIVATE" not in json.dumps(result)
 
 
@@ -535,6 +535,6 @@ def test_actual_pytest_timeout_failure_transcript_excludes_captured_secret_param
         env={"PATH": os.environ.get("PATH", ""), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, timeout=30)
     transcript = result.stdout + result.stderr
-    assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"240 seconds" in transcript
+    assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"300 seconds" in transcript
     assert b'"last_observed_phase":"started"' in transcript
     assert b"SYNTHETIC_PRIVATE_CAPTURE" not in transcript
