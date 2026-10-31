@@ -94,3 +94,44 @@ foreign key. New unified billing never puts a unified ID into that legacy column
 Accepted submission history must retain unified currency selection when execution
 is paused. Actual account deletion retains detached money obligations and does not
 turn an unknown application into a refund or permit another click.
+
+The backend adapter is `credits.submission`. Its route must be native with no
+model attempts, match the actual finite delivery-source digest, fit the reviewed
+artifact/answer/review limits and reserve at most 135 INR minor units through the
+central money admission. The internal hold explicitly binds `funding_currency:
+INR` separately from `billing_currency: credits` and the billing hash. No worker
+outbox is created. The existing native one-opening claim and exact hosted receipt
+validator continue to control the sole possible send and delivery settlement.
+Only verified metering can settle native cost; a customer refund or receipt does
+not invent a zero native bill.
+
+`UNIFIED_BROWSER_SUBMISSION_ENABLED` defaults to false. All prior submit,
+native-upload, account/device, execution audience and funding gates also apply.
+There is no fallback to a new 20-credit hold for a unified owner. An unaccepted
+legacy draft can move to a fresh explicit version-5 review only with no legacy
+reservation or attempted send; an accepted legacy obligation never changes units.
+
+Unaccepted expiry erases the old display without issuing another quote or
+consuming the application identity. A new signed inspection refreshes admission
+bounds and issues a distinct quote. Expiry of an accepted unlaunched reservation
+releases it once and closes that application; a new attempt needs a new identity.
+Old replaced displays cannot cancel a newer accepted quote. Application/history
+responses show actual three-credit holds even though the legacy reservation FK
+is null. Unquoted preparation has `billing_currency: credits` and no `billing`
+object; only an actual quote produces the thirteen-key billing object.
+
+The still-unapplied schema26 migration expands only the review protocol check
+from 1–4 to 1–5 alongside its existing fence/reset changes. Historical schema19,
+20, 21 and 25 readers remain exact. The distinct pending26 catalog reader checks
+the new bound directly. Frozen schema26/native evidence from prior source does
+not qualify this revised DDL. The migration downgrade remains refused.
+
+Required further qualification includes the four owned PostgreSQL submission
+races and revised real catalog case, the actual paired Chrome protocol-5 path,
+the unchanged-client free pilot with paid gates closed, and a current reviewed
+funded native delivery route. Local SQLite and synthetic format/SDK ports prove
+neither production concurrency nor an employer receipt, invoice or live funding.
+The existing business-canary boundary does not yet admit an application source
+kind; it correctly refuses this new operation. That finite canary integration
+and its real-business denominator must be reviewed before a canary rollout. The
+local fixtures use explicitly synthetic `reviewed_public` review data only.
