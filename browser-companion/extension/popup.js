@@ -7,6 +7,8 @@ const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
 let assistance = null;
+// RAM-only rendering ownership; never persisted or used as worker authority.
+let assistanceViewRevision = 0;
 let recoveryReview = null;
 const nativeAssistance = CONFIG.mode === "reviewed_assistance" && CONFIG.nativePairing != null;
 async function request(message) {
@@ -102,7 +104,7 @@ function connectionAction(id, type) {
       await showConnection(result);
       if (nativeAssistance) {
         element("assistance").hidden = !result.connected;
-        if (result.connected) await showAssistance(await request({ type: "assistance_status" }));
+        if (result.connected) await refreshAssistanceStatus();
       }
     }
     catch (failure) {
@@ -138,10 +140,16 @@ element("native-confirmed").addEventListener("change", () => {
   element("native-complete").disabled = !element("native-confirmed").checked || element("native-confirmed").disabled;
 });
 
-async function showAssistance(value) {
-  assistance = value; element("assistance").hidden = false;
+async function showAssistance(value, revision = ++assistanceViewRevision) {
+  if (revision !== assistanceViewRevision) return;
   const origins = [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`];
   const permitted = await chrome.permissions.contains({ origins });
+  if (revision !== assistanceViewRevision) return;
+  const storageOrigin = nativeStorageOrigin(value.storage_origin);
+  const storageAllowed = storageOrigin && await chrome.permissions.contains({ origins: [`${storageOrigin}/*`] });
+  if (revision !== assistanceViewRevision) return;
+  assistance = value; element("assistance").hidden = false;
+  element("assistance-application").disabled = false;
   element("assistance-permission").disabled = permitted;
   element("assistance-connect").disabled = !permitted || value.busy || value.review_id || !["idle", "pending", "active"].includes(value.phase);
   element("assistance-connect").hidden = nativeAssistance;
@@ -151,7 +159,6 @@ async function showAssistance(value) {
   element("assistance-prepare-attachment").disabled = element("assistance-prepare").disabled || !value.attachment_available;
   element("assistance-prepare-native-upload").hidden=!nativeAssistance || !value.native_upload_available;
   element("assistance-prepare-native-upload").disabled=element("assistance-prepare").disabled || !value.native_upload_available;
-  const storageOrigin=nativeStorageOrigin(value.storage_origin),storageAllowed=storageOrigin && await chrome.permissions.contains({origins:[`${storageOrigin}/*`]});
   element("assistance-storage-permission").hidden=!storageOrigin || storageAllowed || !value.native_upload;
   element("assistance-storage-permission").disabled=value.busy;
   element("assistance-prepare-submit").disabled = element("assistance-prepare").disabled || !value.submit_available;
@@ -166,12 +173,35 @@ async function showAssistance(value) {
     ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
     : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
 }
+function showAssistanceUnavailable(revision) {
+  if (revision !== assistanceViewRevision) return;
+  assistanceViewRevision++;
+  // A failed read is not proof that an earlier worker action stopped or failed.
+  // Discard only the stale popup view; retained worker state is untouched.
+  assistance = null;
+  element("assistance").hidden = false;
+  for (const control of element("assistance").querySelectorAll("button, input")) control.disabled = true;
+  element("assistance-state").textContent = "Application status is unavailable. Check current connection before continuing. Application actions stay locked until fresh status is available. An earlier action may still be active; inspect the employer portal before taking another action.";
+}
+async function refreshAssistanceStatus() {
+  const revision = ++assistanceViewRevision;
+  try { await showAssistance(await request({ type: "assistance_status" }), revision); }
+  catch (failure) { showAssistanceUnavailable(revision); throw failure; }
+}
 function assistanceAction(id, type) {
   action(id, async () => {
     const message = ["assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type) ? { type, application_id: element("assistance-application").value.trim() } : { type };
-    if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" });
-    try { await showAssistance(await request(message)); }
-    catch (failure) { await showAssistance(await request({ type: "assistance_status" })); throw failure; }
+    const revision = ++assistanceViewRevision;
+    try {
+      if (assistance && ["assistance_fill", "assistance_prepare", "assistance_prepare_attachment", "assistance_prepare_submit"].includes(type)) await showAssistance({ ...assistance, busy: true, can_fill: false, message: "Working on the reviewed application…" }, revision);
+      if (revision !== assistanceViewRevision) return;
+      await showAssistance(await request(message), revision);
+    } catch (failure) {
+      if (revision === assistanceViewRevision) {
+        try { await refreshAssistanceStatus(); } catch { /* Keep the original action failure and the unavailable-state lock. */ }
+      }
+      throw failure;
+    }
   });
 }
 function enableRecovery(failure) {
@@ -236,7 +266,7 @@ recoveryAction("recovery-inspect", async () => {
 action("assistance-permission", async () => {
   const granted = await chrome.permissions.request({ origins: [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`] });
   if (!granted) throw new Error("The exact HireWiz and Greenhouse permissions were not granted.");
-  await showAssistance(await request({ type: "assistance_status" }));
+  await refreshAssistanceStatus();
 });
 action("assistance-review", async () => {
   const url = new URL(assistance.review_url);
@@ -248,16 +278,20 @@ assistanceAction("assistance-check", "assistance_check");
 assistanceAction("assistance-prepare", "assistance_prepare");
 assistanceAction("assistance-prepare-attachment", "assistance_prepare_attachment");
 action("assistance-prepare-native-upload",async()=>{
-  const granted=await chrome.permissions.request({permissions:["webRequest"],origins:[`${CONFIG.websiteOrigin}/*`,`${CONFIG.portalOrigin}/*`,"https://boards.greenhouse.io/*"]});
-  if(!granted)throw new Error("The exact Greenhouse native network observation permission was not granted.");
-  await showAssistance(await request({type:"assistance_prepare_native_upload",application_id:element("assistance-application").value.trim()}));
+  const revision = ++assistanceViewRevision;
+  try {
+    const granted=await chrome.permissions.request({permissions:["webRequest"],origins:[`${CONFIG.websiteOrigin}/*`,`${CONFIG.portalOrigin}/*`,"https://boards.greenhouse.io/*"]});
+    if(!granted)throw new Error("The exact Greenhouse native network observation permission was not granted.");
+    if (revision !== assistanceViewRevision) return;
+    await showAssistance(await request({type:"assistance_prepare_native_upload",application_id:element("assistance-application").value.trim()}), revision);
+  } catch (failure) { showAssistanceUnavailable(revision); throw failure; }
 });
 action("assistance-storage-permission",async()=>{
   const origin=nativeStorageOrigin(assistance?.storage_origin);
   if(!origin || !assistance.native_upload)throw new Error("No exact reviewed employer storage origin is available.");
   const granted=await chrome.permissions.request({origins:[`${origin}/*`]});
   if(!granted)throw new Error("The exact reviewed storage origin permission was not granted. No upload occurred.");
-  await showAssistance(await request({type:"assistance_status"}));
+  await refreshAssistanceStatus();
 });
 assistanceAction("assistance-prepare-submit", "assistance_prepare_submit");
 assistanceAction("assistance-reconcile", "assistance_reconcile");
