@@ -11,6 +11,8 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
 import { prepareOwnedNativeHttpsProfile } from "./native-https-fixture.js";
+import { legacySubmissionDispatch } from "./legacy-submission-dispatch-fixture.js";
+import { isSubmissionBilling } from "../extension/submission-billing.js";
 const {chromium,expect}=await import(new URL("../../frontend/node_modules/@playwright/test/index.mjs",import.meta.url));
 const {default:webpack}=await import(new URL("../../frontend/node_modules/webpack/lib/index.js",import.meta.url));
 const ROOT=new URL("../../",import.meta.url),WEBSITE="https://www.hirewizhq.com",EXTENSION="pnjmegppacleipajnifjmbcopjjffklb";
@@ -18,12 +20,14 @@ const STORAGE="https://owned-resume.s3.amazonaws.com",PRESIGN="/uncacheable_attr
 const message=(popup,value)=>popup.evaluate(value=>chrome.runtime.sendMessage(value),value);
 const sha256=bytes=>createHash("sha256").update(bytes).digest("hex");
 
-async function fixture({submitStatus=200,loseUploadOutcome=false,loseSubmitOutcome=false,loseUploadReportBeforeServer=false,loseSubmitReportBeforeServer=false,wrongPayload=false,redirect=false}={}){
+async function fixture({unified=false,freeOnly=false,submitStatus=200,loseUploadOutcome=false,loseSubmitOutcome=false,loseUploadReportBeforeServer=false,loseSubmitReportBeforeServer=false,wrongPayload=false,redirect=false}={}){
   const directory=await mkdtemp(`${tmpdir()}/hirewiz-hosted-network-browser-`);
-  const tls=await prepareOwnedNativeHttpsProfile(directory,{dnsNames:["job-boards.greenhouse.io","boards.greenhouse.io","owned-resume.s3.amazonaws.com"]});
+  let tls;
+  try{tls=await prepareOwnedNativeHttpsProfile(directory,{dnsNames:["job-boards.greenhouse.io","boards.greenhouse.io","owned-resume.s3.amazonaws.com"]});}
+  catch(error){await rm(directory,{recursive:true,force:true});throw error;}
   const pending=[],requests=[],uploads=[],submissions=[];let context,server,errors="",droppedUpload=false,droppedSubmit=false;
   const python=spawn(process.env.HIREWIZ_BROWSER_PAIRED_PYTHON||new URL("backend/.venv/bin/python",ROOT).pathname,
-    ["-I",new URL("backend/tests/browser_paired_assistance_chrome_bridge.py",ROOT).pathname,"--application"],
+    ["-I",new URL("backend/tests/browser_paired_assistance_chrome_bridge.py",ROOT).pathname,"--application",...(unified?["--unified"]:[]),...(freeOnly?["--free-only"]:[])],
     {cwd:new URL("backend/",ROOT).pathname,stdio:["pipe","pipe","pipe"],env:{...process.env,PYTHONDONTWRITEBYTECODE:"1",PYTHONWARNINGS:"ignore::DeprecationWarning"}});
   python.stderr.on("data",data=>{errors+=data.toString();});
   createInterface({input:python.stdout}).on("line",line=>{const waiter=pending.shift();try{waiter?.resolve(JSON.parse(line));}catch(error){waiter?.reject(error);}});
@@ -68,6 +72,7 @@ async function fixture({submitStatus=200,loseUploadOutcome=false,loseSubmitOutco
     });
     await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));const port=server.address().port;
     const extension=`${directory}/extension`;await cp(new URL("../extension/",import.meta.url),extension,{recursive:true});
+    if(!unified&&!freeOnly)await writeFile(`${extension}/background.js`,legacySubmissionDispatch(await readFile(`${extension}/background.js`,"utf8")));
     const manifest=JSON.parse(await readFile(`${extension}/manifest.json`,"utf8"));manifest.permissions.push("webRequest");delete manifest.optional_permissions;
     manifest.host_permissions=[`${WEBSITE}/*`,"https://job-boards.greenhouse.io/*","https://boards.greenhouse.io/*",`${STORAGE}/*`];await writeFile(`${extension}/manifest.json`,JSON.stringify(manifest));
     await writeFile(`${extension}/config.js`,`export const CONFIG=Object.freeze(${JSON.stringify({mode:"reviewed_assistance",websiteOrigin:WEBSITE,portalOrigin:"https://job-boards.greenhouse.io",extensionId:EXTENSION,nativePairing:{executorRevision:setup.executor_revision,authorityKey:setup.authority_key}})});`);
@@ -92,7 +97,7 @@ async function fixture({submitStatus=200,loseUploadOutcome=false,loseSubmitOutco
       }
       const pairing=url.startsWith(`${WEBSITE}/api/browser-pairing/device/`),result=await bridge({operation:pairing?"pairing_device":"assistance_device",action:url.split("/").at(-1),origin:request.headers().origin||"",body:request.postDataJSON()});
       if(result.status!==200)requests.push({api:url,status:result.status,body:result.body});
-      if(url.endsWith("/outcome")&&result.status===200){if(loseUploadOutcome&&!droppedUpload&&result.body.review_protocol_version===3){droppedUpload=true;return route.abort("failed");}if(loseSubmitOutcome&&!droppedSubmit&&result.body.review_protocol_version===4){droppedSubmit=true;return route.abort("failed");}}
+      if(url.endsWith("/outcome")&&result.status===200){if(loseUploadOutcome&&!droppedUpload&&result.body.review_protocol_version===3){droppedUpload=true;return route.abort("failed");}if(loseSubmitOutcome&&!droppedSubmit&&[4,5].includes(result.body.review_protocol_version)){droppedSubmit=true;return route.abort("failed");}}
       if(result.body.binary_base64){const bytes=Buffer.from(result.body.binary_base64,"base64"),artifact=result.body.descriptor;return route.fulfill({status:200,headers:{"Content-Type":artifact.media_type,"Content-Length":String(bytes.length),"X-Artifact-SHA256":artifact.sha256,"X-Artifact-Filename":artifact.filename},body:bytes});}
       return route.fulfill({status:result.status,contentType:"application/json",body:JSON.stringify(result.body)});
     });
@@ -103,7 +108,8 @@ async function fixture({submitStatus=200,loseUploadOutcome=false,loseSubmitOutco
     const paired=await message(popup,{type:"pairing_complete"});assert.equal(paired.ok,true,paired.error);assert.equal(paired.value.connected,true);
     const candidate=async(action,body)=>{const value=await bridge({operation:"assistance_candidate",action,body});assert.equal(value.status,200,JSON.stringify(value));return value.body;};
     const review=async(type)=>{const prepared=await message(popup,{type,application_id:setup.application_id});assert.equal(prepared.ok,true,prepared.error+" "+JSON.stringify(requests.filter(value=>value.api)));return candidate("review",{identity:prepared.value.review_id});};
-    const approve=async reviewed=>{await candidate("approve",{identity:reviewed.id,review_digest:reviewed.review_digest,confirmed:true});const checked=await message(popup,{type:"assistance_check"});assert.equal(checked.ok,true,checked.error);return checked.value;};
+    const approve=async reviewed=>{await candidate("approve",{identity:reviewed.id,review_digest:reviewed.review_digest,confirmed:true,
+      ...(reviewed.review_protocol_version===5?{accepted_service_quote_id:reviewed.billing.quote_id}:{})});const checked=await message(popup,{type:"assistance_check"});assert.equal(checked.ok,true,checked.error);return checked.value;};
     return {popup,portal,worker,setup,bridge,candidate,review,approve,uploads,submissions,requests,context,
       async close(){await context?.close();server?.closeAllConnections();if(server?.listening)await new Promise(resolve=>server.close(resolve));
         if(python.exitCode===null){python.stdin.end();await new Promise(resolve=>python.once("exit",resolve));}await rm(directory,{recursive:true,force:true});assert.equal(errors,"");}
@@ -133,6 +139,72 @@ async function approvedFinal(f){
   const result=await message(f.popup,{type:"assistance_fill"});assert.equal(result.ok,true,result.error);
   await message(f.popup,{type:"assistance_cancel"});const final=await f.review("assistance_prepare_submit");await f.approve(final);return final;
 }
+
+async function unifiedDraft(f) {
+  const upload=await f.review("assistance_prepare_native_upload"); assert.equal(upload.fee_credits ?? upload.payload.fee_credits,0); await f.approve(upload);
+  const uploaded=await message(f.popup,{type:"assistance_fill"}); assert.equal(uploaded.ok,true,uploaded.error);
+  assert.equal((await message(f.popup,{type:"assistance_cancel"})).ok,true);
+  const final=await f.review("assistance_prepare_submit");
+  assert.equal(final.review_protocol_version,5); assert.equal(final.payload.review_protocol_version,5); assert.equal(final.fee_credits,3);
+  assert.equal(isSubmissionBilling(final.billing),true); assert.deepEqual(final.payload.billing,final.billing); assert.deepEqual(final.payload.pricing,final.billing);
+  assert.equal(final.payload.receipt_contract,"greenhouse_hosted_browser_https_200_v2");
+  assert.equal(sha256(Buffer.from((await import("../extension/protocol.js")).canonical(final.payload))),final.review_digest);
+  return final;
+}
+test("shipping new client keeps free attachment review/cancel under native pairing with every unified/final-submit gate closed",async()=>{
+  const f=await fixture({freeOnly:true});try{
+    assert.equal(f.setup.free_only,true); assert.equal(f.setup.unified_submission,false);
+    const state=await message(f.popup,{type:"assistance_status"}); assert.equal(state.ok,true,state.error); assert.equal(state.value.submit_available,false);
+    const upload=await f.review("assistance_prepare_attachment"); assert.equal(upload.review_protocol_version,3); assert.equal(upload.payload.fee_credits,0);
+    assert.equal(Object.hasOwn(upload,"billing"),false); assert.equal((await message(f.popup,{type:"assistance_cancel"})).ok,true);
+    const unavailable=await message(f.popup,{type:"assistance_prepare_submit",application_id:f.setup.application_id});
+    assert.equal(unavailable.ok,false); assert.match(unavailable.error,/Unified submission is unavailable/);
+    const audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.charged_credits,0); assert.equal(audit.submit_attempts,0); assert.equal(audit.binary_deliveries,0);
+    assert.equal(f.uploads.length,0); assert.equal(f.submissions.length,0);
+  }finally{await f.close();}
+});
+test("shipping protocol five native HTTPS200 settles exactly three unified credits once without spending legacy money",async()=>{
+  const f=await fixture({unified:true});try{
+    assert.equal(f.setup.unified_submission,true); assert.equal(f.setup.free_only,false);
+    const final=await unifiedDraft(f); let audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.unified_available_credits,40); assert.equal(audit.unified_reserved_credits,0); assert.equal(audit.credits,100);
+    const wrong=await f.bridge({operation:"assistance_candidate",action:"approve",body:{identity:final.id,review_digest:final.review_digest,confirmed:true,accepted_service_quote_id:`csq_${"6".repeat(32)}`}});
+    assert.equal(wrong.status,409); audit=(await f.bridge({operation:"audit"})).body; assert.equal(audit.unified_available_credits,40);
+    await f.approve(final); audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.unified_available_credits,37); assert.equal(audit.unified_reserved_credits,3); assert.equal(audit.charged_credits,0); assert.equal(audit.credits,100);
+    const sent=await message(f.popup,{type:"assistance_fill"}); assert.equal(sent.ok,true,sent.error); assert.equal(sent.value.employer_confirmed,true); assert.equal(sent.value.phase,"filled");
+    audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.charged_credits,3); assert.equal(audit.unified_reserved_credits,0); assert.equal(audit.credits,100); assert.equal(audit.submit_attempts,1);
+    assert.deepEqual(audit.unified_reservations,[{state:"settled",reserved:3,committed:3,released:0}]);
+    assert.equal(audit.receipt.contract,"greenhouse_hosted_browser_https_200_v2"); assert.equal(audit.receipt.network.ip,"127.0.0.1");
+    assert.equal(f.submissions.length,1); assert.equal(f.uploads.length,1); assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false);
+    assert.deepEqual(JSON.parse(f.submissions[0]).job_application,final.payload.expected_application);
+  }finally{await f.close();}
+});
+test("shipping protocol five unknown202 retains its three-credit hold and never replays an employer request",async()=>{
+  const f=await fixture({unified:true,submitStatus:202});try{
+    const final=await unifiedDraft(f); await f.approve(final);
+    assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false);
+    let audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.charged_credits,0); assert.equal(audit.unified_reserved_credits,3); assert.equal(audit.unified_available_credits,37); assert.equal(audit.credits,100); assert.equal(audit.receipt,null);
+    assert.equal((await message(f.popup,{type:"assistance_fill"})).ok,false); assert.equal(f.submissions.length,1);
+    const read=await message(f.popup,{type:"assistance_reconcile"}); assert.equal(read.ok,true,read.error); assert.equal(read.value.employer_confirmed,false);
+    audit=(await f.bridge({operation:"audit"})).body; assert.equal(audit.unified_reserved_credits,3); assert.equal(audit.submit_attempts,1); assert.equal(f.submissions.length,1);
+  }finally{await f.close();}
+});
+test("shipping protocol five preclaim cancellation releases three once and cannot silently reprice the same application",async()=>{
+  const f=await fixture({unified:true});try{
+    const final=await unifiedDraft(f); await f.approve(final);
+    assert.equal((await message(f.popup,{type:"assistance_cancel"})).ok,true);
+    let audit=(await f.bridge({operation:"audit"})).body;
+    assert.equal(audit.unified_available_credits,40); assert.equal(audit.unified_reserved_credits,0); assert.equal(audit.charged_credits,0); assert.equal(audit.credits,100);
+    assert.equal(audit.submit_attempts,0); assert.equal(f.submissions.length,0);
+    const replaced=await message(f.popup,{type:"assistance_prepare_submit",application_id:f.setup.application_id}); assert.equal(replaced.ok,false);
+    audit=(await f.bridge({operation:"audit"})).body; assert.equal(audit.unified_available_credits,40); assert.equal(audit.unified_reservations.length,1);
+    assert.deepEqual(audit.unified_reservations,[{state:"settled",reserved:3,committed:0,released:3}]);
+  }finally{await f.close();}
+});
 
 for(const [name,options] of [["202",{submitStatus:202}],["redirect",{redirect:true}],["changed serialized answer",{wrongPayload:true}]]){
   test(`installed native ${name} keeps a single unknown attempt and never settles or resends`,async()=>{

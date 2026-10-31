@@ -1,6 +1,7 @@
 """Real local SQLite wallet/quote lifecycle; synthetic ports, no native acceptance."""
 from copy import deepcopy
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from backend.app import models as core
@@ -35,6 +36,32 @@ def owned(monkeypatch):
 def balance(owned):
     owned.db.expire_all()
     return service.wallet(owned.db, user_id=1).available_credits
+
+
+@pytest.mark.parametrize("name", ["browser-companion/extension/submission-billing.js",
+    "frontend/lib/browserSubmissionBilling.ts", "frontend/lib/browserHostedNetworkReview.ts"])
+def test_actual_quote_validator_drift_changes_contract_and_refuses_before_quote_or_spend(owned, monkeypatch, name):
+    configure(owned, monkeypatch)
+    before = submission.delivery_contract()
+    path = Path(submission.__file__).resolve().parents[4] / name
+    original = Path.read_bytes
+    reads = []
+
+    def changed(current):
+        if current == path:
+            reads.append(current)
+            return original(current) + b"\n// different quote/receipt validation source\n"
+        return original(current)
+
+    monkeypatch.setattr(Path, "read_bytes", changed)
+    assert submission.delivery_contract() != before and reads
+    with pytest.raises(HTTPException) as error:
+        review(owned)
+    assert error.value.status_code == 409
+    owned.db.rollback()
+    assert balance(owned) == 40 and owned.audit()["credits"] == 100
+    assert owned.db.query(CreditServiceQuote).count() == owned.db.query(CreditReservation).count() == 0
+    assert owned.db.query(CreditExecutionHold).count() == 0 and owned.audit()["native_calls"] == 0
 
 
 def test_three_credit_quote_is_inert_and_acceptance_never_debits_legacy_wallet(owned, monkeypatch):

@@ -2800,6 +2800,8 @@ export interface components {
         };
         /** CandidateRequest */
         CandidateRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
             /**
              * Confirmed
              * @default false

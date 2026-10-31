@@ -39,6 +39,7 @@ DELIVERY_SOURCES = (
     "backend/app/domains/recovery/browser_submit.py",
     "browser-companion/extension/assistance-runtime.js",
     "browser-companion/extension/assistance-transport.js",
+    "browser-companion/extension/submission-billing.js",
     "browser-companion/extension/razorpay-adapter.js",
     "browser-companion/extension/greenhouse-native-network.js",
     "browser-companion/extension/greenhouse-owned-upload.js",
@@ -59,6 +60,8 @@ DELIVERY_SOURCES = (
     "browser-companion/extension/transport.js",
     "frontend/components/BrowserAssistanceReview.tsx",
     "frontend/lib/browserAssistanceGateway.ts",
+    "frontend/lib/browserSubmissionBilling.ts",
+    "frontend/lib/browserHostedNetworkReview.ts",
 )
 
 

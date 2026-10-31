@@ -16,8 +16,9 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   const origin = "https://job-boards.greenhouse.io";
   const tenant = "razorpaysoftwareprivatelimited";
   const version = identity?.review_protocol_version ?? 1;
-  if (![1, 2, 3, 4].includes(version) || !Number.isSafeInteger(version)) return fail("Unsupported reviewed form protocol");
-  const adapterVersion = version === 4 ? "razorpay-greenhouse-submit-v4" : version === 3 ? "razorpay-greenhouse-attachment-v3" : version === 2 ? "razorpay-greenhouse-controls-v2" : "razorpay-greenhouse-text-v1";
+  if (![1, 2, 3, 4, 5].includes(version) || !Number.isSafeInteger(version)) return fail("Unsupported reviewed form protocol");
+  const finalSubmission = version === 4 || version === 5;
+  const adapterVersion = version === 5 ? "razorpay-greenhouse-submit-v5" : version === 4 ? "razorpay-greenhouse-submit-v4" : version === 3 ? "razorpay-greenhouse-attachment-v3" : version === 2 ? "razorpay-greenhouse-controls-v2" : "razorpay-greenhouse-text-v1";
   const recipient = "https://email-address-validator.us.greenhouse.io/address/validate";
   const baseLabels = { first_name: "First Name", last_name: "Last Name", email: "Email" };
   const customLabels = new Set(["LinkedIn Profile", "Website", "Total Years of Experience", "Current Location"]);
@@ -37,10 +38,10 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     || supplied.some((field) => !field || typeof field !== "object" || Array.isArray(field)
       || Object.keys(field).sort().join(",") !== (field.type === "combobox" ? "id,label,options,required,type" : "id,label,required,type")
       || typeof field.id !== "string" || field.id.length > 128 || typeof field.label !== "string" || typeof field.required !== "boolean"
-      || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label) || [2, 4].includes(version) && hostedText(field))
+      || !(field.type === "text" && (Object.hasOwn(baseLabels, field.id) ? field.label === baseLabels[field.id] : /^question_\d+$/.test(field.id) && customLabels.has(field.label) || [2, 4, 5].includes(version) && hostedText(field))
         || version >= 2 && field.type === "tel" && field.id === "phone" && field.label === "Phone" || validChoice(field)
-        || [2, 4].includes(version) && field.type === "checkbox" && /^current-role-[0-4]_1$/.test(field.id) && field.label === "Current role" && field.required === false
-        || [2, 4].includes(version) && field.type === "button" && /^employment-add-[1-4]$/.test(field.id) && field.label === "Add another" && field.required === false))
+        || [2, 4, 5].includes(version) && field.type === "checkbox" && /^current-role-[0-4]_1$/.test(field.id) && field.label === "Current role" && field.required === false
+        || [2, 4, 5].includes(version) && field.type === "button" && /^employment-add-[1-4]$/.test(field.id) && field.label === "Add another" && field.required === false))
     || new Set(supplied.map(({ id }) => id)).size !== supplied.length
     || new Set(supplied.filter((field) => !hostedText(field) && !hostedChoice(field) && !["checkbox", "button"].includes(field.type)).map(({ label }) => label)).size !== supplied.filter((field) => !hostedText(field) && !hostedChoice(field) && !["checkbox", "button"].includes(field.type)).length
     || Object.keys(baseLabels).some((id) => !supplied.some((field) => field.id === id))) return fail("Signed application mapping must contain only the reviewed text semantics and exact unique IDs");
@@ -177,8 +178,8 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     return record;
   };
   const read = (activeChoice = null, selectedAttachment = null) => {
-    const upload = [3, 4].includes(version) ? resumeState() : null;
-    if (version === 4 && (!upload || upload.status !== "portal_reports_uploaded")) throw new Error("Wait for the portal to report a completed resume upload before final review");
+    const upload = [3, 4, 5].includes(version) ? resumeState() : null;
+    if (finalSubmission && (!upload || upload.status !== "portal_reports_uploaded")) throw new Error("Wait for the portal to report a completed resume upload before final review");
     if (version === 3 && upload && !selectedAttachment && upload.status !== "empty") throw new Error("Resume input must be empty before attachment approval");
     // Raw manual state stays in this isolated execution. Local hashes bind
     // changes, not anonymity: low-entropy answers can still be guessed.
@@ -312,7 +313,7 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     };
     const attachmentSchema = upload && version === 3 ? selectedAttachment ? current.attachmentSchema : bounded(upload.group.outerHTML,bounds.text) : null;
     if (attachmentSchema !== null) bindPrivate(context,"resume_upload_sha256",attachmentSchema);
-    if (upload && version === 4) context.resume_upload = { attributes:attributes(upload.group), html:bounded(upload.group.outerHTML,bounds.text) };
+    if (upload && finalSubmission) context.resume_upload = { attributes:attributes(upload.group), html:bounded(upload.group.outerHTML,bounds.text) };
     const serialized = canonical({ context, private_values: privateHashes.map(({ key, value }) => [key, value]) });
     if (new TextEncoder().encode(serialized).length > bounds.total) throw new Error("Form context exceeds the reviewed total byte bound");
     const assistedValues = Object.fromEntries(assisted.map((node) => {
@@ -334,12 +335,12 @@ export async function razorpayAdapter(expected = null, action = null, identity =
     assisted_fields: current.fields.filter((field) => allowed.has(field.id)), manual_fields: current.fields.filter((field) => !allowed.has(field.id)),
     assisted_values: current.assistedValues,
     field_mapping: fieldMapping,
-    ...([2, 4].includes(version) && discoverRows() ? { hosted_rows: discoverRows() } : {}),
+    ...([2, 4, 5].includes(version) && discoverRows() ? { hosted_rows: discoverRows() } : {}),
     required_controls: current.fields.filter((field) => field.required).length, checkpoint: null, status: "manual_handoff",
     message: version === 2 ? "Only explicitly reviewed text, phone and supported choices can be filled. Only listed values and actions are authorized. Changed or unknown controls, attachment and final submission require separate action. No application receipt or charge is established."
       : "Up to seven reviewed plain text fields only. Phone, Country, employment, choices, attachment and final submission remain manual. No application receipt or charge is established.",
   };
-  if (version === 4) {
+  if (finalSubmission) {
     const buttons = [...current.form.querySelectorAll('button[type="submit"]')].filter(visible);
     const submit = buttons.length === 1 ? buttons[0] : null;
     const nonAnswers = new Set(["submit", "button", "file", "hidden"]);
@@ -368,9 +369,23 @@ export async function razorpayAdapter(expected = null, action = null, identity =
   if (inspection.form_version !== expected.form_version) return fail("Reviewed form version changed");
   if (expected.document_id !== identity.document_id || action.document_id !== identity.document_id || action.frame_id !== 0) return fail("Chrome document or frame changed");
   if (["origin", "url", "tenant_id", "employer_key", "canonical_opening_key"].some((key) => inspection[key] !== expected[key])) return fail("Reviewed employer destination changed");
-  if (version === 4) {
-    if (action.review_protocol_version !== 4 || action.control_type !== "submit" || action.field_id !== "final-submit"
-      || !same(action.allowed_actions,["submit"]) || action.fee_credits !== 20 || !digestPattern.test(action.native_proof_sha256 || "")
+  if (finalSubmission) {
+    // This function is serialized into an isolated Chrome world, so validate
+    // the explicit wire price here as well as in the trusted runtime.
+    if (version === 5) {
+      const billing = action.billing;
+      const keys = ["billing_currency", "credits", "delivery_contract_sha256", "financial_policy_sha256", "input_fingerprint", "operation", "quote_contract_sha256", "quote_expires_at_ms", "quote_id", "route_id", "route_version", "schema_version", "tariff_version"];
+      if (!billing || typeof billing !== "object" || Array.isArray(billing) || Object.keys(billing).sort().join(",") !== keys.join(",")
+        || billing.schema_version !== "unified-browser-submission-v1" || billing.billing_currency !== "credits"
+        || billing.operation !== "verified_submission" || billing.credits !== 3 || billing.tariff_version !== "credit-services-2026-10-27-v1"
+        || typeof billing.quote_id !== "string" || !/^csq_[a-f0-9]{32}$/.test(billing.quote_id)
+        || ![billing.route_id,billing.route_version].every(value => typeof value === "string" && /^[A-Za-z0-9_.:-]{1,120}$/.test(value))
+        || ![billing.delivery_contract_sha256,billing.financial_policy_sha256,billing.input_fingerprint,billing.quote_contract_sha256].every(value => typeof value === "string" && digestPattern.test(value))
+        || !Number.isSafeInteger(billing.quote_expires_at_ms) || billing.quote_expires_at_ms <= Date.now()
+        || action.deadline > billing.quote_expires_at_ms || !same(billing, expected.billing)) return fail("The explicit unified submission quote expired or changed");
+    } else if (action.billing !== undefined || expected.billing !== undefined) return fail("Legacy submission cannot infer a unified quote");
+    if (action.review_protocol_version !== version || action.control_type !== "submit" || action.field_id !== "final-submit"
+      || !same(action.allowed_actions,["submit"]) || action.fee_credits !== (version === 5 ? 3 : 20) || !digestPattern.test(action.native_proof_sha256 || "")
       || !digestPattern.test(expected.review_digest || "") || action.review_digest !== expected.review_digest
       || !same(current.assistedValues,expected.current_assisted_values) || !same(inspection.upload,action.upload)
       || !same(inspection.upload_continuity,action.upload_continuity) || action.artifact_sha256!==inspection.upload_continuity?.artifact_sha256
