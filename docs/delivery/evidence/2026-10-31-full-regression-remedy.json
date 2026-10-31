@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-31T08:10:26.175357+00:00",
+  "status": "test_fixture_repairs_reviewed_new_source_ci_pending",
+  "baseline_source": "7be8cac2a332a5ad19366402013d5f385f97105b",
+  "baseline_ci": {
+    "id": 41175964104,
+    "attempt": 1,
+    "url": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/41175964104",
+    "conclusion": "failure",
+    "other_jobs_passed": 4,
+    "schema26_native_postgres_cases_passed": 61,
+    "retained_and_native_protocol_steps": "passed",
+    "full_backend": {
+      "failed": 48,
+      "passed": 10027,
+      "ordinary_skips": 47,
+      "subtests_passed": 253
+    }
+  },
+  "repair_source": "fdf1495bbcb961204806ec2f02731a4a3f59abdf",
+  "scope": {
+    "test_files": 10,
+    "runtime_files_changed": 0,
+    "migration_files_changed": 0,
+    "corpus_or_oracle_changes": false,
+    "application_files": 289,
+    "application_sha256": "605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe"
+  },
+  "diagnosis": [
+    "Synthetic privacy-mail clock expired during the long test collection/run; preserve the original strict expiry with a coherent fixture clock.",
+    "A stale security-mail claim must remain unknown rather than be automatically resent.",
+    "Synthetic retained-source fixtures inherited real CI transfer paths and copied current workflow bytes instead of their frozen historical source.",
+    "Historical migration-prefix assertions omitted schema26; the original forward-step authority stays unchanged.",
+    "Inspector source preservation applies to its complete frozen worker/runtime/helper inventory; unrelated reviewed app changes use their app release context.",
+    "Current canary fixtures require actual canonical schema26 with its evidence-write fence; only the archived CLI rehearsal stays on canonical schema25.",
+    "The fixed synthetic generation boundary must be installed before its quoted output contract is accepted.",
+    "Tailoring fixtures need an actual original PDF and the no-AI journey needs its own real PostgreSQL mail-authority sessions."
+  ],
+  "local_checks": {
+    "combined_focused_cases_passed": 280,
+    "elapsed_seconds": 4.4,
+    "external_network_and_grpc": "denied",
+    "non_sqlite_and_non_owned_sql": "denied",
+    "actual_postgres_cases_executed": 0,
+    "actual_native_processing_or_model_calls": 0
+  },
+  "remaining": [
+    "Genuine new-source CI, including PostgreSQL, before merge or Build.",
+    "Immutable Build, current native maintenance/migration/app plans and reviewed rollout.",
+    "Owner companion review/cancel/revocation after Mac unlock.",
+    "Native/model/human quality, funded shadow accounting, financial/capacity/rollback and commercial gates."
+  ],
+  "production": {
+    "backend_source": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+    "schema": "20261028_0025",
+    "new_build_or_migration": false,
+    "payments_or_generation_activated": false
+  },
+  "checkpoint_policy": "The original eight stages remain unchanged; these checks are supporting evidence, not new completed development checkpoints."
+}
