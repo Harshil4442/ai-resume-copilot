@@ -126,9 +126,10 @@ jobs:
           tests/test_evidence_writer_fence_postgres.py tests/test_evidence_writer_schema26_contract.py
           tests/test_neon_schema26_release_transport.py tests/test_schema26_operator_successors.py
           tests/test_schema26_catalog_postgres.py tests/test_privacy_erasure_recovery.py
+          tests/test_evidence_writer_schema26_step.py tests/test_evidence_writer_schema26_step_postgres.py
           tests/test_privacy_erasure_postgres.py tests/test_mail_budget.py app/routers/privacy_erasure.py
           tests/fixtures/evidence_fence.py
-          ../infra/gcp/schema26_app_rolling_v3.py
+          ../infra/gcp/schema26_app_rolling_v3.py ../infra/gcp/schema26_migration_metadata.py
           tests/test_firestore_identity_list.py tests/test_candidate_validation_identity_list.py
           tests/test_native_metadata_admission.py tests/test_native_metadata_admission_redis.py
           app/routers/native_metadata_http.py
@@ -210,9 +211,10 @@ jobs:
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
           scripts/schema25_app_release_contract.py scripts/schema25_app_release_contract_v2.py
           scripts/schema25_app_release_contract_v3.py scripts/evidence_writer_schema26_contract.py
+          scripts/evidence_writer_schema26_step.py
           scripts/qualify_schema26_compatibility.py scripts/qualify_schema25_retained_v2.py
           scripts/reconcile_native_expenses_schema26.py scripts/review_canary_audience_schema26.py
-          ../infra/gcp/schema26_app_rolling_v3.py
+          ../infra/gcp/schema26_app_rolling_v3.py ../infra/gcp/schema26_migration_metadata.py
           app/routers/privacy_erasure.py
           scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
           ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py

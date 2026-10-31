@@ -36,7 +36,8 @@ PRIVACY_FLAG = "PRIVACY_ERASURE_RECOVERY_ENABLED"
 NATIVE_SUITES = ("tests/test_schema25_app_compatibility_v3_postgres.py",
     "tests/test_evidence_writer_fence_postgres.py", "tests/test_schema26_catalog_postgres.py",
     "tests/test_evidence_review_postgres.py", "tests/test_source_transcription_review_postgres.py",
-    "tests/test_unified_synchronous_postgres.py", "tests/test_privacy_erasure_postgres.py")
+    "tests/test_unified_synchronous_postgres.py", "tests/test_privacy_erasure_postgres.py",
+    "tests/test_evidence_writer_schema26_step_postgres.py")
 PROTOCOL_SUITES = (*v2.PROTOCOL_SUITES, "tests/test_evidence_writer_adapters.py",
     "tests/test_evidence_writer_fence.py", "tests/test_evidence_writer_schema26_contract.py",
     "tests/test_neon_schema26_release_transport.py", "tests/test_owned_dashboard.py",
@@ -44,7 +45,7 @@ PROTOCOL_SUITES = (*v2.PROTOCOL_SUITES, "tests/test_evidence_writer_adapters.py"
     "tests/test_source_transcription_consumers.py", "tests/test_native_acquisition_channel.py",
     "tests/test_native_acquisition_job.py", "tests/test_qualify_schema26_compatibility.py",
     "tests/test_schema26_operator_successors.py", "tests/test_privacy_erasure_recovery.py",
-    "tests/test_mail_budget.py")
+    "tests/test_mail_budget.py", "tests/test_evidence_writer_schema26_step.py")
 PROOF_ROOTS = (*PROTOCOL_SUITES, *NATIVE_SUITES,
     "tests/test_schema25_app_rolling_v3.py", "tests/test_schema25_app_protocol_v3.py",
     "tests/test_qualify_schema25_retained_v2.py", "tests/browser_paired_assistance_chrome_bridge.py",
@@ -95,7 +96,8 @@ PAIRING_PATHS = (*COMPANION_EXTENSION_PATHS, *COMPANION_PROOF_ROOTS,
     "frontend/package.json", "frontend/vitest.config.mts", "frontend/vitest.setup.ts", "frontend/tsconfig.json",
     "frontend/components/BrowserAssistanceReview.tsx", "frontend/components/BrowserAssistanceReview.test.tsx",
     "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip")
-NEW_PATHS = (*PAIRING_PATHS, "backend/scripts/schema25_app_release_contract_v3.py",
+MIGRATION26_PATHS = ('backend/alembic.ini', 'backend/scripts/evidence_writer_schema26_step.py', 'infra/gcp/schema26_migration_metadata.py', 'backend/tests/test_evidence_writer_schema26_step.py', 'backend/tests/test_evidence_writer_schema26_step_postgres.py', 'backend/scripts/browser_schema19_step.py', 'backend/scripts/browser_schema19_contract.py', 'backend/scripts/native_resume_schema20_step.py', 'backend/scripts/native_resume_schema20_contract.py', 'backend/scripts/email_password_schema21_step.py', 'backend/scripts/email_password_schema21_contract.py', 'backend/scripts/unified_credit_schema25_step.py', 'backend/scripts/unified_credit_schema25_contract.py', 'backend/scripts/unified_credit_schema25_manifest.json', 'backend/alembic/env.py', 'infra/gcp/schema25_migration_metadata.py')
+NEW_PATHS = (*MIGRATION26_PATHS, *PAIRING_PATHS, "backend/scripts/schema25_app_release_contract_v3.py",
     "infra/gcp/schema26_app_rolling_v3.py", "backend/tests/test_schema25_app_rolling_v3.py",
     "backend/tests/test_schema25_app_compatibility_v3_postgres.py", "backend/tests/test_schema25_app_protocol_v3.py",
     "backend/scripts/qualify_schema26_compatibility.py", "backend/tests/test_qualify_schema26_compatibility.py",
