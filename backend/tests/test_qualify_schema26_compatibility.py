@@ -330,3 +330,89 @@ print(json.dumps({'old_engine_guard_refused':negative,'post_constructor_reached'
     assert type(blocked_imports) is int and 0 <= blocked_imports <= 16  # Denied, never successful IO.
     assert observed == {"old_engine_guard_refused": True, "post_constructor_reached": True,
         "private_engine_disposed": True, "old_http_engine_unchanged": True, "constructor_io_attempts": 0}
+
+
+def protocol_report(path, *, count=1, failures=1, unknown=False):
+    from scripts import schema25_app_release_contract_v3 as contract
+
+    source = gate.ROOT / "backend" / contract.PROTOCOL_SUITES[0]
+    name = next(node.name for node in ast.parse(source.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"))
+    suite = ElementTree.Element("testsuite")
+    for index in range(count):
+        case = ElementTree.SubElement(suite, "testcase", classname="tests." + source.stem + ".SYNTHETIC_PRIVATE_CLASS",
+            name=("test_SYNTHETIC_PRIVATE_VALUE" if unknown else name) + "[SYNTHETIC_PRIVATE_PARAMETER]")
+        if index < failures:
+            ElementTree.SubElement(case, "failure", type="SYNTHETIC_PRIVATE_TYPE").text = "SQL/token/URL: SYNTHETIC_PRIVATE_VALUE"
+    ElementTree.ElementTree(suite).write(path)
+    return source.stem + "::" + name
+
+
+def test_protocol_observes_source_known_ids_and_counts_without_child_streams_or_parameters(tmp_path):
+    path = tmp_path / "junit.xml"
+    expected = protocol_report(path, count=300)
+    original = path.read_bytes()
+    result = gate.protocol_failure_summary(path, anchor(tmp_path), 1)
+    assert result["observation_scope"] == "native_protocol" and result["qualified"] is False
+    assert result["counts"] == {"passed": 299, "failure": 1, "error": 0, "skipped": 0}
+    assert result["cases"][0]["case_id"] == expected and result["cases"][0]["diagnostic_type"] == "OTHER"
+    assert result["case_details_truncated"] is False and path.read_bytes() == original
+    assert "SYNTHETIC_PRIVATE" not in json.dumps(result)
+
+
+def test_protocol_source_names_include_actual_pytest_test26_functions_without_an_underscore():
+    cases = gate._protocol_public_cases()
+    assert "test26_and_frozen25_marker_contracts_are_disjoint" in cases["test_evidence_writer_schema26_contract"]
+    assert "test25_and_older_collectors_do_not_gain26_authority" in cases["test_neon_schema26_release_transport"]
+
+
+def test_unknown_protocol_function_remains_unavailable_and_failure_detail_bound_is_explicit(tmp_path):
+    path = tmp_path / "junit.xml"
+    protocol_report(path, unknown=True)
+    result = gate.protocol_failure_summary(path, anchor(tmp_path), 1)
+    assert result == {"schema_version": "schema26-ci-failure-v1", "qualified": False,
+        "report_state": "unavailable", "observation_scope": "native_protocol"}
+    assert "SYNTHETIC_PRIVATE" not in json.dumps(result)
+    protocol_report(path, count=33, failures=33)
+    result = gate.protocol_failure_summary(path, anchor(tmp_path), 1)
+    assert result["counts"]["failure"] == 33 and len(result["cases"]) == 32
+    assert result["case_details_truncated"] is True and result["qualified"] is False
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or_selection_change(
+    tmp_path, monkeypatch, capsys, failed,
+):
+    from test_schema25_app_protocol_v3 import SUITES
+    from test_schema25_app_protocol_v3 import (
+        test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipped_cases as invoke,
+    )
+
+    binary = tmp_path / "owned-synthetic-not-executed"
+    binary.write_text("unused synthetic binary")
+    binary.chmod(0o700)
+    monkeypatch.setenv("HIREWIZ_AUTHORITY_EMULATOR_REQUIRED", "true")
+    monkeypatch.setenv("HIREWIZ_APP_COMPATIBILITY_REQUIRED", "true")
+    monkeypatch.setenv("HIREWIZ_OWNED_REDIS_SERVER", str(binary))
+    calls = []
+    def child(argv, **kwargs):
+        path = gate.Path(argv[-1])
+        expected = protocol_report(path, failures=int(failed))
+        calls.append((argv, kwargs, path, expected))
+        assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
+        assert tuple(argv[7:-2]) == SUITES and kwargs["timeout"] == 240 and kwargs["capture_output"] is True
+        assert kwargs["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"
+        return SimpleNamespace(returncode=int(failed), stdout=b"SYNTHETIC_PRIVATE_STDOUT", stderr=b"SYNTHETIC_PRIVATE_STDERR")
+    monkeypatch.setattr(gate.subprocess, "run", child)
+    if failed:
+        with pytest.raises(AssertionError, match=r"^Native protocol subprocess failed; inspect privately(?:\n|$)"):
+            invoke()
+        output = capsys.readouterr()
+        observed = json.loads(output.out)
+        assert observed["qualified"] is False and observed["cases"][0]["case_id"] == calls[0][3]
+        assert observed["child_returncode"] == 1 and observed["counts"]["failure"] == 1
+        assert "SYNTHETIC_PRIVATE" not in output.out + output.err
+    else:
+        invoke()
+        assert capsys.readouterr().out == ""
+    assert len(calls) == 1 and not calls[0][2].exists()  # Existing context cleanup, no new cleanup claim.

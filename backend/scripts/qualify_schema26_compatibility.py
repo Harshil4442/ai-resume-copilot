@@ -6,6 +6,7 @@ source-only fake subprocess tests do not constitute this qualification.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
@@ -70,15 +72,57 @@ def _line_hints(module: str, diagnostic: str) -> list[int]:
     return sorted({int(match[1]) for match in pattern.finditer(diagnostic) if int(match[1]) <= bound})[:3]
 
 
+def _protocol_public_cases() -> dict[str, set[str]]:
+    """Finite public names from the already source-bound protocol suites/helpers.
+
+    Imported test functions may be collected under a different selected module.
+    Names are disclosure metadata only; this does not execute or select tests.
+    """
+    from scripts import schema25_app_release_contract_v3 as contract
+
+    try:
+        names = set()
+        paths = {ROOT / "backend" / name for name in contract.PROTOCOL_SUITES}
+        paths.update(ROOT / name for name in contract.PROTOCOL_FIXTURES
+            if name.startswith("backend/tests/") and name.endswith(".py"))
+        if not 0 < len(paths) <= 128:
+            return {}
+        for path in paths:
+            if path.is_symlink() or not 0 < path.stat().st_size <= 1024**2:
+                return {}
+            for node in ast.walk(ast.parse(path.read_bytes())):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
+                    names.add(node.name)
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    names.update(alias.asname or alias.name for alias in node.names
+                        if (alias.asname or alias.name).startswith("test"))
+        if not 0 < len(names) <= 8192:
+            return {}
+        return {Path(name).stem: names for name in contract.PROTOCOL_SUITES}
+    except Exception:
+        return {}
+
+
+def protocol_failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
+    """Observe only the original failed protocol report, never child streams."""
+    return _read_failure_summary(report, anchor, returncode, _protocol_public_cases(), protocol=True)
+
+
 def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
+    return _read_failure_summary(report, anchor, returncode, PUBLIC_CASES, protocol=False)
+
+
+def _read_failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int,
+                          public_cases: Mapping[str, Collection[str]], *, protocol: bool) -> dict:
     """Case-only observation of the original failed child; never qualification.
 
     No parameter labels, arbitrary XML attributes, diagnostic text, process
     streams or filesystem paths leave this reader. The original report remains
     untouched, including when it is unavailable or its custody changes.
     """
+    scope = {"observation_scope": "native_protocol"} if protocol else {}
     unavailable = {"schema_version": "schema26-ci-failure-v1", "qualified": False,
-        "report_state": "unavailable"}
+        "report_state": "unavailable", **scope}
     directory_fd = report_fd = None
     try:
         if report.name != "junit.xml" or type(returncode) is not int or not -2**31 < returncode < 2**31 or returncode == 0:
@@ -100,21 +144,23 @@ def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int
         if b"<!doctype" in raw.lower() or b"<!entity" in raw.lower():
             return unavailable
         cases = ElementTree.fromstring(raw).findall(".//testcase")
-        if not 0 < len(cases) <= 256:
+        if not 0 < len(cases) <= (4096 if protocol else 256):
             return unavailable
         counts = dict.fromkeys(("passed", "failure", "error", "skipped"), 0)
-        failures = []
+        failures: list[dict] = []
         for ordinal, case in enumerate(cases, start=1):
             module, name = case.get("classname", ""), case.get("name", "").split("[", 1)[0]
             module = module.removeprefix("backend.tests.") if module.startswith("backend.tests.") else module.removeprefix("tests.")
-            if module not in PUBLIC_CASES or name not in PUBLIC_CASES[module]:
+            if protocol:
+                module = module.split(".", 1)[0]  # Never disclose arbitrary class/parameter text.
+            if module not in public_cases or name not in public_cases[module]:
                 return unavailable
             observed = [kind for kind in ("failure", "error", "skipped") if case.find(kind) is not None]
             if len(observed) > 1:
                 return unavailable
             status = observed[0] if observed else "passed"
             counts[status] += 1
-            if observed:
+            if observed and (not protocol or len(failures) < 32):
                 node = case.find(status)
                 assert node is not None
                 diagnostic_type = node.get("type", "")
@@ -126,7 +172,9 @@ def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int
                         sort_keys=True, separators=(",", ":")).encode()).hexdigest()})
         result = {"schema_version": "schema26-ci-failure-v1", "qualified": False,
             "report_state": "observed_unqualified", "child_returncode": returncode,
-            "counts": counts, "cases": failures}
+            "counts": counts, "cases": failures, **scope}
+        if protocol:
+            result["case_details_truncated"] = sum(counts[key] for key in ("failure", "error", "skipped")) > len(failures)
         return result if len(json.dumps(result).encode()) <= 65536 else unavailable
     except Exception:
         return unavailable

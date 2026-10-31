@@ -267,6 +267,7 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
     with tempfile.TemporaryDirectory(prefix="hirewiz-app26-v3-native-") as temporary:
         path = Path(temporary)
         path.chmod(0o700)
+        owned = path.stat()
         report = path / "junit.xml"
         result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q", *SUITES,
             "--junitxml", str(report)], cwd=ROOT / "backend",
@@ -278,6 +279,10 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
         # Do not export raw request/log/fixture content; the exact command/source
         # and finite failure/skip counts are sufficient to refuse qualification.
         status = result.returncode
+        if status != 0:
+            from scripts.qualify_schema26_compatibility import protocol_failure_summary
+            print(json.dumps(protocol_failure_summary(report, (owned.st_dev, owned.st_ino, owned.st_uid), status),
+                sort_keys=True, separators=(",", ":")))
         assert status == 0, "Native protocol subprocess failed; inspect privately"
         assert report.is_file() and report.stat().st_size <= 4 * 1024**2
         cases = ElementTree.parse(report).findall(".//testcase")
