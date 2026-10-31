@@ -220,3 +220,153 @@ def test_file_entry_help_is_inert_and_bootstraps_package_from_unrelated_director
         cwd=tmp_path, text=True, capture_output=True, timeout=20)
     assert result.returncode == 0 and "--bundle-generation" in result.stdout
     assert not list(tmp_path.iterdir())
+
+
+def test_reused_development_bytes_keep_all_forty_owned_files_and_fresh_authority(tmp_path, monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        first_root, second_root = tmp_path / "first", tmp_path / "second"
+        first_root.mkdir()
+        second_root.mkdir()
+        first = fixtures.evaluation.__wrapped__(first_root, monkeypatch)
+        first_info = cache.cache_info()
+        second = fixtures.evaluation.__wrapped__(second_root, monkeypatch)
+        second_info = cache.cache_info()
+        manifest = json.loads((first["native_root"] / "materialization-manifest.json").read_bytes())
+        assert len(manifest["cases"]) == 40
+        assert (first_info.misses, first_info.currsize) == (40, 40)
+        assert second_info.misses == 40 and second_info.hits == first_info.hits + 40
+        for row in manifest["cases"]:
+            name = row["input_artifact"]["path"]
+            original, separate = first["native_root"] / name, second["native_root"] / name
+            assert original.read_bytes() == separate.read_bytes()
+            assert original.stat().st_ino != separate.stat().st_ino
+            assert original.stat().st_nlink == separate.stat().st_nlink == 1
+        name = manifest["cases"][0]["input_artifact"]["path"]
+        untouched = (second["native_root"] / name).read_bytes()
+        (first["native_root"] / name).write_bytes(b"test-owned source mutation")
+        assert (second["native_root"] / name).read_bytes() == untouched
+        assert first["auth"].experiment_id != second["auth"].experiment_id
+        assert first["auth"].native_capture_registry != second["auth"].native_capture_registry
+        for a in first["authorization_root"].iterdir():
+            b = second["authorization_root"] / a.name
+            assert a.is_file() and b.is_file() and a.stat().st_ino != b.stat().st_ino
+            assert a.stat().st_nlink == b.stat().st_nlink == 1
+    finally:
+        cache.cache_clear()
+
+
+@pytest.mark.parametrize("change", ["recipe", "complete_case_metadata"])
+def test_development_byte_cache_never_ignores_any_case_or_recipe_input(change):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        case = fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1][0]
+        fixtures.materialized_development_bytes(case)
+        fixtures.materialized_development_bytes(case)
+        before = cache.cache_info()
+        changed = json.loads(packet.canonical(case))
+        if change == "recipe":
+            changed["source_recipe"]["margin_inches"] += 0.01
+        else:
+            changed["synthetic_cache_metadata"] = "different complete input"
+        fixtures.materialized_development_bytes(changed)
+        assert before.hits == 1 and cache.cache_info().misses == before.misses + 1
+    finally:
+        cache.cache_clear()
+
+
+@pytest.mark.parametrize("source", ["materializer", "fixture"])
+def test_development_byte_cache_binds_actual_helper_source_bytes(source, tmp_path, monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        module = fixtures.materialize if source == "materializer" else fixtures
+        original = Path(module.__file__)
+        copied = tmp_path / original.name
+        copied.write_bytes(original.read_bytes())
+        monkeypatch.setattr(module, "__file__", str(copied))
+        case = fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1][0]
+        fixtures.materialized_development_bytes(case)
+        copied.write_bytes(copied.read_bytes() + b"\n# different helper source bytes\n")
+        fixtures.materialized_development_bytes(case)
+        assert cache.cache_info().misses == 2 and copied.read_bytes() != original.read_bytes()
+    finally:
+        cache.cache_clear()
+
+
+def test_development_byte_cache_binds_actual_font_content(tmp_path, monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        actual_font = Path(fixtures.reportlab.__file__).parent / "fonts/Vera.ttf"
+        font = tmp_path / "fonts/Vera.ttf"
+        font.parent.mkdir()
+        font.write_bytes(actual_font.read_bytes())
+        monkeypatch.setattr(fixtures.reportlab, "__file__", str(tmp_path / "__init__.py"))
+        case = fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1][0]
+        fixtures.materialized_development_bytes(case)
+        font.write_bytes(font.read_bytes() + b"\nsynthetic trailing font data\n")
+        fixtures.materialized_development_bytes(case)
+        assert cache.cache_info().misses == 2
+    finally:
+        cache.cache_clear()
+
+
+def test_development_byte_cache_binds_replaced_helper_callables(monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        case = next(c for c in fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1]
+                    if c["source_format"] == "pdf")
+        fixtures.materialized_development_bytes(case)
+        original, calls = fixtures.materialize._pdf, []
+
+        def first(*args):
+            calls.append("first")
+            return original(*args)
+
+        def second(*args):
+            calls.append("second")
+            return original(*args)
+
+        monkeypatch.setattr(fixtures.materialize, "_pdf", first)
+        fixtures.materialized_development_bytes(case)
+        monkeypatch.setattr(fixtures.materialize, "_pdf", second)
+        fixtures.materialized_development_bytes(case)
+        assert calls == ["first", "second"] and cache.cache_info().misses == 3
+    finally:
+        cache.cache_clear()
+
+
+def test_development_byte_cache_refuses_helper_drift_during_generation(monkeypatch):
+    from tests import test_supported_evaluation as fixtures
+
+    cache = fixtures._materialized_development_bytes
+    cache.cache_clear()
+    try:
+        case = next(c for c in fixtures.inputs.selected_cases(fixtures.ROOT, "development")[1]
+                    if c["source_format"] == "pdf")
+        original = fixtures.materialize._pdf
+
+        def changing(*args):
+            monkeypatch.setattr(fixtures.materialize, "_tex", lambda value: b"changed helper")
+            return original(*args)
+
+        monkeypatch.setattr(fixtures.materialize, "_pdf", changing)
+        with pytest.raises(AssertionError, match="materializer changed"):
+            fixtures.materialized_development_bytes(case)
+        assert cache.cache_info().currsize == 0
+    finally:
+        cache.cache_clear()
