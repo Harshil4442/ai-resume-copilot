@@ -16,21 +16,33 @@ TEX_IMAGE = T.REPOSITORY + "@sha256:" + "b" * 64
 RELEASE = "c" * 40
 
 
+def runner_bytes(**changes):
+    body = dict(schema_version="native-quality-qualified-runner-v1",
+        repository="https://github.com/Harshil4442/ai-resume-copilot.git", release="c" * 40,
+        ci_run_id=1, build_id="11111111-1111-1111-1111-111111111111",
+        image=isolation.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
+        qualification_contract="hirewiz_schema26_app_rolling_v3", qualification_sha256="a" * 64,
+        app_files=289, app_sha256="605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe",
+        entry_path="backend/scripts/native_acquisition_job.py",
+        entry_sha256="8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740",
+        runtime_dependencies_sha256="b" * 64, observed_at="2026-10-31T00:00:00Z",
+        ci_metadata_sha256="f" * 64, build_metadata_sha256="f" * 64)
+    return json.dumps(body | changes, sort_keys=True, separators=(",", ":")).encode()
+
+
 def plan(**changes):
     now = datetime.now(UTC)
     body = dict(purpose="unreviewed_development_capture_no_model_no_retail", evaluator=isolation.EVALUATOR,
         evaluator_uid="109100000000000000001", bucket=isolation.BUCKET, bucket_metageneration="1",
         experiment_id="isolated-dev-synthetic", valid_from=now - timedelta(minutes=1),
         expires_at=now + timedelta(hours=1), controller_sha256="d" * 64,
-        job_name="hirewiz-quality-dev-synthetic1", runner_release=isolation.RUNNER_RELEASE,
-        runner_image=isolation.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
-        runner_build_id="11111111-1111-1111-1111-111111111111", runner_ci_run_id=1,
+        job_name="hirewiz-quality-dev-synthetic1", qualified_runner_receipt_sha256=hashlib.sha256(runner_bytes()).hexdigest(),
         inspector_service_uid="synthetic-service", inspector_revision_uid="synthetic-revision",
         compiler_service_uid="synthetic-service", compiler_revision_uid="synthetic-revision",
         inspector_image=IMAGE, compiler_image=TEX_IMAGE, inspector_release=RELEASE, compiler_release=RELEASE,
         funding_evidence_sha256="f" * 64, acquisition_authorization_sha256="1" * 64,
         native_dispatch_review_sha256="2" * 64, bundle_name="input.synthetic.json",
-        bundle_generation="1", bundle_sha256="3" * 64, entry_sha256="4" * 64)
+        bundle_generation="1", bundle_sha256="3" * 64)
     return isolation.Plan(**(body | changes))
 
 
@@ -130,14 +142,14 @@ def test_old_exact_two_semantics_are_unchanged_and_never_accept_new_member():
 def job(p, batch=0):
     return {"name": f"projects/{D.PROJECT}/locations/us-central1/jobs/{p.job_name}", "uid": "synthetic-job",
         "generation": "1", "observedGeneration": "1", "reconciling": False,
-        "terminalCondition": {"state": "CONDITION_SUCCEEDED"}, "template": isolation.expected_job(p, batch=batch)}
+        "terminalCondition": {"state": "CONDITION_SUCCEEDED"}, "template": isolation.expected_job(p, runner_bytes(), batch=batch)}
 
 
 def test_one_task_zero_retry_fixed_entry_and_exact_bundle_job_is_not_dispatch():
     p = plan()
-    isolation.check_job(p, job(p), batch=0)
-    assert isolation.expected_job(p, batch=0)["template"]["timeout"] == "240s"
-    assert isolation.expected_job(p, batch=8)["template"]["timeout"] == "1200s"
+    isolation.check_job(p, runner_bytes(), job(p), batch=0)
+    assert isolation.expected_job(p, runner_bytes(), batch=0)["template"]["timeout"] == "240s"
+    assert isolation.expected_job(p, runner_bytes(), batch=8)["template"]["timeout"] == "1200s"
 
 
 @pytest.mark.parametrize("change", [
@@ -156,7 +168,7 @@ def test_job_cross_identity_prefix_secret_mount_and_replay_configuration_refuse(
     value = job(p)
     change(value)
     with pytest.raises(isolation.IsolationDenied):
-        isolation.check_job(p, value, batch=0)
+        isolation.check_job(p, runner_bytes(), value, batch=0)
 
 
 def test_stale_controller_and_expired_plan_refuse_before_snapshot():
@@ -172,11 +184,11 @@ def test_stale_controller_and_expired_plan_refuse_before_snapshot():
 def test_bad_future_bundle_bytes_cannot_become_source_or_dispatch_proof():
     p = plan()
     with pytest.raises(isolation.IsolationDenied, match="bundle_bytes"):
-        isolation.check_future_bundle(p, b"{}", batch=0)
+        isolation.check_future_bundle(p, runner_bytes(), b"{}", batch=0)
     raw = b'{"job_name":"one","job_name":"two"}'
     p = plan(bundle_sha256=hashlib.sha256(raw).hexdigest())
     with pytest.raises(isolation.IsolationDenied, match="duplicate_bundle_key"):
-        isolation.check_future_bundle(p, raw, batch=0)
+        isolation.check_future_bundle(p, runner_bytes(), raw, batch=0)
 
 
 def bundle_metadata(p):
@@ -198,7 +210,7 @@ def bundle_metadata(p):
         "currency": "INR", "inspector": {"url": D.ACCEPTED_ORIGIN + "/inspect", "image": IMAGE, "policy": source.POLICY_SHA256},
         "compiler": {"url": T.ACCEPTED_ORIGIN + "/compile", "image": TEX_IMAGE, "policy": T.POLICY_SHA256}}
     value = {"schema_version": "development-native-job-input-v1", "purpose": p.purpose,
-        "entry_sha256": p.entry_sha256, "job_name": p.job_name,
+        "entry_sha256": isolation.bound_runner(p, runner_bytes()).entry_sha256, "job_name": p.job_name,
         "configuration": {"schema_version": "development-native-object-channel-v1", "namespace": p.namespace,
             "acquisition_plan_sha256": "7" * 64, "channel_source_sha256": "8" * 64,
             "maximum_output_bytes": 512 * 1024 * 1024, "maximum_objects": 1024},
@@ -224,7 +236,7 @@ def test_future_bundle_source_count_prefix_auth_and_external_review_are_exact_bu
     p = plan()
     body = bundle_metadata(p)
     p, raw = bind_bundle(p, body)
-    isolation.check_future_bundle(p, raw, batch=0)
+    isolation.check_future_bundle(p, runner_bytes(), raw, batch=0)
     assert body["dispatch"]["purpose"] == "unreviewed_service_capture_external_authority_required"
 
 
@@ -247,7 +259,7 @@ def test_rehashed_future_bundle_cannot_cross_prefix_source_job_or_dispatch(chang
     change(body)
     p, raw = bind_bundle(p, body)
     with pytest.raises(ValueError):
-        isolation.check_future_bundle(p, raw, batch=0)
+        isolation.check_future_bundle(p, runner_bytes(), raw, batch=0)
 
 
 def test_actual_immutable_GCS_port_has_zero_generation_writes_and_no_mutable_head():
@@ -280,3 +292,22 @@ def test_plain_or_model_constructed_wrong_identity_plan_cannot_pass_source_bound
     forged = isolation.Plan.model_construct(**(p.model_dump() | {"evaluator": D.UPLOAD_COORDINATOR}))
     with pytest.raises(ValueError):
         isolation.check(forged, {}, controller_sha256=p.controller_sha256)
+
+
+@pytest.mark.parametrize("changes", [dict(repository="https://example.test/foreign.git"), dict(app_files=288),
+    dict(app_sha256="0" * 64), dict(entry_sha256="0" * 64), dict(ci_run_id=True), dict(approved=True),
+    dict(qualification_contract="old-v2"), dict(image="foreign@sha256:" + "e" * 64)])
+def test_rehashed_external_runner_claim_still_requires_exact_closed_shape(changes):
+    raw = runner_bytes(**changes)
+    p = plan(qualified_runner_receipt_sha256=hashlib.sha256(raw).hexdigest())
+    with pytest.raises(ValueError):
+        isolation.bound_runner(p, raw)
+
+
+def test_raw_receipt_binding_has_no_approved_or_native_authority_shortcut():
+    p = plan()
+    with pytest.raises(isolation.IsolationDenied, match="runner_receipt_bytes"):
+        isolation.bound_runner(p, runner_bytes(ci_run_id=2))
+    receipt = isolation.bound_runner(p, runner_bytes())
+    assert receipt.release == "c" * 40
+    assert isolation.check(p, snapshot(p), controller_sha256=p.controller_sha256)["runner_authority"] == "not_verified_by_offline_snapshot"

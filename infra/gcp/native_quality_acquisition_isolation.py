@@ -24,7 +24,7 @@ import native_tex_worker as tex  # noqa: E402
 PROJECT = documents.PROJECT
 REGION = documents.REGION
 PROJECT_NUMBER = "157225724590"
-RUNNER_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
+HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 EVALUATOR = f"hirewiz-quality-dev@{PROJECT}.iam.gserviceaccount.com"
 BUCKET = "hirewiz-quality-dev-482412-20261031"
 ROLE = f"projects/{PROJECT}/roles/hirewizQualityDevelopmentObjects"
@@ -48,6 +48,46 @@ def digest(value: Any) -> str:
                                      allow_nan=False).encode()).hexdigest()
 
 
+class QualifiedRunner(BaseModel):
+    """Untrusted external claims until the fixed fresh verifier succeeds."""
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True, revalidate_instances="always")
+    schema_version: Literal["native-quality-qualified-runner-v1"]
+    repository: Literal["https://github.com/Harshil4442/ai-resume-copilot.git"]
+    release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    ci_run_id: int = Field(gt=0)
+    build_id: str = Field(pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
+    image: str = Field(pattern="^" + re.escape(RUNNER_REPOSITORY) + r"@sha256:" + SHA + "$")
+    qualification_contract: Literal["hirewiz_schema26_app_rolling_v3"]
+    qualification_sha256: str = Field(pattern="^" + SHA + "$")
+    app_files: Literal[289]
+    app_sha256: Literal["605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe"]
+    entry_path: Literal["backend/scripts/native_acquisition_job.py"]
+    entry_sha256: Literal["8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"]
+    runtime_dependencies_sha256: str = Field(pattern="^" + SHA + "$")
+    observed_at: datetime
+    ci_metadata_sha256: str = Field(pattern="^" + SHA + "$")
+    build_metadata_sha256: str = Field(pattern="^" + SHA + "$")
+
+    @model_validator(mode="after")
+    def timezone(self) -> QualifiedRunner:
+        need(self.observed_at.tzinfo is not None, "runner_receipt_time")
+        return self
+
+
+def bound_runner(plan: Plan, raw: bytes) -> QualifiedRunner:
+    """Exact raw-byte Plan binding, explicitly not a verification result."""
+    plan = checked_plan(plan)
+    need(type(raw) is bytes and 0 < len(raw) <= 16384
+         and hashlib.sha256(raw).hexdigest() == plan.qualified_runner_receipt_sha256, "runner_receipt_bytes")
+    def pairs(rows):
+        need(len({key for key, _ in rows}) == len(rows), "duplicate_runner_receipt_key")
+        return dict(rows)
+    json.loads(raw, object_pairs_hook=pairs)
+    receipt = QualifiedRunner.model_validate_json(raw)
+    need(receipt.release != HISTORICAL_RELEASE, "failed_historical_runner_ineligible")
+    return receipt
+
+
 class Plan(BaseModel):
     """Operator-captured pins, not a funding permit or provider receipt."""
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, revalidate_instances="always")
@@ -62,10 +102,7 @@ class Plan(BaseModel):
     expires_at: datetime
     controller_sha256: str = Field(pattern="^" + SHA + "$")
     job_name: str = Field(pattern=r"^hirewiz-quality-dev-[a-z0-9-]{8,32}$")
-    runner_release: Literal["7be8cac2a332a5ad19366402013d5f385f97105b"]
-    runner_image: str = Field(pattern="^" + re.escape(RUNNER_REPOSITORY) + r"@sha256:" + SHA + "$")
-    runner_build_id: str = Field(pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
-    runner_ci_run_id: int = Field(gt=0)
+    qualified_runner_receipt_sha256: str = Field(pattern="^" + SHA + "$")
     inspector_service_uid: str = Field(min_length=1, max_length=128)
     inspector_revision_uid: str = Field(min_length=1, max_length=128)
     compiler_service_uid: str = Field(min_length=1, max_length=128)
@@ -80,7 +117,6 @@ class Plan(BaseModel):
     bundle_generation: str = Field(pattern=r"^[1-9][0-9]{0,20}$")
     bundle_sha256: str = Field(pattern="^" + SHA + "$")
     native_dispatch_review_sha256: str = Field(pattern="^" + SHA + "$")
-    entry_sha256: str = Field(pattern="^" + SHA + "$")
 
     @model_validator(mode="after")
     def finite(self) -> Plan:
@@ -210,14 +246,15 @@ def check_historical_workers(inspector: dict[str, Any], compiler: dict[str, Any]
             runtime_phase=True, coordinator_phase=True)}
 
 
-def expected_job(plan: Plan, *, batch: int) -> dict[str, Any]:
+def expected_job(plan: Plan, raw_runner: bytes, *, batch: int) -> dict[str, Any]:
     plan = checked_plan(plan)
+    runner = bound_runner(plan, raw_runner)
     need(type(batch) is int and 0 <= batch < 9, "batch")
     return {"taskCount": 1, "parallelism": 1, "template": {
         "serviceAccount": EVALUATOR, "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2", "maxRetries": 0, "timeout": "240s" if batch == 0 else "1200s",
         "vpcAccess": {"egress": "PRIVATE_RANGES_ONLY", "networkInterfaces": [
             {"network": "hirewiz-private", "subnetwork": "hirewiz-callers-us-central1"}]},
-        "containers": [{"image": plan.runner_image,
+        "containers": [{"image": runner.image,
             "command": ["/app/backend/.venv/bin/python"],
             "args": ["-B", "-m", "scripts.native_acquisition_job", "--namespace", plan.namespace,
                      "--bundle-name", plan.bundle_name, "--bundle-generation", plan.bundle_generation,
@@ -225,7 +262,7 @@ def expected_job(plan: Plan, *, batch: int) -> dict[str, Any]:
             "resources": {"limits": {"cpu": "2", "memory": "4Gi"}}}]}}
 
 
-def check_job(plan: Plan, job: dict[str, Any], *, batch: int) -> None:
+def check_job(plan: Plan, raw_runner: bytes, job: dict[str, Any], *, batch: int) -> None:
     plan = checked_plan(plan)
     need(job.get("name") == f"projects/{PROJECT}/locations/{REGION}/jobs/{plan.job_name}"
          and type(job.get("uid")) is str and bool(job["uid"])
@@ -233,16 +270,17 @@ def check_job(plan: Plan, job: dict[str, Any], *, batch: int) -> None:
          and re.fullmatch(r"[1-9][0-9]{0,18}", str(job.get("generation")))
          and job.get("reconciling", False) is False
          and job.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED", "job_identity")
-    need(documents._same(job.get("template"), expected_job(plan, batch=batch)), "job_template")
+    need(documents._same(job.get("template"), expected_job(plan, raw_runner, batch=batch)), "job_template")
     need(not any(job.get(key) for key in ("startExecutionToken", "runExecutionToken", "binaryAuthorization")), "job_extra")
 
 
-def check_future_bundle(plan: Plan, raw: bytes, *, batch: int) -> None:
+def check_future_bundle(plan: Plan, raw_runner: bytes, raw: bytes, *, batch: int) -> None:
     """Bind exact future metadata; unchanged entry still checks every source byte."""
     plan = checked_plan(plan)
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts.native_acquisition_job import Bundle
 
+    runner = bound_runner(plan, raw_runner)
     need(type(batch) is int and 0 <= batch < 9, "batch")
     need(type(raw) is bytes and 0 < len(raw) <= 256 * 1024
          and hashlib.sha256(raw).hexdigest() == plan.bundle_sha256, "bundle_bytes")
@@ -250,7 +288,7 @@ def check_future_bundle(plan: Plan, raw: bytes, *, batch: int) -> None:
         need(len({key for key, _ in rows}) == len(rows), "duplicate_bundle_key")
         return dict(rows)
     bundle = Bundle.model_validate(json.loads(raw, object_pairs_hook=pairs))
-    need(bundle.job_name == plan.job_name and bundle.entry_sha256 == plan.entry_sha256 and bundle.configuration.namespace == plan.namespace
+    need(bundle.job_name == plan.job_name and bundle.entry_sha256 == runner.entry_sha256 and bundle.configuration.namespace == plan.namespace
          and bundle.authorization.experiment_id == plan.experiment_id
          and bundle.authorization.request_limit == 80
          and bundle.authorization.funding_evidence.sha256 == plan.funding_evidence_sha256
@@ -284,7 +322,7 @@ def check(plan: Plan, snapshot: dict[str, Any], *, controller_sha256: str) -> di
         raise IsolationDenied("quality_isolation_snapshot_refused") from None
     return {"schema_version": VERSION, "configuration_matches": True, "plan_sha256": digest(plan.model_dump(mode="json")),
             "input_authority": "untrusted_offline_snapshot",
-            "runner_eligibility": "historical_7be_CI_failed_no_Build_not_eligible", "native_approval": False,
+            "runner_authority": "not_verified_by_offline_snapshot", "native_approval": False,
             "effective_iam_proven": False, "processing_authorized": False, "provider_calls": 0,
             "model_calls": 0, "authorizes_retail": False}
 
@@ -296,6 +334,10 @@ def main() -> int:
     import stat
 
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--qualified-runner", type=Path, required=True)
+    parser.add_argument("--runner-root", type=Path)
+    parser.add_argument("--controller-ci-run-id", type=int)
+    parser.add_argument("--verify-runner", action="store_true")
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--plan-sha256", required=True)
     parser.add_argument("--snapshot", type=Path, required=True)
@@ -322,8 +364,16 @@ def main() -> int:
         from scripts import qualify_native_quality_acquisition as source
         need(not source.git(ROOT, "status", "--porcelain"), "clean_controller_required")
         identity = source.source_identity(ROOT)
-        need(plan.entry_sha256 == identity["runner_entry_sha256"], "runner_entry")
-        print(json.dumps(check(plan, snapshot, controller_sha256=identity["controller_sha256"]), sort_keys=True))
+        raw_runner = read(args.qualified_runner, plan.qualified_runner_receipt_sha256)
+        bound_runner(plan, raw_runner)
+        result = check(plan, snapshot, controller_sha256=identity["controller_sha256"])
+        if args.verify_runner:
+            need(args.runner_root is not None and args.controller_ci_run_id is not None, "runner_verification_arguments")
+            result["runner_observation"] = source.verify_qualified_runner(plan, raw_runner,
+                runner_root=args.runner_root, controller_ci_run_id=args.controller_ci_run_id)
+        else:
+            need(args.runner_root is None and args.controller_ci_run_id is None, "unexpected_runner_verification_arguments")
+        print(json.dumps(result, sort_keys=True))
         return 0
     except Exception:
         print(json.dumps({"state": "quality_isolation_refused", "native_approval": False,
