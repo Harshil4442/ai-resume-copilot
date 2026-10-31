@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-10-31T09:24:15.837739+00:00",
+  "state": "source_preparation_not_deployment",
+  "original_failed_run": {
+    "run_id": 41184803849,
+    "attempt": 1,
+    "source": "b67f61247f7c8d24c16c9c40671a929ea82881a5",
+    "other_jobs_successful": 4,
+    "native_postgres_cases_passed": 61,
+    "failure": "current_v3_protocol_child_240_second_timeout",
+    "outer_protocol_controls_passed": 43,
+    "full_backend_and_openapi": "not_run",
+    "last_started_case_is_not_a_proved_cause": true,
+    "unchanged_rerun_requested": false
+  },
+  "ci_engineering_correction": {
+    "current_v3_suites": 41,
+    "inherited_v2_suites": 16,
+    "current_v3_batch_deadline_seconds": 300,
+    "native_postgres_deadline_seconds": 600,
+    "historical_v1_v2_unchanged": true,
+    "runtime_spending_provider_approval_deadlines_unchanged": true,
+    "all_cases_assertions_and_no_skip_requirement_retained": true
+  },
+  "fixture_batch": {
+    "development_inputs": 40,
+    "preserved": "original source recipe, real source/font/helper/tool-version binding, per-test paths and authorizations",
+    "publication": "only after complete batch binding recheck",
+    "local_timing": "152 controls in12.29s after;146 controls in12.48s before; not evidence of a whole-CI percentage gain",
+    "independent_focused_controls_passed": 14
+  },
+  "additional_owned_postgres_checks": {
+    "canary_cases_passed": 3,
+    "canary_source": "b67 existing bytes unchanged; five disjoint component additions merged during run; no atomic-clean-b67 claim",
+    "fresh_no_ai_journey_passed": 1,
+    "fresh_journey_source": "frozen clean b67",
+    "schema": "20261031_0026",
+    "new_owned_clusters_stopped": 2,
+    "tailoring_lifetime_cases": "not_run; genuine native DOCX fixture context unavailable locally"
+  },
+  "isolated_quality_controller": {
+    "scope": "reviewed keyless dedicated development evaluator, regional private bucket and exact three-invoker snapshot successor",
+    "status": "source_only; no resources, grants, funding permit, processing or provider receipt",
+    "same_qualified_source_ci_and_build_allowed_for_controller_and_runner": true
+  },
+  "production": {
+    "backend_source": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+    "schema": "20261028_0025",
+    "companion": "0.8.7",
+    "new_schema26_migration_or_traffic_promotion": false,
+    "ai_wallet_checkout_submit_gates_expanded": false
+  },
+  "remaining": [
+    "All-five genuine final-source CI, normal merge and immutable Git-source Build",
+    "Schema26 maintenance/migration/app/frontend promotion and schedule restoration",
+    "Native browser reload, original-file review, cancellation before Fill and exact test-device revocation",
+    "Funded native/model evaluation, independent human review, shadow accounting, capacity, expenses and commercial gates"
+  ]
+}

@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-31T08:10:26.175357+00:00",
+  "updated_at": "2026-10-31T09:24:15.837739+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -82,9 +82,10 @@
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00",
       "local_result": "The refreshed native document inspector passed its actual native qualification and serves the accepted worker. Its accepted definition proof expires 2026-11-02T06:26:48Z. General-format expansion, representative 200-case native/model quality, independent human scoring and adjudication remain unqualified; generation stays closed."
     },
     {
@@ -122,10 +123,11 @@
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
-      "local_result": "Schema25 remains deployed and original balances are preserved. Schema26 evidence-write fencing and privacy-erasure continuity are source-only in PR83, not a migrated database. Reviewed legacy mapping/reconciliation and funded seven-day/200-operation shadow evidence remain pending. The source candidate now includes genuine application-canary admission with owner/opening deduplication and a one-use native schema26 maintenance caller. Independent source reviews and live read-only metadata shape checks passed; real PostgreSQL qualification, critical maintenance and funded shadow accounting remain pending."
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00",
+      "local_result": "Schema25 remains deployed and original balances are preserved. Schema26 evidence-write fencing, erasure continuity, canary admission and maintenance are source-only in PR83. Original b67 passed61 actual PostgreSQL qualification cases, but failed the separate protocol batch timeout; final-source qualification and critical maintenance remain pending. The repaired canary and fresh no-AI flows additionally passed four cases on new owned PG17 clusters at schema26. No production DDL, balance conversion or funded seven-day/200-operation shadow evidence is claimed."
     },
     {
       "number": 7,
@@ -145,10 +147,11 @@
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-10-31-full-regression-remedy.json"
+        "docs/delivery/evidence/2026-10-31-full-regression-remedy.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "local_result": "The deployed e23 API/workers, accepted document inspector and frontend0.8.7 remain the live pilot. PR83 is ready for review but not merged: its original 7be run passed the required native qualification steps and four other jobs, then failed the full backend suite. A reviewed ten-test-file repair batch passes 280 focused local controls; genuine new-source PostgreSQL and full CI are still required before Build or schema26 rollout. No new traffic, wallet, AI, privacy or payment activation is claimed.",
-      "status_observed_at": "2026-10-31T08:10:26.175357+00:00"
+      "local_result": "The deployed e23 API/workers, accepted inspector and frontend0.8.7 remain the live pilot. Original b67 CI passed61 PostgreSQL compatibility cases and four jobs, then exceeded the inherited240-second native-protocol batch deadline; full backend tests did not run. The current source batch gives all41 unchanged suites a bounded300-second CI window, reduces redundant synthetic fixture binding and adds isolated native-evaluation tooling. Four affected flows passed on new disposable PG17 clusters; final-source CI, Build and schema26 rollout remain pending. No traffic, wallet, AI, privacy or payment activation is claimed.",
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00"
     },
     {
       "number": 8,
