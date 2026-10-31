@@ -23,7 +23,8 @@ from app.models import (
 )
 from app.routers.privacy_erasure import ErasureConfirm
 
-NOW = datetime.now(UTC)
+# Explicit per-fixture time; collection delays never consume the synthetic TTL.
+NOW = datetime(2026, 10, 31, 12, tzinfo=UTC)
 
 
 def test_closed_ownership_uses_actual_configured_canonical_text_and_witness_boundary(monkeypatch):
@@ -165,6 +166,7 @@ class Port:
 def flow(monkeypatch):
     from app.domains.notifications import mail_budget
     db = Port()
+    monkeypatch.setattr(mail, "utcnow", lambda: NOW)
     monkeypatch.setattr(erasure, "_schema26", lambda port: None)
     monkeypatch.setattr(mail, "configured", lambda: True)
     monkeypatch.setattr(mail_budget, "reserve_messages", lambda port, keys, **kwargs: port.trace.append(("reserved", tuple(keys))))
@@ -214,6 +216,19 @@ def test_fresh_purpose_token_is_separate_from_reset_and_ciphertext_is_authentica
     assert token not in str(item.payload) and item.status == "erasure_pending"
     item.recipient = "foreign@example.invalid"
     with pytest.raises(InvalidTag):
+        mail.message(item)
+
+
+@pytest.mark.parametrize("late", [timedelta(0), timedelta(microseconds=1)])
+def test_actual_mail_expiry_stays_strict_at_the_original_ten_minute_boundary(flow, monkeypatch, late):
+    token = issued(flow)
+    db, _, _ = flow
+    item = next(row for row in db.rows if isinstance(row, NotificationOutbox))
+    expiry = NOW + timedelta(minutes=10)
+    monkeypatch.setattr(mail, "utcnow", lambda: expiry - timedelta(microseconds=1))
+    assert token in mail.message(item)[1]
+    monkeypatch.setattr(mail, "utcnow", lambda: expiry + late)
+    with pytest.raises(ValueError, match="Privacy erasure delivery unavailable"):
         mail.message(item)
 
 
