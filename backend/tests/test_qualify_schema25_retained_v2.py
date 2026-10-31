@@ -1,11 +1,12 @@
 """Synthetic process/filesystem controls; no Git checkout or native child runs."""
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 
@@ -14,8 +15,22 @@ from scripts import qualify_schema25_retained_v2 as runner
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(scope="module")
+def retained_source_bytes():
+    # Only immutable public source bytes are shared; every fake checkout,
+    # process outcome and ownership marker remains invocation-owned.
+    sources = {}
+    for name, expected in runner.PINS.items():
+        raw = subprocess.check_output(
+            ["git", "show", runner.SOURCE + ":" + name], cwd=ROOT, timeout=15,
+        )
+        assert hashlib.sha256(raw).hexdigest() == expected
+        sources[name] = raw
+    return MappingProxyType(sources)
+
+
 @pytest.fixture
-def harness(tmp_path, monkeypatch):
+def harness(tmp_path, monkeypatch, retained_source_bytes):
     current, temporary = tmp_path / "current", tmp_path / "ci-temp"
     current.mkdir()
     temporary.mkdir()
@@ -36,6 +51,11 @@ def harness(tmp_path, monkeypatch):
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("HIREWIZ_APP25_TEST_ROOT", raising=False)
     monkeypatch.delenv("HIREWIZ_AUTHORITY_EMULATOR_PORT", raising=False)
+    # The ordinary suite can inherit real CI transfer-client paths. They are
+    # outside this synthetic RUNNER_TEMP and must not become fixture authority.
+    for key in ("HIREWIZ_TRANSFER_PG_DUMP", "HIREWIZ_TRANSFER_PG_RESTORE",
+                "HIREWIZ_TRANSFER_WORKDIR", "HIREWIZ_TRANSFER_POSTGRES_REQUIRED"):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(runner.sys, "platform", "linux")
     state = SimpleNamespace(root=current, temporary=temporary, environment=environment, calls=[],
                             checkout=None, fail=None, changed=None, verifications=0,
@@ -61,7 +81,7 @@ def harness(tmp_path, monkeypatch):
                 for name in runner.PINS:
                     target = checkout / name
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes((current / name).read_bytes())
+                    target.write_bytes(retained_source_bytes[name])
                 if state.changed == "initial_lock":
                     (checkout / "backend/uv.lock").write_text("different source lock")
                 output = b""

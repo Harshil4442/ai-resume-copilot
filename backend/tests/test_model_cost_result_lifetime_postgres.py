@@ -84,6 +84,18 @@ def _retained_only(factory):
 @pytest.mark.parametrize("order", ["write_first", "delete_first"])
 def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(factory, monkeypatch, order):
     configure_native_docx_worker(monkeypatch)
+    roles, ready, release = _gate(monkeypatch, order=order)
+    calls, rendered, version_writes, unit_commits = [], [], [], []
+    def generation(**kwargs):
+        assert not getattr(roles, "guarded", False)
+        calls.append("one synthetic SDK response")
+        budget = current_budget()
+        record = admit(budget)
+        budget.finish(record, latency_ms=1, response=usage())
+        return _source_edit_response(kwargs["source_units"])
+    # The quote binds this callable's real output contract. Install the fixed
+    # provider boundary before admission, rather than changing it afterward.
+    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", generation)
     with factory() as db:
         resume = db.get(models.Resume, 1)
         resume.source_document, resume.source_format = _native_source(), "docx"
@@ -100,16 +112,6 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
             accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
         ), header_idempotency_key="synthetic-real-tailor")
         run_id = run.id
-    roles, ready, release = _gate(monkeypatch, order=order)
-    calls, rendered, version_writes, unit_commits = [], [], [], []
-    def generation(**kwargs):
-        assert not getattr(roles, "guarded", False)
-        calls.append("one synthetic SDK response")
-        budget = current_budget()
-        record = admit(budget)
-        budget.finish(record, latency_ms=1, response=usage())
-        return _source_edit_response(kwargs["source_units"])
-    monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", generation)
     native_render = docx_artifact.prepare_artifact
     def render(*args, **kwargs):
         assert not getattr(roles, "guarded", False), "render must precede result guard"

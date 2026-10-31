@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-31T03:31:42.706879+00:00",
+  "updated_at": "2026-10-31T08:10:26.175357+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -144,10 +144,11 @@
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-full-regression-remedy.json"
       ],
-      "local_result": "Deployment item completed: all three app services serve immutable e23, the refreshed accepted document worker serves, and frontend0.8.7 is promoted on both public domains with verified public package/readiness. The temporary health permission remains removed. Manual domain assignment was reapplied; its fresh native UI check awaits unlock. Stage7 remains open for current companion acceptance, later schema26 release, opted-in canary and all commercial gates.",
-      "status_observed_at": "2026-10-31T03:31:42.706879+00:00"
+      "local_result": "The deployed e23 API/workers, accepted document inspector and frontend0.8.7 remain the live pilot. PR83 is ready for review but not merged: its original 7be run passed the required native qualification steps and four other jobs, then failed the full backend suite. A reviewed ten-test-file repair batch passes 280 focused local controls; genuine new-source PostgreSQL and full CI are still required before Build or schema26 rollout. No new traffic, wallet, AI, privacy or payment activation is claimed.",
+      "status_observed_at": "2026-10-31T08:10:26.175357+00:00"
     },
     {
       "number": 8,

@@ -1,6 +1,6 @@
 """Connected authenticated backend journey; no external HTTP, model or portal send.
 
-Only external HTTP transport and the database connection boundary are replaced.
+External HTTP is replaced; SQL uses the existing owned PostgreSQL test fixture.
 Signup, JWT auth, parsing, feed normalization, ranking, ownership, packages,
 review, approval, payments and ledgers execute their actual implementations.
 """
@@ -17,8 +17,9 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from backend.app import database as application_database
 from backend.app import models as core
-from backend.app.database import Base, get_db
+from backend.app.database import get_db
 from backend.app.domains.analysis import tasks as analysis_tasks
 from backend.app.domains.dispatch import service as dispatch
 from backend.app.domains.dispatch.models import DispatchOutbox
@@ -27,10 +28,11 @@ from backend.app.domains.employer import tasks as employer_tasks
 from backend.app.domains.notifications import service as notifications
 from backend.app.services import llm_client
 from backend.app.services.generation_budget import GenerationBudget
+from backend.tests.test_employer_admissions_postgres import _migrate
+from backend.tests.test_employer_admissions_postgres import pg_engine as pg_engine
 from docx import Document
 from fastapi.testclient import TestClient
 from google import genai
-from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -72,7 +74,7 @@ def _sign(payload):
 
 
 @pytest.fixture
-def journey(tmp_path, monkeypatch, synthetic_document_inspector):
+def journey(pg_engine, monkeypatch, synthetic_document_inspector):
     # conftest intentionally supplies synthetic pricing for other tests. This
     # journey removes it and any keys before application construction.
     for name in (
@@ -244,17 +246,11 @@ def journey(tmp_path, monkeypatch, synthetic_document_inspector):
     monkeypatch.setattr(socket.socket, "connect", socket_forbidden)
     monkeypatch.setattr(socket, "create_connection", socket_forbidden)
 
-    engine = create_engine(
-        "sqlite:///" + str(tmp_path / "journey.db"), connect_args={"check_same_thread": False}
-    )
-
-    @event.listens_for(engine, "connect")
-    def foreign_keys(connection, _):
-        connection.execute("PRAGMA foreign_keys=ON")
-
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-    for module in (dispatch, analysis_tasks, employer_tasks):
+    _migrate(pg_engine, "head")
+    factory = sessionmaker(bind=pg_engine, autoflush=False)
+    # The real mail admission/settlement opens fresh SQL sessions too. Keep them
+    # on this same owned schema instead of the application's default database.
+    for module in (application_database, dispatch, analysis_tasks, employer_tasks):
         monkeypatch.setattr(module, "SessionLocal", factory)
     from backend.app.main import app
 
@@ -279,7 +275,6 @@ def journey(tmp_path, monkeypatch, synthetic_document_inspector):
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(previous)
-        engine.dispose()
 
 
 def _signup_login(client, email):
