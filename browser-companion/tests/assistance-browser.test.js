@@ -14,6 +14,7 @@ import { fixtureHtml } from "../fixtures/razorpay/form.js";
 import { hostedFixtureHtml } from "../fixtures/razorpay/hosted-form.js";
 import { submitFixtureHtml } from "../fixtures/razorpay/submit-form.js";
 import { typedFixtureHtml } from "../fixtures/razorpay/typed-form.js";
+import { legacySubmissionDispatch } from "./legacy-submission-dispatch-fixture.js";
 
 const ROOT = new URL("../../", import.meta.url);
 const WEBSITE = "https://www.hirewizhq.com";
@@ -28,7 +29,7 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
   let releaseArtifact; let signalArtifact;
   const artifactStarted = new Promise((resolve) => { signalArtifact = resolve; });
   const artifactGate = pauseArtifact ? new Promise((resolve) => { releaseArtifact = resolve; }) : null;
-  const python = spawn(new URL("backend/.venv/bin/python", ROOT).pathname,
+  const python = spawn(process.env.HIREWIZ_BROWSER_ASSISTANCE_PYTHON || new URL("backend/.venv/bin/python", ROOT).pathname,
     ["-I", new URL(submission ? "backend/tests/browser_submit_chrome_bridge.py" : "backend/tests/browser_assistance_chrome_bridge.py", ROOT).pathname],
     { cwd: new URL("backend/", ROOT).pathname, stdio: ["pipe", "pipe", "pipe"], env: {...process.env,PYTHONWARNINGS:"ignore::DeprecationWarning",PYTHONDONTWRITEBYTECODE:"1"} });
   python.stderr.on("data", (chunk) => { errors += chunk.toString(); });
@@ -44,6 +45,7 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
     if (typed || attachment || hosted || submission) assert.equal(typedApplication.status, 200);
     const extension = `${directory}/extension`;
     await cp(new URL("../extension/", import.meta.url), extension, { recursive: true });
+    if (submission) await writeFile(`${extension}/background.js`, legacySubmissionDispatch(await readFile(`${extension}/background.js`, "utf8")));
     // This bridge intentionally exercises the legacy review cohort. Native
     // pairing uses its separate real SQL/cryptographic bridge; the shipping
     // configuration keeps its actual public key and connection requirement.

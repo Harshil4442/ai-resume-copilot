@@ -4,7 +4,7 @@ import { createHash, createPublicKey } from "node:crypto";
 import { CONFIG } from "../extension/config.js";
 const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.8.7");
+assert.equal(manifest.version, "0.8.8");
 const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url)));
 const lock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url)));
 assert.equal(pkg.version, manifest.version);
@@ -14,7 +14,7 @@ assert.deepEqual((await readdir(new URL("../extension/", import.meta.url))).sort
   "assistance-runtime.js", "assistance-transport.js", "background.js", "config.js", "device.js",
   "greenhouse-native-network.js", "greenhouse-owned-upload.js", "greenhouse-resume-component.js", "local-adapter.js",
   "lost-key-recovery.js", "manifest.json", "pairing-runtime.js", "pairing-transport.js", "popup.css", "popup.html",
-  "popup.js", "protocol.js", "razorpay-adapter.js", "startup-diagnostics.js", "transport.js",
+  "popup.js", "protocol.js", "razorpay-adapter.js", "startup-diagnostics.js", "submission-billing.js", "transport.js",
 ]);
 assert.deepEqual(manifest.host_permissions, []);
 assert.deepEqual(manifest.optional_host_permissions, ["https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*", "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]);

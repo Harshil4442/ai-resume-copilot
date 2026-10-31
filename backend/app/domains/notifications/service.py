@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import os
+import re
 from dataclasses import asdict, dataclass
-from datetime import timedelta
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 import httpx
 from sqlalchemy.orm import Session
@@ -36,6 +39,21 @@ def enqueue_notification(
 ) -> models.NotificationOutbox | None:
     if not lifecycle_email_enabled():
         return None
+    from .mail_budget import LIFECYCLE_SCHEDULE_LIMIT, TTL, MailBudgetError, reserve_messages
+    now = utcnow()
+    if available_at is not None and (not isinstance(available_at, datetime) or available_at.utcoffset() is None):
+        return None
+    due = max(now, available_at.astimezone(UTC)) if available_at is not None else now
+    if due > now + LIFECYCLE_SCHEDULE_LIMIT:
+        return None
+    try:
+        funded = reserve_messages(db, [idempotency_key], category="lifecycle", expires_at=due + TTL["lifecycle"])[0]
+    except MailBudgetError as error:
+        if error.mail_outcome != "deferred":
+            raise
+        # This optional message has not been accepted. Keep the caller's paid
+        # grant, generated result, registration or recovery transaction intact.
+        return None
     pending = next(
         (
             item
@@ -54,7 +72,8 @@ def enqueue_notification(
     )
     if existing:
         return existing
-    now = utcnow()
+    if funded.expires_at <= due:
+        return None  # An immutable older envelope cannot fund a new expired schedule.
     item = models.NotificationOutbox(
         id=public_id("ntf"),
         user_id=user_id,
@@ -65,7 +84,7 @@ def enqueue_notification(
         idempotency_key=idempotency_key,
         status="pending",
         attempt_count=0,
-        available_at=available_at or now,
+        available_at=due,
         created_at=now,
         updated_at=now,
     )
@@ -128,6 +147,9 @@ def _message(item: models.NotificationOutbox) -> tuple[str, str]:
     if item.notification_type in {"password_reset", "password_changed"}:
         from .password_reset import message
         return message(item)
+    if item.notification_type == "privacy_erasure":
+        from .privacy_erasure import message as erasure_message
+        return erasure_message(item)
     if item.notification_type == "account_recovery_requested":
         return (
             "HireWiz account recovery requested",
@@ -170,11 +192,16 @@ def _message(item: models.NotificationOutbox) -> tuple[str, str]:
 
 
 def _send(item: models.NotificationOutbox) -> None:
+    from .mail_budget import MailBudgetError, ProviderResult, guarded_send
+
     api_key = (os.getenv("RESEND_API_KEY") or "").strip()
     sender = (os.getenv("EMAIL_FROM") or "").strip()
     if not api_key or not sender:
-        raise RuntimeError("Email delivery is not configured")
-    subject, text = _message(item)
+        raise MailBudgetError("deferred")
+    try:
+        subject, text = _message(item)
+    except Exception:
+        raise MailBudgetError("permanent") from None
     body = {
         "from": sender,
         "to": [item.recipient],
@@ -182,16 +209,48 @@ def _send(item: models.NotificationOutbox) -> None:
         "text": text,
         "html": f"<p>{html.escape(text).replace(chr(10), '<br>')}</p>",
     }
-    with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-        response = client.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Idempotency-Key": item.idempotency_key,
-            },
-            json=body,
-        )
-    response.raise_for_status()
+    def provider():
+        with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+            response = client.post("https://api.resend.com/emails", headers={
+                "Authorization": f"Bearer {api_key}", "Idempotency-Key": item.idempotency_key}, json=body)
+        raw = response.content
+        receipt = hashlib.sha256(raw).hexdigest()
+        status = response.status_code
+        outcome: Literal["sent", "unknown", "permanent", "known_retryable"] = "unknown"
+        if 200 <= status < 300 and len(raw) <= 16384:
+            try:
+                value = json.loads(raw)
+                if (type(value) is dict and set(value) == {"id"} and type(value["id"]) is str
+                        and re.fullmatch(r"[A-Za-z0-9_-]{8,200}", value["id"]) is not None):
+                    outcome = "sent"
+            except (ValueError, TypeError, UnicodeError):
+                pass
+        elif status == 429:
+            outcome = "known_retryable"
+        elif 400 <= status < 500 and status != 408:
+            outcome = "permanent"
+        return ProviderResult(outcome, receipt, status)
+
+    category = ("privacy_erasure" if item.notification_type == "privacy_erasure" else
+        "password_reset" if item.notification_type in {"password_reset", "password_changed"} else "lifecycle")
+    expiry = (item.payload or {}).get("expires_at_ms")
+    expires_at = datetime.fromtimestamp(expiry / 1000, UTC) if type(expiry) is int else None
+    guarded_send(item.idempotency_key, provider, category=category, expires_at=expires_at)
+
+
+def _send_failure(item: models.NotificationOutbox, error: Exception) -> str:
+    outcome = getattr(error, "mail_outcome", "unknown")
+    item.last_error, item.claimed_at, item.updated_at = "MailDeliveryUnavailable", None, utcnow()
+    if outcome == "deferred":
+        item.status, item.attempt_count = "pending", max(0, int(item.attempt_count or 0) - 1)
+        item.available_at = utcnow() + timedelta(minutes=1)
+    elif outcome == "known_retryable" and int(item.attempt_count or 0) < 3:
+        item.status, item.available_at = "pending", utcnow() + timedelta(minutes=2 ** item.attempt_count)
+    elif outcome in {"permanent", "known_retryable"}:
+        item.status = "failed"
+    else:
+        item.status = "mail_unknown"
+    return item.status
 
 
 def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySummary:
@@ -202,16 +261,17 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
     )
     from .password_reset import configured as reset_configured
     from .password_reset import deliver as deliver_reset
+    from .privacy_erasure import deliver_pending as deliver_erasure
+    privacy_sent = deliver_erasure(db, limit=limit)
     security_sent = security_retried = security_failed = security_claimed = 0
     if reset_configured():
         now = utcnow()
-        # Security messages must recover bounded abandoned claims even when
-        # optional lifecycle delivery is disabled.
+        # A stale send has unknown provider outcome, never automatic resend.
         db.query(models.NotificationOutbox).filter(
             models.NotificationOutbox.notification_type.in_(("password_reset", "password_changed")),
             models.NotificationOutbox.status == "processing",
             models.NotificationOutbox.claimed_at < now - timedelta(minutes=15),
-        ).update({models.NotificationOutbox.status: "pending", models.NotificationOutbox.claimed_at: None}, synchronize_session=False)
+        ).update({models.NotificationOutbox.status: "mail_unknown", models.NotificationOutbox.claimed_at: None}, synchronize_session=False)
         db.commit()
         reset_ids = [row[0] for row in db.query(models.NotificationOutbox.id).filter_by(status="pending").filter(
             models.NotificationOutbox.notification_type.in_(("password_reset", "password_changed")),
@@ -229,16 +289,17 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         db.rollback()
     if not configured:
         return DeliverySummary(configured=reset_configured(), claimed=security_claimed,
-            sent=security_sent, retried=security_retried, failed=security_failed)
+            sent=security_sent + privacy_sent, retried=security_retried, failed=security_failed)
 
     now = utcnow()
     stale_claim = now - timedelta(minutes=15)
     db.query(models.NotificationOutbox).filter(
         models.NotificationOutbox.status == "processing",
+        models.NotificationOutbox.notification_type != "privacy_erasure",
         models.NotificationOutbox.claimed_at < stale_claim,
     ).update(
         {
-            models.NotificationOutbox.status: "pending",
+            models.NotificationOutbox.status: "mail_unknown",
             models.NotificationOutbox.claimed_at: None,
             models.NotificationOutbox.updated_at: now,
         },
@@ -252,7 +313,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             db.query(models.NotificationOutbox.id)
             .filter(
                 models.NotificationOutbox.status == "pending",
-                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed")),
+                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure")),
                 models.NotificationOutbox.available_at <= now,
             )
             .order_by(models.NotificationOutbox.available_at.asc())
@@ -267,6 +328,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             .filter(
                 models.NotificationOutbox.id == item_id,
                 models.NotificationOutbox.status == "pending",
+                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure")),
             )
             .with_for_update()
             .first()
@@ -278,21 +340,18 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         item.claimed_at = utcnow()
         item.attempt_count = int(item.attempt_count or 0) + 1
         item.updated_at = utcnow()
+        outgoing = models.NotificationOutbox(id=item.id, notification_type=item.notification_type,
+            recipient=item.recipient, payload=dict(item.payload or {}), idempotency_key=item.idempotency_key)
         db.commit()
         try:
-            _send(item)
+            _send(outgoing)
         except Exception as exc:
             db.rollback()
             item = db.query(models.NotificationOutbox).filter(models.NotificationOutbox.id == item_id).one()
-            item.last_error = type(exc).__name__[:500]
-            item.claimed_at = None
-            item.updated_at = utcnow()
-            if item.attempt_count >= 5:
-                item.status = "failed"
+            outcome = _send_failure(item, exc)
+            if outcome == "failed":
                 failed += 1
-            else:
-                item.status = "pending"
-                item.available_at = utcnow() + timedelta(minutes=2 ** item.attempt_count)
+            elif outcome == "pending":
                 retried += 1
             db.commit()
             continue
@@ -313,7 +372,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
     return DeliverySummary(
         configured=True,
         claimed=len(item_ids) + security_claimed,
-        sent=sent,
+        sent=sent + privacy_sent,
         retried=retried,
         failed=failed,
     )

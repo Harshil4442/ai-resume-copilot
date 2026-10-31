@@ -1,7 +1,7 @@
-/** Password-reset surfaces never enter analytics or error URL collection. */
+/** Sensitive recovery surfaces never enter analytics or error URL collection. */
 export function isPasswordResetPath(path: string) {
-  return ["/forgot-password", "/reset-password", "/account-recovery"].includes(path.replace(/\/$/, ""))
-    || /^\/api\/(?:auth\/)?password-reset(?:\/|$)/.test(path);
+  return ["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm"].includes(path.replace(/\/$/, ""))
+    || /^\/api\/(?:auth\/)?(?:password-reset|privacy-erasure)(?:\/|$)/.test(path);
 }
 
 export function isPasswordResetUrl(value: unknown) {

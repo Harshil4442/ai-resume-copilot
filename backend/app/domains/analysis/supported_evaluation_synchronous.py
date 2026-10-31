@@ -179,7 +179,9 @@ def execute(db: Session, run) -> dict:
     if budget is None or budget.run_id != run.id or budget.before is None or budget.after is None or budget.preflight is None:
         raise ValueError("Synchronous evaluation requires its exact persistent model budget")
     payload, prepared = _prepared(db, run)
-    result = synchronous.generate_prepared(prepared)
+    with synchronous.guard_prepared_inputs(db, user_id=run.user_id, payload=payload, prepared=prepared,
+            run_id=run.id, trusted_generation_configuration=declared):
+        result = synchronous.generate_prepared(prepared)
     require_provider_authority(db, run)
     synchronous.require_current_inputs(db, user_id=run.user_id, payload=payload, prepared=prepared,
         trusted_generation_configuration=declared)

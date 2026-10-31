@@ -918,6 +918,10 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
     application = _owned(db, models.EmployerApplication, identity, user_id)
     if application.status in LOCKED_APPLICATION_STATES or application.status == "cancelled":
         raise HTTPException(409, "This application can no longer be edited")
+    from ..credits import submission as unified
+
+    if unified.is_unified(application):
+        unified.require_editable(db, application)
     _validate_answers(application.form, payload.answers, payload.consents)
     resume_snapshot, version_snapshot = _selection_snapshot(db, user_id, payload)
     db.rollback()
@@ -926,6 +930,8 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
         application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
         if application.status in LOCKED_APPLICATION_STATES or application.status == "cancelled":
             raise HTTPException(409, "Application execution started while this package was being edited")
+        if unified.is_unified(application):
+            unified.require_editable(db, application)
         _selection_snapshot(db, user_id, payload)
         artifact = _artifact_row(sealed, user_id, payload)
         db.add(artifact)
@@ -943,7 +949,10 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
         application.status = "needs_action" if missing_fields(application) else "ready"
         posting = _posting(db, application.posting_id)
         source = _source(db, posting.source_id)
-        _quote_application(application, posting, source)
+        if unified.is_unified(application):
+            unified.reset_unquoted(db, application, posting, source)
+        else:
+            _quote_application(application, posting, source)
         application.package_digest = _package_digest(application, posting, source, artifact)
         artifacts.attach_upload(db, upload_id, user_id=user_id)
         db.commit()
@@ -951,6 +960,8 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
 
 
 def application_response(db, application):
+    from ..credits import submission as unified
+
     posting = _posting(db, application.posting_id)
     source = _source(db, posting.source_id)
     artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, application.user_id)
@@ -974,6 +985,14 @@ def application_response(db, application):
     if application.reservation_id:
         reservation = db.query(models.ServiceCreditReservation).filter_by(id=application.reservation_id).one()
         result["reserved_credits"] = reservation.reserved_amount if reservation.state == "reserved" else 0
+    elif unified.is_unified(application):
+        result["billing_currency"] = "credits"
+        if (application.pricing_snapshot or {}).get("quote_id"):
+            result["billing"] = copy.deepcopy(application.pricing_snapshot)
+        reservation = unified.reservation(db, application)
+        if reservation is not None:
+            reservation, _ = unified.held(db, application)
+            result["reserved_credits"] = reservation.reserved_credits if reservation.state == "reserved" else 0
     return result
 
 
@@ -981,6 +1000,10 @@ def approve_application(db, user_id, identity, payload: schemas.ApprovalCreate, 
     application = _owned(db, models.EmployerApplication, identity, user_id, lock=True)
     if application.status in LOCKED_APPLICATION_STATES or application.status == "cancelled":
         raise HTTPException(409, "This application cannot be approved in its current state")
+    from ..credits import submission as unified
+
+    if unified.is_unified(application):
+        raise HTTPException(409, "Review and accept the exact three-credit quote in browser assistance")
     if payload.package_digest != application.package_digest:
         raise HTTPException(409, "The reviewed application has changed; review it again")
     if missing_fields(application):
@@ -1065,6 +1088,14 @@ def cancel_application(db, user_id, identity, *, commit=True):
         raise HTTPException(409, "Your manual submission report is retained. It is not an employer-confirmed receipt; further execution is stopped.")
     if application.status == "confirmed":
         raise HTTPException(409, "The employer already received this application; future work can be stopped but it cannot be recalled here")
+    from ..credits import submission as unified
+
+    if unified.is_unified(application):
+        unified.cancel_application(db, application, now=utcnow())
+        db.query(models.EmployerApplicationApproval).filter_by(application_id=application.id, revoked_at=None).update({"revoked_at": utcnow()}, synchronize_session=False)
+        if commit:
+            db.commit()
+        return application
     if application.status in {"submitting", "unknown"}:
         application.cancel_requested = True
         application.approved_digest = None

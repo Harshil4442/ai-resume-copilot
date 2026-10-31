@@ -60,6 +60,7 @@ export type OpportunityMatch = components["schemas"]["OpportunityMatchResponse"]
 export type ApplicationEvent = components["schemas"]["ApplicationEventResponse"];
 export type EvidenceItem = components["schemas"]["EvidenceResponse"];
 export type EvidenceImport = components["schemas"]["EvidenceImportResponse"];
+export type TranscriptionReview = components["schemas"]["TranscriptionReviewResponse"];
 export type ResumeVersion = components["schemas"]["ResumeVersionResponse"];
 export type Reminder = components["schemas"]["ReminderResponse"];
 export type CareerMemory = components["schemas"]["CareerMemoryResponse"];

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { candidateAuthSecret, csrfMatches, websiteOrigin } from "./candidateAuthServer";
 import { boundedPairingBytes } from "./browserPairingGateway";
 import { BROWSER_BACKEND_TIMEOUT_MS } from "./browserTransportTimeouts";
+import { submissionReviewBillingMatches } from "./browserSubmissionBilling";
 
 const CANDIDATE = new Set(["device", "confirm", "revoke", "review", "revise", "approve", "cancel"]);
 const DEVICE = new Set(["prepare", "status", "application", "inspect", "begin", "outcome", "cancel", "artifact", "reconcile"]);
@@ -60,6 +61,13 @@ export async function browserAssistanceGateway(request: NextRequest, operation: 
     const bytes = await boundedPairingBytes(request.body, device ? 65536 : operation === "revise" ? 16384 : 4096);
     const input: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(bytes));
     if (!input || typeof input !== "object" || Array.isArray(input)) return failure(422);
+    if (!device && operation === "approve" && "accepted_service_quote_id" in input) {
+      const approval = input as Record<string, unknown>;
+      if (Object.keys(approval).sort().join(",") !== "accepted_service_quote_id,confirmed,identity,review_digest"
+        || approval.confirmed !== true || typeof approval.identity !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(approval.identity)
+        || typeof approval.review_digest !== "string" || !/^[a-f0-9]{64}$/.test(approval.review_digest)
+        || typeof approval.accepted_service_quote_id !== "string" || !/^csq_[a-f0-9]{32}$/.test(approval.accepted_service_quote_id)) return failure(422);
+    }
     const response = await fetch(`${base}/api/v1/browser-assistance/${device ? "device" : "candidate"}/${operation}`, {
       method: "POST", credentials: "omit", cache: "no-store", redirect: "error", signal: AbortSignal.timeout(BROWSER_BACKEND_TIMEOUT_MS),
       headers: { "Content-Type": "application/json", ...(device ? { Origin: origin } : { Authorization: `Bearer ${token!.accessToken}` }) },
@@ -73,6 +81,10 @@ export async function browserAssistanceGateway(request: NextRequest, operation: 
     const raw = await boundedPairingBytes(response.body, 65536);
     const result: unknown = JSON.parse(new TextDecoder("utf8", { fatal: true }).decode(raw));
     if (!result || typeof result !== "object" || Array.isArray(result) || !publicReply(result)) return failure();
+    const reply = result as Record<string, unknown>;
+    if ((!device && ["review", "approve", "cancel", "revise"].includes(operation) || device && ["inspect", "outcome", "reconcile"].includes(operation))
+      && !submissionReviewBillingMatches(reply)) return failure();
+    if (device && operation === "status" && reply.review != null && !submissionReviewBillingMatches(reply.review)) return failure();
     return NextResponse.json(result, { headers: HEADERS });
   } catch { return failure(); }
 }

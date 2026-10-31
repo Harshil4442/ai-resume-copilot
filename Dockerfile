@@ -31,6 +31,13 @@ RUN uv sync --frozen --no-dev --no-install-project \
 
 COPY backend/ ./
 
+# Inert exact submission source inputs for the server-side delivery digest.
+# No frontend build, execution, Node dependencies or additional runtime entrypoint.
+COPY ["browser-companion/extension/assistance-runtime.js", "browser-companion/extension/assistance-transport.js", "browser-companion/extension/background.js", "browser-companion/extension/config.js", "browser-companion/extension/device.js", "browser-companion/extension/greenhouse-native-network.js", "browser-companion/extension/greenhouse-owned-upload.js", "browser-companion/extension/greenhouse-resume-component.js", "browser-companion/extension/local-adapter.js", "browser-companion/extension/lost-key-recovery.js", "browser-companion/extension/manifest.json", "browser-companion/extension/pairing-runtime.js", "browser-companion/extension/pairing-transport.js", "browser-companion/extension/popup.css", "browser-companion/extension/popup.html", "browser-companion/extension/popup.js", "browser-companion/extension/protocol.js", "browser-companion/extension/razorpay-adapter.js", "browser-companion/extension/startup-diagnostics.js", "browser-companion/extension/submission-billing.js", "browser-companion/extension/transport.js", "/app/browser-companion/extension/"]
+COPY ["frontend/components/BrowserAssistanceReview.tsx", "/app/frontend/components/"]
+COPY ["frontend/lib/browserAssistanceGateway.ts", "frontend/lib/browserHostedNetworkReview.ts", "frontend/lib/browserSubmissionBilling.ts", "/app/frontend/lib/"]
+
+
 RUN chmod +x /app/backend/entrypoint.sh
 
 RUN useradd --create-home --uid 10001 hirewiz \

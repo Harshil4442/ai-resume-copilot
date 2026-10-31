@@ -295,12 +295,12 @@ class CandidateAccountService:
         from .enrollment import _revision
 
         def binding(proof):
-            return (proof.id, proof.user_id, proof.token_sha256, proof.email_sha256,
+            return (proof.id, proof.purpose, proof.user_id, proof.token_sha256, proof.email_sha256,
                 proof.credential_sha256, proof.native_revision_sha256, proof.legacy_epoch,
                 proof.expires_at, proof.consumed_at)
 
         with self.sessions() as db:
-            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one_or_none()
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id, purpose="password_reset").with_for_update().one_or_none()
             # The original mailbox token is reauthenticated after the SQL claim
             # boundary, before deriving any owner or issuing native authority.
             if (proof is None or proof.status != "PROCESSING" or proof.consumed_at is None
@@ -327,7 +327,7 @@ class CandidateAccountService:
                                      "credential_sha256": credential_digest(encoded)})
         with self.sessions() as db:
             user = db.query(User).filter_by(id=old.candidate_id).with_for_update().one()
-            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one()
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id, purpose="password_reset").with_for_update().one()
             row = db.query(CandidatePasswordAccount).filter_by(user_id=old.candidate_id).with_for_update().one()
             if (proof.status != "PROCESSING" or proof.user_id != old.candidate_id
                     or binding(proof) != verified or not _valid_token(proof, token)
@@ -341,7 +341,7 @@ class CandidateAccountService:
             raise GuardUnavailable(UNAVAILABLE)
         with self.sessions() as db:
             user = db.query(User).filter_by(id=old.candidate_id).with_for_update().one()
-            proof = db.query(PasswordResetToken).filter_by(id=reset_id).with_for_update().one()
+            proof = db.query(PasswordResetToken).filter_by(id=reset_id, purpose="password_reset").with_for_update().one()
             row = db.query(CandidatePasswordAccount).filter_by(user_id=old.candidate_id).with_for_update().one()
             if (proof.status != "PROCESSING" or proof.user_id != old.candidate_id
                     or binding(proof) != verified or not _valid_token(proof, token)

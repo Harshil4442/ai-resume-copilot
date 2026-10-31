@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ...models import AdminAuditEvent, AnalysisRun, User
 from ..common import payload_fingerprint
-from ..employer.models import EmployerSearch
+from ..employer.models import EmployerApplication, EmployerSearch, ServiceCreditReservation
 from .finance import Closed, FundingUnavailable
 
 VERSION = "reviewed-business-canary-v1"
@@ -31,12 +31,13 @@ ACCEPT_ACTION = "credit_canary_accept"
 Digest = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 Identity = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{7,47}$")]
 Owner = Annotated[int, Field(strict=True, gt=0, le=2**31 - 1)]
-FAMILIES = {"matching", "interview", "tailoring", "enrichment", "bullets", "qa", "learning", "discovery", "skill_roi", "market"}
+FAMILIES = {"matching", "interview", "tailoring", "enrichment", "bullets", "qa", "learning", "discovery", "skill_roi", "market", "submission"}
 OPERATIONS = {"job_match": "matching", "enhanced_job_match": "matching",
     "interview_questions": "interview", "resume_tailor": "tailoring",
     "resume_tailor_extended": "tailoring", "resume_enrichment": "enrichment",
     "bullet_rewrite": "bullets", "enhanced_qa": "qa", "learning_strategy": "learning",
-    "job_discovery_batch": "discovery", "skill_roi": "skill_roi", "market_analysis": "market", "market_report": "market"}
+    "job_discovery_batch": "discovery", "skill_roi": "skill_roi", "market_analysis": "market", "market_report": "market",
+    "verified_submission": "submission"}
 
 
 def need(value: object) -> None:
@@ -73,7 +74,7 @@ class CanaryReview(Closed):
     members: tuple[Member, ...] = Field(min_length=1, max_length=MAX_CENSUS)
     selected_owner_ids: tuple[Owner, ...] = Field(min_length=1, max_length=100)
     excluded_owner_ids: tuple[Owner, ...] = Field(max_length=MAX_CENSUS)
-    families: tuple[str, ...] = Field(min_length=1, max_length=10)
+    families: tuple[str, ...] = Field(min_length=1, max_length=11)
 
     @field_validator("real_business_accounts_and_exclusions_reviewed", mode="before")
     @classmethod
@@ -337,6 +338,98 @@ def enrollment(db: Session, *, user_id: int, runtime=None, now: datetime | None 
         "accepted_work_survives_revocation": True}
 
 
+def _source_kind(family: str) -> str:
+    return {"discovery": "search", "submission": "application"}.get(family, "analysis")
+
+
+def _application_key(owner: int, opening: str) -> tuple:
+    # A new resume, application, review or quote for the same opening does not
+    # manufacture another genuine business acceptance in the denominator.
+    need(type(opening) is str and len(opening) == 64 and all(c in "0123456789abcdef" for c in opening))
+    return owner, "submission", payload_fingerprint({"owner": owner, "opening_key": opening})
+
+
+def _application_business_keys(db: Session, review: CanaryReview, *, now: datetime,
+                               exclude: tuple[str, str]) -> tuple[set[tuple], int]:
+    if "submission" not in review.families:
+        return set(), 0
+    from ..browser_assistance.models import BrowserAssistanceReview
+    from .models import CreditReservation, CreditServiceQuote
+
+    ids = [row.user_id for row in review.members]
+    query = db.query(EmployerApplication).filter(EmployerApplication.user_id.in_(ids),
+        EmployerApplication.application_mode == "browser")
+    legacy = query.join(ServiceCreditReservation, EmployerApplication.reservation_id == ServiceCreditReservation.id).filter(
+        ServiceCreditReservation.user_id == EmployerApplication.user_id,
+        ServiceCreditReservation.source_id == EmployerApplication.id,
+        ServiceCreditReservation.operation == "job_application", ServiceCreditReservation.unit_price == 20,
+        ServiceCreditReservation.requested_count == 1, ServiceCreditReservation.reserved_amount == 20,
+        ServiceCreditReservation.created_at >= review.traffic_started_at, ServiceCreditReservation.created_at <= now,
+        EmployerApplication.credit_cost == 20,
+        EmployerApplication.pricing_snapshot["unit_price"].as_integer() == 20,
+        select(BrowserAssistanceReview.id).where(
+            BrowserAssistanceReview.application_id == EmployerApplication.id,
+            BrowserAssistanceReview.user_id == EmployerApplication.user_id,
+            BrowserAssistanceReview.review_protocol_version == 4,
+            BrowserAssistanceReview.approved_at.is_not(None)).exists()).with_entities(
+        EmployerApplication.id, EmployerApplication.user_id, EmployerApplication.opening_key).limit(MAX_TRAFFIC + 1).all()
+    unified = query.join(CreditReservation, (CreditReservation.source_id == EmployerApplication.id)
+        & (CreditReservation.user_id == EmployerApplication.user_id)).join(CreditServiceQuote,
+        CreditServiceQuote.accepted_reservation_id == CreditReservation.id).filter(
+        CreditReservation.operation == "verified_submission", CreditReservation.reserved_credits == 3,
+        CreditServiceQuote.user_id == EmployerApplication.user_id,
+        CreditServiceQuote.operation == "verified_submission", CreditServiceQuote.accepted_at.is_not(None),
+        CreditServiceQuote.accepted_at >= review.traffic_started_at, CreditServiceQuote.accepted_at <= now,
+        EmployerApplication.approved_at.is_not(None),
+        EmployerApplication.reservation_id.is_(None), EmployerApplication.credit_cost == 3).with_entities(
+        EmployerApplication.id, EmployerApplication.user_id, EmployerApplication.opening_key,
+        EmployerApplication.pricing_snapshot, CreditReservation.input_fingerprint,
+        CreditReservation.quote_snapshot, CreditServiceQuote).limit(MAX_TRAFFIC + 1).all()
+    need(len(legacy) + len(unified) <= MAX_TRAFFIC)
+    keys = set()
+    for identity, owner, opening in legacy:
+        if exclude != ("application", identity):
+            keys.add(_application_key(owner, opening))
+    for identity, owner, opening, billing, fingerprint, snapshot, quote in unified:
+        if exclude == ("application", identity):
+            continue
+        # Retained paid acceptances count; drafts and self-reported manual
+        # outcomes do not. Never replace the quote fingerprint with the older
+        # application-creation fingerprint.
+        from .submission import quote_billing
+        need(quote.input_fingerprint == fingerprint
+            and snapshot.get("service_quote_id") == quote.id and quote_billing(quote) == billing)
+        keys.add(_application_key(owner, opening))
+    return keys, len(legacy) + len(unified)
+
+
+def _submission_source(db: Session, source, fingerprint: str, *, since: datetime, now: datetime) -> dict:
+    from ..browser_assistance.models import BrowserAssistanceReview
+    from . import submission
+    from .models import CreditServiceQuote
+    from .submission_contract import SubmissionBilling
+
+    try:
+        billing = SubmissionBilling.model_validate(source.pricing_snapshot).model_dump(mode="json")
+    except ValueError:
+        raise FundingUnavailable("The reviewed application quote is unavailable; no work was accepted") from None
+    quote = db.get(CreditServiceQuote, billing["quote_id"])
+    need(quote is not None and quote.user_id == source.user_id and quote.operation == "verified_submission"
+        and quote.input_fingerprint == fingerprint == billing["input_fingerprint"]
+        and since <= aware(quote.created_at) <= now < aware(quote.expires_at)
+        and quote.accepted_reservation_id is None and submission.quote_billing(quote) == billing
+        and quote.idempotency_key.startswith("browser-submit-quote:"))
+    candidate = db.get(BrowserAssistanceReview, quote.idempotency_key.removeprefix("browser-submit-quote:"))
+    need(candidate is not None and candidate.user_id == source.user_id and candidate.application_id == source.id
+        and candidate.review_protocol_version == 5 and candidate.state == "draft"
+        and aware(candidate.created_at) <= now < aware(candidate.expires_at)
+        and candidate.package_digest == source.package_digest
+        and candidate.review_digest == submission.contract.digest(candidate.payload)
+        and candidate.payload.get("billing") == candidate.payload.get("pricing") == billing
+        and source.credit_cost == 3 and source.application_mode == "browser" and source.reservation_id is None)
+    return {"business_key": _application_key(source.user_id, source.opening_key)[2], "quote_id": quote.id}
+
+
 def _business_keys(db: Session, review: CanaryReview, *, now: datetime, exclude: tuple[str, str]) -> set[tuple]:
     ids = [row.user_id for row in review.members]
     rows = db.execute(select(AnalysisRun.id, AnalysisRun.user_id, AnalysisRun.operation,
@@ -347,8 +440,8 @@ def _business_keys(db: Session, review: CanaryReview, *, now: datetime, exclude:
     searches = db.query(EmployerSearch.id, EmployerSearch.user_id, EmployerSearch.input_fingerprint,
         EmployerSearch.scope).filter(EmployerSearch.user_id.in_(ids),
         EmployerSearch.created_at >= review.traffic_started_at, EmployerSearch.created_at <= now).limit(MAX_TRAFFIC + 1).all()
-    need(len(rows) + len(searches) <= MAX_TRAFFIC)
-    keys = set()
+    keys, applications = _application_business_keys(db, review, now=now, exclude=exclude)
+    need(len(rows) + len(searches) + applications <= MAX_TRAFFIC)
     for identity, owner, operation, fingerprint, schema, shadow, quoted_shadow in rows:
         family = OPERATIONS.get(operation.removeprefix("sync_"))
         if (exclude == ("analysis", identity) or identity.startswith("dev_") or schema is not None
@@ -378,17 +471,24 @@ def accept(db: Session, *, user_id: int, runtime, operation: str, source_id: str
     review, _ = load_review(db)
     family = OPERATIONS.get(operation)
     need(family in review.families)
-    kind = "search" if family == "discovery" else "analysis"
-    source = db.get(EmployerSearch if kind == "search" else AnalysisRun, source_id)
-    need(source is not None and source.user_id == user_id and source.input_fingerprint == input_fingerprint
-         and review.traffic_started_at <= aware(source.created_at) <= current)
+    assert family is not None
+    kind = _source_kind(family)
+    source = db.get({"search": EmployerSearch, "application": EmployerApplication,
+        "analysis": AnalysisRun}[kind], source_id)
+    need(source is not None and source.user_id == user_id)
+    extra = _submission_source(db, source, input_fingerprint,
+        since=review.traffic_started_at, now=current) if kind == "application" else {}
+    if kind != "application":
+        need(source.input_fingerprint == input_fingerprint
+             and review.traffic_started_at <= aware(source.created_at) <= current)
     if kind == "analysis":
         need(OPERATIONS.get(source.operation.removeprefix("sync_")) == family)
     identity = _audit_id("accept", kind, source_id)
     old = db.get(AdminAuditEvent, identity)
     if old is not None:
         need(old.action == ACCEPT_ACTION and old.after_state.get("user_id") == user_id
-             and old.after_state.get("source_id") == source_id)
+             and old.after_state.get("source_id") == source_id
+             and old.after_state.get("input_fingerprint") == input_fingerprint)
         return old.after_state
     keys = _business_keys(db, review, now=current, exclude=(kind, source_id))
     previous = db.query(AdminAuditEvent.after_state).filter_by(action=ACCEPT_ACTION,
@@ -401,11 +501,13 @@ def accept(db: Session, *, user_id: int, runtime, operation: str, source_id: str
     for (value,) in previous:
         if value.get("user_id") in members and value.get("family") in review.families:
             canary_count += 1
-            keys.add((value["user_id"], value["family"], value["input_fingerprint"]))
-    keys.add((user_id, family, input_fingerprint))
+            key = value.get("business_key") if value["family"] == "submission" else value["input_fingerprint"]
+            need(type(key) is str and len(key) == 64)
+            keys.add((value["user_id"], value["family"], key))
+    keys.add((user_id, family, extra.get("business_key", input_fingerprint)))
     need(20 * (canary_count + 1) <= len(keys))
     value = {**proof, "acceptance_id": identity, "user_id": user_id, "family": family, "source_kind": kind,
-        "source_id": source_id, "input_fingerprint": input_fingerprint,
+        "source_id": source_id, "input_fingerprint": input_fingerprint, **extra,
         "eligible_business_acceptances": len(keys), "canary_acceptances": canary_count + 1}
     _record(db, identity=identity, action=ACCEPT_ACTION, target=review.id, value=value,
         actor_id=None, actor="server:canary-business-admission", now=current)
@@ -441,8 +543,11 @@ def require_accepted_hold(db: Session, hold) -> None:
              and proof["source_id"] == reservation.source_id
              and proof["input_fingerprint"] == reservation.input_fingerprint
              and proof["family"] == OPERATIONS.get(reservation.operation)
-             and proof["source_kind"] == ("search" if proof["family"] == "discovery" else "analysis")
+             and proof["source_kind"] == _source_kind(proof["family"])
              and proof["acceptance_id"] == _audit_id("accept", proof["source_kind"], proof["source_id"]))
+        if proof["source_kind"] == "application":
+            need(type(proof.get("business_key")) is str and len(proof["business_key"]) == 64
+                 and proof.get("quote_id") == reservation.quote_snapshot.get("service_quote_id"))
     elif (hold.snapshot or {}).get("public_admission") is not None:
         from .models import CreditReservation
         public = hold.snapshot["public_admission"]

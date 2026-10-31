@@ -86,7 +86,7 @@ async function assistanceEngine() {
         const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [documentId] }, func: razorpayAdapter,
           args: [null, null, { document_id: documentId, frame_id: 0, field_mapping: mapping, review_protocol_version: version, upload:domUpload }] });
         if (result?.documentId !== documentId || result?.result?.outcome !== "inspected") throw new Error(result?.result?.reason || "The exact current portal form is not supported");
-        if(version===4 && upload){
+        if([4,5].includes(version) && upload){
           if(result.result.upload?.review_id!==upload.review_id || result.result.upload?.action_id!==upload.action_id
             || result.result.upload?.filename!==upload.filename || result.result.upload?.status!==upload.status)throw new Error("The visible upload changed.");
           result.result.upload=structuredClone(upload);
@@ -296,7 +296,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.type === "assistance_prepare") return current.prepare(message.application_id);
       if (message.type === "assistance_prepare_attachment") return current.prepare(message.application_id, 3);
       if (message.type === "assistance_prepare_native_upload") return current.prepare(message.application_id,3,true);
-      if (message.type === "assistance_prepare_submit") return current.prepare(message.application_id, 4);
+      if (message.type === "assistance_prepare_submit") return current.prepare(message.application_id, 5);
       if (message.type === "assistance_reconcile") return current.reconcile();
       if (message.type === "assistance_fill") return current.fill();
       if (message.type === "assistance_cancel") return current.cancel();

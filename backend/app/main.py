@@ -23,7 +23,7 @@ try:
 except Exception:
     pass
 
-from .routers import password_reset, candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, credits, public_endpoints  # noqa: E402
+from .routers import password_reset, privacy_erasure, candidate_accounts, auth, resume, jobs, recommendations, llm, analytics, rag, market, billing, credits, public_endpoints  # noqa: E402
 from .routers import resume_uploads  # noqa: E402
 from .routers.v1 import router as v1_router  # noqa: E402
 from .rate_limiter import limiter
@@ -98,6 +98,8 @@ async def jwt_validation_middleware(request: Request, call_next):
         path == "/api/auth/register" or
         path == "/api/auth/password-reset/request" or
         path == "/api/auth/password-reset/confirm" or
+        path == "/api/auth/privacy-erasure/request" or
+        path == "/api/auth/privacy-erasure/confirm" or
         path == "/api/auth/candidate/v1/register" or
         path == "/api/auth/candidate/v1/login" or
         path == "/api/auth/candidate/v1/availability" or
@@ -149,6 +151,7 @@ def health():
 app.include_router(auth.router, prefix="/api")
 app.include_router(candidate_accounts.router, prefix="/api")
 app.include_router(password_reset.router, prefix="/api")
+app.include_router(privacy_erasure.router, prefix="/api")
 app.include_router(resume_uploads.router, prefix="/api")
 app.include_router(resume.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")

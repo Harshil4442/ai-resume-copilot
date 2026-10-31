@@ -25,6 +25,9 @@ def erase_owner_credit_links(db: Session, *, user_id: int) -> None:
 
     lock_application_set(db, user_id)
     db.query(User.id).filter_by(id=user_id).with_for_update().one_or_none()
+    from .submission import erase_unstarted
+
+    erase_unstarted(db, user_id)
     # Erase owner-bound discovery proofs before their EmployerSearch parent;
     # accounting holds remain detached below, including unknown native costs.
     db.query(CreditDiscoveryDelivery).filter_by(user_id=user_id).delete(synchronize_session="fetch")

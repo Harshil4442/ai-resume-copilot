@@ -9,6 +9,8 @@ import subprocess
 import sys
 import zipfile
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
+from importlib.metadata import version
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +28,74 @@ from app.services import interview_contract, llm_client, model_cost_policy
 from tests.model_cost_fixtures import synthetic_policy
 
 ROOT = Path(__file__).resolve().parents[1] / "evals/unified_credit_v2"
+
+
+def _materialization_binding(font):
+    # Only immutable synthetic input bytes are reusable. Bind their complete
+    # recipe, actual helper sources/callables, font and installed renderers.
+    sources = (Path(__file__), Path(materialize.__file__), Path(packet.__file__), font)
+    helpers = tuple((name, value) for name, value in sorted(vars(materialize).items())
+                    if callable(value))
+    return (tuple((str(path), packet.file_digest(path)) for path in sources), helpers,
+            version("reportlab"), version("python-docx"), sys.version_info[:3])
+
+
+@lru_cache(maxsize=80)
+def _materialized_development_bytes(raw_case, binding, font):
+    del binding  # Part of the cache identity, never authority or a receipt.
+    case = json.loads(raw_case)
+    kind = case["source_format"]
+    fixture = copy.deepcopy(case)
+    fixture["source_recipe"]["font"] = "Bitstream Vera Sans"
+    fonts = {"Bitstream Vera Sans": font}
+    if kind == "pdf":
+        return materialize._pdf(fixture, fonts), None
+    if kind == "docx":
+        return materialize._docx(case), None
+    source = materialize._tex(case)
+    if kind == "texzip":
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("main.tex", source)
+        source = buffer.getvalue()
+    else:
+        assert kind == "tex"
+    return source, materialize._pdf(fixture, fonts)
+
+
+def materialized_development_bytes(case):
+    assert case["split"] == "development"
+    font = Path(reportlab.__file__).parent / "fonts/Vera.ttf"
+    binding = _materialization_binding(font)
+    result = _materialized_development_bytes(packet.canonical(case), binding, font)
+    if _materialization_binding(font) != binding:
+        _materialized_development_bytes.cache_clear()
+        raise AssertionError("Synthetic materializer changed while preparing fixture bytes")
+    assert type(result) is tuple and type(result[0]) is bytes
+    assert result[1] is None or type(result[1]) is bytes
+    return result
+
+
+def materialized_development_batch(cases):
+    """Reuse one real recipe binding only within this immutable fixture batch.
+
+    No files, review receipts or authorizations may be published until the final
+    source/font/callable/tool-version comparison succeeds. The standalone helper
+    keeps its per-call before/after checks for direct callers and drift tests.
+    """
+    assert len(cases) == 40 and all(case["split"] == "development" for case in cases)
+    font = Path(reportlab.__file__).parent / "fonts/Vera.ttf"
+    binding = _materialization_binding(font)
+    try:
+        result = tuple(_materialized_development_bytes(packet.canonical(case), binding, font)
+                       for case in cases)
+        assert _materialization_binding(font) == binding, "Synthetic materializer changed during fixture batch"
+        assert all(type(item) is tuple and type(item[0]) is bytes
+                   and (item[1] is None or type(item[1]) is bytes) for item in result)
+    except BaseException:
+        _materialized_development_bytes.cache_clear()
+        raise
+    return result
 
 
 def write(root, name, value):
@@ -58,21 +128,9 @@ def evaluation(tmp_path, monkeypatch):
     evidence.mkdir()
     rows, receipts, captures = [], {}, {}
     cases = inputs.selected_cases(ROOT, "development")[1]
-    for case in cases:
+    prepared = materialized_development_batch(cases)
+    for case, (content, compiled_pdf) in zip(cases, prepared, strict=True):
         identity, kind = case["case_id"], case["source_format"]
-        if kind == "pdf":
-            fixture = copy.deepcopy(case)
-            fixture["source_recipe"]["font"] = "Bitstream Vera Sans"
-            content = materialize._pdf(fixture, {"Bitstream Vera Sans": Path(reportlab.__file__).parent / "fonts/Vera.ttf"})
-        elif kind == "docx":
-            content = materialize._docx(case)
-        elif kind == "tex":
-            content = materialize._tex(case)
-        else:
-            buffer = BytesIO()
-            with zipfile.ZipFile(buffer, "w") as archive:
-                archive.writestr("main.tex", materialize._tex(case))
-            content = buffer.getvalue()
         path = source_root / (identity + "." + kind)
         path.write_bytes(content)
         sha = packet.file_digest(path)
@@ -103,9 +161,8 @@ def evaluation(tmp_path, monkeypatch):
             source_response["parsed"] = {"raw_text": "", "sections": {}, "skills": [], "experience_years": 0,
                 "contact_info": dict.fromkeys(("name", "email", "phone", "linkedin", "github"))}
             captures[identity]["worker_response"] = write(evidence, response["path"], source_response)
-            fixture = copy.deepcopy(case)
-            fixture["source_recipe"]["font"] = "Bitstream Vera Sans"
-            pdf = materialize._pdf(fixture, {"Bitstream Vera Sans": Path(reportlab.__file__).parent / "fonts/Vera.ttf"})
+            assert compiled_pdf is not None
+            pdf = compiled_pdf
             pdf_path = evidence / (identity + ".compiled.pdf")
             pdf_path.write_bytes(pdf)
             pdf_sha = packet.file_digest(pdf_path)

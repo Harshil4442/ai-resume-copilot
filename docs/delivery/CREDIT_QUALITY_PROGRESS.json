@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-29T20:33:48.603570+00:00",
+  "updated_at": "2026-10-31T09:24:15.837739+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -18,10 +18,11 @@
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "local_result": "Current schema25 ab2 production and existing signed-in profile/search/application reads were verified. One synthetic PDF upload, preview and exact original download passed with existing seven legacy analysis units retained. Representative workload and final vendor allocation remain pending.",
-      "status_observed_at": "2026-10-29T20:33:48.603570+00:00"
+      "local_result": "The e23 schema25 API and workers and compatible frontend now serve the pilot. Signed-in companion setup was observed after promotion. Fresh complete owner journeys, representative workload measurements and final invoice allocation remain pending.",
+      "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
     },
     {
       "number": 2,
@@ -37,10 +38,11 @@
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "local_result": "Gemini provider cap remains INR450. Reviewed expense reconciliation and prospective zero legacy signup grants are integrated; existing balances preserved. Private primary receipts were located, but actual usage invoices, project allocation, tax/gateway reconciliation and release acceptance remain pending.",
-      "status_observed_at": "2026-10-29T13:28:48.083922+00:00"
+      "local_result": "Cost and billing protections in the e23 app are deployed behind the existing closed activation gates. Existing customer obligations were retained through the rollout. Unified-wallet activation, legacy mapping, invoice and tax reconciliation remain pending; there is no new sales activation. The combined source candidate adds explicit three-credit browser-submission quotes and central reservations; previously accepted twenty-credit obligations remain separate. This candidate is not deployed or commercially qualified.",
+      "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
     },
     {
       "number": 3,
@@ -54,10 +56,11 @@
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
-        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
-      "local_result": "Deterministic parsing and saved-source delivery work on the deployed baseline. Reviewed bootstrap/reuse and bounded polling changes are integrated in the next candidate; their production rollout remains pending."
+      "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
+      "local_result": "Bootstrap/reuse and bounded polling changes are deployed in e23. The next source-only batch adds explicit transcription/evidence review and the owned Dashboard snapshot; PR83 qualification and its schema26 rollout remain pending."
     },
     {
       "number": 4,
@@ -78,10 +81,12 @@
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
-        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
-      "local_result": "The deployed native inspector remains accepted. New generic PDF geometry passes 34 of 40 development examples, with six failures retained truthfully; current source candidate still needs real native Build/corpus acceptance, full representative quality and independent human scoring. Generation remains closed."
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00",
+      "local_result": "The refreshed native document inspector passed its actual native qualification and serves the accepted worker. Its accepted definition proof expires 2026-11-02T06:26:48Z. General-format expansion, representative 200-case native/model quality, independent human scoring and adjudication remain unqualified; generation stays closed."
     },
     {
       "number": 5,
@@ -97,10 +102,11 @@
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
-        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "status_observed_at": "2026-10-29T20:33:48.603570+00:00",
-      "local_result": "104 local responsive browser checks at widths320 and1440 and the full responsive CI job passed. Both connected cold billing journeys passed with synthetic provider captures. Native List permission was verified, but shared Upstash wire and representative capacity qualification remain pending; Stage5 activation flags remain false."
+      "status_observed_at": "2026-10-31T03:31:42.706879+00:00",
+      "local_result": "Earlier desktop/mobile public-page checks and owned responsive controls remain retained. Companion0.8.7 is publicly deployed after exact-source release checks; the same-browser native pairing succeeded on 0.8.6. The 0.8.7 local source update is ready, but native reload and original-file review/cancel/revoke await Mac unlock. Native 10,000-user workload and peak/cost/capacity gates remain pending."
     },
     {
       "number": 6,
@@ -116,10 +122,12 @@
         "docs/delivery/evidence/2026-10-28-native-corpus-and-release-readiness.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "status_observed_at": "2026-10-29T13:52:42.658954+00:00",
-      "local_result": "Schema25 remains deployed. Reviewed canary server and Billing controls require explicit owner consent, reject delayed stale choices and atomically cap actual eligible accepted traffic at5%. No twenty-account minimum is invented. No production activation or real consent is created by tests. Deployed opted-in acceptance and seven-day/200-operation representative shadow evidence remain pending."
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00",
+      "local_result": "Schema25 remains deployed and original balances are preserved. Schema26 evidence-write fencing, erasure continuity, canary admission and maintenance are source-only in PR83. Original b67 passed61 actual PostgreSQL qualification cases, but failed the separate protocol batch timeout; final-source qualification and critical maintenance remain pending. The repaired canary and fresh no-AI flows additionally passed four cases on new owned PG17 clusters at schema26. No production DDL, balance conversion or funded seven-day/200-operation shadow evidence is claimed."
     },
     {
       "number": 7,
@@ -137,10 +145,13 @@
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
-        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json"
+        "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-10-31-full-regression-remedy.json",
+        "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json"
       ],
-      "local_result": "All three app services now serve immutable ab2 at100%; compatible existing frontend remains canonical. Exact original-source owner acceptance passed and temporary health IAM was removed. The next candidate is not deployed: backend fixture/environment and finite release-tooling corrections require complete exact-source CI, immutable Build and native worker qualification before API-first promotion. Companion review/cancel/revoke and commercial release gates remain pending.",
-      "status_observed_at": "2026-10-29T20:33:48.603570+00:00"
+      "local_result": "The deployed e23 API/workers, accepted inspector and frontend0.8.7 remain the live pilot. Original b67 CI passed61 PostgreSQL compatibility cases and four jobs, then exceeded the inherited240-second native-protocol batch deadline; full backend tests did not run. The current source batch gives all41 unchanged suites a bounded300-second CI window, reduces redundant synthetic fixture binding and adds isolated native-evaluation tooling. Four affected flows passed on new disposable PG17 clusters; final-source CI, Build and schema26 rollout remain pending. No traffic, wallet, AI, privacy or payment activation is claimed.",
+      "status_observed_at": "2026-10-31T09:24:15.837739+00:00"
     },
     {
       "number": 8,

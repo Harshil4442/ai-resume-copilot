@@ -19,6 +19,7 @@ from backend.app.services.generation_budget import GenerationBudget
 from backend.app.services.generation_gate import GenerationPaused, generation_enabled
 from backend.app.services.guardrails import billable_operation
 from backend.app.services.rag.chat import ask_match_ai
+from backend.tests.fixtures.transcription_source import source_for_text
 from docx import Document
 from fastapi import HTTPException, UploadFile
 from google import genai
@@ -45,8 +46,9 @@ def factory(monkeypatch):
     factory = sessionmaker(bind=engine, autoflush=False)
     with factory() as db:
         db.add(models.User(id=1, email="synthetic@example.com", ai_credits=100, tier="free"))
-        db.add(models.Resume(id=1, user_id=1, original_filename="resume.docx", raw_text="Python engineer",
-                             skills=["Python"], sections={"experience": "Developed Python services"}))
+        db.add(models.Resume(id=1, user_id=1, original_filename="resume.pdf", raw_text="Python engineer",
+                             skills=["Python"], sections={"experience": "Developed Python services"},
+                             source_format="pdf", source_document=source_for_text("Python engineer")))
         db.add(models.Opportunity(id="opp_gate", user_id=1, resume_id=1, title="Software Engineer",
                                   company="Example", job_description="Build Python and Docker services for customers.", job_snapshot={}))
         db.commit()

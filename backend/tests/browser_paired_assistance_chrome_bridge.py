@@ -13,9 +13,10 @@ import json
 import logging
 import sys
 import traceback
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT.parent), str(ROOT), str(ROOT / "tests")]
@@ -52,12 +53,56 @@ native_logger.addHandler(native_handler)
 native_logger.propagate = False
 
 APPLICATION = "--application" in sys.argv
+UNIFIED_SUBMISSION = "--unified" in sys.argv
+FREE_ONLY = "--free-only" in sys.argv
+if (UNIFIED_SUBMISSION or FREE_ONLY) and not APPLICATION or UNIFIED_SUBMISSION and FREE_ONLY:
+    raise ValueError("Select one explicit owned application mode")
+if UNIFIED_SUBMISSION or FREE_ONLY:
+    # Register actual wallet tables BEFORE the existing owned factory creates
+    # its private schema. This does not create or select any native authority.
+    from app.domains.credits import models as credit_models  # noqa: E402
 REVISION = "companion_0_8_0" if APPLICATION else "companion_0_7_0"
 patch = pytest.MonkeyPatch()
 
 
 def current_clock():
     return int(datetime.now(UTC).timestamp() * 1000)
+
+
+def configure_unified_submission(db, user_id):
+    """Synthetic funded test envelope; never a production release review."""
+    from app.domains.common import payload_fingerprint
+    from app.domains.credits import admission, finance, release, runtime, service_quotes, submission
+    from app.domains.credits import service as credit_service
+
+    stamp = service.now()
+    policy = finance.FinancialPolicy(version="owned-browser-synthetic-v1",
+        valid_from=stamp - timedelta(days=1), expires_at=stamp + timedelta(days=29),
+        provenance="synthetic_test", evidence_sha256="a" * 64)
+    route = service_quotes.QualifiedRoute(id="owned-native-submission", version="synthetic-v1",
+        operation="verified_submission", tariff_version="credit-services-2026-10-27-v1",
+        credits=3, mode="native", deliverable="Owned synthetic final submission validator result",
+        supported_limits={"artifact_bytes": 10 * 1024 * 1024, "answer_count": 64, "review_bytes": 65536},
+        qualification_id="owned-synthetic-not-native-proof", qualification_evidence_sha256="b" * 64,
+        output_contract_sha256=submission.delivery_contract(), qualified_from=stamp - timedelta(days=1),
+        qualified_until=stamp + timedelta(days=29), native_cost_evidence_sha256="c" * 64,
+        native_processing_minor=13, worker_processing_minor=0, model_quotes=())
+    budgets = admission.ExecutionBudgetPolicy(version="owned-synthetic-funding-v1", evidence_sha256="d" * 64,
+        valid_from=stamp - timedelta(days=1), expires_at=stamp + timedelta(days=29),
+        daily_global_minor=10000, monthly_global_minor=10000, monthly_account_minor=10000,
+        monthly_incident_minor=10000, monthly_route_minor={route.id: 10000},
+        legacy_search_cost_minor=10, legacy_application_cost_minor=30, legacy_preparation_minor=10,
+        legacy_provider_attempt_overhead_minor=2)
+    configured_runtime = runtime.RuntimeConfig(policy=policy, budgets=budgets, routes=(route,))
+    patch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    patch.setenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "true")
+    patch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
+    patch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", configured_runtime.model_dump_json())
+    patch.setattr(release, "current_review", lambda **_: SimpleNamespace(policy=policy,
+        evidence={"delivery_routes": payload_fingerprint(configured_runtime.model_dump(mode="json"))}))
+    credit_service.grant_credits(db, user_id=user_id, quantity=40, source_type="payment_order",
+        source_id="owned-synthetic-unified-browser", funding_kind="paid",
+        terms_snapshot={"owned_synthetic_test_only": True}, expires_at=stamp + timedelta(days=1), now=stamp)
 
 
 if APPLICATION:
@@ -128,6 +173,11 @@ with TemporaryDirectory(prefix="hirewiz-paired-chrome-sql-") as directory:
             policy["service_apply_credits"] = 20
             patch.setenv("HIREWIZ_EXPENSE_POLICY_JSON", json.dumps(policy))
             patch.setenv("EMPLOYER_APPLY_CREDITS_PER_JOB", "20")
+            if FREE_ONLY:
+                for key in ("BROWSER_ASSISTANCE_SUBMIT_ENABLED", "BROWSER_SUBMIT_NATIVE_ENABLED",
+                        "EMPLOYER_AUTO_SUBMIT_ENABLED", "UNIFIED_BROWSER_SUBMISSION_ENABLED",
+                        "UNIFIED_CREDIT_EXECUTION_ENABLED"):
+                    patch.setenv(key, "false")
             content = b"%PDF-1.4\nOwned local candidate resume fixture only\n%%EOF\n"
             mapping = [
                 {"id": identity, "label": label, "type": "text", "required": True}
@@ -214,6 +264,8 @@ with TemporaryDirectory(prefix="hirewiz-paired-chrome-sql-") as directory:
                 )
                 application.package_digest = _package_digest(application, posting, source, artifact)
                 db.add(application)
+                if UNIFIED_SUBMISSION:
+                    configure_unified_submission(db, uid)
                 db.commit()
         for line in sys.stdin:
             request = json.loads(line)
@@ -237,6 +289,8 @@ with TemporaryDirectory(prefix="hirewiz-paired-chrome-sql-") as directory:
                             target_url=target,
                             field_mapping=mapping,
                             answers=values,
+                            unified_submission=UNIFIED_SUBMISSION,
+                            free_only=FREE_ONLY,
                         )
                 elif operation == "pairing_device":
                     result = c.browser.device(
@@ -329,6 +383,15 @@ with TemporaryDirectory(prefix="hirewiz-paired-chrome-sql-") as directory:
                                 .filter_by(operation="artifact")
                                 .count(),
                             )
+                            if UNIFIED_SUBMISSION or FREE_ONLY:
+                                from app.domains.credits import service as credit_service
+                                wallet = credit_service.wallet(db, user_id=uid)
+                                result.update(unified_available_credits=wallet.available_credits,
+                                    unified_reserved_credits=wallet.reserved_credits,
+                                    unified_reservations=[{"state": row.state, "reserved": row.reserved_credits,
+                                        "committed": row.committed_credits, "released": row.released_credits}
+                                        for row in db.query(credit_models.CreditReservation).all()])
+                                result["final_submit_enabled"] = service.submissions.enabled()
                 else:
                     raise ValueError("Unsupported owned operation")
                 print(json.dumps({"status": 200, "body": result}), flush=True)

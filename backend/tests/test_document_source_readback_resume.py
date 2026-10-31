@@ -85,7 +85,10 @@ def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     assert len(profile.SOURCES) == 22 and len(profile.CONTRACT_PATHS) == 14
     for name in set(profile.CONTRACT_PATHS) | set(profile.SOURCES) | {profile.POLICY_PATH}:
         assert (ROOT / name).read_bytes() == subprocess.check_output(["git", "show", resume.ORIGINAL_SOURCE + ":" + name], cwd=ROOT)
-    assert subprocess.check_output(["git", "diff", resume.ORIGINAL_SOURCE, "--", "backend/app"], cwd=ROOT) == b""
+    # App features outside the inspector are admitted by their own release
+    # context. Freeze every worker runtime member, rather than the entire app.
+    assert len(profile.courier.RUNTIME) == 20
+    assert set(profile.courier.RUNTIME) <= profile.SOURCES
 
 
 def test_create_only_claim_fits_existing_namespace_and_second_directory_cannot_resend(tmp_path):

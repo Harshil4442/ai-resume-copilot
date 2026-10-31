@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { apiBlob, apiDownload, apiGet, apiPostJson, apiPutJson } from "../lib/api";
 import { accountMutationHeaders } from "../lib/accountTransportClient";
+import { applicationSubmissionBilling } from "../lib/browserSubmissionBilling";
 import { getSourcePreservingContent, type Opportunity, type ResumeVersion } from "../lib/career";
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
 import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
@@ -99,8 +100,10 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
 
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
   const versions = useQuery({ queryKey: ["resume-versions", resumeId], queryFn: ({ signal }) => apiGet<ResumeVersion[]>(`/v1/resume-versions?resume_id=${encodeURIComponent(resumeId)}`, signal), enabled: choice === "tailored" && Boolean(resumeId) });
-  const immutable = reportUncertain || ["queued", "submitting", "confirmed", "unknown", "cancelled", "user_reported"].includes(application.status);
-  const automatic = application.application_mode === "api";
+  const billingState = applicationSubmissionBilling(application);
+  const creditUnits = billingState === "legacy" ? "service credits" : "unified credits";
+  const immutable = billingState === "invalid" || reportUncertain || ["queued", "submitting", "confirmed", "unknown", "cancelled", "user_reported"].includes(application.status);
+  const automatic = billingState === "legacy" && application.application_mode === "api";
   const approvedVersions = (versions.data ?? []).filter((version) => version.approval_state === "approved" && Boolean(getSourcePreservingContent(version.structured_content)?.source_edits.length));
   const employerUrl = safeEmployerUrl(application.posting.apply_url || application.posting.canonical_url);
   const razorpayBrowserUrl = employerUrl && /^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/\d+$/.test(employerUrl) ? employerUrl : null;
@@ -135,7 +138,7 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   });
   const submit = useMutation({
     mutationFn: async () => {
-      if (!reviewed || dirty || !artifactReady || !automatic || application.batch_id || !catalog.data?.auto_submit_enabled || application.missing_fields.length) throw new Error("Save and review the complete application before submitting. Batch members must be queued from their exact batch review.");
+      if (billingState !== "legacy" || !reviewed || dirty || !artifactReady || !automatic || application.batch_id || !catalog.data?.auto_submit_enabled || application.missing_fields.length) throw new Error("Save and review the complete application before submitting. Batch members must be queued from their exact batch review.");
       const approved = await apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/approve`, { package_digest: application.package_digest, allowed_actions: ["fill", "upload", "submit"] });
       client.setQueryData(["employer-jobs", "application", application.id], approved);
       return apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/execute`, { package_digest: approved.package_digest });
@@ -145,7 +148,7 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   });
   const handoff = useMutation({
     mutationFn: async () => {
-      if (automatic || !reviewed || dirty || !artifactReady || !employerUrl || application.batch_id || application.missing_fields.length) throw new Error("Save and review the exact handoff package before continuing.");
+      if (billingState === "invalid" || automatic || !reviewed || dirty || !artifactReady || !employerUrl || application.batch_id || application.missing_fields.length) throw new Error("Save and review the exact handoff package before continuing.");
       const approved = await apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/approve`, { package_digest: application.package_digest, allowed_actions: ["fill", "upload"] });
       client.setQueryData(["employer-jobs", "application", application.id], approved);
       return apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/execute`, { package_digest: approved.package_digest });
@@ -192,10 +195,11 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   function markDirty() { setDirty(true); setReviewed(false); }
   return <div className="space-y-7">
     <section className="border-b border-border pb-5"><p className="text-xs font-semibold text-primary">{application.posting.employer} · {application.posting.platform}</p><h2 className="mt-2 break-words text-xl font-semibold">{application.posting.title}</h2><p className="mt-2 text-sm text-muted-foreground">{application.posting.location}</p><p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-primary"><ShieldCheck size={16} />{applicationStatusLabels[application.status]}</p>{employerUrl && (automatic || (application.status === "manual_handoff" && !dirty)) ? <a href={employerUrl} target="_blank" rel="noopener noreferrer" className="mt-3 block break-all text-xs text-primary underline underline-offset-4">{employerUrl}</a> : employerUrl ? <p className="mt-3 break-all text-xs text-muted-foreground">{employerUrl}</p> : <p className="mt-3 text-sm text-coral">Employer destination unavailable. Submission is disabled.</p>}</section>
-    {application.status === "confirmed" ? <section className="rounded-lg border border-primary/30 bg-primary/5 p-4" aria-live="polite"><h3 className="flex items-center gap-2 font-semibold"><CheckCircle2 size={18} />Employer submission confirmed</h3><p className="mt-2 text-sm">{application.charged_credits} service credits charged.</p>{application.receipt ? <dl className="mt-3 grid gap-2 text-xs">{Object.entries(application.receipt).filter(([, value]) => ["string", "number"].includes(typeof value)).map(([key, value]) => <div key={key}><dt className="font-semibold">{key.replaceAll("_", " ")}</dt><dd className="break-all">{String(value)}</dd></div>)}</dl> : null}</section> : null}
+    {application.status === "confirmed" && billingState !== "invalid" ? <section className="rounded-lg border border-primary/30 bg-primary/5 p-4" aria-live="polite"><h3 className="flex items-center gap-2 font-semibold"><CheckCircle2 size={18} />Employer submission confirmed</h3><p className="mt-2 text-sm">{application.charged_credits} {creditUnits} charged.</p>{application.receipt ? <dl className="mt-3 grid gap-2 text-xs">{Object.entries(application.receipt).filter(([, value]) => ["string", "number"].includes(typeof value)).map(([key, value]) => <div key={key}><dt className="font-semibold">{key.replaceAll("_", " ")}</dt><dd className="break-all">{String(value)}</dd></div>)}</dl> : null}</section> : null}
     {application.status === "user_reported" ? <section className="rounded-lg border border-border bg-surface p-4" aria-live="polite"><h3 className="font-semibold">Submission reported by you</h3><p className="mt-2 text-sm leading-6">Your manual submission report is recorded. Employer confirmation and the file actually used are unverified. Further assistance for this saved application is stopped. No application credits were charged.</p>{application.candidate_report ? <p className="mt-2 text-xs text-muted-foreground">Report recorded: {new Date(application.candidate_report.reported_at).toLocaleString("en-IN")}</p> : null}</section> : null}
     {application.status === "unknown" ? <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">The employer may have received this application. Do not send another copy until its status is confirmed. No automatic retry is available.</div> : null}
-    <p className="text-xs leading-5 text-muted-foreground">{application.reserved_credits ?? 0} service credits currently reserved · {application.charged_credits} charged.</p>
+    {billingState === "invalid" ? <p role="alert" className="text-sm text-coral">Application pricing is unavailable. Refresh its current status before taking another action.</p> : <p className="text-xs leading-5 text-muted-foreground">{application.reserved_credits ?? 0} {creditUnits} currently reserved · {application.charged_credits} charged.</p>}
+    {billingState === "unquoted" ? <p className="text-xs text-muted-foreground">No final submission quote has been accepted. Inspect a separate final review in your companion before reserving unified credits.</p> : null}
     {application.error ? <p role="alert" className="text-sm text-coral">{application.error.message}</p> : null}
     <section aria-labelledby="application-resume-heading"><h3 id="application-resume-heading" className="font-semibold">Resume for this job</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Switch to the original or a custom file at any time before submission. Saving a change clears the previous approval.</p><div className="mt-4 grid gap-4 sm:grid-cols-2">
       <label className="grid gap-2 text-sm font-semibold">Resume choice<select className="field-control" value={choice} disabled={immutable || pending} onChange={(event) => { setChoice(event.target.value as ResumeChoice); setVersionId(""); markDirty(); }}><option value="original">Original resume</option><option value="tailored">Approved tailored version</option><option value="custom">Custom upload</option></select></label>

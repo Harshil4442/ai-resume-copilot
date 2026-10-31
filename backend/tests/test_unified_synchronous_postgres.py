@@ -4,11 +4,11 @@ from threading import Barrier
 
 import pytest
 from backend.app import models
-from backend.app.database import Base
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.tests import test_unified_synchronous as synchronous_checks
+from backend.tests.fixtures.evidence_fence import install_owned_fence
 from backend.tests.test_employer_admissions_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_unified_synchronous import (
     configure,
@@ -25,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 @pytest.fixture
 def factory():
     for engine in owned_pg_engine.__wrapped__():
-        Base.metadata.create_all(engine)
+        install_owned_fence(engine)
         maker = sessionmaker(engine, autoflush=False)
         with maker() as db:
             db.add_all([models.User(id=1, email="sync-pg@example.invalid", ai_credits=17),
@@ -73,3 +73,9 @@ def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_
 def test_unknown_supplier_hold_survives_personal_claim_route_rollback_on_postgres(factory, monkeypatch):
     context = setup.__wrapped__(factory, monkeypatch)
     synchronous_checks.test_unknown_provider_failure_refunds_but_cannot_retry_same_quote(context)
+
+
+@pytest.mark.parametrize("stage", ["preflight", "before"])
+def test_changed_source_during_native_dispatch_admission_on_postgres(factory, monkeypatch, stage):
+    context = setup.__wrapped__(factory, monkeypatch)
+    synchronous_checks.test_source_change_during_native_budget_io_refuses_supplier_and_retains_any_claim(context, stage)

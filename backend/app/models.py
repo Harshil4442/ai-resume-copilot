@@ -76,9 +76,11 @@ class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
     __table_args__ = (
         CheckConstraint("status IN ('PENDING','PROCESSING','COMPLETED','INVALIDATED','UNAVAILABLE')", name="ck_password_reset_status"),
+        CheckConstraint("purpose IN ('password_reset','privacy_erasure')", name="ck_password_reset_purpose"),
         Index("ix_password_reset_owner_created", "user_id", "created_at"),
     )
     id = Column(String(64), primary_key=True)
+    purpose = Column(String(24), nullable=False, default="password_reset", server_default="password_reset")
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     token_sha256 = Column(String(64), nullable=False, unique=True)
     email_sha256 = Column(String(64), nullable=False)

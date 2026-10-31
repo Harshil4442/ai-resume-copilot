@@ -1,0 +1,817 @@
+{
+  "authority": false,
+  "description": "Format/hash-only unsigned synthetic data. No receipt, approval, funding or permission. Never send to an employer.",
+  "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
+  "input_preimage": {
+    "application_id": "apply_synthetic",
+    "artifact_generation": "123456789",
+    "artifact_id": "artifact_synthetic",
+    "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+    "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+    "credential_revision_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "device_id": "00000000-0000-4000-8000-000000000001",
+    "device_key_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "document_id": "synthetic-document",
+    "employer_key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "expected_application_sha256": "1a3f5f08c199f319a410c4b850743606837587461408c328ed34e32fee7626aa",
+    "form_sha256": "c2f95f6b284e244aa68afcff3fc54be30aa0ea1b296a39e65db57b0fd0a42409",
+    "job_content_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
+    "native_context_sha256": "e7d8f89e85011dc70ce5f51c3dcb9e85dec48bd7e75512032055d1f6f4939a4c",
+    "opening_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "package_inputs_sha256": "8d765973b8e445b741438f231c7a33ff921894925fb13c17c50530572896238a",
+    "price": {
+      "billing_currency": "credits",
+      "credits": 3,
+      "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
+      "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
+      "operation": "verified_submission",
+      "route_id": "synthetic_verified_submission",
+      "route_version": "synthetic-v1",
+      "tariff_version": "credit-services-2026-10-27-v1"
+    },
+    "resume_choice": "original",
+    "resume_id": 7,
+    "resume_version_id": null,
+    "review_id": "00000000-0000-4000-8000-000000000005",
+    "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
+    "schema_version": "verified-submission-input-v1",
+    "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+    "upload_evidence_sha256": "51edc39db8630bdc18c9367b6ad46ebcb0d0df8051b1ffeaeab89ed2314d8361",
+    "user_id": 17
+  },
+  "legacy4": {
+    "approve_request": {
+      "confirmed": true,
+      "identity": "00000000-0000-4000-8000-000000000005",
+      "review_digest": "d86dc7a6aade956fff4499f29ee0573ef34fbf97255984b22d1cb6378269bd96"
+    },
+    "lease_payload": {
+      "action_id": "00000000-0000-4000-8000-000000000006",
+      "allowed_actions": [
+        "submit"
+      ],
+      "application_id": "apply_synthetic",
+      "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+      "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+      "control_type": "submit",
+      "deadline": 1793440010000,
+      "device_id": "00000000-0000-4000-8000-000000000001",
+      "document_id": "synthetic-document",
+      "expected_application": {
+        "answers_attributes": {},
+        "appcast_click_id": null,
+        "attachments": {},
+        "data_compliance": {},
+        "demographic_answers": [],
+        "email": "synthetic@example.test",
+        "employments": [],
+        "first_name": "Synthetic",
+        "from_job_board_renderer": true,
+        "last_name": "Fixture",
+        "mapped_url_token": null,
+        "resume_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+        "resume_url_filename": "Synthetic.pdf",
+        "time_zone": "Asia/Kolkata"
+      },
+      "expected_application_sha256": "1a3f5f08c199f319a410c4b850743606837587461408c328ed34e32fee7626aa",
+      "fee_credits": 20,
+      "field_id": "final-submit",
+      "frame_id": 0,
+      "issued_at_ms": 1793440000000,
+      "native_context": {
+        "tab_id": 44,
+        "time_zone": "Asia/Kolkata"
+      },
+      "native_proof_sha256": "589c66e424085f5b4319a2324a6cf16eac851a7ffed16de41ce07df9b5144e8e",
+      "package_digest": "86f9b18499b56ec7a20c4ac58bcaef1058d99e894a8cfbbef14cdd0d390d4994",
+      "protocol_version": 1,
+      "receipt_contract": "greenhouse_hosted_browser_https_200_v2",
+      "review_digest": "d86dc7a6aade956fff4499f29ee0573ef34fbf97255984b22d1cb6378269bd96",
+      "review_id": "00000000-0000-4000-8000-000000000005",
+      "review_protocol_version": 4,
+      "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
+      "submit_control": {
+        "form_id": "application-form",
+        "label": "Submit application",
+        "type": "submit"
+      },
+      "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+      "upload": {
+        "action_id": "00000000-0000-4000-8000-000000000004",
+        "filename": "Synthetic.pdf",
+        "native_upload": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "artifact_size_bytes": 1024,
+          "document_id": "synthetic-document",
+          "filename": "Synthetic.pdf",
+          "multipart_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+          "multipart_size": 2048,
+          "native": {
+            "browser_major": 151,
+            "completed_at_ms": 1793439999500,
+            "document_id": null,
+            "frame_id": -1,
+            "from_cache": false,
+            "https_validation": "browser_default",
+            "initiator": "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb",
+            "ip": "198.51.100.8",
+            "method": "POST",
+            "native_body_crosscheck": "raw",
+            "redirected": false,
+            "request_body_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+            "request_body_size": 2048,
+            "request_body_source": "extension_owned_arraybuffer",
+            "request_id": "synthetic-format-only",
+            "started_at_ms": 1793439999000,
+            "status_code": 200,
+            "tab_id": -1,
+            "url": "https://synthetic.s3.amazonaws.com/"
+          },
+          "review_digest": "67543c5ebd78b8a18e9054a61f5f7c417956e05afe145c71c8dd96a8456ec157",
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "tab_id": 44,
+          "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+          "uploaded_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+          "version": "greenhouse_owned_upload_browser_https_v2"
+        },
+        "review_id": "00000000-0000-4000-8000-000000000003",
+        "status": "portal_reports_uploaded",
+        "upload_plan_sha256": "465aa4591f8cd40da5f64e2a21cfdbef1bb04fe06ea89a872628087f7b6ef026"
+      },
+      "upload_continuity": {
+        "action_id": "00000000-0000-4000-8000-000000000004",
+        "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+        "document_id": "synthetic-document",
+        "review_id": "00000000-0000-4000-8000-000000000003",
+        "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+      }
+    },
+    "lease_sha256": "c180f60365e98c6bedd095ec75649c376e0729407c2a29f8163edb4ac0a90eda",
+    "pricing_sha256": "5c6125c0c83d1543f6210754a0cb8087f2f6296e427724bbe22f621ecab66969",
+    "review_response": {
+      "employer_confirmed": false,
+      "expires_at_ms": 1793440060000,
+      "fee_credits": 20,
+      "filled_count": 0,
+      "id": "00000000-0000-4000-8000-000000000005",
+      "payload": {
+        "admission": {
+          "policy_revision": "synthetic-format-only"
+        },
+        "allowed_actions": [
+          "submit"
+        ],
+        "answers": [
+          {
+            "id": "first_name",
+            "label": "First Name",
+            "required": true,
+            "type": "text",
+            "value": "Synthetic"
+          },
+          {
+            "id": "last_name",
+            "label": "Last Name",
+            "required": true,
+            "type": "text",
+            "value": "Fixture"
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "required": true,
+            "type": "text",
+            "value": "synthetic@example.test"
+          }
+        ],
+        "application_id": "apply_synthetic",
+        "artifact": {
+          "artifact_id": "artifact_synthetic",
+          "filename": "Synthetic.pdf",
+          "media_type": "application/pdf",
+          "resume_choice": "original",
+          "resume_id": 7,
+          "resume_version_id": null,
+          "sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "size_bytes": 1024
+        },
+        "assisted_values": {
+          "email": "synthetic@example.test",
+          "first_name": "Synthetic",
+          "last_name": "Fixture"
+        },
+        "candidate_id": 17,
+        "company": "Razorpay",
+        "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+        "disclosures": [
+          "Synthetic format data; no employer action is authorized.",
+          "Reserve 20 legacy service credits.",
+          "Unknown outcomes keep the hold and are never resent automatically."
+        ],
+        "document_id": "synthetic-document",
+        "expected_application": {
+          "answers_attributes": {},
+          "appcast_click_id": null,
+          "attachments": {},
+          "data_compliance": {},
+          "demographic_answers": [],
+          "email": "synthetic@example.test",
+          "employments": [],
+          "first_name": "Synthetic",
+          "from_job_board_renderer": true,
+          "last_name": "Fixture",
+          "mapped_url_token": null,
+          "resume_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+          "resume_url_filename": "Synthetic.pdf",
+          "time_zone": "Asia/Kolkata"
+        },
+        "expected_application_sha256": "1a3f5f08c199f319a410c4b850743606837587461408c328ed34e32fee7626aa",
+        "fee_credits": 20,
+        "field_mapping": [
+          {
+            "id": "first_name",
+            "label": "First Name",
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "last_name",
+            "label": "Last Name",
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "required": true,
+            "type": "text"
+          }
+        ],
+        "fields": [],
+        "frame_id": 0,
+        "job": {
+          "content_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
+          "external_id": "4740333005",
+          "posting_id": "posting_synthetic",
+          "title": "Synthetic software role"
+        },
+        "manual_fields": [],
+        "native_context": {
+          "tab_id": 44,
+          "time_zone": "Asia/Kolkata"
+        },
+        "package_digest": "86f9b18499b56ec7a20c4ac58bcaef1058d99e894a8cfbbef14cdd0d390d4994",
+        "pricing": {
+          "pricing_version": "synthetic-legacy",
+          "unit_price": 20
+        },
+        "receipt_contract": "greenhouse_hosted_browser_https_200_v2",
+        "review_protocol_version": 4,
+        "reviewed_answers": {
+          "email": "synthetic@example.test",
+          "first_name": "Synthetic",
+          "last_name": "Fixture"
+        },
+        "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
+        "submit_control": {
+          "form_id": "application-form",
+          "label": "Submit application",
+          "type": "submit"
+        },
+        "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+        "upload": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "filename": "Synthetic.pdf",
+          "native_upload": {
+            "action_id": "00000000-0000-4000-8000-000000000004",
+            "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+            "artifact_size_bytes": 1024,
+            "document_id": "synthetic-document",
+            "filename": "Synthetic.pdf",
+            "multipart_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+            "multipart_size": 2048,
+            "native": {
+              "browser_major": 151,
+              "completed_at_ms": 1793439999500,
+              "document_id": null,
+              "frame_id": -1,
+              "from_cache": false,
+              "https_validation": "browser_default",
+              "initiator": "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb",
+              "ip": "198.51.100.8",
+              "method": "POST",
+              "native_body_crosscheck": "raw",
+              "redirected": false,
+              "request_body_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+              "request_body_size": 2048,
+              "request_body_source": "extension_owned_arraybuffer",
+              "request_id": "synthetic-format-only",
+              "started_at_ms": 1793439999000,
+              "status_code": 200,
+              "tab_id": -1,
+              "url": "https://synthetic.s3.amazonaws.com/"
+            },
+            "review_digest": "67543c5ebd78b8a18e9054a61f5f7c417956e05afe145c71c8dd96a8456ec157",
+            "review_id": "00000000-0000-4000-8000-000000000003",
+            "tab_id": 44,
+            "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+            "uploaded_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+            "version": "greenhouse_owned_upload_browser_https_v2"
+          },
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "status": "portal_reports_uploaded",
+          "upload_plan_sha256": "465aa4591f8cd40da5f64e2a21cfdbef1bb04fe06ea89a872628087f7b6ef026"
+        },
+        "upload_continuity": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "document_id": "synthetic-document",
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+        }
+      },
+      "review_digest": "d86dc7a6aade956fff4499f29ee0573ef34fbf97255984b22d1cb6378269bd96",
+      "review_protocol_version": 4,
+      "state": "draft",
+      "submission_status": "not_launched"
+    },
+    "review_sha256": "d86dc7a6aade956fff4499f29ee0573ef34fbf97255984b22d1cb6378269bd96"
+  },
+  "package_inputs_preimage": {
+    "admission_snapshot": {
+      "policy_revision": "synthetic-format-only"
+    },
+    "answers": {
+      "email": "synthetic@example.test",
+      "first_name": "Synthetic",
+      "last_name": "Fixture"
+    },
+    "application_mode": "browser",
+    "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+    "consents": {},
+    "credential_reference": "SYNTHETIC_UNUSED_REFERENCE",
+    "credit_cost": 3,
+    "destination": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+    "employer": "Razorpay",
+    "employer_policy": {
+      "enabled": false
+    },
+    "form_version": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "job_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
+    "opening_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "platform": "greenhouse",
+    "posting_id": "posting_synthetic",
+    "pricing_snapshot": null,
+    "receipt_contract": {},
+    "recipient_hosts": [
+      "job-boards.greenhouse.io"
+    ],
+    "region": "global",
+    "resume_choice": "original",
+    "source_id": "source_synthetic",
+    "submission_grant": "synthetic format only, no permission",
+    "tenant": "razorpaysoftwareprivatelimited"
+  },
+  "schema_version": "synthetic-browser-submission-contract-v1",
+  "unified5": {
+    "application_request": {
+      "application_id": "apply_synthetic",
+      "review_protocol_version": 5
+    },
+    "approve_request": {
+      "accepted_service_quote_id": "csq_55555555555555555555555555555555",
+      "confirmed": true,
+      "identity": "00000000-0000-4000-8000-000000000005",
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4"
+    },
+    "availability": {
+      "submit_protocol_versions": [
+        4,
+        5
+      ],
+      "unified_submit_available": true
+    },
+    "inspect_request": {
+      "application_id": "apply_synthetic",
+      "inspection": {
+        "assisted_values": {
+          "email": "synthetic@example.test",
+          "first_name": "Synthetic",
+          "last_name": "Fixture"
+        },
+        "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+        "document_id": "synthetic-document",
+        "frame_id": 0,
+        "manual_fields": [],
+        "native_context": {
+          "tab_id": 44,
+          "time_zone": "Asia/Kolkata"
+        },
+        "origin": "https://job-boards.greenhouse.io",
+        "outcome": "inspected",
+        "ready": true,
+        "review_protocol_version": 5,
+        "upload": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "filename": "Synthetic.pdf",
+          "native_upload": {
+            "action_id": "00000000-0000-4000-8000-000000000004",
+            "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+            "artifact_size_bytes": 1024,
+            "document_id": "synthetic-document",
+            "filename": "Synthetic.pdf",
+            "multipart_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+            "multipart_size": 2048,
+            "native": {
+              "browser_major": 151,
+              "completed_at_ms": 1793439999500,
+              "document_id": null,
+              "frame_id": -1,
+              "from_cache": false,
+              "https_validation": "browser_default",
+              "initiator": "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb",
+              "ip": "198.51.100.8",
+              "method": "POST",
+              "native_body_crosscheck": "raw",
+              "redirected": false,
+              "request_body_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+              "request_body_size": 2048,
+              "request_body_source": "extension_owned_arraybuffer",
+              "request_id": "synthetic-format-only",
+              "started_at_ms": 1793439999000,
+              "status_code": 200,
+              "tab_id": -1,
+              "url": "https://synthetic.s3.amazonaws.com/"
+            },
+            "review_digest": "67543c5ebd78b8a18e9054a61f5f7c417956e05afe145c71c8dd96a8456ec157",
+            "review_id": "00000000-0000-4000-8000-000000000003",
+            "tab_id": 44,
+            "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+            "uploaded_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+            "version": "greenhouse_owned_upload_browser_https_v2"
+          },
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "status": "portal_reports_uploaded",
+          "upload_plan_sha256": "465aa4591f8cd40da5f64e2a21cfdbef1bb04fe06ea89a872628087f7b6ef026"
+        },
+        "upload_continuity": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "document_id": "synthetic-document",
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+        },
+        "url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+      }
+    },
+    "lease_payload": {
+      "action_id": "00000000-0000-4000-8000-000000000006",
+      "allowed_actions": [
+        "submit"
+      ],
+      "application_id": "apply_synthetic",
+      "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+      "billing": {
+        "billing_currency": "credits",
+        "credits": 3,
+        "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
+        "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
+        "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
+        "operation": "verified_submission",
+        "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
+        "quote_expires_at_ms": 1793440060000,
+        "quote_id": "csq_55555555555555555555555555555555",
+        "route_id": "synthetic_verified_submission",
+        "route_version": "synthetic-v1",
+        "schema_version": "unified-browser-submission-v1",
+        "tariff_version": "credit-services-2026-10-27-v1"
+      },
+      "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+      "control_type": "submit",
+      "deadline": 1793440010000,
+      "device_id": "00000000-0000-4000-8000-000000000001",
+      "document_id": "synthetic-document",
+      "expected_application": {
+        "answers_attributes": {},
+        "appcast_click_id": null,
+        "attachments": {},
+        "data_compliance": {},
+        "demographic_answers": [],
+        "email": "synthetic@example.test",
+        "employments": [],
+        "first_name": "Synthetic",
+        "from_job_board_renderer": true,
+        "last_name": "Fixture",
+        "mapped_url_token": null,
+        "resume_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+        "resume_url_filename": "Synthetic.pdf",
+        "time_zone": "Asia/Kolkata"
+      },
+      "expected_application_sha256": "1a3f5f08c199f319a410c4b850743606837587461408c328ed34e32fee7626aa",
+      "fee_credits": 3,
+      "field_id": "final-submit",
+      "frame_id": 0,
+      "issued_at_ms": 1793440000000,
+      "native_context": {
+        "tab_id": 44,
+        "time_zone": "Asia/Kolkata"
+      },
+      "native_proof_sha256": "589c66e424085f5b4319a2324a6cf16eac851a7ffed16de41ce07df9b5144e8e",
+      "package_digest": "161cfa8481414e9a753b412bf68e0a6caece905285f4ad0d0f6df6104cec0377",
+      "protocol_version": 1,
+      "receipt_contract": "greenhouse_hosted_browser_https_200_v2",
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4",
+      "review_id": "00000000-0000-4000-8000-000000000005",
+      "review_protocol_version": 5,
+      "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
+      "submit_control": {
+        "form_id": "application-form",
+        "label": "Submit application",
+        "type": "submit"
+      },
+      "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+      "upload": {
+        "action_id": "00000000-0000-4000-8000-000000000004",
+        "filename": "Synthetic.pdf",
+        "native_upload": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "artifact_size_bytes": 1024,
+          "document_id": "synthetic-document",
+          "filename": "Synthetic.pdf",
+          "multipart_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+          "multipart_size": 2048,
+          "native": {
+            "browser_major": 151,
+            "completed_at_ms": 1793439999500,
+            "document_id": null,
+            "frame_id": -1,
+            "from_cache": false,
+            "https_validation": "browser_default",
+            "initiator": "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb",
+            "ip": "198.51.100.8",
+            "method": "POST",
+            "native_body_crosscheck": "raw",
+            "redirected": false,
+            "request_body_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+            "request_body_size": 2048,
+            "request_body_source": "extension_owned_arraybuffer",
+            "request_id": "synthetic-format-only",
+            "started_at_ms": 1793439999000,
+            "status_code": 200,
+            "tab_id": -1,
+            "url": "https://synthetic.s3.amazonaws.com/"
+          },
+          "review_digest": "67543c5ebd78b8a18e9054a61f5f7c417956e05afe145c71c8dd96a8456ec157",
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "tab_id": 44,
+          "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+          "uploaded_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+          "version": "greenhouse_owned_upload_browser_https_v2"
+        },
+        "review_id": "00000000-0000-4000-8000-000000000003",
+        "status": "portal_reports_uploaded",
+        "upload_plan_sha256": "465aa4591f8cd40da5f64e2a21cfdbef1bb04fe06ea89a872628087f7b6ef026"
+      },
+      "upload_continuity": {
+        "action_id": "00000000-0000-4000-8000-000000000004",
+        "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+        "document_id": "synthetic-document",
+        "review_id": "00000000-0000-4000-8000-000000000003",
+        "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+      }
+    },
+    "lease_sha256": "d1b7cba2dc3e35b13b34238814abcb844f0f5dede2e1d6948577eaf4f2b8aea4",
+    "pricing_sha256": "d931b090fb230d3df3ce3127224ab1e9ffb1e197ec7b667056c97f84bc8a82d3",
+    "review_response": {
+      "billing": {
+        "billing_currency": "credits",
+        "credits": 3,
+        "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
+        "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
+        "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
+        "operation": "verified_submission",
+        "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
+        "quote_expires_at_ms": 1793440060000,
+        "quote_id": "csq_55555555555555555555555555555555",
+        "route_id": "synthetic_verified_submission",
+        "route_version": "synthetic-v1",
+        "schema_version": "unified-browser-submission-v1",
+        "tariff_version": "credit-services-2026-10-27-v1"
+      },
+      "employer_confirmed": false,
+      "expires_at_ms": 1793440060000,
+      "fee_credits": 3,
+      "filled_count": 0,
+      "id": "00000000-0000-4000-8000-000000000005",
+      "payload": {
+        "admission": {
+          "policy_revision": "synthetic-format-only"
+        },
+        "allowed_actions": [
+          "submit"
+        ],
+        "answers": [
+          {
+            "id": "first_name",
+            "label": "First Name",
+            "required": true,
+            "type": "text",
+            "value": "Synthetic"
+          },
+          {
+            "id": "last_name",
+            "label": "Last Name",
+            "required": true,
+            "type": "text",
+            "value": "Fixture"
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "required": true,
+            "type": "text",
+            "value": "synthetic@example.test"
+          }
+        ],
+        "application_id": "apply_synthetic",
+        "artifact": {
+          "artifact_id": "artifact_synthetic",
+          "filename": "Synthetic.pdf",
+          "media_type": "application/pdf",
+          "resume_choice": "original",
+          "resume_id": 7,
+          "resume_version_id": null,
+          "sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "size_bytes": 1024
+        },
+        "assisted_values": {
+          "email": "synthetic@example.test",
+          "first_name": "Synthetic",
+          "last_name": "Fixture"
+        },
+        "billing": {
+          "billing_currency": "credits",
+          "credits": 3,
+          "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
+          "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
+          "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
+          "operation": "verified_submission",
+          "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
+          "quote_expires_at_ms": 1793440060000,
+          "quote_id": "csq_55555555555555555555555555555555",
+          "route_id": "synthetic_verified_submission",
+          "route_version": "synthetic-v1",
+          "schema_version": "unified-browser-submission-v1",
+          "tariff_version": "credit-services-2026-10-27-v1"
+        },
+        "candidate_id": 17,
+        "company": "Razorpay",
+        "context_digest": "756c258fbbbc427f970e15843fcd773e7aad3e57e9c8f87adbae1ee1355cf08f",
+        "disclosures": [
+          "Synthetic format data; no employer action is authorized.",
+          "Reserve three unified credits after explicit quote acceptance.",
+          "Unknown outcomes keep the hold and are never resent automatically."
+        ],
+        "document_id": "synthetic-document",
+        "expected_application": {
+          "answers_attributes": {},
+          "appcast_click_id": null,
+          "attachments": {},
+          "data_compliance": {},
+          "demographic_answers": [],
+          "email": "synthetic@example.test",
+          "employments": [],
+          "first_name": "Synthetic",
+          "from_job_board_renderer": true,
+          "last_name": "Fixture",
+          "mapped_url_token": null,
+          "resume_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+          "resume_url_filename": "Synthetic.pdf",
+          "time_zone": "Asia/Kolkata"
+        },
+        "expected_application_sha256": "1a3f5f08c199f319a410c4b850743606837587461408c328ed34e32fee7626aa",
+        "fee_credits": 3,
+        "field_mapping": [
+          {
+            "id": "first_name",
+            "label": "First Name",
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "last_name",
+            "label": "Last Name",
+            "required": true,
+            "type": "text"
+          },
+          {
+            "id": "email",
+            "label": "Email",
+            "required": true,
+            "type": "text"
+          }
+        ],
+        "fields": [],
+        "frame_id": 0,
+        "job": {
+          "content_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
+          "external_id": "4740333005",
+          "posting_id": "posting_synthetic",
+          "title": "Synthetic software role"
+        },
+        "manual_fields": [],
+        "native_context": {
+          "tab_id": 44,
+          "time_zone": "Asia/Kolkata"
+        },
+        "package_digest": "161cfa8481414e9a753b412bf68e0a6caece905285f4ad0d0f6df6104cec0377",
+        "pricing": {
+          "billing_currency": "credits",
+          "credits": 3,
+          "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
+          "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
+          "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
+          "operation": "verified_submission",
+          "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
+          "quote_expires_at_ms": 1793440060000,
+          "quote_id": "csq_55555555555555555555555555555555",
+          "route_id": "synthetic_verified_submission",
+          "route_version": "synthetic-v1",
+          "schema_version": "unified-browser-submission-v1",
+          "tariff_version": "credit-services-2026-10-27-v1"
+        },
+        "receipt_contract": "greenhouse_hosted_browser_https_200_v2",
+        "review_protocol_version": 5,
+        "reviewed_answers": {
+          "email": "synthetic@example.test",
+          "first_name": "Synthetic",
+          "last_name": "Fixture"
+        },
+        "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
+        "submit_control": {
+          "form_id": "application-form",
+          "label": "Submit application",
+          "type": "submit"
+        },
+        "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+        "upload": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "filename": "Synthetic.pdf",
+          "native_upload": {
+            "action_id": "00000000-0000-4000-8000-000000000004",
+            "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+            "artifact_size_bytes": 1024,
+            "document_id": "synthetic-document",
+            "filename": "Synthetic.pdf",
+            "multipart_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+            "multipart_size": 2048,
+            "native": {
+              "browser_major": 151,
+              "completed_at_ms": 1793439999500,
+              "document_id": null,
+              "frame_id": -1,
+              "from_cache": false,
+              "https_validation": "browser_default",
+              "initiator": "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb",
+              "ip": "198.51.100.8",
+              "method": "POST",
+              "native_body_crosscheck": "raw",
+              "redirected": false,
+              "request_body_sha256": "eca8dd412866c0284990fe934856b84a2016fd43d6a75569dd7cf00cdd89c32f",
+              "request_body_size": 2048,
+              "request_body_source": "extension_owned_arraybuffer",
+              "request_id": "synthetic-format-only",
+              "started_at_ms": 1793439999000,
+              "status_code": 200,
+              "tab_id": -1,
+              "url": "https://synthetic.s3.amazonaws.com/"
+            },
+            "review_digest": "67543c5ebd78b8a18e9054a61f5f7c417956e05afe145c71c8dd96a8456ec157",
+            "review_id": "00000000-0000-4000-8000-000000000003",
+            "tab_id": 44,
+            "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+            "uploaded_url": "https://synthetic.s3.amazonaws.com/synthetic/Synthetic.pdf",
+            "version": "greenhouse_owned_upload_browser_https_v2"
+          },
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "status": "portal_reports_uploaded",
+          "upload_plan_sha256": "465aa4591f8cd40da5f64e2a21cfdbef1bb04fe06ea89a872628087f7b6ef026"
+        },
+        "upload_continuity": {
+          "action_id": "00000000-0000-4000-8000-000000000004",
+          "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+          "document_id": "synthetic-document",
+          "review_id": "00000000-0000-4000-8000-000000000003",
+          "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
+        }
+      },
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4",
+      "review_protocol_version": 5,
+      "state": "draft",
+      "submission_status": "not_launched"
+    },
+    "review_sha256": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4"
+  }
+}

@@ -259,6 +259,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owned Dashboard */
+        get: operations["get_owned_dashboard_api_auth_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/delete-account": {
         parameters: {
             query?: never;
@@ -377,6 +394,40 @@ export interface paths {
         put?: never;
         /** Request Link */
         post: operations["request_link_api_auth_password_reset_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/privacy-erasure/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm */
+        post: operations["confirm_api_auth_privacy_erasure_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/privacy-erasure/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Link */
+        post: operations["request_link_api_auth_privacy_erasure_request_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2022,6 +2073,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evidence-items/transcription-review/{resume_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcription Review Snapshot */
+        get: operations["transcription_review_snapshot_api_v1_evidence_items_transcription_review__resume_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evidence-items/{evidence_id}": {
         parameters: {
             query?: never;
@@ -2038,6 +2106,23 @@ export interface paths {
         head?: never;
         /** Update Evidence */
         patch: operations["update_evidence_api_v1_evidence_items__evidence_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/evidence-items/{evidence_id}/transcription-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Transcription */
+        post: operations["review_transcription_api_v1_evidence_items__evidence_id__transcription_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/features": {
@@ -2715,6 +2800,8 @@ export interface components {
         };
         /** CandidateRequest */
         CandidateRequest: {
+            /** Accepted Service Quote Id */
+            accepted_service_quote_id?: string | null;
             /**
              * Confirmed
              * @default false
@@ -3157,6 +3244,58 @@ export interface components {
              */
             server_time: string;
         };
+        /** DashboardOpportunities */
+        DashboardOpportunities: {
+            /** Items */
+            items: components["schemas"]["DashboardOpportunity"][];
+            /** Total */
+            total: number;
+        };
+        /** DashboardOpportunity */
+        DashboardOpportunity: {
+            /** Company */
+            company: string;
+            /** Id */
+            id: string;
+            /** Next Action */
+            next_action: string | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "saved" | "evaluating" | "preparing" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | "archived";
+            /** Title */
+            title: string;
+        };
+        /** DashboardReminder */
+        DashboardReminder: {
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+        };
+        /** DashboardResumeSignal */
+        DashboardResumeSignal: {
+            /** Evidenced Skills */
+            evidenced_skills: number;
+            /** Verification Rate */
+            verification_rate: number;
+        };
+        /** DashboardSummary */
+        DashboardSummary: {
+            /** Applications Count */
+            applications_count: number;
+            /** Average Match Score */
+            average_match_score: number;
+            /** Resume Count */
+            resume_count: number;
+            resume_quality: components["schemas"]["DashboardResumeSignal"];
+        };
         /** DimensionScore */
         DimensionScore: {
             /** Evidence Ids */
@@ -3284,6 +3423,43 @@ export interface components {
         };
         /** EmptyEnrollmentChallenge */
         EmptyEnrollmentChallenge: Record<string, never>;
+        /** ErasureCompleted */
+        ErasureCompleted: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "ACCOUNT_ERASED";
+        };
+        /** ErasureConfirm */
+        ErasureConfirm: {
+            /**
+             * Confirm Erasure
+             * @constant
+             */
+            confirm_erasure: true;
+            /**
+             * Token
+             * Format: password
+             */
+            token: string;
+        };
+        /** ErasureRequest */
+        ErasureRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
+        /** ErasureRequested */
+        ErasureRequested: {
+            /**
+             * Status
+             * @constant
+             */
+            status: "ERASURE_LINK_REQUESTED";
+        };
         /** EvidenceCreate */
         EvidenceCreate: {
             /**
@@ -3343,6 +3519,11 @@ export interface components {
             resume_id: number | null;
             /** Skills */
             skills: string[];
+            /**
+             * Snapshot Fingerprint
+             * @description Bind review to every exact returned fact, source and approval field.
+             */
+            readonly snapshot_fingerprint: string;
             /** Source Ref */
             source_ref: string | null;
             /** Title */
@@ -3361,6 +3542,8 @@ export interface components {
             category?: string | null;
             /** Evidence Text */
             evidence_text?: string | null;
+            /** Expected Fingerprint */
+            expected_fingerprint?: string | null;
             /** Metrics */
             metrics?: {
                 [key: string]: unknown;
@@ -4217,6 +4400,22 @@ export interface components {
             schema_version: "owned-bootstrap-v1";
             /** Unavailable */
             unavailable: ("profile" | "features" | "credit_availability" | "credit_wallet")[];
+        };
+        /** OwnedDashboardView */
+        OwnedDashboardView: {
+            bootstrap: components["schemas"]["OwnedBootstrapView"];
+            opportunities: components["schemas"]["DashboardOpportunities"] | null;
+            /** Reminders */
+            reminders: components["schemas"]["DashboardReminder"][] | null;
+            /**
+             * Schema Version
+             * @default owned-dashboard-v1
+             * @constant
+             */
+            schema_version: "owned-dashboard-v1";
+            summary: components["schemas"]["DashboardSummary"] | null;
+            /** Unavailable */
+            unavailable: ("summary" | "opportunities" | "reminders")[];
         };
         /** PackageUpdate */
         PackageUpdate: {
@@ -5177,6 +5376,57 @@ export interface components {
              * @enum {string}
              */
             reason_code: "source_required" | "editable_source_required" | "source_unreadable" | "source_too_large" | "source_protected" | "source_format_unsupported" | "font_unsupported" | "replacement_does_not_fit" | "source_layout_changed" | "source_span_unavailable" | "source_links_protected" | "evidence_changes_unsupported" | "tex_dependency_unsupported" | "tex_compile_failed" | "tex_worker_unavailable" | "tex_artifact_invalid" | "no_supported_changes" | "provider_unavailable" | "generation_unavailable" | "validation_failed";
+        };
+        /** TranscriptionReviewAction */
+        TranscriptionReviewAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "correct_transcription" | "confirm_visible_text";
+            /** Evidence Text */
+            evidence_text: string;
+            /** Expected Assessment Fingerprint */
+            expected_assessment_fingerprint?: string | null;
+            /** Expected Fingerprint */
+            expected_fingerprint?: string | null;
+            /** Section */
+            section: string;
+        };
+        /** TranscriptionReviewResponse */
+        TranscriptionReviewResponse: {
+            /** Assessment Fingerprint */
+            assessment_fingerprint: string;
+            /** Filename */
+            filename: string;
+            /** Resume Id */
+            resume_id: number;
+            /** Sections */
+            sections: components["schemas"]["TranscriptionSectionReview"][];
+            /** Source Format */
+            source_format: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_required" | "needs_review" | "reviewed" | "editable_source_required";
+            /** Unmapped Text */
+            unmapped_text?: string | null;
+        };
+        /** TranscriptionSectionReview */
+        TranscriptionSectionReview: {
+            /** Evidence Fingerprint */
+            evidence_fingerprint: string | null;
+            /** Evidence Id */
+            evidence_id: string | null;
+            /** Original Text */
+            original_text: string;
+            /** Reviewed */
+            reviewed: boolean;
+            /** Section */
+            section: string;
         };
         /** UploadCreate */
         UploadCreate: {
@@ -6669,6 +6919,26 @@ export interface operations {
             };
         };
     };
+    get_owned_dashboard_api_auth_dashboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnedDashboardView"];
+                };
+            };
+        };
+    };
     delete_account_api_auth_delete_account_post: {
         parameters: {
             query?: never;
@@ -7199,6 +7469,198 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResetFailed"];
+                };
+            };
+        };
+    };
+    confirm_api_auth_privacy_erasure_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErasureConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureCompleted"];
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+        };
+    };
+    request_link_api_auth_privacy_erasure_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ErasureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErasureRequested"];
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
+                };
+            };
+            /** @description Authentication input rejected without reflecting private values */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        detail: "Invalid authentication request";
+                    };
                 };
             };
         };
@@ -10578,9 +11040,42 @@ export interface operations {
             };
         };
     };
-    delete_evidence_api_v1_evidence_items__evidence_id__delete: {
+    transcription_review_snapshot_api_v1_evidence_items_transcription_review__resume_id__get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                resume_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptionReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_evidence_api_v1_evidence_items__evidence_id__delete: {
+        parameters: {
+            query?: {
+                expected_fingerprint?: string | null;
+            };
             header?: never;
             path: {
                 evidence_id: string;
@@ -10619,6 +11114,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EvidenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_transcription_api_v1_evidence_items__evidence_id__transcription_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TranscriptionReviewAction"];
             };
         };
         responses: {

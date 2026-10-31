@@ -120,6 +120,16 @@ jobs:
           tests/test_schema25_app_rolling_release.py tests/test_schema25_app_compatibility_postgres.py
           tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
           tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_protocol_v2.py
+          tests/test_schema25_app_compatibility_v3_postgres.py tests/test_schema25_app_protocol_v3.py
+          tests/test_schema25_app_rolling_v3.py tests/test_qualify_schema26_compatibility.py
+          tests/test_evidence_writer_adapters.py tests/test_evidence_writer_fence.py
+          tests/test_evidence_writer_fence_postgres.py tests/test_evidence_writer_schema26_contract.py
+          tests/test_neon_schema26_release_transport.py tests/test_schema26_operator_successors.py
+          tests/test_schema26_catalog_postgres.py tests/test_privacy_erasure_recovery.py
+          tests/test_evidence_writer_schema26_step.py tests/test_evidence_writer_schema26_step_postgres.py
+          tests/test_privacy_erasure_postgres.py tests/test_mail_budget.py app/routers/privacy_erasure.py
+          tests/fixtures/evidence_fence.py
+          ../infra/gcp/schema26_app_rolling_v3.py ../infra/gcp/schema26_migration_metadata.py
           tests/test_firestore_identity_list.py tests/test_candidate_validation_identity_list.py
           tests/test_native_metadata_admission.py tests/test_native_metadata_admission_redis.py
           app/routers/native_metadata_http.py
@@ -200,6 +210,12 @@ jobs:
           scripts/neon_direct_identity.py ../infra/gcp/browser_schema19_release.py
           scripts/email_password_schema21_contract.py scripts/email_password_schema21_step.py
           scripts/schema25_app_release_contract.py scripts/schema25_app_release_contract_v2.py
+          scripts/schema25_app_release_contract_v3.py scripts/evidence_writer_schema26_contract.py
+          scripts/evidence_writer_schema26_step.py
+          scripts/qualify_schema26_compatibility.py scripts/qualify_schema25_retained_v2.py
+          scripts/reconcile_native_expenses_schema26.py scripts/review_canary_audience_schema26.py
+          ../infra/gcp/schema26_app_rolling_v3.py ../infra/gcp/schema26_migration_metadata.py
+          app/routers/privacy_erasure.py
           scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
           ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py
           scripts/credit_shadow_report.py
@@ -269,9 +285,54 @@ jobs:
           APP_ENV: test
           DATABASE_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_test
         run: |
-          .venv/bin/alembic upgrade head
+          # Preserve the original reversible migration rehearsal before the
+          # intentionally irreversible evidence/privacy fence is introduced.
+          .venv/bin/alembic upgrade 20261028_0025
           .venv/bin/alembic downgrade 20260803_0001
-          .venv/bin/alembic upgrade head
+          .venv/bin/alembic upgrade 20261028_0025
+          .venv/bin/python - <<'PY'
+          from alembic import command
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          from sqlalchemy import create_engine, text
+          from app.database import DATABASE_URL
+          from scripts import evidence_writer_schema26_contract as contract
+
+          configuration = Config("alembic.ini")
+          assert ScriptDirectory.from_config(configuration).get_current_head() == contract.SCHEMA
+          command.upgrade(configuration, contract.SCHEMA)
+          engine = create_engine(DATABASE_URL, hide_parameters=True)
+          def snapshot():
+              with engine.connect() as connection:
+                  observed = contract.observe(connection)
+                  fence = connection.execute(text(
+                      "SELECT c.oid,c.relowner,c.relacl,t.oid,t.tgenabled,p.oid,p.proowner,p.proacl,"
+                      "pg_catalog.pg_get_triggerdef(t.oid),pg_catalog.pg_get_functiondef(p.oid) "
+                      "FROM pg_catalog.pg_namespace n JOIN pg_catalog.pg_class c ON c.relnamespace=n.oid "
+                      "JOIN pg_catalog.pg_trigger t ON t.tgrelid=c.oid "
+                      "JOIN pg_catalog.pg_proc p ON p.oid=t.tgfoid "
+                      "WHERE n.nspname='public' AND c.relname='evidence_items' "
+                      "AND t.tgname='evidence_writer_fence' AND NOT t.tgisinternal"
+                  )).one()
+                  return observed, tuple(fence)
+          try:
+              before = snapshot()
+              try:
+                  command.downgrade(configuration, "20260803_0001")
+              except RuntimeError as error:
+                  refusal = (
+                      "Evidence writer fence downgrade is unsupported: a reviewed safe replacement "
+                      "must retain old-writer denial before this fence can be removed; live privacy "
+                      "tokens, outbox deliveries and unknown completion obligations also block safe removal"
+                  )
+                  assert type(error) is RuntimeError and str(error) == refusal
+              else:
+                  raise AssertionError("Schema26 downgrade unexpectedly succeeded")
+              assert snapshot() == before, "Refused downgrade changed schema26 or its exact evidence fence"
+          finally:
+              engine.dispose()
+          print("Historical25 round trip passed; schema26 refused downgrade with its exact fence unchanged")
+          PY
       - name: Provision disposable Lever pacing Redis
         id: lever-redis
         timeout-minutes: 3
@@ -336,12 +397,12 @@ jobs:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
         run: .venv/bin/python scripts/qualify_schema25_retained_v1.py
-      - name: Qualify schema25 app v2 compatibility
+      - name: Qualify schema26 app v3 compatibility
         working-directory: backend
         env:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_rolling_v2.py tests/test_schema25_app_alias_retirement.py
+        run: .venv/bin/python -I -B scripts/qualify_schema26_compatibility.py
       - name: Prepare pinned owned TLS Redis wire binary
         id: native-metadata-redis
         timeout-minutes: 7
@@ -363,14 +424,22 @@ jobs:
             > "$owned_redis_root/build.log" 2>&1
           test -x "$owned_redis_root/source/src/redis-server"
           printf 'binary=%s\n' "$owned_redis_root/source/src/redis-server" >> "$GITHUB_OUTPUT"
-      - name: Qualify schema25 app v2 native protocol
+      - name: Qualify retained actual-source schema25 app v2
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v2.py
+        run: .venv/bin/python scripts/qualify_schema25_retained_v2.py
+      - name: Qualify schema26 app v3 native protocol
+        working-directory: backend
+        env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v3.py
       - name: Run backend tests
         working-directory: backend
         env:
@@ -392,7 +461,7 @@ jobs:
             --owned ../infra/document-processing/service.py
           # Catch the native delivery/application contract before the full suite.
           .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
-          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics --ignore=tests/test_schema25_app_compatibility_v2_postgres.py --ignore=tests/test_schema25_app_rolling_v2.py --ignore=tests/test_schema25_app_alias_retirement.py --ignore=tests/test_schema25_app_protocol_v2.py
       - name: Save encrypted PostgreSQL failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
