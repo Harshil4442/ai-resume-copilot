@@ -174,3 +174,46 @@ then frontend promotion, owner journeys and rollback verification remain require
 Full200/native/model/human quality, realistic financial evidence, large-scale
 capacity and worldwide coverage remain separate uncompleted requirements. All
 corresponding generation/sales flags stay closed.
+
+## Restore the three original schedules after promotion
+
+The schema25 maintenance close requires all three schedules paused. Native readback
+before this release found all three originally ENABLED. Use the distinct
+`infra/gcp/schema26_schedule_resume.py` continuation after the exact schema26 V3
+promotion is fully observed; do not leave them paused or pass a V3 plan to the
+historical25 deployed-maintenance adapter.
+
+From the exact qualified checkout, with both Cloud SDK logging flags retained,
+run one phase using the ORIGINAL maintenance and application files/journals:
+
+```sh
+python -B -m infra.gcp.schema26_schedule_resume resume --root "$ROOT" \
+  --maintenance-plan "$OUT/maintenance.json" --maintenance-plan-sha256 "$M_SHA" \
+  --maintenance-journal "$OUT/maintenance-journal" \
+  --application-plan "$OUT/app26.json" --application-plan-sha256 "$A_SHA" \
+  --application-journal "$OUT/app-journal"
+```
+
+This creates one immutable maintenance-journal binding to the exact application
+plan/source, checks each original ENABLED→PAUSED record and current configuration,
+then resumes only `hirewiz-resume-cleanup`, `hirewiz-maintenance` and
+`hirewiz-resume-scan`. Each schedule uses the original one-send intent/readback
+primitive. Complete promotion ACK/LRO/readback/health, current26 catalog/roles,
+source/CI/Build, secrets/IAM, document pins and every other resource remain required.
+The same temporary narrow health ID-token capability may be needed; this operator
+creates no IAM grant, credential, DDL, queue or worker change.
+
+An uncertain POST or local acknowledgement requires the SAME command with mode
+`reconcile`. Reconcile reads only previously started actions and never sends a
+resume or begins the next schedule. Its `remaining_unsent` result requires an
+explicit later `resume` for those unsent schedules after review. Never replace a
+journal, rebind an existing restore or resend an unknown action.
+
+The exact schedule-state transition intentionally changes the old application's
+captured PAUSED resource pins. The original V3 `verify_global` remains strict:
+generic V3 observe/rollback with that old resource snapshot refuses after restore.
+The continuation's reconcile is the truthful schedule-aware post-restore
+observation; it does not claim a general rollback/RTO mechanism. ReqV1.1 R03 and
+funded rollback evidence remain unqualified before commercial activation. Do not
+relax the old resource pins, change them in a retained plan, or count source-only
+port tests as native restoration or recovery acceptance.

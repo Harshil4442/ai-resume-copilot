@@ -542,6 +542,14 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
         return plan
 
     def verify_global(self, plan):
+        self._verify_global_before_resources(plan)
+        need(
+            self._resources(plan.workers_release) == plan.resources,
+            "resource_or_document_state_changed",
+        )
+        self._verify_global_after_resources(plan)
+
+    def _verify_global_before_resources(self, plan):
         plan.validate()
         need(type(plan) is self.plan_type, "distinct_app_plan_required")
         need(type(plan.maintenance_baseline) is ClosedApiBaseline, "maintenance_baseline_required")
@@ -565,10 +573,8 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
             self._reachable(plan.services) == plan.reachable_revisions,
             "reachable_prior_revision_changed",
         )
-        need(
-            self._resources(plan.workers_release) == plan.resources,
-            "resource_or_document_state_changed",
-        )
+
+    def _verify_global_after_resources(self, plan):
         signature, _ = self._database(
             plan.runtime_secret,
             plan.observer_secret,
