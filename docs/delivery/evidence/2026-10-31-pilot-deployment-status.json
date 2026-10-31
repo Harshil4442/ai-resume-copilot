@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-30T22:57:54.051386+00:00",
+  "observed_at": "2026-10-31T03:31:42.706879+00:00",
   "report_date_local": "2026-10-31",
   "timezone": "Asia/Kolkata",
   "scope": "20 reviewed employer origins and Razorpay/Greenhouse candidate-reviewed pilot; worldwide expansion and final employer submission deferred",
@@ -8,14 +8,20 @@
     "stage7_overall_complete": false,
     "backend_source": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
     "app_services_at_100_percent": 3,
-    "frontend_source": "3cb27683ac884f5861a13d3cead2e3278bc7f3b6",
+    "frontend_source": "8648118cace6284f5b7e7347607475d6cb4e0f92",
     "frontend_promoted": true,
-    "companion_public_version": "0.8.5",
+    "companion_public_version": "0.8.7",
     "temporary_health_permission_removed": true,
     "manual_frontend_promotion_retained": true,
     "estimated_effort": null,
     "actual_effort_minutes_approximate": 100,
-    "effort_note": "Approximate elapsed rollout work; no earlier retained estimate. Not total project effort."
+    "effort_note": "The approximate 100 minutes refers to the earlier app/worker rollout, not this companion update or total project effort. No retained earlier estimate.",
+    "frontend_deployment": "dpl_9XTqBWiudei8KdkYikG6wV1YoK14",
+    "frontend_ci": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/41158935649",
+    "frontend_source_pull_request": "https://github.com/Harshil4442/ai-resume-copilot/pull/85",
+    "frontend_public_readiness_http": 204,
+    "frontend_invalid_origin_http": 403,
+    "manual_frontend_setting_native_ui_recheck_pending": true
   },
   "worker_qualification": {
     "github_run": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/41119586258",
@@ -26,20 +32,30 @@
     "pull_request": "https://github.com/Harshil4442/ai-resume-copilot/pull/83",
     "schema26_migrated": false,
     "deployed": false,
-    "qualification_complete": false
+    "qualification_complete": false,
+    "source": "55cbc5c041a1ff9409fdd3cfc5469fda5267c49a",
+    "last_ci": "https://github.com/Harshil4442/ai-resume-copilot/actions/runs/41160930978",
+    "last_ci_status": "failed: inner native protocol reached its unchanged 240-second limit; active case not retained",
+    "next": "Source-only safe timeout observation and maintenance/retirement/lifecycle checks; no database upgrade executed"
   },
   "browser_acceptance": {
     "owner_setup_page_signed_in": true,
     "same_identity_extension_reloaded": true,
-    "signed_connection_status_http": 403,
+    "signed_connection_status_http": null,
     "connection_review_cancel_revoke_complete": false,
     "employer_form_first_name_and_email_empty": true,
     "resume_attached_to_employer": false,
-    "employer_application_submitted": false
+    "employer_application_submitted": false,
+    "native_pairing_success_observed": true,
+    "native_loaded_version_last_observed": "0.8.6",
+    "same_folder_source_files_version": "0.8.7",
+    "new_version_reload_pending": true,
+    "mac_unlock_pending": true,
+    "observation_note": "The repaired 0.8.6 signed native pairing and current-connection check succeeded.0.8.7 public bytes and same-folder source update are verified; its native reload and subsequent review/cancel/revoke remain pending. No new HTTP200 claim is inferred from UI success."
   },
   "remaining_gates": [
     "Representative native/model and independent human quality acceptance",
-    "Native10,000-user workload, peaks and cost capacity",
+    "Native 10,000-user workload, peaks and cost capacity",
     "Funded seven-day and200-operation shadow accounting",
     "Legacy mapping, invoice/tax reconciliation and commercial owner decision",
     "Browser review, cancellation and exact-device revocation"

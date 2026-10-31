@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-10-30T22:57:54.051386+00:00",
+  "updated_at": "2026-10-31T03:31:42.706879+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -104,8 +104,8 @@
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
-      "local_result": "Desktop and 375px mobile public-page checks passed for the promoted frontend, with navigation and loaded images observed. Companion0.8.5 was reloaded on the same browser identity, but signed connection status returned HTTP403; review/cancel/revoke is not accepted. Native10,000-user and peak/cost/capacity gates remain pending."
+      "status_observed_at": "2026-10-31T03:31:42.706879+00:00",
+      "local_result": "Earlier desktop/mobile public-page checks and owned responsive controls remain retained. Companion0.8.7 is publicly deployed after exact-source release checks; the same-browser native pairing succeeded on 0.8.6. The 0.8.7 local source update is ready, but native reload and original-file review/cancel/revoke await Mac unlock. Native 10,000-user workload and peak/cost/capacity gates remain pending."
     },
     {
       "number": 6,
@@ -146,8 +146,8 @@
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "local_result": "Deployment item completed: all three app services serve immutable e23 at100%, the refreshed document worker serves its accepted image, and the compatible frontend is promoted on both public domains. The temporary health permission was removed and manual frontend promotion remains enabled. This is a pilot deployment, not completion of Stage7: companion review/cancel/revoke, the later schema26 release, opted-in canary and all commercial gates remain pending.",
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
+      "local_result": "Deployment item completed: all three app services serve immutable e23, the refreshed accepted document worker serves, and frontend0.8.7 is promoted on both public domains with verified public package/readiness. The temporary health permission remains removed. Manual domain assignment was reapplied; its fresh native UI check awaits unlock. Stage7 remains open for current companion acceptance, later schema26 release, opted-in canary and all commercial gates.",
+      "status_observed_at": "2026-10-31T03:31:42.706879+00:00"
     },
     {
       "number": 8,
