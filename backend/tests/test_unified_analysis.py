@@ -1,7 +1,11 @@
 """The actual analysis admission/worker/settlement uses one funded credit wallet."""
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pytest
 from backend.app import models
+from backend.app.database import Base
 from backend.app.domains.analysis import schemas, tasks
 from backend.app.domains.analysis import service as analysis_service
 from backend.app.domains.credits import analysis, finance, runtime, service, service_quotes
@@ -9,11 +13,31 @@ from backend.app.domains.credits.models import CreditExecutionHold, CreditReserv
 from backend.app.services.delivery_contracts import current_output_contract
 from backend.app.services.generation_budget import current_budget
 from backend.tests.test_analysis_runs import _native_source
-from backend.tests.test_unified_credits import factory, grant
+from backend.tests.test_unified_credits import grant
 from backend.tests.test_unified_execution import budgets, financial_policy, response, route
 from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
 
-assert factory
+
+@pytest.fixture
+def factory():
+    # This module exercises real fresh-input sessions during execution. Keep its
+    # SQLite connections independent; the shared credit-only fixture is unchanged.
+    with TemporaryDirectory(prefix="hirewiz-unified-analysis-") as directory:
+        engine = create_engine("sqlite:///" + str(Path(directory) / "analysis.sqlite"),
+            poolclass=QueuePool)
+        try:
+            Base.metadata.create_all(engine)
+            maker = sessionmaker(engine, autoflush=False)
+            with maker() as db:
+                db.add_all([models.User(id=i, email=f"credit-test-{i}@example.com",
+                    ai_credits=17, job_service_credits=13) for i in (1, 2)])
+                db.commit()
+            yield maker
+        finally:
+            engine.dispose()
 
 
 @pytest.fixture
