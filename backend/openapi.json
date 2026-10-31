@@ -1200,6 +1200,18 @@
       "CandidateRequest": {
         "additionalProperties": false,
         "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "pattern": "^csq_[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
           "confirmed": {
             "default": false,
             "title": "Confirmed",
