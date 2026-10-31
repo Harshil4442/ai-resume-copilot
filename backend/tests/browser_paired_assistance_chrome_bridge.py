@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -40,6 +41,15 @@ from app.domains.employer.service import _package_digest  # noqa: E402
 from app.domains.recovery.browser_pairing import production_browser_pairing  # noqa: E402
 from app.domains.recovery.contracts import canonical  # noqa: E402
 from app.domains.recovery.store import GuardDenied, GuardUnavailable  # noqa: E402
+from app.observability import JsonFormatter  # noqa: E402
+
+# Preserve the real finite native diagnostic in this owned harness, so expected
+# denial tests can assert its exact labels while every unexpected stderr fails.
+native_handler = logging.StreamHandler()
+native_handler.setFormatter(JsonFormatter())
+native_logger = logging.getLogger("native_boundary")
+native_logger.addHandler(native_handler)
+native_logger.propagate = False
 
 APPLICATION = "--application" in sys.argv
 REVISION = "companion_0_8_0" if APPLICATION else "companion_0_7_0"

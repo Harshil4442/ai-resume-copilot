@@ -2,6 +2,7 @@
 // SDK-intercepted production composition → protected + SQL activation. All HTTP
 // is locally fulfilled. Test-only fixed clocks match the synthetic native clock.
 import assert from "node:assert/strict";
+import { readinessFixture } from "./pairing-readiness-fixture.js";
 import test from "node:test";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ const WEBSITE = "https://www.hirewizhq.com";
 const EXTENSION = "pnjmegppacleipajnifjmbcopjjffklb";
 const message = (popup, value) => popup.evaluate((input) => chrome.runtime.sendMessage(input), value);
 
-async function fixture() {
+async function fixture({ expectedNativeFailures = [] } = {}) {
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-paired-assistance-browser-`);
   const pending = [], requests = []; let errors = "", context;
   const python = spawn(process.env.HIREWIZ_BROWSER_PAIRED_PYTHON || new URL("backend/.venv/bin/python", ROOT).pathname,
@@ -52,6 +53,8 @@ async function fixture() {
         if(url.startsWith("chrome-extension:")) return route.continue();
         const origin = request.headers().origin || "";
         requests.push({url,origin,method:request.method()});
+        const ready = readinessFixture({url, method:request.method(), headers:request.headers(), body:request.postData()}, WEBSITE, EXTENSION);
+        if (ready) return route.fulfill(ready);
         let result;
         if(url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) && request.method()==="POST") {
           result = await bridge({operation:"pairing_device",action:url.split("/").at(-1),origin,body:request.postDataJSON()});
@@ -69,9 +72,11 @@ async function fixture() {
     return {...current,bridge,requests,setup,get context(){return context;},
       async restart(){await context.close();return launch();},
       async close(){await context?.close();if(python.exitCode===null){python.stdin.end();await new Promise(resolve=>python.once("exit",resolve));}
-        await rm(directory,{recursive:true,force:true});assert.equal(errors,"");
-        assert.ok(requests.every(({url,origin,method})=>method==="POST" && origin===`chrome-extension://${EXTENSION}`
-          && (url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) || url.startsWith(`${WEBSITE}/api/browser-assistance/device/`))),"Only owned local fulfillments with actual extension Origin");}
+        await rm(directory,{recursive:true,force:true});
+        assert.deepEqual(errors.split("\n").filter(Boolean).map(line=>JSON.parse(line)),expectedNativeFailures);
+        assert.ok(requests.every(({url,origin,method})=>method==="GET" ? readinessFixture({url,method,headers:origin?{origin}:{},body:null},WEBSITE,EXTENSION)?.status===204
+          : method==="POST" && origin===`chrome-extension://${EXTENSION}`
+          && (url.startsWith(`${WEBSITE}/api/browser-pairing/device/`) || url.startsWith(`${WEBSITE}/api/browser-assistance/device/`))),"Only finite public readiness or owned signed fulfillments with actual extension Origin");}
     };
   } catch(error){await context?.close();python.kill();await rm(directory,{recursive:true,force:true});throw error;}
 }
@@ -111,7 +116,7 @@ test("installed MV3 genuine native pairing activates same Chrome key for assista
 });
 
 test("installed MV3 wrong candidate password cannot enable application UI or native completion",async()=>{
-  const f=await fixture();try {
+  const f=await fixture({expectedNativeFailures:[{event:"native_boundary_failure_v1",component:"browser_pairing",stage:"native_operation",exception_type:"GuardDenied"}]});try {
     const selected=await start(f);
     assert.equal((await f.bridge({operation:"candidate_fixture_approve",pairing_id:selected.pairing_id,wrong_password:true})).status,403);
     const checked=await complete(f);assert.equal(checked.connected,false);assert.equal(checked.phase,"awaiting_candidate");
@@ -119,7 +124,7 @@ test("installed MV3 wrong candidate password cannot enable application UI or nat
     await expect(f.popup.locator("#assistance")).toBeHidden();
     assert.equal(f.requests.filter(({url})=>url.endsWith("/complete")).length,0);
     const audit=(await f.bridge({operation:"audit"})).body;
-    assert.deepEqual(audit.devices,[]);assert.equal(audit.protected_devices,0);assert.equal(audit.signatures,0);
+    assert.deepEqual(audit.devices,[]);assert.equal(audit.protected_devices,0);assert.equal(audit.signatures,0);assert.equal(audit.application_actions,0);
   }finally{await f.close();}
 });
 

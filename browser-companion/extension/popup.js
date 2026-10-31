@@ -2,6 +2,7 @@ import { CONFIG } from "./config.js";
 import { decode64 } from "./protocol.js";
 import { nativeStorageOrigin } from "./greenhouse-native-network.js";
 import { showStartupFailure, startupDiagnostic, startupStatus } from "./startup-diagnostics.js";
+import { pairingReadTimingSupport } from "./pairing-runtime.js";
 const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
@@ -85,6 +86,9 @@ async function showConnection(value) {
   element("native-state").textContent = value.message || (expiredPending
     ? "This connection review expired. Check its current status before choosing a recovery action."
     : labels[value.phase]) || "Connection needs inspection.";
+  const timing = pairingReadTimingSupport(value.transport_timing);
+  element("native-read-timing").hidden = timing === null;
+  element("native-read-timing").textContent = timing ?? "";
 }
 function connectionAction(id, type) {
   action(id, async () => {

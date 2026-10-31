@@ -10,6 +10,7 @@ import { createHash, X509Certificate, generateKeyPairSync } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { nativeFixtureBuild } from "../scripts/native-fixture-build.js";
 import { canonical } from "../extension/protocol.js";
+import { readinessFixture } from "./pairing-readiness-fixture.js";
 
 async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey = false, inspectedKeyStatus = null,
   executorRevision = "owned-runtime-socket-probe-v1" } = {}) {
@@ -18,8 +19,11 @@ async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey =
   const certificate = await readFile(`${directory}/tls.crt`);
   const spki = new X509Certificate(certificate).publicKey.export({ type: "spki", format: "der" });
   const pin = createHash("sha256").update(spki).digest("base64");
-  const requests = [], pending = new Set();
+  const requests = [], readinessRequests = [], pending = new Set();
+  let extensionId;
   const server = createServer({ key: await readFile(`${directory}/tls.key`), cert: certificate }, (req, res) => {
+    const ready = readinessFixture({ url: `https://127.0.0.1${req.url}`, method: req.method, headers: req.headers, body: null }, "https://127.0.0.1", extensionId);
+    if (ready) { readinessRequests.push(req.url); req.resume(); res.writeHead(ready.status, ready.headers); res.end(); return; }
     // Record endpoint names only: no bodies, headers, candidate or key material.
     requests.push(req.url);
     if (req.url === "/api/browser-pairing/device/inspect-key" && inspectedKeyStatus) {
@@ -43,6 +47,7 @@ async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey =
   const { publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const authorityKey = publicKey.export({ format: "jwk" });
   const build = await nativeFixtureBuild(`${directory}/extension`, { websiteOrigin: origin, authorityKey, executorRevision, grantTestOrigin });
+  extensionId = build.extensionId;
   let context;
   const launch = async (unavailable = false) => {
     context = await chromium.launchPersistentContext(`${directory}/profile`, { channel: "chromium", headless: true,
@@ -56,7 +61,7 @@ async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey =
   };
   try {
     const current = await launch();
-    return { ...current, origin, requests, directory, get context() { return context; },
+    return { ...current, origin, requests, readinessRequests, directory, get context() { return context; },
       async restart({ unavailable = false } = {}) { await context.close(); return launch(unavailable); },
       async close() { await context?.close(); for (const response of pending) response.destroy(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); } };
   } catch (error) { await context?.close(); for (const response of pending) response.destroy(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); await rm(directory, { recursive: true, force: true }); throw error; }
@@ -110,6 +115,7 @@ test("actual MV3: unavailable socket outcome persists unknown; restart and cance
     await expect(f.popup.getByRole("alert")).toContainText("outcome needs inspection");
     const state = await checkpoint(f.worker); assert.equal(state.phase, "unknown");
     assert.deepEqual(f.requests, ["/api/browser-pairing/device/prepare"]);
+    assert.deepEqual(f.readinessRequests, ["/api/browser-pairing/device/prepare"]);
     assert.equal(JSON.stringify(state).includes("password"), false); assert.equal(JSON.stringify(state).includes("claim"), false);
     const next = await f.restart();
     await expect(next.popup.locator("#native-state")).toContainText("Automatic retry");

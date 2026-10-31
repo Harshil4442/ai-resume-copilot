@@ -636,6 +636,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
         f"READBACK_DIRECTORY={runner_temp}/document-refresh-original-40805300453",
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"CONSUMED_BUNDLE={runner_temp}/document-refresh-consumed-audit",
+        f"COMPLETED_SOURCE_ORIGINAL={runner_temp}/completed-source-original-42-2",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
     assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
@@ -663,7 +664,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
         "service_account": "${{ vars.DOCUMENT_REFRESH_SERVICE_ACCOUNT }}"}
     candidate = next(step for step in job["steps"] if step.get("name") ==
                      "Build full-source inspector, prove native cases and transition exact pins")
-    assert candidate["if"] == "env.REFRESH_MODE == 'full-source-refresh'"
+    assert candidate["if"] == "env.REFRESH_MODE == 'full-source-refresh' && env.RESUME_COMPLETED_SOURCE_READBACK != 'true'"
     assert "--prior-history-directory" in candidate["run"] and "--recover-failed-native-job" in candidate["run"]
     history = next(step for step in job["steps"] if step.get("name") == "Retrieve prior owned native proof journals")
     assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'"

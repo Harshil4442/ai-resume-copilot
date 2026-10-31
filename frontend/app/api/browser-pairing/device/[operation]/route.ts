@@ -3,6 +3,37 @@ import { BROWSER_BACKEND_TIMEOUT_MS } from "../../../../../lib/browserTransportT
 import { boundedPairingBytes, DEVICE_OPERATIONS, deviceReply, gatewayConfiguration, MAX_PAIRING_BODY, MAX_PAIRING_RESPONSE } from "../../../../../lib/browserPairingGateway";
 
 const headers = { "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache", "X-Content-Type-Options": "nosniff" };
+const readinessOperations = new Set(["prepare", "inspect-key", "status", "challenge", "refresh-challenge"]);
+const readinessBackends = new Set(["https://ai-resume-parser-mqff62d75a-uc.a.run.app", "https://ai-resume-parser-157225724590.us-central1.run.app"]);
+const extensionOrigin = "chrome-extension://pnjmegppacleipajnifjmbcopjjffklb";
+const readinessTimeoutMs = 15000;
+
+// Public availability only: no clock, device identity, admission or claim is issued.
+// Privileged extension GETs may omit Origin; a supplied Origin is still filtered.
+export async function GET(request: NextRequest, context: { params: Promise<{ operation: string }> }) {
+  try {
+    const { operation } = await context.params;
+    const origin = request.headers.get("origin");
+    if (request.method !== "GET" || !readinessOperations.has(operation) || request.nextUrl.search || request.body
+        || request.headers.has("cookie") || request.headers.has("authorization") || request.headers.has("content-type")
+        || request.headers.has("content-length") || request.headers.has("content-encoding") || request.headers.has("transfer-encoding")
+        || origin !== null && origin !== extensionOrigin) return new NextResponse(null, { status: 403, headers });
+    const configuration = gatewayConfiguration();
+    if (configuration.origin !== "https://www.hirewizhq.com" || request.nextUrl.origin !== configuration.origin
+        || !readinessBackends.has(configuration.backend)) return new NextResponse(null, { status: 503, headers });
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(readinessTimeoutMs)]);
+    signal.throwIfAborted();
+    const response = await fetch(`${configuration.backend}/api/health`, {
+      method: "GET", credentials: "omit", redirect: "error", cache: "no-store", signal });
+    // The public health body and cancellation acknowledgement are never consumed.
+    try { void response.body?.cancel().catch(() => undefined); } catch { /* best effort */ }
+    signal.throwIfAborted();
+    return new NextResponse(null, { status: response.status === 200 ? 204 : 503, headers });
+  } catch {
+    return new NextResponse(null, { status: 503, headers });
+  }
+}
+
 export async function POST(request: NextRequest, context: { params: Promise<{ operation: string }> }) {
   try {
     const { operation } = await context.params;
