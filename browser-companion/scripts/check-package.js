@@ -4,7 +4,7 @@ import { createHash, createPublicKey } from "node:crypto";
 import { CONFIG } from "../extension/config.js";
 const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url)));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "0.8.6");
+assert.equal(manifest.version, "0.8.7");
 const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url)));
 const lock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url)));
 assert.equal(pkg.version, manifest.version);

@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "browser-companion" / "extension"
-DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.6.zip"
+DESTINATION = ROOT / "frontend" / "public" / "downloads" / "hirewiz-browser-companion-0.8.7.zip"
 SOURCE_FILES = (
     "assistance-runtime.js", "assistance-transport.js", "background.js", "config.js", "device.js",
     "greenhouse-native-network.js", "greenhouse-owned-upload.js", "greenhouse-resume-component.js", "local-adapter.js",
@@ -33,7 +33,7 @@ def native_configuration(path: Path) -> bytes:
             value[key] = item
         return value
     value = json.loads(raw, object_pairs_hook=pairs)
-    # Package 0.8.6 adds read-only readiness before signing; native admission stays pinned.
+    # Package 0.8.7 fixes popup status presentation; native admission stays pinned.
     if (type(value) is not dict or set(value) != {"executorRevision", "authorityKey"}
             or value["executorRevision"] != "companion_0_8_1"):
         raise ValueError("native_public_configuration_revision")
@@ -58,7 +58,7 @@ def main():
     parser.add_argument("--native-config", type=Path, help="Exact reviewed public claim-key/executor pins for normal-user pairing")
     arguments = parser.parse_args()
     manifest = json.loads((SOURCE / "manifest.json").read_text())
-    if (manifest["version"] != "0.8.6" or manifest["host_permissions"] != []
+    if (manifest["version"] != "0.8.7" or manifest["host_permissions"] != []
             or manifest["optional_host_permissions"] != [
                 "https://www.hirewizhq.com/*", "https://job-boards.greenhouse.io/*",
                 "https://boards.greenhouse.io/*", "https://*.amazonaws.com/*"]
