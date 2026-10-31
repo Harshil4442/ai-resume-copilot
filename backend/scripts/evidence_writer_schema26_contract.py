@@ -20,12 +20,13 @@ from scripts import schema25_app_release_contract as financial
 from scripts import unified_credit_schema25_contract as previous
 
 reset21 = previous.previous
+browser19 = reset21.previous.previous
 
 BEFORE = previous.SCHEMA
 SCHEMA = "20261031_0026"
 CONTRACT = "hirewiz_evidence_writer_schema26_v1"
 MIGRATION = "backend/alembic/versions/20261031_0026_evidence_writer_fence.py"
-MIGRATION_SHA256 = "1f0fe00dd9afe19f64fbfff5b2427651115577177f3744598ebddbd7fa2ce48d"
+MIGRATION_SHA256 = "b69c7a245d5dda60fb7b508ed868d8e705b49e4a2c1c43cf3dd77c5dccb7d651"
 DEFINITION = "backend/app/domains/career/evidence_fence_definition.py"
 DEFINITION_SHA256 = "1f87cfc84b63fd0b35b3c74bbc4069f094256d14a9f5bdc5af36bc4691ee2794"
 
@@ -172,14 +173,122 @@ def _reset_constraints(connection, namespace_oid, namespace):
          and checks["ck_password_reset_status"] in expected_checks
          and checks["ck_password_reset_purpose"] in purpose_checks,
          "reset_purpose_or_status_check_mismatch")
+def _browser_constraints(connection, namespace_oid: int, namespace: str) -> None:
+    """Keep the frozen19 key/FK checks, with only the reviewed protocol bound5."""
+    rows = (
+        connection.execute(
+            text(
+                "SELECT c.relname,k.conname,k.contype,k.convalidated,k.condeferrable,"
+                "k.condeferred,k.conislocal,k.coninhcount,k.connoinherit,"
+                "ARRAY(SELECT a.attname::text FROM unnest(k.conkey) WITH ORDINALITY x(num,pos) "
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid AND a.attnum=x.num "
+                "ORDER BY x.pos) AS columns,"
+                "rn.nspname AS referenced_namespace,r.relname AS referenced_table,"
+                "ARRAY(SELECT a.attname::text FROM unnest(k.confkey) WITH ORDINALITY x(num,pos) "
+                "JOIN pg_catalog.pg_attribute a ON a.attrelid=r.oid AND a.attnum=x.num "
+                "ORDER BY x.pos) AS referenced_columns,"
+                "k.confupdtype,k.confdeltype,k.confmatchtype,"
+                "pg_catalog.pg_get_constraintdef(k.oid) AS definition "
+                "FROM pg_catalog.pg_constraint k JOIN pg_catalog.pg_class c ON c.oid=k.conrelid "
+                "LEFT JOIN pg_catalog.pg_class r ON r.oid=k.confrelid "
+                "LEFT JOIN pg_catalog.pg_namespace rn ON rn.oid=r.relnamespace "
+                "WHERE c.relnamespace=:namespace AND "
+                "(c.relname=ANY(CAST(:tables AS text[])) OR (c.relname=:reviews "
+                "AND k.conname IN ('ck_browser_review_protocol','ck_browser_review_index'))) "
+                "ORDER BY c.oid,k.oid LIMIT 257"
+            ),
+            {"namespace": namespace_oid, "tables": sorted(browser19._GOOGLE_COLUMNS), "reviews": browser19._REVIEWS},
+        )
+        .mappings()
+        .all()
+    )
+    need(len(rows) <= 256, "browser_constraint_inventory_bound")
+    expected = {
+        ("candidate_google_enrollment_challenges", "p", ("id",), None, None, (), None),
+        (
+            "candidate_google_enrollment_challenges",
+            "f",
+            ("user_id",),
+            namespace,
+            "users",
+            ("id",),
+            ("a", "c", "s"),
+        ),
+        ("candidate_google_identities", "p", ("user_id",), None, None, (), None),
+        ("candidate_google_identities", "u", ("principal_sha256",), None, None, (), None),
+        (
+            "candidate_google_identities",
+            "f",
+            ("user_id",),
+            namespace,
+            "users",
+            ("id",),
+            ("a", "c", "s"),
+        ),
+        ("candidate_identity_history", "p", ("registration_id",), None, None, (), None),
+    }
+    found, checks = set(), {}
+    for row in rows:
+        need(
+            row["convalidated"] is True
+            and row["condeferrable"] is False
+            and row["condeferred"] is False
+            and row["conislocal"] is True
+            and row["coninhcount"] == 0,
+            "browser_constraint_shape_mismatch",
+        )
+        if row["relname"] == browser19._REVIEWS:
+            need(
+                row["contype"] == "c"
+                and row["connoinherit"] is False
+                and row["conname"] not in checks,
+                "browser_review_checks_mismatch",
+            )
+            checks[row["conname"]] = re.sub(r"[\s()]", "", row["definition"])
+            continue
+        item = (
+            row["relname"],
+            row["contype"],
+            tuple(row["columns"]),
+            row["referenced_namespace"],
+            row["referenced_table"],
+            tuple(row["referenced_columns"]),
+            (row["confupdtype"], row["confdeltype"], row["confmatchtype"])
+            if row["contype"] == "f"
+            else None,
+        )
+        need(item not in found, "browser_constraint_shape_mismatch")
+        found.add(item)
+    need(found == expected, "browser_constraint_shape_mismatch")
+    need(
+        checks
+        == {
+            "ck_browser_review_protocol": "CHECKreview_protocol_version>=1ANDreview_protocol_version<=5",
+            "ck_browser_review_index": "CHECKnext_index>=0ANDnext_index<=64",
+        },
+        "browser_review_checks_mismatch",
+    )
+
+
+def _browser_shape(connection, namespace_oid, namespace):
+    browser19._namespace(namespace)
+    need(type(namespace_oid) is int and 0 < namespace_oid < 2**32, "browser_namespace_oid_invalid")
+    rows = connection.execute(text("SELECT oid,nspname FROM pg_catalog.pg_namespace WHERE oid=:namespace"),
+        {"namespace": namespace_oid}).all()
+    need([tuple(row) for row in rows] == [(namespace_oid, namespace)], "browser_namespace_identity_mismatch")
+    browser19.previous._candidate_projection_shape(connection, namespace_oid)
+    browser19.previous._extension_shape(connection, namespace_oid, "20261015_0018")
+    browser19._columns(connection, namespace_oid)
+    _browser_constraints(connection, namespace_oid, namespace)
+    browser19._indexes(connection, namespace_oid)
 
 
 def verify_shape(connection, namespace_oid=2200, namespace="public"):
     marker(connection, namespace)
-    # Preserve19/20 directly; old21's exact reset-column/check validator must
-    # continue to refuse the new purpose field. This distinct26 shape admits
-    # only that one reviewed column/check and retains all old index/FK rules.
-    reset21.previous.previous.verify_shape(connection, namespace_oid, namespace)
+    # Original19/21 remain exact and refuse the new review/purpose checks.
+    # This distinct pending26 validator admits ONLY those explicit deltas,
+    # preserving actual old projection/column/index/FK guards without relabeling.
+    _browser_shape(connection, namespace_oid, namespace)
     reset21.previous._upload_format(connection, namespace_oid, ("pdf", "docx", "tex", "texzip"))
     _reset_columns(connection, namespace_oid)
     _reset_constraints(connection, namespace_oid, namespace)

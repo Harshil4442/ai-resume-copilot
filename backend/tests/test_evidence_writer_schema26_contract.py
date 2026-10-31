@@ -199,3 +199,101 @@ def test_no_other_constraint_change_is_admitted_by_the_purpose_delta(kind):
         rows[2]["condeferrable"] = True
     with pytest.raises(contract.Schema26Denied):
         contract._reset_constraints(ConstraintsPort(rows), 2200, "public")
+
+
+def browser_constraints(protocol=5):
+    """Synthetic pg_catalog rows, not an owned PostgreSQL observation."""
+    common = {"convalidated": True, "condeferrable": False, "condeferred": False,
+        "conislocal": True, "coninhcount": 0, "connoinherit": False,
+        "referenced_namespace": None, "referenced_table": None, "referenced_columns": [],
+        "confupdtype": "a", "confdeltype": "a", "confmatchtype": "s", "definition": ""}
+    rows = []
+    for table, kind, columns in (
+        ("candidate_google_enrollment_challenges", "p", ["id"]),
+        ("candidate_google_enrollment_challenges", "f", ["user_id"]),
+        ("candidate_google_identities", "p", ["user_id"]),
+        ("candidate_google_identities", "u", ["principal_sha256"]),
+        ("candidate_google_identities", "f", ["user_id"]),
+        ("candidate_identity_history", "p", ["registration_id"]),
+    ):
+        row = {**common, "relname": table, "contype": kind,
+            "conname": table + "_" + kind, "columns": columns}
+        if kind == "f":
+            row.update(referenced_namespace="public", referenced_table="users",
+                referenced_columns=["id"], confdeltype="c")
+        rows.append(row)
+    for name, expression in (
+        ("ck_browser_review_protocol", f"review_protocol_version BETWEEN 1 AND {protocol}"),
+        ("ck_browser_review_index", "next_index BETWEEN 0 AND 64"),
+    ):
+        # pg_get_constraintdef expands BETWEEN; retain its actual expression form.
+        column, bounds = expression.split(" BETWEEN ")
+        lower, upper = bounds.split(" AND ")
+        rows.append({**common, "relname": "browser_assistance_reviews", "contype": "c",
+            "conname": name, "columns": [column],
+            "definition": f"CHECK (({column} >= {lower}) AND ({column} <= {upper}))"})
+    return rows
+
+
+class BrowserConstraintsPort:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def execute(self, statement, params):
+        sql = str(statement)
+        assert sql.startswith("SELECT ") and "pg_catalog.pg_constraint" in sql
+        assert "LIMIT 257" in sql and params == {"namespace": 2200,
+            "tables": sorted(contract.browser19._GOOGLE_COLUMNS), "reviews": "browser_assistance_reviews"}
+        return Rows(self.rows)
+
+
+def test26_accepts_only_new_review_bound_and_frozen19_still_requires_four():
+    port = BrowserConstraintsPort(browser_constraints())
+    contract._browser_constraints(port, 2200, "public")
+    with pytest.raises(contract.browser19.Schema19Denied, match="review_checks_mismatch"):
+        contract.browser19._constraints(port, 2200, "public")
+    old = BrowserConstraintsPort(browser_constraints(4))
+    contract.browser19._constraints(old, 2200, "public")
+    with pytest.raises(contract.Schema26Denied, match="browser_review_checks_mismatch"):
+        contract._browser_constraints(old, 2200, "public")
+
+
+@pytest.mark.parametrize("kind", ["old_four", "six", "zero", "or", "index63", "index65",
+    "missing", "extra", "duplicate", "unvalidated", "deferred", "inherited", "noinherit",
+    "foreign_owner", "wrong_delete", "missing_unique", "duplicate_pk", "overflow"])
+def test26_protocol_delta_never_weakens_other_google_or_review_catalog_guards(kind):
+    rows = browser_constraints()
+    if kind in {"old_four", "six", "zero", "or"}:
+        expression = rows[-2]["definition"]
+        rows[-2]["definition"] = (expression.replace("<= 5", "<= 4") if kind == "old_four"
+            else expression.replace("<= 5", "<= 6") if kind == "six"
+            else expression.replace(">= 1", ">= 0") if kind == "zero"
+            else expression.replace("AND", "OR"))
+    elif kind in {"index63", "index65"}:
+        rows[-1]["definition"] = rows[-1]["definition"].replace("<= 64", "<= " + kind[-2:])
+    elif kind == "missing":
+        rows.pop()
+    elif kind == "extra":
+        rows.append({**rows[-1], "conname": "unknown_check"})
+    elif kind == "duplicate":
+        rows.append(dict(rows[-1]))
+    elif kind == "unvalidated":
+        rows[-2]["convalidated"] = False
+    elif kind == "deferred":
+        rows[1]["condeferrable"] = True
+    elif kind == "inherited":
+        rows[-2]["coninhcount"] = 1
+    elif kind == "noinherit":
+        rows[-2]["connoinherit"] = True
+    elif kind == "foreign_owner":
+        rows[1]["referenced_namespace"] = "other_owner"
+    elif kind == "wrong_delete":
+        rows[1]["confdeltype"] = "n"
+    elif kind == "missing_unique":
+        rows.pop(3)
+    elif kind == "duplicate_pk":
+        rows.append(dict(rows[0]))
+    else:
+        rows *= 33
+    with pytest.raises(contract.Schema26Denied):
+        contract._browser_constraints(BrowserConstraintsPort(rows), 2200, "public")

@@ -30,6 +30,30 @@ def test_actual_privileged_fixture_role_is_not_a_qualified_runtime_writer(fenced
             contract.verify_writer_permissions(connection, runtime=actor, migrator=actor)
 
 
+def test26_native_review_bound_is_five_and_catalog_drift_rolls_back_without_history_change(fenced):
+    """Owned native SQL only; no browser approval or employer execution."""
+    with fenced.connect() as connection:
+        before = connection.scalar(text("SELECT count(*) FROM public.browser_assistance_reviews"))
+        assert contract.observe(connection)
+        with pytest.raises(contract.browser19.Schema19Denied, match="review_checks_mismatch"):
+            contract.browser19.verify_shape(connection, 2200, "public")
+        connection.rollback()
+        for expression in ("review_protocol_version BETWEEN 1 AND 4",
+                           "review_protocol_version BETWEEN 1 AND 6",
+                           "review_protocol_version>=1 OR review_protocol_version<=5"):
+            with connection.begin() as transaction:
+                connection.exec_driver_sql("ALTER TABLE public.browser_assistance_reviews "
+                    "DROP CONSTRAINT ck_browser_review_protocol")
+                connection.exec_driver_sql("ALTER TABLE public.browser_assistance_reviews "
+                    "ADD CONSTRAINT ck_browser_review_protocol CHECK (" + expression + ")")
+                with pytest.raises(contract.Schema26Denied, match="browser_review_checks_mismatch"):
+                    contract.observe(connection)
+                transaction.rollback()
+            assert contract.observe(connection)
+            assert connection.scalar(text("SELECT count(*) FROM public.browser_assistance_reviews")) == before
+            connection.rollback()
+
+
 @pytest.mark.parametrize("changed", ["disabled", "security_definer"])
 def test_actual_catalog_drift_refuses_then_rollback_restores_the_original_fence(fenced, changed):
     with fenced.connect() as connection:
