@@ -109,9 +109,16 @@ def test_changed_rolling_proof_helper_cannot_reuse_a_previous_plan(monkeypatch, 
     native.root = ROOT
     monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# unreviewed proof helper\n"
         if path == ROOT / name else original(path))
-    assert contract.source_fingerprint(ROOT, prior) != baseline
+    historical = name in dict(contract.HISTORICAL_COMPANION_PACKAGES)
+    if historical:
+        with pytest.raises(contract.v1.schema25.Schema25Denied, match="historical_companion_package_changed"):
+            contract.source_fingerprint(ROOT, prior)
+    else:
+        assert contract.source_fingerprint(ROOT, prior) != baseline
     # No observer or command seam is installed: source drift must stop first.
-    with pytest.raises(rolling.RollingDenied, match="compatibility_source_changed"):
+    expected = contract.v1.schema25.Schema25Denied if historical else rolling.RollingDenied
+    reason = "historical_companion_package_changed" if historical else "compatibility_source_changed"
+    with pytest.raises(expected, match=reason):
         native._compatibility(plan)
 
 
