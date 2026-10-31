@@ -269,13 +269,20 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
         path.chmod(0o700)
         owned = path.stat()
         report = path / "junit.xml"
-        result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q", *SUITES,
-            "--junitxml", str(report)], cwd=ROOT / "backend",
-            env={**os.environ, "APP_ENV": "test", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
-                 "HIREWIZ_METADATA_PACING_REQUIRED": "true", "HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true",
-                 "HIREWIZ_EXPENSE_POLICY_JSON": json.dumps(synthetic_expense_policy()),
-                 "LLM_MODEL_COST_POLICY_JSON": json.dumps(synthetic_policy())},
-            capture_output=True, timeout=240)
+        try:
+            result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-vv", *SUITES,
+                "--junitxml", str(report)], cwd=ROOT / "backend",
+                env={**os.environ, "APP_ENV": "test", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
+                     "HIREWIZ_METADATA_PACING_REQUIRED": "true", "HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true",
+                     "HIREWIZ_EXPENSE_POLICY_JSON": json.dumps(synthetic_expense_policy()),
+                     "LLM_MODEL_COST_POLICY_JSON": json.dumps(synthetic_policy())},
+                capture_output=True, timeout=240)
+        except subprocess.TimeoutExpired as error:
+            from scripts.qualify_schema26_compatibility import protocol_timeout_summary
+            print(json.dumps(protocol_timeout_summary(error), sort_keys=True, separators=(",", ":")))
+            # Preserve the original timeout command/deadline/type, without the
+            # subprocess argument-frame traceback exposing verbose parameters.
+            raise subprocess.TimeoutExpired(error.cmd, error.timeout) from None
         # Do not export raw request/log/fixture content; the exact command/source
         # and finite failure/skip counts are sufficient to refuse qualification.
         status = result.returncode

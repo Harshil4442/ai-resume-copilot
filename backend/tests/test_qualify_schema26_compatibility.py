@@ -399,7 +399,7 @@ def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or
         path = gate.Path(argv[-1])
         expected = protocol_report(path, failures=int(failed))
         calls.append((argv, kwargs, path, expected))
-        assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
+        assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-vv"]
         assert tuple(argv[7:-2]) == SUITES and kwargs["timeout"] == 240 and kwargs["capture_output"] is True
         assert kwargs["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"
         return SimpleNamespace(returncode=int(failed), stdout=b"SYNTHETIC_PRIVATE_STDOUT", stderr=b"SYNTHETIC_PRIVATE_STDERR")
@@ -416,3 +416,125 @@ def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or
         invoke()
         assert capsys.readouterr().out == ""
     assert len(calls) == 1 and not calls[0][2].exists()  # Existing context cleanup, no new cleanup claim.
+
+
+def _public_progress_case():
+    from scripts import schema25_app_release_contract_v3 as contract
+    source = gate.ROOT / "backend" / contract.PROTOCOL_SUITES[0]
+    name = next(node.name for node in ast.parse(source.read_text()).body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"))
+    return "tests/" + source.name + "::" + name
+
+
+@pytest.mark.parametrize("ending,phase", [(" ", "started"), (" PASSED [  1%]", "completed"),
+    (" FAILED [100%]", "completed"), (" ERROR", "completed")])
+def test_timeout_observes_only_public_identity_and_phase_without_parameters_or_streams(ending, phase):
+    node = _public_progress_case()
+    progress = ("collecting ... collected 2 items\n" + node + "[SYNTHETIC_PRIVATE_PARAMETER]" + ending).encode()
+    failure = gate.subprocess.TimeoutExpired(["original-owned-child"], 240,
+        output=progress, stderr=b"SYNTHETIC_PRIVATE_STDERR")
+    result = gate.protocol_timeout_summary(failure)
+    assert result == {"schema_version": "schema26-ci-timeout-v1", "qualified": False,
+        "observation_scope": "native_protocol", "child_outcome": "timeout",
+        "report_state": "observed_unqualified", "timeout_seconds": 240,
+        "last_observed_case_id": node.removeprefix("tests/").replace(".py::", "::"),
+        "last_observed_phase": phase}
+    assert "SYNTHETIC_PRIVATE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("mode", ["missing", "text", "oversize", "utf8", "unknown_path",
+    "unknown_function", "partial_node", "partial_parameter", "trailing_noise", "no_collection", "control", "timeout"])
+def test_timeout_missing_truncated_malformed_or_unallowlisted_progress_remains_unknown(mode):
+    node = _public_progress_case()
+    raw = ("collected 2 items\n" + node + "[SYNTHETIC_PRIVATE_PARAMETER] ").encode()
+    if mode == "missing":
+        raw = None
+    if mode == "text":
+        raw = raw.decode()
+    if mode == "oversize":
+        raw = b"x" * (gate.MAX_REPORT_BYTES + 1)
+    if mode == "utf8":
+        raw += b"\xff"
+    if mode == "unknown_path":
+        raw = raw.replace(b"tests/test_", b"tests/test_unallowlisted_", 1)
+    if mode == "unknown_function":
+        raw += ("\n" + node.rsplit("::", 1)[0] + "::test_SYNTHETIC_PRIVATE ").encode()
+    if mode == "partial_node":
+        raw = ("collected 2 items\n" + node).encode()
+    if mode == "partial_parameter":
+        raw = raw[:-2]
+    if mode == "trailing_noise":
+        raw += b"\nSYNTHETIC_PRIVATE_TRUNCATED_NOISE"
+    if mode == "no_collection":
+        raw = raw.split(b"\n", 1)[1]
+    if mode == "control":
+        raw += b"\x1b"
+    error = gate.subprocess.TimeoutExpired(["owned"], 241 if mode == "timeout" else 240,
+        output=raw, stderr=b"SYNTHETIC_PRIVATE_STDERR")
+    assert gate.protocol_timeout_summary(error) == {"schema_version": "schema26-ci-timeout-v1",
+        "qualified": False, "observation_scope": "native_protocol", "child_outcome": "timeout",
+        "report_state": "unknown"}
+
+
+def test_timeout_does_not_treat_failure_body_as_a_started_case():
+    node = _public_progress_case()
+    raw = ("collected 2 items\n" + node + " PASSED [ 50%]\n"
+        "================= FAILURES =================\n"
+        "tests/test_unknown.py::test_SYNTHETIC_PRIVATE ").encode()
+    result = gate.protocol_timeout_summary(gate.subprocess.TimeoutExpired(["owned"], 240, output=raw))
+    assert result["last_observed_phase"] == "completed" and "SYNTHETIC_PRIVATE" not in json.dumps(result)
+
+
+def test_real_small_owned_pytest_timeout_reports_last_observed_start_not_a_cause(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import sys
+
+    from scripts import schema25_app_release_contract_v3 as contract
+    source = tmp_path / "backend/tests/test_owned_observation.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("import time\ndef test_first(): pass\ndef test_wait(): time.sleep(30)\n")
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(contract, "PROTOCOL_SUITES", ("tests/test_owned_observation.py",))
+    monkeypatch.setattr(contract, "PROTOCOL_FIXTURES", ())
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-vv",
+            "-p", "no:cacheprovider", "tests/test_owned_observation.py"], cwd=tmp_path / "backend",
+            env={"PATH": os.environ.get("PATH", ""), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, timeout=2)
+    observed = gate.protocol_timeout_summary(caught.value)
+    assert observed["last_observed_case_id"] == "test_owned_observation::test_wait"
+    assert observed["last_observed_phase"] == "started" and observed["qualified"] is False
+    assert observed["timeout_seconds"] == 2 and "cause" not in observed
+
+
+def test_actual_pytest_timeout_failure_transcript_excludes_captured_secret_parameters_and_streams(tmp_path):
+    import os
+    import subprocess
+    import sys
+    node = _public_progress_case()
+    source = tmp_path / "test_outer_observation.py"
+    source.write_text("import os, socket, subprocess, sys\n"
+        + "def denied(*a,**k): raise AssertionError('External access forbidden')\n"
+        + "for method in ('connect','connect_ex','bind','listen'): setattr(socket.socket,method,denied)\n"
+        + "socket.getaddrinfo=socket.create_connection=denied\n"
+        + "from sqlalchemy.engine import Engine\nEngine.connect=denied\n"
+        + "import google.auth\ngoogle.auth.default=denied\n"
+        + "sys.path[:0]=" + repr([str(gate.ROOT / "backend"), str(gate.ROOT)]) + "\n"
+        + "from tests.test_schema25_app_protocol_v3 import test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipped_cases as invoke\n"
+        + "PRIVATE='SYNTHETIC_PRIVATE_CAPTURE'\n"
+        + "PROGRESS=" + repr("collected 2 items\n" + node + "[") + "+PRIVATE+'] '\n"
+        + "def test_original_timeout(monkeypatch,tmp_path):\n"
+        + " binary=tmp_path/'never-executed';binary.write_text('synthetic');binary.chmod(0o700)\n"
+        + " monkeypatch.setenv('HIREWIZ_AUTHORITY_EMULATOR_REQUIRED','true')\n"
+        + " monkeypatch.setenv('HIREWIZ_OWNED_REDIS_SERVER',str(binary))\n"
+        + " def child(argv,**kw): raise subprocess.TimeoutExpired(argv,kw['timeout'],output=PROGRESS.encode(),stderr=PRIVATE.encode())\n"
+        + " monkeypatch.setattr(subprocess,'run',child)\n invoke()\n")
+    result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q",
+        "-p", "no:cacheprovider", str(source)], cwd=tmp_path,
+        env={"PATH": os.environ.get("PATH", ""), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, timeout=30)
+    transcript = result.stdout + result.stderr
+    assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"240 seconds" in transcript
+    assert b'"last_observed_phase":"started"' in transcript
+    assert b"SYNTHETIC_PRIVATE_CAPTURE" not in transcript

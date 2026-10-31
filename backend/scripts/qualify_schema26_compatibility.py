@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -92,6 +93,60 @@ def _protocol_public_cases() -> dict[str, set[str]]:
 def protocol_failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
     """Observe only the original failed protocol report, never child streams."""
     return _read_failure_summary(report, anchor, returncode, _protocol_public_cases(), protocol=True)
+
+
+def protocol_timeout_summary(error: subprocess.TimeoutExpired) -> dict:
+    """Last genuinely observed public progress identity, never a timeout cause.
+
+    Only source-known module/function names leave this boundary. Parameter IDs,
+    class names, child streams and arbitrary progress text are discarded. A
+    missing, partial or malformed progress record remains unknown.
+    """
+    unknown = {"schema_version": "schema26-ci-timeout-v1", "qualified": False,
+        "observation_scope": "native_protocol", "child_outcome": "timeout",
+        "report_state": "unknown"}
+    try:
+        if (type(error) is not subprocess.TimeoutExpired
+                or type(error.timeout) not in (int, float) or not math.isfinite(error.timeout)
+                or not 0 < error.timeout <= 240 or type(error.stdout) is not bytes
+                or not 0 < len(error.stdout) <= MAX_REPORT_BYTES):
+            return unknown
+        lines = error.stdout.decode("utf-8", errors="strict").split("\n")
+        if len(lines) > 32768:
+            return unknown
+        public = _protocol_public_cases()
+        collected, last = False, None
+        for line in lines:
+            if re.fullmatch(r"(?:collecting \.\.\. )?collected [1-9][0-9]{0,3} items?", line.strip()):
+                collected = True
+                continue
+            if not collected:
+                continue
+            if re.match(r"=+ (?:FAILURES|ERRORS|short test summary info|warnings summary|test session starts)\b", line):
+                break  # Failure bodies are not progress observations.
+            if not line.startswith("tests/"):
+                if not line.strip():
+                    continue
+                return unknown
+            match = re.fullmatch(r"tests/(test[A-Za-z0-9_]{0,199})\.py::"
+                r"(?:[A-Za-z_][A-Za-z0-9_]{0,127}::){0,4}(test[A-Za-z0-9_]{0,199})(.*)", line)
+            if match is None or match[1] not in public or match[2] not in public[match[1]]:
+                return unknown
+            suffix = match[3]
+            if len(suffix) > 65536 or any(ord(char) < 32 for char in suffix):
+                return unknown
+            terminal = re.search(r" (PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASS)(?: +\[ *[0-9]{1,3}%\])? *$", suffix)
+            if terminal is None and not suffix.endswith(" "):
+                return unknown  # A partial final write cannot establish a complete node ID.
+            parameter = suffix[:terminal.start()] if terminal else suffix.rstrip(" ")
+            if parameter and not (parameter.startswith("[") and parameter.endswith("]")):
+                return unknown
+            last = {"last_observed_case_id": match[1] + "::" + match[2],
+                "last_observed_phase": "completed" if terminal else "started"}
+        return ({**unknown, "report_state": "observed_unqualified",
+            "timeout_seconds": error.timeout, **last} if last else unknown)
+    except Exception:
+        return unknown
 
 
 def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
