@@ -18,6 +18,11 @@ native upload and document evidence and the qualified native route. The preimage
 contains `PriceCore`, but excludes generated quote IDs, the final priced package
 digest and review digest. After quote creation, the package and review bind the
 full billing snapshot, preventing a circular hash or price substitution.
+The server-only `package_inputs_sha256` uses the existing complete original
+package serializer with only `pricing_snapshot` set to null. Employer grants,
+recipient hosts, original answers and consents, admission bounds and source
+policy remain included. No final priced package, quote ID or review digest is
+substituted into that preimage.
 
 The new client explicitly requests `review_protocol_version: 5` in both
 `application` and `inspect`, and requires version 5 in the response. It never
@@ -26,6 +31,10 @@ review requires an eligible current unified runtime and the independent new
 submission gate. Existing accepted version-4 checkpoints remain readable and
 executable under their original contract. An older client can create a fresh
 version-4 review only for a legacy owner under the existing legacy gates.
+Additive availability fields are `unified_submit_available` and the exact
+ordered `submit_protocol_versions: [4, 5]` when the independent gate is on.
+They advertise configured support only. They do not prove account eligibility,
+funding or approval, and the old `submit_fee_credits: 20` remains legacy advice.
 
 `SubmissionBilling` has exactly thirteen keys: `schema_version`,
 `billing_currency`, `operation`, `credits`, `tariff_version`, `route_id`,

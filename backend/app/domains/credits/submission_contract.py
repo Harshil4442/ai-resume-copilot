@@ -87,6 +87,7 @@ class SubmissionInput(Closed):
     employer_key: Digest
     job_content_sha256: Digest
     form_sha256: Digest
+    package_inputs_sha256: Digest
     target_url: Annotated[str, Field(pattern=r"^https://job-boards\.greenhouse\.io/razorpaysoftwareprivatelimited/jobs/[0-9]+$")]
     resume_id: int = Field(strict=True, gt=0)
     resume_choice: Literal["original", "tailored", "custom"]

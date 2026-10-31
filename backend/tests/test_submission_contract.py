@@ -21,6 +21,7 @@ def test_complete_synthetic_vectors_bind_exact_review_pricing_lease_and_approval
     data = vector()
     assert data["authority"] is False
     preimage = c.SubmissionInput.model_validate(data["input_preimage"])
+    assert preimage.package_inputs_sha256 == c.digest(data["package_inputs_preimage"])
     assert c.input_fingerprint(preimage) == data["input_fingerprint"]
     for name, protocol, fee in (("legacy4", 4, 20), ("unified5", 5, 3)):
         sample = data[name]
@@ -48,6 +49,7 @@ def test_complete_synthetic_vectors_bind_exact_review_pricing_lease_and_approval
     new = data["unified5"]
     assert new["application_request"] == {"application_id": "apply_synthetic", "review_protocol_version": 5}
     assert new["inspect_request"]["inspection"]["review_protocol_version"] == 5
+    assert new["availability"] == {"unified_submit_available": True, "submit_protocol_versions": [4, 5]}
     response, lease = new["review_response"], new["lease_payload"]
     billing = c.SubmissionBilling.model_validate(response["billing"])
     assert set(response["billing"]) == {

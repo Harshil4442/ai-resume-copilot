@@ -1,7 +1,7 @@
 {
   "authority": false,
   "description": "Format/hash-only unsigned synthetic data. No receipt, approval, funding or permission. Never send to an employer.",
-  "input_fingerprint": "4a94bdb85d0fb544042a7bb29d813ba608c1d432cb05960f0d5341b960dfa9e0",
+  "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
   "input_preimage": {
     "application_id": "apply_synthetic",
     "artifact_generation": "123456789",
@@ -18,6 +18,7 @@
     "job_content_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
     "native_context_sha256": "e7d8f89e85011dc70ce5f51c3dcb9e85dec48bd7e75512032055d1f6f4939a4c",
     "opening_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "package_inputs_sha256": "8d765973b8e445b741438f231c7a33ff921894925fb13c17c50530572896238a",
     "price": {
       "billing_currency": "credits",
       "credits": 3,
@@ -337,6 +338,41 @@
     },
     "review_sha256": "d86dc7a6aade956fff4499f29ee0573ef34fbf97255984b22d1cb6378269bd96"
   },
+  "package_inputs_preimage": {
+    "admission_snapshot": {
+      "policy_revision": "synthetic-format-only"
+    },
+    "answers": {
+      "email": "synthetic@example.test",
+      "first_name": "Synthetic",
+      "last_name": "Fixture"
+    },
+    "application_mode": "browser",
+    "artifact_sha256": "84e8ad1212eb78ee65bb1d0405e5dd6d20b1d85dad17f1207dc99ab8684ea204",
+    "consents": {},
+    "credential_reference": "SYNTHETIC_UNUSED_REFERENCE",
+    "credit_cost": 3,
+    "destination": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005",
+    "employer": "Razorpay",
+    "employer_policy": {
+      "enabled": false
+    },
+    "form_version": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "job_sha256": "5c7b5cf3ff857328f22e1a26600ba2363831eb324d81a25bb7f7836e84a643eb",
+    "opening_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "platform": "greenhouse",
+    "posting_id": "posting_synthetic",
+    "pricing_snapshot": null,
+    "receipt_contract": {},
+    "recipient_hosts": [
+      "job-boards.greenhouse.io"
+    ],
+    "region": "global",
+    "resume_choice": "original",
+    "source_id": "source_synthetic",
+    "submission_grant": "synthetic format only, no permission",
+    "tenant": "razorpaysoftwareprivatelimited"
+  },
   "schema_version": "synthetic-browser-submission-contract-v1",
   "unified5": {
     "application_request": {
@@ -347,7 +383,14 @@
       "accepted_service_quote_id": "csq_55555555555555555555555555555555",
       "confirmed": true,
       "identity": "00000000-0000-4000-8000-000000000005",
-      "review_digest": "a73cdbaf9a37c98a3eec3ffb835b5a7eea9723ec9c09b6365d095639dbcd4504"
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4"
+    },
+    "availability": {
+      "submit_protocol_versions": [
+        4,
+        5
+      ],
+      "unified_submit_available": true
     },
     "inspect_request": {
       "application_id": "apply_synthetic",
@@ -434,7 +477,7 @@
         "credits": 3,
         "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
         "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
-        "input_fingerprint": "4a94bdb85d0fb544042a7bb29d813ba608c1d432cb05960f0d5341b960dfa9e0",
+        "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
         "operation": "verified_submission",
         "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
         "quote_expires_at_ms": 1793440060000,
@@ -478,7 +521,7 @@
       "package_digest": "161cfa8481414e9a753b412bf68e0a6caece905285f4ad0d0f6df6104cec0377",
       "protocol_version": 1,
       "receipt_contract": "greenhouse_hosted_browser_https_200_v2",
-      "review_digest": "a73cdbaf9a37c98a3eec3ffb835b5a7eea9723ec9c09b6365d095639dbcd4504",
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4",
       "review_id": "00000000-0000-4000-8000-000000000005",
       "review_protocol_version": 5,
       "reviewed_answers_sha256": "6407cb3a61dea91898253a79267075fd906bc57d8b0656fb587588f75551a044",
@@ -539,15 +582,15 @@
         "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
       }
     },
-    "lease_sha256": "241cd5876537d5945dde7ca0e162fde5d540a15851602d4b546f15d23f92a2ce",
-    "pricing_sha256": "3e77085eb466d630a322190694f893fd775be16466761df94baa65ca16883116",
+    "lease_sha256": "d1b7cba2dc3e35b13b34238814abcb844f0f5dede2e1d6948577eaf4f2b8aea4",
+    "pricing_sha256": "d931b090fb230d3df3ce3127224ab1e9ffb1e197ec7b667056c97f84bc8a82d3",
     "review_response": {
       "billing": {
         "billing_currency": "credits",
         "credits": 3,
         "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
         "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
-        "input_fingerprint": "4a94bdb85d0fb544042a7bb29d813ba608c1d432cb05960f0d5341b960dfa9e0",
+        "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
         "operation": "verified_submission",
         "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
         "quote_expires_at_ms": 1793440060000,
@@ -613,7 +656,7 @@
           "credits": 3,
           "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
           "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
-          "input_fingerprint": "4a94bdb85d0fb544042a7bb29d813ba608c1d432cb05960f0d5341b960dfa9e0",
+          "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
           "operation": "verified_submission",
           "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
           "quote_expires_at_ms": 1793440060000,
@@ -689,7 +732,7 @@
           "credits": 3,
           "delivery_contract_sha256": "aace0143b30f1abbe99bfccef58c85f1d3ff86c6c1402940797da1e214828752",
           "financial_policy_sha256": "b71acfa8948441da264b46708cad43b407d86990c42040eef877101f8141e181",
-          "input_fingerprint": "4a94bdb85d0fb544042a7bb29d813ba608c1d432cb05960f0d5341b960dfa9e0",
+          "input_fingerprint": "d882fc7f2c270b8bfba3819f7a122287b0d661a6e9add866e11c95db04d573a9",
           "operation": "verified_submission",
           "quote_contract_sha256": "9de23fcd130648653e3c7411514e1522bf125e283252e96944e012fac24131b9",
           "quote_expires_at_ms": 1793440060000,
@@ -764,11 +807,11 @@
           "target_url": "https://job-boards.greenhouse.io/razorpaysoftwareprivatelimited/jobs/4740333005"
         }
       },
-      "review_digest": "a73cdbaf9a37c98a3eec3ffb835b5a7eea9723ec9c09b6365d095639dbcd4504",
+      "review_digest": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4",
       "review_protocol_version": 5,
       "state": "draft",
       "submission_status": "not_launched"
     },
-    "review_sha256": "a73cdbaf9a37c98a3eec3ffb835b5a7eea9723ec9c09b6365d095639dbcd4504"
+    "review_sha256": "3698caf2d032794b0515591e54f09ffd91219164f9ad07b41ea5665d5e5ff1a4"
   }
 }
