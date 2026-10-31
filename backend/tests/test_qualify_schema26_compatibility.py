@@ -226,3 +226,107 @@ def test_nonzero_child_reports_case_only_then_original_refusal_and_retains_origi
     assert value["cases"][0]["case_id"] == saved["case"]
     assert "SYNTHETIC_PRIVATE_VALUE" not in output.out + output.err
     assert hashlib.sha256(saved["path"].read_bytes()).hexdigest() == saved["sha"]
+
+
+@pytest.mark.parametrize("outcome", ["success", "post_constructor_failure"])
+def test_frozen_archived_candidate_constructor_uses_its_own_redacted_engine_without_io(tmp_path, outcome, monkeypatch):
+    """Exact old constructor and corrected fixture statements, never native SQL."""
+    import os
+    import subprocess
+    import sys
+    monkeypatch.syspath_prepend(str(gate.ROOT / "infra/gcp"))
+    import unified_credit_schema25_release as release
+
+    files = release.prior_app_files(gate.ROOT, "e23c940e6133323c3c1ff11e646a4ca9b2b0b165")
+    assert len(files) == 274
+    assert release.prior_app_digest(files) == "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40800a"
+    for name, raw in files.items():
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+    module = ast.parse((gate.ROOT / "backend/tests/test_privacy_erasure_postgres.py").read_text())
+    schedule = next(ast.literal_eval(node.value) for node in module.body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "INTERRUPTED_OLD_DELETE" for target in node.targets))
+    body = ast.parse(schedule).body
+    creation = next(node for node in body if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "candidate_engine" for target in node.targets))
+    owned = next(node for node in body if isinstance(node, ast.Try))
+    # Run the actual fixture's private-engine creation, constructor and finally.
+    # Stop explicitly before its HTTP/native schedule; no substitute constructor.
+    isolated = ast.Module(body=[creation, ast.Expr(value=ast.Call(func=ast.Name(id="engine_created", ctx=ast.Load()),
+        args=[], keywords=[])), ast.Try(body=[owned.body[0], ast.Expr(value=ast.Call(
+            func=ast.Name(id="post_constructor_probe", ctx=ast.Load()), args=[], keywords=[]))],
+            handlers=[], orelse=[], finalbody=owned.finalbody)], type_ignores=[])
+    probe = ast.unparse(ast.fix_missing_locations(isolated))
+    program = r'''
+import json, socket, sys
+from pathlib import Path
+attempts=[]
+def denied(*args, **kwargs):
+    attempts.append('denied')
+    raise AssertionError('Source-only constructor probe forbids IO')
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
+import psycopg
+import google.auth, google.auth._default
+Engine.connect=denied
+psycopg.connect=denied
+psycopg.Connection.connect=classmethod(denied)
+psycopg.AsyncConnection.connect=classmethod(denied)
+google.auth.default=google.auth._default.default=denied
+socket.getaddrinfo=socket.create_connection=denied
+for name in ('connect','connect_ex','bind','listen'):
+    setattr(socket.socket,name,denied)
+sys.path.insert(0,sys.argv[1])
+import app
+from app.database import engine, SessionLocal
+from app.domains.candidate_accounts.service import CandidateAccountService
+from app.domains.recovery.store import GuardUnavailable
+assert Path(app.__file__).resolve().parent == Path(sys.argv[1]).resolve()/'app'
+assert engine.hide_parameters is False and SessionLocal.kw['bind'] is engine
+import_attempts=len(attempts)
+class ControlledRetention:
+    def __getattr__(self, name):
+        raise AssertionError('Constructor must not call retention IO')
+negative=False
+try:
+    CandidateAccountService(engine, ControlledRetention())
+except GuardUnavailable:
+    negative=True
+assert negative
+observed, disposed=[],[]
+class ProbeStopped(RuntimeError): pass
+def engine_created():
+    assert candidate_engine is not engine and candidate_engine.pool is not engine.pool
+    assert candidate_engine.url == engine.url and candidate_engine.hide_parameters is True
+    event.listen(candidate_engine,'engine_disposed',lambda value: disposed.append(value is candidate_engine))
+def post_constructor_probe():
+    assert accounts.sessions.kw['bind'] is candidate_engine
+    assert engine.hide_parameters is False and SessionLocal.kw['bind'] is engine
+    observed.append('post_constructor')
+    if sys.argv[3] == 'post_constructor_failure':
+        raise ProbeStopped()
+try:
+    exec(compile(sys.argv[2],'actual_owned_fixture_constructor','exec'),globals(),globals())
+except ProbeStopped:
+    assert sys.argv[3] == 'post_constructor_failure'
+assert observed == ['post_constructor'] and disposed == [True] and len(attempts) == import_attempts
+assert engine.hide_parameters is False and SessionLocal.kw['bind'] is engine
+print(json.dumps({'old_engine_guard_refused':negative,'post_constructor_reached':True,
+    'private_engine_disposed':True,'old_http_engine_unchanged':True,
+    'blocked_import_attempts':import_attempts,'constructor_io_attempts':len(attempts)-import_attempts}))
+'''
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", program, str(tmp_path / "backend"), probe, outcome],
+        cwd=tmp_path / "backend", capture_output=True, timeout=30,
+        env={"PATH": os.environ.get("PATH", ""), "APP_ENV": "test",
+            "DATABASE_URL": "postgresql+psycopg://synthetic:unused@127.0.0.1:1/no_connection",
+            "JWT_SECRET": "interrupted-erasure-synthetic-source-only", "RATE_LIMIT_STORAGE_URL": "memory://",
+            "AUTO_DB_MIGRATE": "false", "PYTHON_DOTENV_DISABLED": "1", "OTEL_SDK_DISABLED": "true",
+            "PYTHONDONTWRITEBYTECODE": "1"})
+    code = result.returncode
+    assert code == 0, "Exact archived constructor probe failed; raw child streams are not public diagnostics"
+    observed = json.loads(result.stdout)
+    blocked_imports = observed.pop("blocked_import_attempts")
+    assert type(blocked_imports) is int and 0 <= blocked_imports <= 16  # Denied, never successful IO.
+    assert observed == {"old_engine_guard_refused": True, "post_constructor_reached": True,
+        "private_engine_disposed": True, "old_http_engine_unchanged": True, "constructor_io_attempts": 0}

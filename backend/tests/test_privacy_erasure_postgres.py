@@ -97,7 +97,7 @@ INTERRUPTED_OLD_DELETE = r'''
 import json, select, sys
 from pathlib import Path
 from fastapi.testclient import TestClient
-from sqlalchemy import event
+from sqlalchemy import create_engine, event
 import app as archived_app
 from app import models
 from app.database import SessionLocal, engine
@@ -131,36 +131,40 @@ class ControlledRetention:
         pending[0] = True
         return True
 
-accounts = CandidateAccountService(engine, ControlledRetention())
-accounts_module.production_candidate_accounts = lambda: accounts
-auth.require_candidate_ingress = lambda request: None  # Explicit synthetic BFF ingress only.
-candidate_ingress.require_candidate_ingress = auth.require_candidate_ingress
-def after_denial_commit(session):
-    if not pending[0]:
-        return
-    assert any(isinstance(row, models.CandidatePasswordAccount) and row.user_id == 1
-        and row.state == 'DELETE_DENIED' for row in session.identity_map.values())
-    pending[0] = False
-    print(json.dumps({'phase':'denial_committed', 'delete_calls':len(calls),
-        'retained':native_records}), flush=True)
-    assert select.select([sys.stdin], [], [], 30)[0], 'Bounded migration release missing'
-    assert sys.stdin.readline().strip() == 'release-after-schema26'
-event.listen(accounts.sessions, 'after_commit', after_denial_commit)
-event.listen(engine, 'handle_error', lambda failure:
-    errors.append(getattr(failure.original_exception, 'sqlstate', None)))
-bearer = create_access_token(subject='1', candidate_lifetime={
-    'version':1, 'context':context.model_dump(mode='json'), 'auth_generation':1})
-headers = {'Authorization':'Bearer '+bearer}
-with TestClient(app, raise_server_exceptions=False) as client:
-    failed = client.post('/api/auth/delete-account', headers=headers)
-    assert failed.status_code == 500 and errors == ['42501']
-    denied = client.get('/api/auth/me', headers=headers)
-    assert denied.status_code == 401
-with SessionLocal() as db:
-    assert db.get(models.CandidatePasswordAccount, 1).state == 'DELETE_DENIED'
-    assert db.get(models.User, 1) is not None
-print(json.dumps({'phase':'outer_rollback', 'sqlstate':errors[0],
-    'normal_auth':denied.status_code, 'delete_calls':len(calls)}), flush=True)
+candidate_engine = create_engine(engine.url, hide_parameters=True)
+try:
+    accounts = CandidateAccountService(candidate_engine, ControlledRetention())
+    accounts_module.production_candidate_accounts = lambda: accounts
+    auth.require_candidate_ingress = lambda request: None  # Explicit synthetic BFF ingress only.
+    candidate_ingress.require_candidate_ingress = auth.require_candidate_ingress
+    def after_denial_commit(session):
+        if not pending[0]:
+            return
+        assert any(isinstance(row, models.CandidatePasswordAccount) and row.user_id == 1
+            and row.state == 'DELETE_DENIED' for row in session.identity_map.values())
+        pending[0] = False
+        print(json.dumps({'phase':'denial_committed', 'delete_calls':len(calls),
+            'retained':native_records}), flush=True)
+        assert select.select([sys.stdin], [], [], 30)[0], 'Bounded migration release missing'
+        assert sys.stdin.readline().strip() == 'release-after-schema26'
+    event.listen(accounts.sessions, 'after_commit', after_denial_commit)
+    event.listen(engine, 'handle_error', lambda failure:
+        errors.append(getattr(failure.original_exception, 'sqlstate', None)))
+    bearer = create_access_token(subject='1', candidate_lifetime={
+        'version':1, 'context':context.model_dump(mode='json'), 'auth_generation':1})
+    headers = {'Authorization':'Bearer '+bearer}
+    with TestClient(app, raise_server_exceptions=False) as client:
+        failed = client.post('/api/auth/delete-account', headers=headers)
+        assert failed.status_code == 500 and errors == ['42501']
+        denied = client.get('/api/auth/me', headers=headers)
+        assert denied.status_code == 401
+    with SessionLocal() as db:
+        assert db.get(models.CandidatePasswordAccount, 1).state == 'DELETE_DENIED'
+        assert db.get(models.User, 1) is not None
+    print(json.dumps({'phase':'outer_rollback', 'sqlstate':errors[0],
+        'normal_auth':denied.status_code, 'delete_calls':len(calls)}), flush=True)
+finally:
+    candidate_engine.dispose()
 '''
 
 
