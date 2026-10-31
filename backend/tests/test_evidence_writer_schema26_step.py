@@ -22,7 +22,11 @@ def load(name, path):
 
 
 step = load("proposal_schema26_step", PROPOSAL / "backend/scripts/evidence_writer_schema26_step.py")
-metadata = load("proposal_schema26_metadata", PROPOSAL / "infra/gcp/schema26_migration_metadata.py")
+maintenance26 = importlib.import_module("schema26_maintenance_guard")
+guard_fixtures = importlib.import_module("test_schema26_maintenance_guard")
+baseline, observation = guard_fixtures.baseline, guard_fixtures.observation
+
+metadata = load("proposal_schema26_metadata", BASE / "infra/gcp/schema26_migration_metadata.py")
 
 
 class Result:
@@ -31,6 +35,12 @@ class Result:
 
     def scalar_one(self):
         return self.value
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return list(self.rows)
 
     def __iter__(self):
         return iter(self.rows)
@@ -54,6 +64,8 @@ class FakeConnection:
     def execute(self, sql, params=None):
         value = str(sql)
         self.calls.append((value, params))
+        if value == maintenance26.ACCOUNT_SQL:
+            return Result(rows=[])
         if "relacl::text" in value:
             acl = "changed" if self.after and self.table_acl_changed else "same"
             return Result(rows=[(table, 24578, acl) for table in step.TABLES])
@@ -67,9 +79,34 @@ class FakeConnection:
         raise AssertionError("Unexpected fake SQL")
 
 
+def prepared_guard():
+    # Explicit inert native port exercises the real one-use final SQL/native
+    # check; it cannot be supplied through the production constructor.
+    result = object.__new__(maintenance26.NativeMaintenanceDdlGuard)
+    result.prepared, result.started, result.closed = True, False, False
+    result.baseline, result.owners = baseline(), ()
+    result.sql_sha256 = maintenance26.fingerprint({"rows": [], "absence": {}})
+    result.retired_sha256 = maintenance26.retirement_fingerprint(observation(), result.baseline)
+
+    class Reader:
+        calls = 0
+
+        def observe(self):
+            self.calls += 1
+            assert self.calls == 1
+            return observation()
+
+        def close(self):
+            pass
+
+    result.final_reader = Reader()
+    return result
+
+
 @pytest.fixture
 def fixture(monkeypatch):
     db = FakeConnection()
+    final_guard = prepared_guard()
     identity = step.identity_step.MigrationIdentity(
         "a" * 64,
         16395,
@@ -138,12 +175,15 @@ def fixture(monkeypatch):
     flags = {name: "false" for name in step.previous.DISABLED_FLAGS}
     return SimpleNamespace(
         db=db,
+        final_guard=final_guard,
         identity=identity,
         flags=flags,
         source_calls=source_calls,
         markers=markers,
         upgrades=upgrades,
-        run=lambda: step.upgrade_transaction(db, identity, root=BASE, flags=flags),
+        run=lambda: step.upgrade_transaction(
+            db, identity, root=BASE, flags=flags, maintenance_guard=final_guard
+        ),
     )
 
 
@@ -210,7 +250,11 @@ def test_before_refusals_send_no_ddl(fixture, monkeypatch, change):
 
         fixture.identity = replace(fixture.identity, namespace="foreign")
         fixture.run = lambda: step.upgrade_transaction(
-            fixture.db, fixture.identity, root=BASE, flags=fixture.flags
+            fixture.db,
+            fixture.identity,
+            root=BASE,
+            flags=fixture.flags,
+            maintenance_guard=fixture.final_guard,
         )
     elif change == "enabled_credits":
         fixture.flags["UNIFIED_CREDITS_ENABLED"] = "true"
@@ -283,7 +327,7 @@ def test_affected_row_bound_and_no_cleartext_export(fixture, monkeypatch):
 
 def test_metadata_change_is_only_the_explicit_disjoint25_collector_and_schema():
     old = ast.parse((BASE / "infra/gcp/schema25_migration_metadata.py").read_text())
-    current = ast.parse((PROPOSAL / "infra/gcp/schema26_migration_metadata.py").read_text())
+    current = ast.parse((BASE / "infra/gcp/schema26_migration_metadata.py").read_text())
     old.body.pop(0)
     current.body.pop(0)
     for node in ast.walk(current):
@@ -328,3 +372,43 @@ def test_metadata_selects_exact25_without_widening_the_old21_purpose(monkeypatch
             "expected_schema": "20261028_0025",
         }
     ]
+
+
+def test_all_three_affected_tables_locked_and_exact_final_guard_consumed(fixture):
+    fixture.run()
+    assert step.TABLES == ("browser_assistance_reviews", "evidence_items", "password_reset_tokens")
+    assert [sql for sql in fixture.db.commands if sql.startswith("LOCK TABLE")] == [
+        f'LOCK TABLE "public"."{name}" IN ACCESS EXCLUSIVE MODE' for name in step.TABLES
+    ]
+    assert fixture.final_guard.started and fixture.final_guard.closed
+    assert fixture.final_guard.final_reader.calls == 1
+    assert len([sql for sql, _ in fixture.db.calls if sql == maintenance26.ACCOUNT_SQL]) == 1
+
+
+def test_real_final_guard_metadata_refusal_executes_zero_alembic(fixture):
+    def refuse():
+        raise maintenance26.MaintenanceDenied("synthetic_final_metadata_refusal")
+
+    fixture.final_guard.final_reader.observe = refuse
+    with pytest.raises(maintenance26.MaintenanceDenied):
+        fixture.run()
+    assert fixture.upgrades == []
+    assert fixture.final_guard.started and fixture.final_guard.closed
+
+
+def test_plain_or_consumed_guard_cannot_reach_any_sql_or_ddl(fixture):
+    for invalid in (object(), SimpleNamespace(prepared=True, started=False, closed=False)):
+        with pytest.raises(step.Migration26Denied, match="native_maintenance_guard_required"):
+            step.upgrade_transaction(
+                fixture.db,
+                fixture.identity,
+                root=BASE,
+                flags=fixture.flags,
+                maintenance_guard=invalid,
+            )
+    assert fixture.db.commands == [] and fixture.upgrades == []
+    fixture.run()
+    before = list(fixture.db.commands)
+    with pytest.raises(step.Migration26Denied, match="native_maintenance_guard_required"):
+        fixture.run()
+    assert fixture.db.commands == before and len(fixture.upgrades) == 1

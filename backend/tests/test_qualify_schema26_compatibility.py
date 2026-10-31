@@ -185,7 +185,7 @@ def test_actual_public_case_allowlist_is_exactly_the_finite_original_suite_sourc
     for suite in gate.SUITES:
         path = gate.ROOT / "backend" / suite
         expected[path.stem] = tuple(node.name for node in ast.parse(path.read_text()).body
-            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"))
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test"))
     assert gate.PUBLIC_CASES == expected
 
 

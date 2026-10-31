@@ -36,6 +36,13 @@ follow-up adds source-allowlisted timeout diagnostics without changing that limi
 or removing required cases. Separate maintenance closure, retired-revision and
 typed account-operation checks remain required before any database upgrade.
 
+The combined source candidate adds explicit three-credit browser-submission quotes,
+central wallet/cash holds, current-quote canary admission and matching companion0.8.8
+reviews. Existing accepted20-credit applications retain their original obligations.
+Independent source reviews and owned local wire controls passed; the combined
+PostgreSQL/build/rollout and real-canary gates remain pending. Companion0.8.8 is
+source-only and has not replaced the installed owner client.
+
 The earlier 29 October configuration and responsive measurements remain recorded
 in the linked historical release evidence. The coordinator retains its separate
 captured source `7a00839d`; it is not relabeled as an app/document release. The

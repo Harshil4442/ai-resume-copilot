@@ -9,9 +9,11 @@ fence or authorizes old evidence writers, including ordinary app rollback.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 from dataclasses import asdict, dataclass
@@ -44,10 +46,124 @@ PRIOR = PriorSource(
     41095660943,
 )
 CLOSED_FLAGS = historical.CLOSED_FLAGS
+maintenance = historical.maintenance
 
 
 def need(value, reason):
     rolling.need(value, "schema26_app_" + reason)
+
+
+@dataclass(frozen=True)
+class ClosedApiBaseline:
+    """Metadata from the original stock close, never an authority by itself."""
+
+    maintenance_plan_sha256: str
+    close_started_sha256: str
+    close_acknowledged_sha256: str
+    close_checked_sha256: str
+    api_service_uid: str
+    api_generation: int
+    api_etag: str
+    closed_revision: str
+    closed_revision_uid: str
+    closed_template_sha256: str
+    original_pilot_flags: tuple[tuple[str, str], ...]
+
+    def validate(self):
+        need(all(type(value) is str and rolling.HASH.fullmatch(value) for value in (
+            self.maintenance_plan_sha256, self.close_started_sha256,
+            self.close_acknowledged_sha256, self.close_checked_sha256,
+            self.closed_template_sha256)), "maintenance_lineage_invalid")
+        need(all(type(value) is str and re.fullmatch(r"[a-f0-9-]{36}", value)
+                 for value in (self.api_service_uid, self.closed_revision_uid))
+             and type(self.api_generation) is int and self.api_generation > 1
+             and type(self.api_etag) is str and 1 <= len(self.api_etag) <= 256
+             and rolling.short_revision(self.closed_revision, SERVICES[0]) == self.closed_revision,
+             "maintenance_native_identity_invalid")
+        need(self.original_pilot_flags == tuple((flag, "true") for flag in sorted(historical.PILOT_FLAGS)),
+             "maintenance_original_pilot_invalid")
+
+
+def _maintenance_lineage(plan, journal, run):
+    need(type(plan) is maintenance.MaintenancePlan and type(journal) is rolling.Journal
+         and journal.plan_hash == rolling.sha(asdict(plan)), "original_maintenance_journal_required")
+    plan.validate()
+    pin = plan.services[0]
+    need(pin.name == SERVICES[0] and pin.source == PRIOR.release
+         and pin.image == f"{rolling.release.REGION}-docker.pkg.dev/{rolling.release.PROJECT}"
+                          f"/cloud-run-source-deploy/hirewiz@{PRIOR.image_digest}",
+         "maintenance_prior_source_changed")
+    marker = "service." + pin.name + ".close"
+    started, ack, checked = (journal.read(marker + suffix)
+        for suffix in (".started", ".acknowledged", ".checked"))
+    need(started is not None and ack is not None and checked is not None,
+         "maintenance_close_not_checked")
+    need(set(started) == {"prior_generation", "request_sha256", "replay_authorized", "plan_sha256"}
+         and type(started["prior_generation"]) is int and started["prior_generation"] == pin.generation
+         and started["replay_authorized"] is False
+         and type(started["request_sha256"]) is str and rolling.HASH.fullmatch(started["request_sha256"])
+         and set(ack) == {"operation", "plan_sha256"}
+         and type(ack["operation"]) is str and rolling.OPERATION.fullmatch(ack["operation"])
+         and set(checked) == {"generation", "revision", "plan_sha256"}
+         and type(checked["generation"]) is int and checked["generation"] == pin.generation + 1
+         and rolling.short_revision(checked["revision"], pin.name) == plan.revision(pin.name, "close"),
+         "maintenance_close_lineage_changed")
+    need(not any(journal.read("service." + service + ".restore.started") is not None
+                 for service in SERVICES)
+         and not any(journal.read("service." + service + ".close.started") is not None
+                     for service in SERVICES[1:]), "maintenance_scope_changed")
+    operation = run.operation(ack["operation"])
+    need(operation.get("name") == ack["operation"] and operation.get("done") is True
+         and "error" not in operation, "maintenance_close_operation_unresolved")
+    template, _ = maintenance.desired(plan, pin, run, "close")
+    revision = run.revision(pin.name, plan.revision(pin.name, "close"))
+    maintenance.revision_ready(revision, pin.name, plan.revision(pin.name, "close"))
+    need(type(revision.get("uid")) is str and re.fullmatch(r"[a-f0-9-]{36}", revision["uid"])
+         and {key: revision.get(key) for key in pin.template_keys}
+             == {key: template.get(key) for key in pin.template_keys},
+         "maintenance_closed_revision_changed")
+    original = maintenance.pinned_revision(pin, run, pin.prior_revision, dict(pin.revisions)[pin.prior_revision])
+    historical.observed_flags(original, pin.name)
+    v3_flags(original)
+    flags = tuple((flag, rolling.environment(original)[flag]["value"])
+                  for flag in sorted(historical.PILOT_FLAGS))
+    return pin, started, ack, checked, revision, template, flags
+
+
+def capture_closed_api_baseline(plan, journal, run):
+    pin, started, ack, checked, revision, template, flags = _maintenance_lineage(plan, journal, run)
+    row = maintenance.service_readback(plan, pin, run, "close", started)
+    for worker in plan.services[1:]:
+        current = run.service(worker.name)
+        maintenance.ready(current, worker.name)
+        need(current["uid"] == worker.uid and int(current["generation"]) == worker.generation
+             and rolling.static_sha(current) == worker.static_sha256
+             and maintenance.coordinator.template_hash(current["template"]) == worker.template_sha256
+             and rolling.pinned_traffic(worker.name, current) == list(worker.traffic)
+             and rolling.short_revision(current["latestCreatedRevision"], worker.name) == worker.prior_revision,
+             "maintenance_worker_changed")
+    baseline = ClosedApiBaseline(rolling.sha(asdict(plan)), rolling.sha(started), rolling.sha(ack),
+        rolling.sha(checked), row["uid"], int(row["generation"]), row["etag"],
+        plan.revision(pin.name, "close"), revision["uid"], rolling.template_sha(row["template"], pin.name), flags)
+    baseline.validate()
+    return baseline
+
+
+def verify_closed_api_baseline(baseline, plan, journal, run):
+    """Reobserve immutable lineage after staging; never require the old Service template."""
+    need(type(baseline) is ClosedApiBaseline, "maintenance_baseline_required")
+    baseline.validate()
+    pin, started, ack, checked, revision, template, flags = _maintenance_lineage(plan, journal, run)
+    immutable = {key: revision.get(key) for key in pin.template_keys}
+    if rolling.template_sha(immutable, pin.name) != baseline.closed_template_sha256:
+        immutable["revision"] = baseline.closed_revision
+    need((baseline.maintenance_plan_sha256, baseline.close_started_sha256,
+          baseline.close_acknowledged_sha256, baseline.close_checked_sha256,
+          baseline.api_service_uid, baseline.api_generation, baseline.closed_revision,
+          baseline.closed_revision_uid, baseline.closed_template_sha256, baseline.original_pilot_flags)
+         == (rolling.sha(asdict(plan)), rolling.sha(started), rolling.sha(ack), rolling.sha(checked),
+             pin.uid, checked["generation"], plan.revision(pin.name, "close"), revision["uid"],
+             rolling.template_sha(immutable, pin.name), flags), "maintenance_baseline_changed")
 
 
 @dataclass(frozen=True)
@@ -59,6 +175,7 @@ class App26V3Plan(rolling.RollingPlan):
     resources: tuple[historical.ResourcePin, ...] = ()
     protected_liabilities: tuple[tuple[str, str, int], ...] = ()
     reachable_revisions: tuple[historical.ReachablePin, ...] = ()
+    maintenance_baseline: ClosedApiBaseline | None = None
 
     def disabled_flags(self):
         return CLOSED_FLAGS
@@ -86,6 +203,14 @@ class App26V3Plan(rolling.RollingPlan):
             "distinct_plan_required",
         )
         historical.validate_extensions(self)
+        if self.maintenance_baseline is not None:
+            need(type(self.maintenance_baseline) is ClosedApiBaseline, "maintenance_baseline_required")
+            self.maintenance_baseline.validate()
+            pin = self.services[0]
+            need((pin.uid, pin.generation, pin.prior_revision, pin.template_sha256)
+                 == (self.maintenance_baseline.api_service_uid, self.maintenance_baseline.api_generation,
+                     self.maintenance_baseline.closed_revision, self.maintenance_baseline.closed_template_sha256)
+                 and self.release != PRIOR.release, "maintenance_plan_pin_changed")
 
 
 def v3_flags(template):
@@ -98,9 +223,46 @@ def v3_flags(template):
     )
 
 
+def observed_flags(template, service, baseline=None):
+    if baseline is None or service != SERVICES[0]:
+        historical.observed_flags(template, service)
+        return
+    need(type(baseline) is ClosedApiBaseline, "maintenance_baseline_required")
+    baseline.validate()
+    env = rolling.environment(template)
+    need(env.get("APP_RELEASE") == {"name": "APP_RELEASE", "value": PRIOR.release}
+         and template["containers"][0]["image"].endswith("@" + PRIOR.image_digest)
+         and all(env.get(flag) == {"name": flag, "value": "false"} for flag in initial.OFF),
+         "maintenance_closed_admission_changed")
+
+
 def candidate_template(plan, pin, current):
     v3_flags(current["template"])
-    result = historical.candidate_template(plan, pin, current)
+    baseline = plan.maintenance_baseline if pin.service == SERVICES[0] else None
+    if baseline is None:
+        result = historical.candidate_template(plan, pin, current)
+    else:
+        plan.validate()
+        observed_flags(current["template"], pin.service, baseline)
+        need(rolling.template_sha(current["template"], pin.service) == baseline.closed_template_sha256,
+             "maintenance_closed_template_changed")
+        result = rolling.stage_body(plan, pin, current)["template"]
+        env = rolling.environment(result)
+        for flag, value in baseline.original_pilot_flags:
+            env[flag] = {"name": flag, "value": value}
+        result["containers"][0]["env"] = list(env.values())
+        expected = copy.deepcopy(current["template"])
+        expected["revision"] = plan.revision(pin.service)
+        expected.setdefault("labels", {})["hirewiz-source"] = plan.release
+        expected["containers"][0]["image"] = plan.image
+        expected_env = rolling.environment(expected)
+        expected_env["APP_RELEASE"] = {"name": "APP_RELEASE", "value": plan.release}
+        for flag, value in baseline.original_pilot_flags:
+            expected_env[flag] = {"name": flag, "value": value}
+        expected["containers"][0]["env"] = list(expected_env.values())
+        need(rolling.template_sha(result, pin.service) == rolling.template_sha(expected, pin.service),
+             "unrelated_candidate_configuration_changed")
+        historical.observed_flags(result, pin.service)
     v3_flags(result)
     return result
 
@@ -121,6 +283,66 @@ class Source26Boundary(historical.App25V2Source):
 
 class NativeApp26Boundary(historical.NativeApp25Boundary):
     plan_type, prior_source, source_boundary = App26V3Plan, PRIOR, Source26Boundary
+
+    def __init__(self, root, *, maintenance_plan_path=None, maintenance_plan_sha256=None,
+                 maintenance_journal=None):
+        need(isinstance(maintenance_plan_path, Path) and isinstance(maintenance_journal, Path)
+             and type(maintenance_plan_sha256) is str
+             and rolling.HASH.fullmatch(maintenance_plan_sha256), "maintenance_custody_required")
+        self.maintenance_plan_path = maintenance_plan_path
+        self.maintenance_plan_sha256 = maintenance_plan_sha256
+        self.maintenance_journal = maintenance_journal
+        super().__init__(root)
+
+    def _maintenance_custody(self):
+        raw = initial._read_pinned(self.maintenance_plan_path, self.maintenance_plan_sha256)
+        plan = maintenance.load(raw)
+        return plan, rolling.Journal(self.maintenance_journal, plan)
+
+    def _capture_maintenance_baseline(self):
+        plan, journal = self._maintenance_custody()
+        return capture_closed_api_baseline(plan, journal, self.run)
+
+    def _verify_maintenance_baseline(self, baseline):
+        plan, journal = self._maintenance_custody()
+        verify_closed_api_baseline(baseline, plan, journal, self.run)
+
+    def _pin(self, name, baseline=None):
+        if name != SERVICES[0] or baseline is None:
+            return super()._pin(name)
+        need(type(baseline) is ClosedApiBaseline, "maintenance_baseline_required")
+        baseline.validate()
+        current = self.service(name)
+        observed_flags(current["template"], name, baseline)
+        need((current["uid"], int(current["generation"]), current["etag"])
+             == (baseline.api_service_uid, baseline.api_generation, baseline.api_etag)
+             and rolling.template_sha(current["template"], name) == baseline.closed_template_sha256
+             and all(rolling.short_revision(current[key], name) == baseline.closed_revision
+                     for key in ("latestCreatedRevision", "latestReadyRevision")),
+             "maintenance_closed_preimage_changed")
+        revision = self.revision(name, baseline.closed_revision)
+        need(revision is not None and revision.get("uid") == baseline.closed_revision_uid,
+             "maintenance_closed_revision_changed")
+        keys = tuple(sorted(set(current["template"]) - {"revision"}))
+        need({key: revision.get(key) for key in keys} == {key: current["template"][key] for key in keys},
+             "maintenance_closed_revision_changed")
+        traffic = rolling.pinned_traffic(name, current)
+        need(all(row["revision"] == baseline.closed_revision for row in traffic),
+             "maintenance_open_alias_changed")
+        secrets = []
+        for key, row in rolling.environment(current["template"]).items():
+            if "valueSource" in row:
+                ref = row["valueSource"]["secretKeyRef"]
+                need(rolling.REF.fullmatch(ref["secret"] + ":" + ref["version"])
+                     and self._reference(ref["secret"], ref["version"]) == ref["version"],
+                     "numeric_secret_required")
+                secrets.append(rolling.SecretPin(key, ref["secret"], ref["version"]))
+        pin = rolling.ServicePin(name, current["uid"], int(current["generation"]), baseline.closed_revision,
+            PRIOR.release, baseline.closed_template_sha256, rolling.static_sha(current),
+            rolling.sha(self.iam(name)), rolling.sha({key: revision.get(key) for key in keys}), keys,
+            tuple(traffic), tuple(sorted(secrets, key=lambda row: row.environment_name)))
+        rolling._ready(current, pin)
+        return pin
 
     def _compatibility(self, plan):
         fingerprint = contract.source_fingerprint(
@@ -266,7 +488,8 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
         self.observer.verify_source_image(
             release=release, image_digest=image_digest, build_id=build_id, ci_run_id=ci_run_id
         )
-        pins = tuple(self._pin(name) for name in SERVICES)
+        baseline = self._capture_maintenance_baseline()
+        pins = tuple(self._pin(name, baseline) for name in SERVICES)
         refs = {row.environment_name: row.secret + ":" + row.version for row in pins[0].secrets}
         env = rolling.environment(self.service(SERVICES[0])["template"])
         policies = rolling.PolicyPins(
@@ -306,6 +529,7 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
             resources=self._resources(workers_release),
             protected_liabilities=liabilities,
             reachable_revisions=self._reachable(pins),
+            maintenance_baseline=baseline,
         )
         plan.validate()
         for pin in pins:
@@ -320,6 +544,8 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
     def verify_global(self, plan):
         plan.validate()
         need(type(plan) is self.plan_type, "distinct_app_plan_required")
+        need(type(plan.maintenance_baseline) is ClosedApiBaseline, "maintenance_baseline_required")
+        self._verify_maintenance_baseline(plan.maintenance_baseline)
         self.observer.verify_source_image(
             release=plan.release,
             image_digest=plan.image_digest,
@@ -385,7 +611,8 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
             )
             historical.current_phase(plan, pin, current, target)
             for template in (current["template"], prior):
-                historical.observed_flags(template, pin.service)
+                observed_flags(template, pin.service, plan.maintenance_baseline
+                    if rolling.environment(template).get("APP_RELEASE", {}).get("value") == PRIOR.release else None)
                 if self.plan_type is App26V3Plan:
                     v3_flags(template)
                 rolling.verify_policy_bindings(plan.policies, pin, template)
@@ -414,6 +641,10 @@ def load(raw):
         ReachablePin(**row) for row in value["reachable_revisions"]
     )
     value["protected_liabilities"] = tuple(tuple(row) for row in value["protected_liabilities"])
+    if value.get("maintenance_baseline") is not None:
+        row = value["maintenance_baseline"]
+        row["original_pilot_flags"] = tuple(tuple(pair) for pair in row["original_pilot_flags"])
+        value["maintenance_baseline"] = ClosedApiBaseline(**row)
     pins = []
     for row in value["services"]:
         row["secrets"] = tuple(rolling.SecretPin(**secret) for secret in row["secrets"])
@@ -423,6 +654,61 @@ def load(raw):
     plan = App26V3Plan(**value)
     plan.validate()
     return plan
+
+
+def stage_closed_api(plan, boundary, journal, *, reconcile=False):
+    """V3-only stage request; original shared engine remains byte-for-byte unchanged."""
+    need(type(plan) is App26V3Plan and type(plan.maintenance_baseline) is ClosedApiBaseline
+         and type(journal) is rolling.Journal and journal.plan_hash == rolling.sha(asdict(plan)),
+         "maintenance_baseline_required")
+    pin = plan.services[0]
+    marker = "stage." + pin.service
+    started, ack, checked = (journal.read(marker + suffix) for suffix in (".started", ".ack", ".checked"))
+    if checked is not None:
+        need(started is not None, "maintenance_stage_checked_without_start")
+        rolling._readback(plan, boundary, pin, started)
+        return True
+    boundary.verify_global(plan)
+    if started is None:
+        need(not reconcile and journal.read(historical.ROLLBACK_INTENT) is None
+             and not any(journal.read(later + "." + service + ".started")
+                         for later in ("promote", "rollback") for service in SERVICES),
+             "maintenance_stage_not_authorized")
+        current = boundary.service(pin.service)
+        rolling._ready(current, pin)
+        need(rolling.sha(boundary.iam(pin.service)) == pin.iam_sha256,
+             "maintenance_stage_iam_changed")
+        rolling._old_revision(boundary, pin)
+        need(boundary.revision(pin.service, plan.revision(pin.service)) is None,
+             "maintenance_candidate_revision_exists")
+        body = rolling.stage_body(plan, pin, current)
+        body["template"] = candidate_template(plan, pin, current)
+        started = {"phase": "stage", "request_sha256": rolling.sha(body), "mask": "template,traffic",
+            "template_sha256": rolling.template_sha(body["template"], pin.service),
+            "traffic": body["traffic"], "expected_generation": int(current["generation"]) + 1,
+            "service_uid": pin.uid, "previous_etag": current["etag"], "replay_authorized": False}
+        need(boundary.service(pin.service) == current, "maintenance_stage_preimage_changed")
+        journal.record(marker + ".started", started)
+        operation = boundary.patch(pin.service, body, "template,traffic")
+        name = operation.get("name")
+        need(type(name) is str and rolling.OPERATION.fullmatch(name), "maintenance_stage_ack_unknown")
+        ack = {"operation": name, "request_sha256": started["request_sha256"]}
+        journal.record(marker + ".ack", ack)
+    if ack is None:
+        need(reconcile, "maintenance_stage_unknown_reconcile_only")
+        observation = rolling._readback(plan, boundary, pin, started)
+    else:
+        need(ack.get("request_sha256") == started["request_sha256"]
+             and rolling.OPERATION.fullmatch(ack.get("operation", "")), "maintenance_stage_ack_changed")
+        operation = boundary.operation(ack["operation"])
+        need(operation.get("name") == ack["operation"] and "error" not in operation,
+             "maintenance_stage_operation_failed")
+        if operation.get("done") is not True:
+            return False
+        observation = rolling._readback(plan, boundary, pin, started)
+    journal.record(marker + ".checked", {**observation, "replay_authorized": False,
+        "operation_ack_retained": ack is not None})
+    return True
 
 
 def execute(phase, plan, boundary, journal):
@@ -447,7 +733,10 @@ def execute(phase, plan, boundary, journal):
                 "stage_already_passed",
             )
             for pin in plan.services:
-                if not rolling.action(plan, boundary, journal, pin, "stage"):
+                complete = (stage_closed_api(plan, boundary, journal)
+                    if plan.maintenance_baseline is not None and pin.service == SERVICES[0]
+                    else rolling.action(plan, boundary, journal, pin, "stage"))
+                if not complete:
                     return {
                         "status": "schema26_app_same_operation_pending",
                         "phase": "stage",
@@ -472,6 +761,13 @@ def execute(phase, plan, boundary, journal):
         result = historical.rollback_app(plan, boundary, journal, reconcile=phase == "reconcile")
     else:
         need(phase in {"advance", "reconcile"}, "phase_invalid")
+        if (phase == "advance" and plan.maintenance_baseline is not None
+                and journal.read("promote." + SERVICES[0] + ".started") is None):
+            with journal.locked():
+                need(journal.read(historical.ROLLBACK_INTENT) is None, "explicit_rollback_in_progress")
+                if not stage_closed_api(plan, boundary, journal):
+                    return {"status": "schema26_app_same_operation_pending", "phase": "stage",
+                        "rolling_release_complete": False, "replay_authorized": False}
         result = {"advance": rolling.advance, "reconcile": rolling.reconcile}[phase](
             plan, boundary, journal
         )
@@ -511,6 +807,9 @@ def main():
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
+    parser.add_argument("--maintenance-plan", type=Path)
+    parser.add_argument("--maintenance-plan-sha256")
+    parser.add_argument("--maintenance-journal", type=Path)
     for name in (
         "release",
         "image-digest",
@@ -545,7 +844,10 @@ def main():
         and os.getenv("CLOUDSDK_CORE_LOG_HTTP") == "false",
         "private_sdk_logging_required",
     )
-    boundary = NativeApp26Boundary(args.root)
+    need(args.maintenance_plan is not None and args.maintenance_plan_sha256 is not None
+         and args.maintenance_journal is not None, "maintenance_custody_required")
+    boundary = NativeApp26Boundary(args.root, maintenance_plan_path=args.maintenance_plan,
+        maintenance_plan_sha256=args.maintenance_plan_sha256, maintenance_journal=args.maintenance_journal)
     if args.phase == "capture":
         names = (
             "release",

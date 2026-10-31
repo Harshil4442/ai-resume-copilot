@@ -15,14 +15,19 @@ career feature does not cancel a request already admitted before its first SQL.
 An idle connection sample, request timeout, delay, row lock in only the new app,
 or successful old/new storage exchange does not prove this schedule safe.
 
-Migration20261031_0026 adds one statement trigger and its function, with no row,
-source file, approval, ledger, column or credential rewrite. Its transaction sets
+Migration20261031_0026 adds the statement trigger/function, a purpose column for
+password-reset/privacy tokens, and the protocol1–5 browser-review CHECK. Existing
+reset rows receive only the default `password_reset` purpose; existing browser
+review values, evidence, approvals, ledgers and credentials are preserved. Its transaction sets
 lock_timeout4s and statement_timeout10s, takes ACCESS EXCLUSIVE on evidence_items,
 and creates an ALWAYS BEFORE INSERT/UPDATE/DELETE trigger. Obtaining the lock
 serializes transactions already touching that table. A late old handler that has
 not reached SQL subsequently encounters the committed trigger and receives
 SQLSTATE42501. The transaction commits its Alembic marker and trigger together.
-A contested lock refuses; an unknown commit needs readback before any retry.
+A contested lock refuses; an unknown commit needs readback and must not be replayed.
+The native wrapper first takes all three affected table locks in sorted order,
+then compares the fresh locked row digests and exact owners/ACLs. Only the new
+reset-purpose field is normalized in that comparison.
 
 The fixed marker is a cooperative **source-version fence**, not authentication
 against arbitrary SQL or a database administrator. Old source, request payloads,
@@ -90,6 +95,25 @@ is not a native security proof.
 
 ## Operational blast radius and rollback
 
+The distinct native entrypoint is `infra/gcp/schema26_native_migration.py`.
+Its `capture`, `upgrade` and `reconcile` modes require the exact reviewed
+maintenance plan, its hash and original journal; the SQL primitive is not a
+standalone production command. The closed API baseline retains the original e23
+image with candidate ingress and account lifecycle admission disabled. Traffic
+movement or an empty SQL session sample is insufficient: every older API
+revision must report retired execution resources, and the complete typed native
+publication, account-operation/reset history and current SQL state must agree.
+A generic denial is never accepted as a privacy-erasure intent or completion.
+
+The upgrade caller persists create-only started and transaction-ready records,
+uses the original authenticated bootstrap/physical target, and runs the exact
+one-use guard again after table locks immediately before Alembic. Fresh SQL and
+full revision-retirement checks precede DDL. Commit acknowledgement is recorded
+separately from fresh read-only catalog, row/ACL and liability observations.
+`reconcile` observes a known25 or26 outcome and never executes DDL. Missing,
+changed or uncertain evidence stops the operation; it does not authorize another
+upgrade attempt. Existing unknown financial obligations remain retained.
+
 Original schema25 app, alias, pilot-reopen, deployed-maintenance and expense
 reconciliation/canary operators correctly refuse26. They must retain that behavior.
 Before using those operations on26, qualify distinct successor source/adapters,
@@ -109,8 +133,9 @@ default, credential rotation, row rewrite or unsafe write reopening is provided.
 
 ## Cost and evidence limits
 
-This introduces no model call, provider request, new hosted service or recurring
-subscription. A native evidence flush adds bounded catalog/marker SQL and the
+This introduces no model call, new hosted service or recurring subscription.
+Migration preparation reads the existing GCP services through bounded read-only
+ports; those reads have ordinary provider quotas and costs. A native evidence flush adds bounded catalog/marker SQL and the
 database trigger; their latency/capacity/cost are not measured by local port tests.
 Native lock/role/catalog and old/new process tests are authored but must execute
 in the existing explicitly owned CI PostgreSQL environment. Production migration,

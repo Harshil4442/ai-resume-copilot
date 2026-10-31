@@ -12,7 +12,7 @@ import os
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event
 from types import SimpleNamespace
 from uuid import uuid4
@@ -25,6 +25,13 @@ from test_evidence_writer_fence_postgres import pg25 as pg25  # noqa: F401
 from test_schema25_app_compatibility_postgres import ROOT, release
 from test_schema25_app_compatibility_postgres import app25_database as app25_database
 
+from app.domains.browser_assistance.models import BrowserAssistanceDevice, BrowserAssistanceReview
+from app.domains.employer.models import (
+    EmployerApplication,
+    EmployerPosting,
+    EmployerSource,
+    SealedApplicationArtifact,
+)
 from app.models import EntitlementLedger, ModelCostLiability, PaymentOrder
 from scripts import evidence_writer_schema26_step as step
 
@@ -53,6 +60,95 @@ def owned26(request):
     try:
         now = datetime.now(UTC)
         with Session(source) as db:
+            # Real FK-bound legacy4 row bytes and20-price metadata, not a grant,
+            # reservation, paid submission or provider receipt.
+            source_row = EmployerSource(
+                id="m26-source",
+                employer="Synthetic",
+                platform="greenhouse",
+                board_token="m26",
+                careers_url="https://example.invalid/careers",
+                verification_url="https://example.invalid/careers",
+                verification_note="Synthetic SQL fixture",
+            )
+            db.add(source_row)
+            db.flush()
+            posting = EmployerPosting(
+                id="m26-posting",
+                source_id=source_row.id,
+                external_id="m26-only",
+                title="Synthetic",
+                employer="Synthetic",
+                description="Synthetic",
+                canonical_url="https://example.invalid/job",
+                apply_url="https://example.invalid/job",
+                content_sha256="a" * 64,
+            )
+            db.add(posting)
+            db.flush()
+            artifact = SealedApplicationArtifact(
+                id="m26-artifact",
+                user_id=1,
+                resume_id=1,
+                sha256="b" * 64,
+                filename="synthetic.txt",
+                media_type="text/plain",
+                size_bytes=1,
+                content=b"x",
+            )
+            db.add(artifact)
+            db.flush()
+            application = EmployerApplication(
+                id="m26-application",
+                user_id=1,
+                posting_id=posting.id,
+                idempotency_key="m26-legacy4",
+                input_fingerprint="c" * 64,
+                resume_id=1,
+                resume_choice="original",
+                artifact_id=artifact.id,
+                form={},
+                answers={},
+                consents={},
+                package_digest="d" * 64,
+                job_content_sha256="a" * 64,
+                credit_cost=20,
+                charged_credits=0,
+                pricing_snapshot={"synthetic_legacy_protocol": 4, "credit_cost": 20},
+            )
+            db.add(application)
+            db.flush()
+            device = BrowserAssistanceDevice(
+                id=str(uuid4()),
+                user_id=1,
+                extension_id="a" * 32,
+                public_key={"synthetic_sql_fixture": True},
+                key_sha256="e" * 64,
+                state="active",
+                created_at=now,
+                pairing_expires_at=now + timedelta(minutes=5),
+            )
+            db.add(device)
+            db.flush()
+            db.add(
+                BrowserAssistanceReview(
+                    id=str(uuid4()),
+                    user_id=1,
+                    device_id=device.id,
+                    application_id=application.id,
+                    package_digest="d" * 64,
+                    artifact_sha256="b" * 64,
+                    context_digest="f" * 64,
+                    review_digest="1" * 64,
+                    payload={"synthetic_legacy_metadata": 20},
+                    state="draft",
+                    next_index=0,
+                    review_protocol_version=4,
+                    created_at=now,
+                    expires_at=now + timedelta(minutes=5),
+                )
+            )
+            db.flush()
             order = PaymentOrder(
                 public_id="m26-paid",
                 user_id=1,
@@ -288,6 +384,8 @@ def snapshot(engine, *, purpose=False):
             "users",
             "resumes",
             "evidence_items",
+            "browser_assistance_reviews",
+            "employer_applications",
             "payment_orders",
             "entitlement_ledger",
             "model_cost_liabilities",
@@ -332,9 +430,92 @@ def assert_roles_and_acls(owned):
         )
 
 
+def prepared_sql_guard(owned, *, refuse=False):
+    """Owned SQL qualification only; synthetic native port is NOT provider proof.
+
+    Production cannot inject this port through NativeMaintenanceDdlGuard's
+    constructor. The test bypasses only its native preflight, then executes its
+    real one-use SQL freshness and final-retirement logic inside actual PG.
+    """
+    sys.path.insert(0, str(ROOT / "infra/gcp"))
+    import schema26_app_rolling_v3 as release26
+    import schema26_maintenance_guard as maintenance26
+
+    baseline = release26.ClosedApiBaseline(
+        *(["a" * 64] * 4),
+        str(uuid4()),
+        2,
+        "synthetic-closed",
+        "ai-resume-parser-m25-aaaaaaaaaaaa-close",
+        str(uuid4()),
+        "b" * 64,
+        tuple((flag, "true") for flag in sorted(release26.historical.PILOT_FLAGS)),
+    )
+    revision = maintenance26.metadata.API + "/revisions/" + baseline.closed_revision
+    traffic = [
+        {
+            "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+            "revision": baseline.closed_revision,
+            "percent": 100,
+        }
+    ]
+    observation = {
+        "service": {
+            "name": maintenance26.metadata.API,
+            "uid": baseline.api_service_uid,
+            "generation": "2",
+            "observedGeneration": "2",
+            "etag": baseline.api_etag,
+            "reconciling": False,
+            "terminalCondition": {"type": "Ready", "state": "CONDITION_SUCCEEDED"},
+            "latestCreatedRevision": revision,
+            "latestReadyRevision": revision,
+            "traffic": traffic,
+            "trafficStatuses": traffic,
+        },
+        "revisions": [
+            {
+                "name": revision,
+                "uid": baseline.closed_revision_uid,
+                "service": "ai-resume-parser",
+                "conditions": [{"type": "Ready", "state": "CONDITION_SUCCEEDED"}],
+            }
+        ],
+        "elapsed_ms": 0,
+        "resource_gets": 3,
+        "physical_resource_gets": 3,
+        "resource_write_sends": 0,
+        "maintenance_admission_proved": False,
+    }
+
+    class NativePort:
+        reads = 0
+        closed = False
+
+        def observe(self):
+            self.reads += 1
+            assert self.reads == 1
+            if refuse:
+                raise maintenance26.MaintenanceDenied("synthetic_final_metadata_refusal")
+            return observation
+
+        def close(self):
+            self.closed = True
+
+    result = object.__new__(maintenance26.NativeMaintenanceDdlGuard)
+    result.started, result.closed, result.prepared = False, False, True
+    result.baseline, result.owners, result.final_reader = baseline, (), NativePort()
+    with owned.observer.connect() as db:
+        rows, absence = maintenance26.sql_projection(db, ())
+    result.sql_sha256 = maintenance26.fingerprint({"rows": rows, "absence": absence})
+    result.retired_sha256 = maintenance26.retirement_fingerprint(observation, baseline)
+    return result
+
+
 def test_native26_supplied_bootstrap_transaction_preserves_data_catalog_acl_and_holds(owned26):
     owned = owned26
     before = snapshot(owned.admin)
+    maintenance_guard = prepared_sql_guard(owned)
     commits, ddl_roles = [], []
 
     def commit(_db):
@@ -358,7 +539,9 @@ def test_native26_supplied_bootstrap_transaction_preserves_data_catalog_acl_and_
     try:
         with owned.bootstrap.connect() as db:
             with db.begin():
-                result = step.upgrade_transaction(db, owned.identity, root=ROOT, flags=FLAGS)
+                result = step.upgrade_transaction(
+                    db, owned.identity, root=ROOT, flags=FLAGS, maintenance_guard=maintenance_guard
+                )
                 assert db.in_transaction() and commits == [] and result["committed"] is False
         assert commits == [True]
     finally:
@@ -372,12 +555,18 @@ def test_native26_supplied_bootstrap_transaction_preserves_data_catalog_acl_and_
         step.contract.verify_writer_permissions(
             db, runtime=owned.names["runtime"], migrator=owned.names["migrator"]
         )
+    assert (
+        maintenance_guard.final_reader.reads == 1
+        and maintenance_guard.started
+        and maintenance_guard.closed
+    )
     assert_roles_and_acls(owned)
 
 
 def test_native26_failure_after_real_ddl_rolls_back_the_fence_grant_and_original_rows(owned26):
     owned = owned26
     before = snapshot(owned.admin)
+    maintenance_guard = prepared_sql_guard(owned)
     stopped = []
     error = RuntimeError("Synthetic owned stop after actual purpose-column DDL")
 
@@ -402,7 +591,9 @@ def test_native26_failure_after_real_ddl_rolls_back_the_fence_grant_and_original
     event.listen(owned.bootstrap, "after_cursor_execute", stop)
     try:
         with pytest.raises(RuntimeError) as caught, owned.bootstrap.begin() as db:
-            step.upgrade_transaction(db, owned.identity, root=ROOT, flags=FLAGS)
+            step.upgrade_transaction(
+                db, owned.identity, root=ROOT, flags=FLAGS, maintenance_guard=maintenance_guard
+            )
         assert caught.value is error and stopped == [True]
     finally:
         event.remove(owned.bootstrap, "after_cursor_execute", stop)
@@ -422,12 +613,18 @@ def test_native26_failure_after_real_ddl_rolls_back_the_fence_grant_and_original
             )
             == 0
         )
+    assert (
+        maintenance_guard.final_reader.reads == 1
+        and maintenance_guard.started
+        and maintenance_guard.closed
+    )
     assert_roles_and_acls(owned)
 
 
 def test_native26_post_lock_cohort_includes_commit_between_first_select_and_lock(owned26):
     owned = owned26
     first_select, released, committed = Event(), Event(), Event()
+    maintenance_guard = prepared_sql_guard(owned)
     with owned.admin.connect() as db:
         before_digest = step.affected_digest(db, owned.identity, after=False)
 
@@ -462,7 +659,9 @@ def test_native26_post_lock_cohort_includes_commit_between_first_select_and_lock
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(writer)
             with owned.bootstrap.begin() as db:
-                result = step.upgrade_transaction(db, owned.identity, root=ROOT, flags=FLAGS)
+                result = step.upgrade_transaction(
+                    db, owned.identity, root=ROOT, flags=FLAGS, maintenance_guard=maintenance_guard
+                )
             future.result(timeout=10)
     finally:
         event.remove(owned.bootstrap, "after_cursor_execute", after)
@@ -471,4 +670,64 @@ def test_native26_post_lock_cohort_includes_commit_between_first_select_and_lock
         assert db.scalar(text("SELECT count(*) FROM evidence_items WHERE id='evd_late'")) == 1
         assert result["affected_sha256"] == step.affected_digest(db, owned.identity, after=True)
         assert result["affected_sha256"] != before_digest
+    assert (
+        maintenance_guard.final_reader.reads == 1
+        and maintenance_guard.started
+        and maintenance_guard.closed
+    )
+    assert_roles_and_acls(owned)
+
+
+def test_native26_final_seam_refusal_rolls_back_without_migration_ddl(owned26):
+    owned = owned26
+    before = snapshot(owned.admin)
+    maintenance_guard = prepared_sql_guard(owned, refuse=True)
+    migration_ddl = []
+
+    def record(_db, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().startswith(("CREATE ", "ALTER ", "DROP ")):
+            migration_ddl.append(statement.split()[0])
+
+    event.listen(owned.bootstrap, "before_cursor_execute", record)
+    try:
+        with (
+            pytest.raises(RuntimeError, match="synthetic_final_metadata_refusal"),
+            owned.bootstrap.begin() as db,
+        ):
+            step.upgrade_transaction(
+                db, owned.identity, root=ROOT, flags=FLAGS, maintenance_guard=maintenance_guard
+            )
+    finally:
+        event.remove(owned.bootstrap, "before_cursor_execute", record)
+    assert migration_ddl == []
+    assert (
+        maintenance_guard.final_reader.reads == 1
+        and maintenance_guard.started
+        and maintenance_guard.closed
+    )
+    assert snapshot(owned.admin) == before
+    with owned.observer.connect() as db:
+        assert (
+            db.scalar(text("SELECT version_num FROM public.alembic_version"))
+            == step.contract.BEFORE
+        )
+        assert db.scalar(text("SELECT to_regprocedure('public.evidence_writer_fence()')")) is None
+        assert (
+            db.scalar(
+                text(
+                    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' "
+                    "AND table_name='password_reset_tokens' AND column_name='purpose'"
+                )
+            )
+            == 0
+        )
+        assert (
+            db.scalar(text("SELECT review_protocol_version FROM browser_assistance_reviews")) == 4
+        )
+        assert (
+            db.scalar(
+                text("SELECT credit_cost FROM employer_applications WHERE id='m26-application'")
+            )
+            == 20
+        )
     assert_roles_and_acls(owned)

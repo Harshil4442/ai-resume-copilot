@@ -9,6 +9,7 @@ commits nothing and never retries. Returned values are pre-commit observations.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -25,7 +26,7 @@ from scripts import unified_credit_schema25_step as previous_step
 
 # Serialize with the original additive-migration transaction; no new lock service.
 LOCK_ID = previous_step.LOCK_ID
-TABLES = ("evidence_items", "password_reset_tokens")
+TABLES = ("browser_assistance_reviews", "evidence_items", "password_reset_tokens")
 MAX_ROWS = 250_000
 
 
@@ -45,13 +46,13 @@ def affected_acl(connection, identity):
             text(
                 "SELECT relname,relowner,coalesce(relacl::text,'') FROM pg_catalog.pg_class "
                 "WHERE relnamespace=:namespace AND relname=ANY(CAST(:tables AS text[])) "
-                "AND relkind='r' ORDER BY relname LIMIT 3"
+                "AND relkind='r' ORDER BY relname LIMIT 4"
             ),
             {"namespace": identity.namespace_oid, "tables": list(TABLES)},
         )
     ]
     need(
-        len(rows) == 2
+        len(rows) == 3
         and tuple(row[0] for row in rows) == TABLES
         and all(row[1] == identity.migrator_oid for row in rows),
         "affected_owner_or_acl_unavailable",
@@ -60,7 +61,7 @@ def affected_acl(connection, identity):
 
 
 def affected_digest(connection, identity, *, after: bool):
-    """Only the two exclusively locked DDL tables; only row hashes leave SQL.
+    """Only the three exclusively locked DDL tables; only row hashes leave SQL.
 
     Other pilot tables may legitimately change. For existing reset rows the only
     normalized field is the new purpose, separately required to be password_reset.
@@ -100,7 +101,7 @@ def affected_digest(connection, identity, *, after: bool):
     return digest.hexdigest()
 
 
-def upgrade_transaction(connection, identity, *, root: Path, flags: dict):
+def upgrade_transaction(connection, identity, *, root: Path, flags: dict, maintenance_guard):
     """Use standard Alembic on this exact supplied transaction; no commit/replay."""
     need(
         connection.dialect.name == "postgresql" and connection.in_transaction(),
@@ -109,6 +110,15 @@ def upgrade_transaction(connection, identity, *, root: Path, flags: dict):
     need(
         type(identity) is identity_step.MigrationIdentity and identity.namespace == "public",
         "fixed_identity_required",
+    )
+    from schema26_maintenance_guard import NativeMaintenanceDdlGuard
+
+    need(
+        type(maintenance_guard) is NativeMaintenanceDdlGuard
+        and maintenance_guard.prepared
+        and not maintenance_guard.started
+        and not maintenance_guard.closed,
+        "native_maintenance_guard_required",
     )
     previous.require_disabled(flags)
     source = contract.verify_source(root)
@@ -136,7 +146,7 @@ def upgrade_transaction(connection, identity, *, root: Path, flags: dict):
     connection.exec_driver_sql('SET LOCAL search_path TO "public"')
     for table in TABLES:
         connection.exec_driver_sql(f'LOCK TABLE "public"."{table}" IN ACCESS EXCLUSIVE MODE')
-    # READ COMMITTED takes a fresh statement snapshot after both AX locks.
+    # READ COMMITTED takes a fresh statement snapshot after all three AX locks.
     # Do not freeze a transaction snapshot in the earlier identity/catalog reads.
     financial.observe(connection, namespace_oid=identity.namespace_oid)
     liabilities = financial.liability_pins(connection)
@@ -144,6 +154,9 @@ def upgrade_transaction(connection, identity, *, root: Path, flags: dict):
     configuration = Config(str(root / "backend/alembic.ini"))
     configuration.set_main_option("script_location", str(root / "backend/alembic"))
     configuration.attributes["connection"] = connection
+    # Fixed native observer, constructed/authenticated before this transaction.
+    # Actual complete retired revision census is the last IO before DDL.
+    maintenance_guard.verify_pre_ddl(connection)
     command.upgrade(configuration, contract.SCHEMA)
     need(connection.in_transaction(), "external_transaction_lost")
     need(affected_digest(connection, identity, after=True) == before, "affected_data_changed")
@@ -164,6 +177,14 @@ def upgrade_transaction(connection, identity, *, root: Path, flags: dict):
         "affected_sha256": before,
         "source_sha256": source,
         "schema_acl": acl,
+        "acl_sha256": hashlib.sha256(
+            json.dumps(
+                {"schema": acl, "tables": table_acl},
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode()
+        ).hexdigest(),
         "transaction_ready_to_commit": True,
         "committed": False,
         "replay_authorized": False,

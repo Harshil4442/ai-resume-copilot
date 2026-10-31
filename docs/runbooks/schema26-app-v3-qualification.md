@@ -14,12 +14,12 @@ The distinct contract binds the actual complete app, reviewed additive HTTP
 nodes, source consumers, evidence fence, exact26 schema/issuer/catalog, operator,
 owned-input acquisition tools, privacy recovery, financial successors, frontend
 contracts, native tests and their finite transitive helpers. The final app
-inventory is287 files, SHA256
-`cc0f5e1fd7b27417f9351baf7b4fc8595e905577fa86e0f066919af43ca6e21b`.
+inventory is289 files, SHA256
+`605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe`.
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
 
-The finite current-source closure also binds all20 companion0.8.6 delivered
+The finite current-source closure also binds all21 companion0.8.8 delivered
 files, its package/dependency metadata and reproducible public ZIP, the exact
 download component, existing device BFF route and its gateway/timeout helpers,
 the actual CI unit/browser/assistance entrypoints, additional owned-Chrome and
@@ -28,7 +28,7 @@ synthetic adapter, and the three Python SQL bridges with their existing helpers.
 Frontend test configuration and the download button's actual class helper are
 also source-bound. Additional hosted/paired-wire sources are not relabeled as
 executed by the existing companion CI commands.
-All12 older public ZIPs through0.8.5 remain unchanged. The public bodyless
+All14 older public ZIPs through0.8.7 remain unchanged at their frozen hashes. The public bodyless
 readiness GET is an availability experiment before signing; it grants no device,
 session, clock or submission authority. The original signed5-second admission,
 native30-second and action10-second limits are unchanged. No reduction of the
@@ -61,6 +61,16 @@ The native protocol gate retains the original installed SDK, owned emulator,
 TLS-Redis and no-skipped-case requirements and adds the new finite proof-source
 closure. Local pure ports, SQLite, authored native tests or a branch-level green
 result do not satisfy genuine final-source/native qualification.
+
+The candidate also binds explicit protocol5 three-credit submission quotes,
+their actual client/BFF validators, shared wire vectors and native wallet races.
+Previously accepted protocol4 work retains its original20-credit currency and
+reservations. The real canary binds the current immutable quote fingerprint and
+deduplicates genuine traffic by owner and canonical opening; draft/replaced
+quotes and manual outcome reports never inflate its5% allowance. This source
+does not enable submissions, the new wallet, canary membership or checkout.
+The backend image carries only the exact25 inert client source inputs used by
+the server delivery digest, without a frontend runtime or additional dependency.
 
 Before any26 API traffic or frontend release, qualify the existing password-reset
 service as available under its already authorized Resend configuration. This
@@ -97,6 +107,15 @@ role identities, current numeric secret versions, actual26 marker/fence/catalog,
 closed AI/sales/Stage5 flags, current IAM/resource/template/generation/traffic and
 health guards. Existing one-send journals and unknown-outcome reconciliation are
 retained. This operator performs no migration, credential or IAM change.
+
+The separately reviewed `infra/gcp/schema26_native_migration.py` supplies the
+one-use native maintenance boundary for the three-table26 SQL primitive. The app
+operator consumes that genuine closed-baseline plan/journal and immutable
+old/closed revision lineage; it cannot infer migration authority from a Boolean
+or zero-traffic snapshot. Its first API stage explicitly restores the intended
+pilot flags, while rollback retains the captured closed baseline. See the
+[evidence-fence runbook](evidence-writer-schema26.md) for retirement, typed
+lifecycle/SQL joins and unknown-outcome handling.
 
 The disjoint26 native SQL issuer retains original target, TLS, CA, provenance,
 role/OID and session checks. Existing purposes retain their exact old schemas.

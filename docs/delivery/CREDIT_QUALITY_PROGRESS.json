@@ -41,7 +41,7 @@
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
-      "local_result": "Cost and billing protections in the e23 app are deployed behind the existing closed activation gates. Existing customer obligations were retained through the rollout. Unified-wallet activation, legacy mapping, invoice and tax reconciliation remain pending; there is no new sales activation.",
+      "local_result": "Cost and billing protections in the e23 app are deployed behind the existing closed activation gates. Existing customer obligations were retained through the rollout. Unified-wallet activation, legacy mapping, invoice and tax reconciliation remain pending; there is no new sales activation. The combined source candidate adds explicit three-credit browser-submission quotes and central reservations; previously accepted twenty-credit obligations remain separate. This candidate is not deployed or commercially qualified.",
       "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
     },
     {
@@ -125,7 +125,7 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
       ],
       "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
-      "local_result": "Schema25 remains deployed and original balances are preserved. Schema26 evidence-write fencing and privacy-erasure continuity are source-only in PR83, not a migrated database. Reviewed legacy mapping/reconciliation and funded seven-day/200-operation shadow evidence remain pending."
+      "local_result": "Schema25 remains deployed and original balances are preserved. Schema26 evidence-write fencing and privacy-erasure continuity are source-only in PR83, not a migrated database. Reviewed legacy mapping/reconciliation and funded seven-day/200-operation shadow evidence remain pending. The source candidate now includes genuine application-canary admission with owner/opening deduplication and a one-use native schema26 maintenance caller. Independent source reviews and live read-only metadata shape checks passed; real PostgreSQL qualification, critical maintenance and funded shadow accounting remain pending."
     },
     {
       "number": 7,

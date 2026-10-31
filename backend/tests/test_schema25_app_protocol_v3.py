@@ -111,7 +111,7 @@ def test_protocol_fingerprint_binds_the_finite_transitive_local_proof_helpers():
 def companion_proof_closure(root, roots, declared):
     """Exact relative ES imports used by these finite source/wire proof roots.
 
-    Runtime browser imports resolve among the separately bound full20 inventory.
+    Runtime browser imports resolve among the separately bound full21 inventory.
     Package imports are pinned by the unchanged frontend and companion locks.
     """
     pending, seen = list(roots), set()
@@ -139,14 +139,20 @@ def test_pairing_source_package_and_actual_wire_proof_dependencies_are_bound():
         "browser-companion/tests/request-deadlines.js", "browser-companion/tests/native-https-fixture.js"} <= observed
     source = ROOT / "browser-companion/extension"
     assert set(contract.COMPANION_EXTENSION_PATHS) == {str(path.relative_to(ROOT)) for path in source.iterdir()}
-    archive = ROOT / "frontend/public/downloads/hirewiz-browser-companion-0.8.6.zip"
+    archive = ROOT / "frontend/public/downloads/hirewiz-browser-companion-0.8.8.zip"
     with ZipFile(archive) as package:
         assert package.namelist() == ["hirewiz-browser-companion/" + Path(name).name
             for name in contract.COMPANION_EXTENSION_PATHS]
         for name in contract.COMPANION_EXTENSION_PATHS:
             assert package.read("hirewiz-browser-companion/" + Path(name).name) == (ROOT / name).read_bytes()
-    assert json.loads((source / "manifest.json").read_text())["version"] == "0.8.6"
-    assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.6"
+    assert json.loads((source / "manifest.json").read_text())["version"] == "0.8.8"
+    assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.8"
+    # Preserve all fourteen previously delivered archives at their original
+    # frozen bytes; qualification of this source never rewrites past clients.
+    import hashlib
+    assert len(contract.HISTORICAL_COMPANION_PACKAGES) == 14
+    assert all(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected
+        for name, expected in contract.HISTORICAL_COMPANION_PACKAGES)
 
 
 def test_companion_actual_ci_entrypoints_and_literal_bridge_inputs_are_bound():

@@ -207,3 +207,220 @@ def test_native_capture_requires_actual_e23_serving_not_prospective_pins(context
     with pytest.raises(rolling.RollingDenied):
         native._pin(pin.service)
     assert not boundary.writes
+
+
+class ClosedV3Fixture(V3Fixture):
+    """Real stock close algorithm over synthetic ports, never native proof."""
+    def __init__(self, directory):
+        from test_schema25_maintenance import Controls
+
+        super().__init__()
+        for index, row in enumerate(self.revisions.values()):
+            row["uid"] = f"10000000-0000-4000-8000-{index:012d}"
+        self.maintenance_plan = app.maintenance.capture(self, Controls(), "e" * 32)
+        directory.mkdir(mode=0o700)
+        self.maintenance_journal = rolling.Journal(directory, self.maintenance_plan)
+        assert app.maintenance.service_action(self.maintenance_plan, self.maintenance_plan.services[0],
+            self, self.maintenance_journal, "close")
+        self.baseline = app.capture_closed_api_baseline(self.maintenance_plan, self.maintenance_journal, self)
+        native = object.__new__(app.NativeApp26Boundary)
+        native.service, native.revision, native.iam = self.service, self.revision, self.iam
+        native._reference = lambda _name, version: version
+        api = native._pin(app.SERVICES[0], self.baseline)
+        pins = (api, *self.plan.services[1:])
+        self.plan = replace(self.plan, services=pins, maintenance_baseline=self.baseline,
+            reachable_revisions=tuple(app.historical.reachable_pin(pin.service, row["revision"],
+                self.revision(pin.service, row["revision"]), self.revision(pin.service, pin.prior_revision),
+                prior_source=app.PRIOR) for pin in pins for row in pin.traffic))
+        self.targets = {pin.service: app.candidate_template(self.plan, pin, self.service(pin.service)) for pin in pins}
+        self.rollout_start = len(self.writes)
+
+    def patch(self, service, body, mask):
+        result = super().patch(service, body, mask)
+        if "template" in body:
+            name = rolling.short_revision(body["template"]["revision"], service)
+            self.revisions[(service, name)]["uid"] = f"20000000-0000-4000-8000-{len(self.writes):012d}"
+        return result
+
+    def verify_global(self, plan):
+        plan.validate()
+        if plan.maintenance_baseline is not None:
+            app.verify_closed_api_baseline(plan.maintenance_baseline, self.maintenance_plan,
+                self.maintenance_journal, self)
+        for pin in plan.services:
+            template = self.states[pin.service]["template"]
+            baseline = plan.maintenance_baseline if rolling.environment(template)["APP_RELEASE"]["value"] == app.PRIOR.release else None
+            app.observed_flags(template, pin.service, baseline)
+            app.historical.current_phase(plan, pin, self.states[pin.service], self.targets[pin.service])
+
+
+@pytest.fixture
+def closed_context(tmp_path):
+    tmp_path.chmod(0o700)
+    case = ClosedV3Fixture(tmp_path / "maintenance")
+    rollout = tmp_path / "rollout"
+    rollout.mkdir(mode=0o700)
+    return case, rolling.Journal(rollout, case.plan)
+
+
+def test_closed_baseline_load_roundtrip_retains_original_stock_lineage_without_raw_env(closed_context):
+    case, _ = closed_context
+    assert app.load(rolling.canonical(asdict(case.plan))) == case.plan
+    assert app.capture_closed_api_baseline(case.maintenance_plan, case.maintenance_journal, case) == case.baseline
+    raw = rolling.canonical(asdict(case.baseline))
+    assert b"synthetic-sensitive" not in raw and b"DATABASE_URL" not in raw
+    for loader in (app.historical.load, app.historical.load_v2, app.initial.load_plan):
+        with pytest.raises(rolling.RollingDenied):
+            loader(rolling.canonical(asdict(case.plan)))
+
+
+def test_closed_baseline_targets_change_only_original_api_pilot_flags_and_qualified_source(closed_context):
+    case, _ = closed_context
+    api = case.plan.services[0]
+    closed = case.service(api.service)
+    target = app.candidate_template(case.plan, api, closed)
+    expected = app.rolling.stage_body(case.plan, api, closed)["template"]
+    env = rolling.environment(expected)
+    for flag, value in case.baseline.original_pilot_flags:
+        env[flag] = {"name": flag, "value": value}
+    expected["containers"][0]["env"] = list(env.values())
+    assert target == expected
+    assert all(rolling.environment(target)[flag]["value"] == "false" for flag in app.CLOSED_FLAGS)
+    assert all(rolling.environment(closed["template"])[flag]["value"] == "false" for flag in app.initial.OFF)
+    for pin in case.plan.services[1:]:
+        assert app.candidate_template(case.plan, pin, case.service(pin.service)) == case.targets[pin.service]
+    with pytest.raises(rolling.RollingDenied, match="maintenance_plan_pin_changed"):
+        replace(case.plan, release=app.PRIOR.release).validate()
+
+
+@pytest.mark.parametrize("phase", ["stage", "advance"])
+def test_closed_api_stage_sends_exact_reopened_target_and_journals_actual_request(closed_context, phase):
+    case, journal = closed_context
+    assert app.execute(phase, case.plan, case, journal)["status"] in {
+        "schema26_app_staged_zero_traffic", "schema26_app_release_observed"}
+    service, body, mask = case.writes[case.rollout_start]
+    assert service == app.SERVICES[0] and mask == "template,traffic"
+    assert body["template"] == case.targets[service]
+    marker = journal.read("stage." + service + ".started")
+    assert marker["request_sha256"] == rolling.sha(body)
+    assert marker["template_sha256"] == rolling.template_sha(body["template"], service)
+    assert journal.read("stage." + service + ".ack")["request_sha256"] == marker["request_sha256"]
+    assert journal.read("stage." + service + ".checked")["operation_ack_retained"] is True
+    count = len(case.writes)
+    app.execute("reconcile", case.plan, case, journal)
+    assert len(case.writes) == count
+
+
+def test_closed_baseline_immutable_lineage_remains_verifiable_after_candidate_and_rollback(closed_context):
+    case, journal = closed_context
+    assert app.execute("advance", case.plan, case, journal)["rolling_release_complete"]
+    app.verify_closed_api_baseline(case.baseline, case.maintenance_plan, case.maintenance_journal, case)
+    result = app.execute("rollback", case.plan, case, journal)
+    assert result["status"] == "schema26_app_prior_traffic_restored_writes_restricted"
+    api = case.plan.services[0]
+    active = next(row["revision"] for row in rolling.pinned_traffic(api.service, case.service(api.service)) if row.get("percent"))
+    assert active == case.baseline.closed_revision
+    assert all(rolling.environment(case.revision(api.service, active))[flag]["value"] == "false"
+        for flag in app.initial.OFF)
+    assert all(mask == "traffic" for _, _, mask in case.writes[-3:])
+    assert not any(row["revision"] == case.maintenance_plan.services[0].prior_revision
+        for row in rolling.pinned_traffic(api.service, case.service(api.service)))
+
+
+def test_closed_api_stage_lost_ack_never_replays_and_only_reconciles_original_metadata(closed_context):
+    case, journal = closed_context
+    case.lose_ack = True
+    with pytest.raises(RuntimeError):
+        app.execute("stage", case.plan, case, journal)
+    count = len(case.writes)
+    with pytest.raises(rolling.RollingDenied, match="unknown_reconcile_only"):
+        app.execute("stage", case.plan, case, journal)
+    assert len(case.writes) == count
+    app.execute("reconcile", case.plan, case, journal)
+    assert len(case.writes) == count
+    assert journal.read("stage." + app.SERVICES[0] + ".checked")["operation_ack_retained"] is False
+
+
+@pytest.mark.parametrize("fault", ["missing_ack", "unknown_operation", "failed_operation", "restore", "worker_close",
+    "closed_uid", "closed_template", "original_flags", "checked_generation"])
+def test_closed_baseline_refuses_unknown_or_changed_original_lineage(closed_context, fault):
+    case, _ = closed_context
+    marker = "service." + app.SERVICES[0] + ".close"
+    ack = case.maintenance_journal.read(marker + ".acknowledged")
+    if fault == "missing_ack":
+        (case.maintenance_journal.directory / (marker + ".acknowledged.json")).unlink()
+    elif fault == "unknown_operation":
+        case.operations[ack["operation"]]["done"] = False
+    elif fault == "failed_operation":
+        case.operations[ack["operation"]]["error"] = {"code": 9}
+    elif fault in {"restore", "worker_close"}:
+        name = "service." + (app.SERVICES[0] if fault == "restore" else app.SERVICES[1])
+        case.maintenance_journal.record(name + (".restore.started" if fault == "restore" else ".close.started"), {})
+    elif fault == "closed_uid":
+        case.revisions[(app.SERVICES[0], case.baseline.closed_revision)]["uid"] = "30000000-0000-4000-8000-000000000001"
+    elif fault == "closed_template":
+        case.revisions[(app.SERVICES[0], case.baseline.closed_revision)]["maxInstanceRequestConcurrency"] = 99
+    elif fault == "original_flags":
+        pin = case.maintenance_plan.services[0]
+        rolling.environment(case.revisions[(pin.name, pin.prior_revision)])["BROWSER_ASSISTANCE_ENABLED"]["value"] = "false"
+    else:
+        path = case.maintenance_journal.directory / (marker + ".checked.json")
+        value = json.loads(path.read_text())
+        value["generation"] += 1
+        path.write_text(json.dumps(value))
+        path.chmod(0o600)
+    with pytest.raises(rolling.RollingDenied):
+        app.verify_closed_api_baseline(case.baseline, case.maintenance_plan, case.maintenance_journal, case)
+
+
+def test_closed_api_pin_refuses_live_preimage_or_alias_drift(closed_context):
+    case, _ = closed_context
+    native = object.__new__(app.NativeApp26Boundary)
+    native.service, native.revision, native.iam = case.service, case.revision, case.iam
+    native._reference = lambda _name, version: version
+    case.states[app.SERVICES[0]]["etag"] = "unexpected-etag"
+    with pytest.raises(rolling.RollingDenied, match="closed_preimage_changed"):
+        native._pin(app.SERVICES[0], case.baseline)
+    case.states[app.SERVICES[0]]["etag"] = case.baseline.api_etag
+    case.states[app.SERVICES[0]]["trafficStatuses"].append({"tag": "old-open",
+        "revision": case.maintenance_plan.services[0].prior_revision})
+    with pytest.raises(rolling.RollingDenied, match="open_alias_changed"):
+        native._pin(app.SERVICES[0], case.baseline)
+
+
+@pytest.mark.parametrize("field", ["api_generation", "closed_template_sha256", "closed_revision", "original_pilot_flags"])
+def test_loaded_closed_baseline_cannot_change_the_pinned_plan_or_expand_flags(closed_context, field):
+    case, _ = closed_context
+    value = asdict(case.plan)
+    replacements = {"api_generation": True, "closed_template_sha256": "f" * 64,
+        "closed_revision": app.SERVICES[0] + "-other", "original_pilot_flags": [("OPTIONAL_AI_GENERATION_ENABLED", "true")]}
+    value["maintenance_baseline"][field] = replacements[field]
+    with pytest.raises(rolling.RollingDenied):
+        app.load(rolling.canonical(value))
+
+
+def test_closed_capture_refuses_an_unrelated_worker_change(closed_context):
+    case, _ = closed_context
+    case.states[app.SERVICES[1]]["template"]["maxInstanceRequestConcurrency"] = 99
+    with pytest.raises(rolling.RollingDenied, match="maintenance_worker_changed"):
+        app.capture_closed_api_baseline(case.maintenance_plan, case.maintenance_journal, case)
+
+
+def test_closed_api_pending_operation_and_rollback_intent_never_start_another_stage(closed_context):
+    case, journal = closed_context
+    case.pause = True
+    assert app.execute("advance", case.plan, case, journal)["status"] == "schema26_app_same_operation_pending"
+    count = len(case.writes)
+    assert app.execute("advance", case.plan, case, journal)["status"] == "schema26_app_same_operation_pending"
+    assert len(case.writes) == count
+    journal.record(app.historical.ROLLBACK_INTENT, {"forward_continuation_authorized": False})
+    with pytest.raises(rolling.RollingDenied, match="explicit_rollback_in_progress"):
+        app.execute("advance", case.plan, case, journal)
+    assert len(case.writes) == count
+
+
+def test_native_closed_mode_requires_explicit_original_custody_before_any_client(monkeypatch):
+    monkeypatch.setattr(app.historical.NativeApp25Boundary, "__init__",
+        lambda *_a, **_k: pytest.fail("No native client without explicit custody"))
+    with pytest.raises(rolling.RollingDenied, match="maintenance_custody_required"):
+        app.NativeApp26Boundary(ROOT)
