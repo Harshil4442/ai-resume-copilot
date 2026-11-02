@@ -274,7 +274,9 @@ def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -
         "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f": (3, 11),
     }
     expected = contracts.get(policy) if type(policy) is str else None
-    from infra.gcp.document_source_release import SourceProbe
+    from infra.gcp.document_source_release import ExpiredSourcePredecessor, SourceProbe
+    need(not isinstance(acceptance, ExpiredSourcePredecessor),
+         "document_transition_current_acceptance_required")
     if isinstance(probe, SourceProbe) and policy == probe.POLICY:
         expected = (probe.CONTRACT_VERSION, probe.REQUIRED_CASE_COUNT)
     courier = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
@@ -591,11 +593,19 @@ class Controller:
 
 def transition(image: str, build: dict[str, Any], native_journal: Path, journal: Path,
                *, http: Any, probe: Any, retire_expired_v2: bool = False,
-               rescue_expired_v2: bool = False, application_context: Any = None) -> dict[str, Any]:
+               rescue_expired_v2: bool = False, application_context: Any = None,
+               recover_expired_source: bool = False) -> dict[str, Any]:
     """Trusted controller entry: actual fresh native acceptance, never a boolean receipt."""
     need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
          and not (retire_expired_v2 and rescue_expired_v2),
          "document_transition_recovery_mode_invalid")
+    need(type(recover_expired_source) is bool and (not recover_expired_source
+         or not (retire_expired_v2 or rescue_expired_v2) and application_context is not None
+         and probe.CONTRACT_VERSION == 4), "document_transition_expired_source_mode_refused")
+    if recover_expired_source:
+        from infra.gcp.document_source_candidate import DEFINITIONS_KIND
+        need(type(build) is dict and build.get("kind") == DEFINITIONS_KIND,
+             "document_transition_expired_source_mode_refused")
     owner = Journal(journal)
     try:
         acceptance = probe.verify_successor(image, build, native_journal)
@@ -613,6 +623,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         prior_image = None
         prior_policy = None
         prior_expired = False
+        expired_source = None
         for name in SERVICES:
             value = run.service(name)
             run.ready(name, value, uid=probe.SERVICE_UID if name == WORKER else None)
@@ -623,7 +634,12 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 if prior_image != probe.BASE_IMAGE and rescue_expired_v2:
                     probe.verify_expired_current_v2_for_retirement(prior_image, value)
                 prior_policy = probe.policy_for_serving(value, prior_image)
-                if prior_image != probe.BASE_IMAGE and not rescue_expired_v2:
+                if recover_expired_source:
+                    need(build.get("kind") == DEFINITIONS_KIND and build.get("fixed_renderer_base") == prior_image,
+                         "document_transition_expired_source_parent_changed")
+                    expired_source = probe.verify_expired_current_source_predecessor(prior_image, value)
+                    owner.write("expired-source-predecessor.json", expired_source.report())
+                elif prior_image != probe.BASE_IMAGE and not rescue_expired_v2:
                     try:
                         probe.verify_current_successor(prior_image, value)
                     except probe.NativeProofDenied as error:
@@ -653,6 +669,14 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "close", build["nonce"], image, {}, captured[name])
             run.patch(name, "close", template, acceptance=acceptance)
+        if recover_expired_source:
+            need(expired_source is not None and all(run.service(name) == run.observed[name]
+                 and all(environment(run.observed[name]["template"])[key] == {"name": key, "value": "false"}
+                         for key in PAUSE[name]) for name in CALLERS)
+                 and run.service(WORKER) == run.observed[WORKER],
+                 "document_transition_expired_source_predecessor_changed")
+            need(probe.verify_expired_current_source_predecessor(prior_image, run.observed[WORKER]).report()
+                 == expired_source.report(), "document_transition_expired_source_predecessor_changed")
         if prior_expired:
             need(all(run.service(name) == run.observed[name]
                      and all(environment(run.observed[name]["template"])[key] == {"name": key, "value": "false"}

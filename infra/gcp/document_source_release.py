@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
 from infra.gcp import document_candidate as courier
@@ -18,6 +19,29 @@ from infra.gcp import document_refresh_transition as transition
 from infra.gcp import document_source_candidate as profile
 from infra.gcp import document_source_payload as payload
 from infra.gcp import document_source_receipt as receipt
+
+
+@dataclass(frozen=True)
+class ExpiredSourcePredecessor:
+    """Freshly read structural custody only; never authorizes processing."""
+    image: str
+    build_id: str
+    source_commit: str
+    qualification_sha256: str
+    policy_sha256: str
+    source_sha256: dict
+    renderer_version: str
+    font_manifest_sha256: str
+    definition_expires_at: str
+    inventory_sha256: str
+    receipt_sha256: str
+    worker_sha256: str
+    contract_version: int = 4
+    required_case_count: int = 17
+
+    def report(self):
+        return {**asdict(self), "purpose": "expired_source_structural_predecessor",
+                "processing_authorized": False, "fresh_native_acceptance": False}
 
 
 class SourceProbe:
@@ -126,7 +150,7 @@ class SourceProbe:
         event = payload.INVENTORY_EVENT if mode == "inventory" else payload.CORPUS_EVENT
         return job, execution, corpus.native_payload(clients, job, execution, mode, event=event)
 
-    def _acceptance(self, clients, *, fresh=True):
+    def _verified_evidence(self, clients):
         runtime = self.source_contract()
         _, _, inventory = self._observation(clients, "inventory", self.build)
         identity = self.validate_inventory(inventory, self.build["immutable_image"], runtime)
@@ -142,7 +166,13 @@ class SourceProbe:
         number, issued = scans[0]["definitions"].split("/", 1)
         stamp = datetime.fromisoformat(issued)
         prior.need(re.fullmatch(r"[0-9]{1,10}", number) and stamp.tzinfo is not None
-                   and timedelta(0) <= datetime.now(UTC) - stamp < timedelta(days=1 if fresh else 3),
+                   and timedelta(0) <= datetime.now(UTC) - stamp,
+                   "document_source_revision_definition_identity_invalid")
+        return job, execution, inventory, value, stamp
+
+    def _acceptance(self, clients, *, fresh=True):
+        job, execution, _, value, stamp = self._verified_evidence(clients)
+        prior.need(datetime.now(UTC) - stamp < timedelta(days=1 if fresh else 3),
                    "document_source_revision_definitions_stale")
         build = self.build
         return prior.NativeAcceptance(build["immutable_image"], build["build_id"], build["build_resource"],
@@ -180,6 +210,14 @@ class SourceProbe:
     def verify_current_successor(self, image, metadata):
         if self.policy_for_serving(metadata, image) != self.POLICY:
             return v3.verify_current_successor(image, metadata) if prior.policy_for_serving(metadata, image) == v3.POLICY else prior.verify_current_successor(image, metadata)
+        return self._verify_current_source(image, metadata)
+
+    def _verify_current_source(self, image, metadata, *, expired_predecessor=False):
+        prior.need(type(expired_predecessor) is bool
+                   and (not expired_predecessor or self.POLICY == profile.POLICY_SHA256),
+                   "document_source_revision_expired_profile_refused")
+        prior.need(self.policy_for_serving(metadata, image) == self.POLICY,
+                   "document_source_revision_serving_policy_changed")
         labels = metadata.get("labels", {})
         build = self.build_identity(read_only_release=self.read_only_release,
             build_id=labels.get("hirewiz-refresh-build"), nonce=labels.get("hirewiz-refresh-nonce"), image=image)
@@ -193,9 +231,21 @@ class SourceProbe:
             prior.need(all(actual.get(key) == metadata.get(key) for key in fields)
                        and actual.get("uid") == self.SERVICE_UID,
                        "document_source_revision_serving_changed")
-            return self._acceptance(clients, fresh=False)
+            if not expired_predecessor:
+                return self._acceptance(clients, fresh=False)
+            _, _, inventory, value, stamp = self._verified_evidence(clients)
+            prior.need(datetime.now(UTC) - stamp >= timedelta(days=3),
+                       "document_source_revision_expired_predecessor_required")
+            return ExpiredSourcePredecessor(image, build["build_id"], self.source.commit,
+                self.source.qualification_sha256, self.POLICY, dict(self.source.sources),
+                courier.RENDERER, courier.FONT, (stamp + timedelta(days=3)).isoformat(),
+                corpus.sha(inventory), corpus.sha(value), corpus.sha(metadata))
         finally:
             clients.close()
+
+    def verify_expired_current_source_predecessor(self, image, metadata):
+        return verify_expired_current_source_predecessor(image, metadata,
+            read_only_release=self.read_only_release)
 
     def verify_caller_pins(self, clients, image, *, policy_sha256=None, caller_serving_validator=None):
         policy = self.POLICY if policy_sha256 is None else policy_sha256
@@ -224,10 +274,14 @@ def run_successor(build, journal, *, root=profile.ROOT):
     return v3.run_successor(build, journal, adapter=SourceProbe(build, root=root))
 
 
-def promote(build, native_journal, transition_journal, *, application_context, root=profile.ROOT):
+def promote(build, native_journal, transition_journal, *, application_context, root=profile.ROOT,
+            recover_expired_source=False):
     """Reuse exact native proof/controller; unknown mutation intents never replay."""
     prior.need(application_context is not None and not transition_journal.exists(),
                "document_source_revision_fresh_transition_required")
+    prior.need(type(recover_expired_source) is bool and (not recover_expired_source
+               or build.get("kind") == profile.DEFINITIONS_KIND),
+               "document_source_revision_expired_recovery_mode_refused")
     probe = SourceProbe(build, root=root)
     if native_journal.exists():
         accepted = probe.verify_successor(build["immutable_image"], build, native_journal)
@@ -242,7 +296,8 @@ def promote(build, native_journal, transition_journal, *, application_context, r
     http = prior.build_module().native_http()
     try:
         result = transition.transition(build["immutable_image"], build, native_journal, transition_journal,
-            http=http, probe=probe, application_context=application_context)
+            http=http, probe=probe, application_context=application_context,
+            **({"recover_expired_source": True} if recover_expired_source else {}))
     finally:
         http.close()
     return result | {"source_commit": build["source_commit"], "renderer_contract_version": 4,
@@ -262,21 +317,30 @@ def verify_current_successor(image, metadata, *, read_only_release=False):
     return current_probe(image, metadata, read_only_release=read_only_release).verify_current_successor(image, metadata)
 
 
+def verify_expired_current_source_predecessor(image, metadata, *, read_only_release=False):
+    probe = current_probe(image, metadata, read_only_release=read_only_release)
+    prior.need(probe.policy_for_serving(metadata, image) == profile.POLICY_SHA256,
+               "document_source_revision_expired_profile_refused")
+    return probe._verify_current_source(image, metadata, expired_predecessor=True)
+
+
 def verify_caller_pins(clients, image, *, caller_serving_validator=None):
     worker = clients.service(prior.PARENT + "/services/hirewiz-document-inspector")
     probe = current_probe(image, worker, read_only_release=getattr(clients, "read_only_release", False))
     return probe.verify_caller_pins(clients, image, caller_serving_validator=caller_serving_validator)
 
 
-def parent_before_build(image, current_source):
+def parent_before_build(image, current_source, *, recover_expired_source=False):
     """An observed current source profile is mandatory before a child Build."""
+    prior.need(type(recover_expired_source) is bool, "document_source_revision_expired_recovery_mode_refused")
     clients = prior.Clients()
     try:
         metadata = clients.preflight()["service"]
         prior.need(metadata.get("template", {}).get("containers", [{}])[0].get("image") == image,
                    "document_source_revision_parent_not_current")
         probe = current_probe(image, metadata)
-        accepted = probe.verify_current_successor(image, metadata)
+        accepted = (verify_expired_current_source_predecessor(image, metadata)
+                    if recover_expired_source else probe.verify_current_successor(image, metadata))
         prior.need(accepted.image == image and accepted.policy_sha256 == current_source.policy
                    and accepted.source_sha256 == current_source.sources
                    and accepted.contract_version == 4 and accepted.required_case_count == 17
