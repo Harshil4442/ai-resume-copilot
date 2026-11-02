@@ -15,7 +15,7 @@ nodes, source consumers, evidence fence, exact26 schema/issuer/catalog, operator
 owned-input acquisition tools, privacy recovery, financial successors, frontend
 contracts, native tests and their finite transitive helpers. The final app
 inventory is289 files, SHA256
-`605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe`.
+`446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce`.
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
 

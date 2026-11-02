@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "605015f59cf9143810ec25cb9dd4206b3b7e2e592bc9b205b8d58a5b3d2323fe"
+APP_SHA256 = "446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -37,6 +37,10 @@ RUNNER_PATHS = (
 PROOF_PATHS = ("backend/tests/conftest.py", "backend/tests/expense_policy_fixtures.py",
                "backend/tests/model_cost_fixtures.py")
 CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
+# Only the reviewed UTC repair and its prospective V3 app inventory may differ
+# from the failed historical runner. Every other execution input remains fixed.
+CURRENT_EXECUTION_PATHS = ("backend/app/domains/credits/canary.py",
+                           "backend/scripts/schema25_app_release_contract_v3.py")
 ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
                     "infra/__init__.py", "infra/gcp/__init__.py")
 
@@ -99,8 +103,24 @@ def current_proof_hashes(root: Path) -> dict[str, str]:
     return entries
 
 
+def current_execution_hashes(root: Path) -> dict[str, str]:
+    """Finite successor bytes bound to this checkout's exact committed HEAD."""
+    head = git(root, "rev-parse", "HEAD").decode().strip()
+    need(len(head) == 40 and all(c in "0123456789abcdef" for c in head), "current_execution_head")
+    entries = {}
+    for name in CURRENT_EXECUTION_PATHS:
+        path = root / name
+        need(path.is_file() and path.resolve() == path and not path.is_symlink()
+             and 0 < path.stat().st_size <= 512 * 1024, "current_execution_path")
+        raw = path.read_bytes()
+        need(raw == git(root, "show", head + ":" + name), "uncommitted_current_execution_changed")
+        entries[name] = hashlib.sha256(raw).hexdigest()
+    need(git(root, "rev-parse", "HEAD").decode().strip() == head, "current_execution_head_changed")
+    return entries
+
+
 def dependency_hashes(root: Path) -> dict[str, str]:
-    """A finite historical code inventory, never a wildcard for future code."""
+    """Historical inventory plus two explicit HEAD-bound reviewed successors."""
     ancestor_fence(root)
     objects = {}
     for row in git(root, "ls-tree", "-r", "-z", "--full-tree", HISTORICAL_RELEASE).split(b"\0"):
@@ -113,6 +133,8 @@ def dependency_hashes(root: Path) -> dict[str, str]:
         name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                          "infra/document-processing/", "infra/native-tex/"))
         and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS))
+    successors = current_execution_hashes(root)
+    need(set(successors) <= set(paths), "current_execution_not_historical")
     current = set(git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
     code_roots = ("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                   "infra/document-processing/", "infra/native-tex/")
@@ -124,10 +146,13 @@ def dependency_hashes(root: Path) -> dict[str, str]:
         need(path.is_file() and path.resolve() == path and not path.is_symlink(), "dependency_path")
         raw = path.read_bytes()
         mode, kind, expected = objects[name]
-        need(mode in {b"100644", b"100755"} and kind == b"blob"
-             and hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
-                              usedforsecurity=False).hexdigest().encode() == expected,
-             "historical_execution_dependency_changed")
+        need(mode in {b"100644", b"100755"} and kind == b"blob", "historical_dependency_type")
+        if name in successors:
+            need(hashlib.sha256(raw).hexdigest() == successors[name], "current_execution_changed_during_read")
+        else:
+            need(hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
+                             usedforsecurity=False).hexdigest().encode() == expected,
+                 "historical_execution_dependency_changed")
         entries[name] = hashlib.sha256(raw).hexdigest()
     return entries
 
@@ -136,9 +161,13 @@ def source_identity(root: Path) -> dict:
     need(root.is_absolute() and root.resolve() == root, "root")
     entries = component_hashes(root)
     dependencies = dependency_hashes(root)
+    successors = current_execution_hashes(root)
+    need(all(dependencies[name] == value for name, value in successors.items()),
+         "current_execution_changed_during_identity")
     body = {"schema_version": "native-quality-component-v2", "component_paths": entries,
             "execution_dependencies": dependencies, "proof_inputs": proof_hashes(root),
             "current_proof_inputs": current_proof_hashes(root),
+            "current_execution_inputs": successors,
             "absent_package_ancestors": list(ABSENT_ANCESTORS), "full_ci_suites": list(SUITES)}
     return {**body, "controller_sha256": digest(body), "runtime_dependencies_sha256": digest(dependencies),
         "runner_entry_sha256": ENTRY_SHA256,

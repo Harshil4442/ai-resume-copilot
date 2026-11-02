@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -27,6 +28,11 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
     assert len(value["execution_dependencies"]) == 464 and len(q.CURRENT_PROOF_PATHS) == 1
+    assert q.CURRENT_EXECUTION_PATHS == ("backend/app/domains/credits/canary.py",
+        "backend/scripts/schema25_app_release_contract_v3.py")
+    assert set(value["current_execution_inputs"]) == set(q.CURRENT_EXECUTION_PATHS)
+    assert all(value["execution_dependencies"][name] == digest
+        for name, digest in value["current_execution_inputs"].items())
     assert "runner_release" not in value and "runner_app_and_contract_sha256" not in value
 
 
@@ -264,6 +270,60 @@ def test_current_observer_only_committed_drift_changes_controller_not_runtime(mo
     assert before["current_proof_inputs"] != after["current_proof_inputs"]
     assert before["execution_dependencies"] == after["execution_dependencies"]
     assert before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
+
+
+@pytest.mark.parametrize("name", q.CURRENT_EXECUTION_PATHS)
+def test_uncommitted_successor_file_is_refused_in_actual_execution_closure(monkeypatch, name):
+    original = Path.read_bytes
+    def changed(path):
+        raw = original(path)
+        return raw + b"\n# uncommitted successor drift\n" if path == ROOT / name else raw
+    monkeypatch.setattr(Path, "read_bytes", changed)
+    with pytest.raises(ValueError, match="uncommitted_current_execution_changed"):
+        q.dependency_hashes(ROOT)
+
+
+@pytest.mark.parametrize("name", ["Dockerfile", "backend/app/domains/analysis/native_input_acquisition.py"])
+def test_unrelated_execution_file_still_requires_exact_failed_baseline_bytes(monkeypatch, name):
+    original = Path.read_bytes
+    def changed(path):
+        raw = original(path)
+        return raw + b"\n# unrelated runtime drift\n" if path == ROOT / name else raw
+    monkeypatch.setattr(Path, "read_bytes", changed)
+    with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
+        q.dependency_hashes(ROOT)
+
+
+@pytest.mark.parametrize("name", q.CURRENT_EXECUTION_PATHS)
+def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(tmp_path, name):
+    # A real local Git checkout with shared read-only objects avoids pretending
+    # a committed foreign byte change is merely an uncommitted working-tree edit.
+    # It supplies no CI, Build, native or funding authority.
+    before = q.dependency_hashes(ROOT)
+    for path in before:
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((ROOT / path).read_bytes())
+    (tmp_path / name).write_bytes((tmp_path / name).read_bytes() + b"\n# committed foreign successor\n")
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+    def run(*args):
+        subprocess.run(["git", "-c", "user.name=Synthetic source test", "-c", "user.email=source@example.invalid",
+            "-C", str(tmp_path), *args], cwd=tmp_path, env=environment,
+            capture_output=True, check=True, timeout=10)
+    run("init", "-q")
+    common = Path(q.git(ROOT, "rev-parse", "--git-common-dir").decode().strip())
+    common = common if common.is_absolute() else ROOT / common
+    (tmp_path / ".git/objects/info/alternates").write_text(str((common / "objects").resolve()) + "\n")
+    run("add", "--all")
+    run("commit", "-q", "-m", "Synthetic foreign source only")
+    assert not q.git(tmp_path, "status", "--porcelain")
+    after = q.dependency_hashes(tmp_path)
+    assert len(before) == len(after) == 464
+    assert {key for key in before if before[key] != after[key]} == {name}
+    assert q.digest(before) != q.digest(after)
+    with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
+        q._runner_source(tmp_path)
 
 
 def test_current_observer_context_must_match_both_actual_roots(native_ports):
