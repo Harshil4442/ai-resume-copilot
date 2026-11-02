@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2"
+APP_SHA256 = "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (

@@ -259,11 +259,14 @@ class ConfiguredBrowserPairing:
         )
         batch = None
         if mode == "true":
-            from .gcp_rpc import FirestoreIdentityList
+            from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
             from .native_metadata_admission import require_enabled
 
             require_enabled()
-            batch = FirestoreIdentityList((bindings[0][0], bindings[1][0]))
+            first, second = bindings[0][0], bindings[1][0]
+            if not isinstance(first, FirestoreRpc) or not isinstance(second, FirestoreRpc):
+                raise GuardUnavailable("Browser pairing identity clients are unavailable")
+            batch = FirestoreIdentityList((first, second))
         with identity_observation_scope(bindings, batch=batch):
             try:
                 # All existing entry/exit and signing barriers remain fresh.

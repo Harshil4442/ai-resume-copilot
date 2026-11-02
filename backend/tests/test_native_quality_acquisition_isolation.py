@@ -22,7 +22,7 @@ def runner_bytes(**changes):
         ci_run_id=1, build_id="11111111-1111-1111-1111-111111111111",
         image=isolation.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
         qualification_contract="hirewiz_schema26_app_rolling_v3", qualification_sha256="a" * 64,
-        app_files=289, app_sha256="67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2",
+        app_files=289, app_sha256="9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e",
         entry_path="backend/scripts/native_acquisition_job.py",
         entry_sha256="8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740",
         runtime_dependencies_sha256="b" * 64, observed_at="2026-10-31T00:00:00Z",

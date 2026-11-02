@@ -37,7 +37,7 @@ baseline. The historical7be failure remains ineligible, and old CI/Build/receipt
 cannot approve either changed current proof or runtime bytes. Dockerfile, locks,
 CI workflow, the other454 execution inputs and entry8eef remain byte-exact.
 The current reviewed App289 inventory is
-`67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2`;
+`9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e`;
 it needs its own genuine all-five CI and immutable Build. Additional executable
 modules in those execution namespaces refuse; original default two-caller
 contracts and all signed/native deadlines are unchanged.
@@ -114,7 +114,7 @@ code is never imported/executed. Its output contains only source hashes/counts.
 The runner and controller may use the SAME actual clean head and all-five CI
 run; no distinct-head requirement or extra controller-only app Build exists.
 The QFP may legitimately change with reviewed test-only repairs even while
-App289/67c and entry8eef remain identical. The child does not spoof CI variables
+App289/9ec and entry8eef remain identical. The child does not spoof CI variables
 or run any native suite. Unknown/timeout/dirty or changed source refuses.
 
 The Plan also binds genuine evaluatorUID/bucketmetageneration, current worker
