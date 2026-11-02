@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import builtins
 import copy
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,8 @@ from pydantic import ValidationError
 from app.domains.analysis import native_input_acquisition as old
 from app.domains.analysis import quality_packet as packet
 from evaluation.native_acquisition_v2 import engine as e
+from scripts import native_acquisition_channel as original_channel
+from scripts import native_acquisition_job as original_job
 from scripts import qualify_native_quality_acquisition as source
 from scripts import schema25_app_release_contract_v3 as contract
 
@@ -181,27 +184,108 @@ def reviewed_toys(tmp_path, monkeypatch):
         "entry_sha256": source.ENTRY_SHA256, "runtime_dependencies_sha256": "2" * 64,
         "observed_at": start.isoformat(), "ci_metadata_sha256": source.digest(ci),
         "build_metadata_sha256": source.digest(build)})
-    executions = [put(f"execution-{i}.json", {
-        "name": f"projects/ai-resume-parser-482412/locations/us-central1/jobs/hirewiz-quality-dev-toy-{i:08}/executions/toy-{i}",
-        "uid": f"{i:08x}-1234-1234-1234-123456789012", "taskCount": 1, "succeededCount": 1,
-        "startTime": start.isoformat(), "completionTime": (now - timedelta(minutes=9)).isoformat(), "template": {
+    generations = [0]
+
+    def object_ref(name, raw):
+        generations[0] += 1
+        return original_channel.ObjectRef(name=name, generation=str(generations[0]), size=len(raw), sha256=packet.digest(raw))
+
+    def retained(name, value, kind, path=None):
+        raw = value if isinstance(value, bytes) else packet.canonical(value)
+        artifact = put(path or "channel/" + name, raw, kind)
+        return {"artifact": artifact, "reference": object_ref(name, raw).model_dump(mode="json")}
+
+    namespace = "gs://hirewiz-quality-dev-482412-20261031/quality-development/" + original_auth.experiment_id + "/"
+    configuration = original_channel.binding(report, namespace)
+    channel_binding = retained("channel-binding.json", configuration.model_dump(mode="json"), "control")
+    phase_records = {}
+    for row in report["selected_cases"]:
+        for phase in row["phases"]:
+            key = row["case_id"] + "." + phase
+            raw_intent = (root / "journal" / (key + ".intent.json")).read_bytes()
+            names = [key + suffix for suffix in (".raw.json", ".retained.json", ".result.json")]
+            if phase == "compile":
+                names.append(row["case_id"] + ".compiled.pdf")
+            phase_records[key] = retained(key + ".terminal.json", {
+                "version": original_channel.VERSION, "key": key,
+                "intent": object_ref(key + ".intent.json", raw_intent).model_dump(mode="json"),
+                "files": [object_ref(name, (root / "journal" / name).read_bytes()).model_dump(mode="json") for name in names]}, "terminal")
+    put("old-authority/runner-funding.json", {"synthetic_only": "no funding"})
+    original_batches: list[dict[str, Any]] = []
+    accumulated: dict[str, Any] = {}
+    previous_dispatch, previous_terminal = None, None
+    phase_keys = list(phase_records)
+    cursor = 0
+    for i in range(9):
+        count = 1 if i == 0 else 9 if i == 8 else 10
+        selected_keys = phase_keys[cursor:cursor + count]
+        cursor += count
+        review = put(f"old-authority/dispatch-review-{i}.json", {"synthetic_only": "no native approval"}, "dispatch_review")
+        review_ref = {"path": Path(review["path"]).name, "sha256": review["sha256"]}
+        placeholder = original_channel.ObjectRef(name=f"dispatch.{i}.json", generation="1", size=1, sha256="0" * 64)
+        before = packet.digest(packet.canonical(accumulated))
+        dispatch = original_channel.Dispatch(schema_version="reviewed-native-acquisition-dispatch-v1",
+            purpose="unreviewed_service_capture_external_authority_required", reviewed_by="toy-not-authority",
+            external_authority_review=review_ref, channel_binding=channel_binding["reference"], acknowledgment=placeholder,
+            before_checkpoint_sha256=before, parent_terminal=previous_terminal, maximum_requests=count)
+        ack = retained(placeholder.name, original_channel.dispatch_bytes(dispatch), "batch")
+        dispatch = dispatch.model_copy(update={"acknowledgment": original_channel.ObjectRef.model_validate(ack["reference"])})
+        authority_names = {"funding.json", "runner-funding.json", review_ref["path"]}
+        if previous_dispatch:
+            authority_names.add(previous_dispatch.external_authority_review.path)
+
+        def file_inputs(directory, names, prefix):
+            return [{"path": name, "object": object_ref(f"input.{prefix}.{j}", (root / directory / name).read_bytes()).model_dump(mode="json")}
+                    for j, name in enumerate(sorted(names))]
+
+        job_name = f"hirewiz-quality-dev-toy-{i:08}"
+        bundle = original_job.Bundle(schema_version="development-native-job-input-v1",
+            purpose="unreviewed_development_capture_no_model_no_retail", entry_sha256=source.ENTRY_SHA256,
+            job_name=job_name, configuration=configuration, authorization=original_auth, dispatch=dispatch,
+            previous_dispatch=previous_dispatch, runner_funding_evidence={"path": "runner-funding.json",
+                "sha256": packet.file_digest(root / "old-authority/runner-funding.json")},
+            native_files=file_inputs("native", {"materialization-manifest.json", *(row["source"]["path"] for row in report["selected_cases"])}, f"native-{i}"),
+            authorization_files=file_inputs("old-authority", authority_names, f"authority-{i}"))
+        bundle_record = retained(f"input.bundle-{i}.json", packet.canonical(bundle.model_dump(mode="json")), "control", f"bundles/batch-{i}.json")
+        claim = retained("run." + before + ".intent.json", {"version": original_channel.VERSION,
+            "dispatch_sha256": packet.digest(original_channel.dispatch_bytes(dispatch)), "before_checkpoint_sha256": before}, "batch")
+        context = retained("job." + packet.digest(original_channel.dispatch_bytes(dispatch)) + ".context.json", {
+            "job": job_name, "execution": job_name + "-exec", "task_index": 0, "task_attempt": 0,
+            "custody": "environment_observation_not_provider_attestation"}, "batch")
+        accumulated.update({key: phase_records[key]["reference"] for key in selected_keys})
+        terminal = retained("run." + before + ".terminal.json", {"version": original_channel.VERSION,
+            "state": "completed_unreviewed", "channel_binding": channel_binding["reference"],
+            "dispatch": ack["reference"], "dispatch_sha256": packet.digest(original_channel.dispatch_bytes(dispatch)),
+            "before_checkpoint_sha256": before, "after_checkpoint_sha256": packet.digest(packet.canonical(accumulated)),
+            "parent_terminal": previous_terminal.model_dump(mode="json") if previous_terminal else None,
+            "requests_sent": count, "actual_native_cost_minor": None, "authorizes_retail": False}, "batch")
+        execution = put(f"execution-{i}.json", {
+            "name": f"projects/ai-resume-parser-482412/locations/us-central1/jobs/{job_name}/executions/{job_name}-exec",
+            "job": f"projects/ai-resume-parser-482412/locations/us-central1/jobs/{job_name}",
+            "uid": f"{i:08x}-1234-1234-1234-123456789012", "taskCount": 1, "succeededCount": 1,
+            "startTime": start.isoformat(), "completionTime": (now - timedelta(minutes=9)).isoformat(), "template": {
             "serviceAccount": isolation.EVALUATOR, "maxRetries": 0, "containers": [{"image": image,
             "command": ["/app/backend/.venv/bin/python"], "args": ["-B", "-m", "scripts.native_acquisition_job",
-            "--namespace", "gs://hirewiz-quality-dev-482412-20261031/quality-development/" + original_auth.experiment_id + "/",
-            "--bundle-name", f"input.toy-{i}.json", "--bundle-generation", "1", "--bundle-sha256", "a" * 64,
-            "--workspace", "/app/backend/.quality-development"]}]}}, "provider") for i in range(9)]
+            "--namespace", namespace, "--bundle-name", bundle_record["reference"]["name"],
+            "--bundle-generation", bundle_record["reference"]["generation"], "--bundle-sha256", bundle_record["reference"]["sha256"],
+            "--workspace", "/app/backend/.quality-development"]}]}}, "provider")
+        original_batches.append({"batch_index": i, "execution": execution, "bundle": bundle_record,
+            "dispatch_ack": ack, "run_intent": claim, "run_terminal": terminal, "job_context": context,
+            "phase_terminals": {key: phase_records[key] for key in selected_keys}})
+        previous_dispatch = dispatch
+        previous_terminal = original_channel.ObjectRef.model_validate(terminal["reference"])
     evidence_ref = put("review.json", {"state": "completed_native_development_review",
         "reviewed_by": "toy-reviewer-not-human-proof", "reviewed_at": reviewed_at.isoformat(),
         "development_plan_sha256": plan_ref["sha256"], "capture_registry_sha256": registry_ref["sha256"],
-        "validation_map_sha256": map_ref["sha256"], "native_execution_readbacks": executions})
+        "validation_map_sha256": map_ref["sha256"], "native_batches": original_batches})
     lock = dict(schema_version=e.LOCK_VERSION, purpose="reviewed_native_development_inputs_before_held_out_capture",
         state="locked_before_held_out_native_capture", manifest_sha256=e.inputs.MANIFEST_SHA,
         corpus_sha256=e.inputs.CORPUS_SHA, protocol_sha256=e.inputs.PROTOCOL_SHA, rubric_sha256=manifest["rubric_sha256"],
         reviewed_by="toy-reviewer-not-human-proof", reviewed_at=reviewed_at.isoformat(),
         locked_at=(now - timedelta(minutes=3)).isoformat(), native_directory="native", journal_directory="journal",
-        review_directory="reviews", authorization_directory="old-authority", development_authorization=old_auth_ref,
+        review_directory="reviews", authorization_directory="old-authority", channel_directory="channel", development_authorization=old_auth_ref,
         development_plan=plan_ref, capture_registry=registry_ref, validation_map=map_ref, review_evidence=evidence_ref,
-        runner_receipt=runner_ref, ci_metadata=ci_ref, build_metadata=build_ref)
+        runner_receipt=runner_ref, ci_metadata=ci_ref, build_metadata=build_ref, channel_binding=channel_binding)
 
     def seal():
         lock["files"] = [{**e.Artifact(path=name, sha256=packet.file_digest(root / name)).model_dump(), "kind": kind}
@@ -233,6 +317,56 @@ def test_complete_toy_protocol_never_claims_native_or_processing_approval(review
     assert reviewed_toys.selections and set(reviewed_toys.selections) == {"development"}
 
 
+def test_native_runtime_validation_does_not_import_unshipped_infra_or_controllers(reviewed_toys, monkeypatch):
+    original_import = builtins.__import__
+
+    def shipped(name, globals=None, locals=None, fromlist=(), level=0):
+        assert not (name == "infra" or name.startswith("infra.")), "infra is not copied into the production image"
+        assert not (name == "scripts" and {"qualify_native_quality_acquisition", "schema25_app_release_contract_v3"} & set(fromlist)), "controller import is not a runtime data read"
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", shipped)
+    assert check(reviewed_toys).native_approval is False
+
+
+@pytest.mark.parametrize("change", ["bundle_hash", "bundle_generation", "source_hash", "checkpoint", "context"])
+def test_self_consistent_review_hashes_cannot_borrow_a_different_native_execution(reviewed_toys, change):
+    t = reviewed_toys
+    evidence = json.loads((t.root / "review.json").read_bytes())
+    batch = evidence["native_batches"][0]
+    execution = json.loads((t.root / batch["execution"]["path"]).read_bytes())
+    if change in {"bundle_hash", "bundle_generation"}:
+        execution["template"]["containers"][0]["args"][10 if change == "bundle_hash" else 8] = "0" * 64 if change == "bundle_hash" else "999"
+    elif change == "source_hash":
+        record = batch["bundle"]
+        value = json.loads((t.root / record["artifact"]["path"]).read_bytes())
+        value["native_files"][0]["object"]["sha256"] = "0" * 64
+        raw = packet.canonical(value)
+        record["artifact"] = t.put(record["artifact"]["path"], raw)
+        record["reference"].update(size=len(raw), sha256=packet.digest(raw))
+        execution["template"]["containers"][0]["args"][10] = packet.digest(raw)
+    else:
+        record = batch["run_terminal" if change == "checkpoint" else "job_context"]
+        value = json.loads((t.root / record["artifact"]["path"]).read_bytes())
+        value["after_checkpoint_sha256" if change == "checkpoint" else "execution"] = "0" * 64 if change == "checkpoint" else "unrelated-execution"
+        raw = packet.canonical(value)
+        record["artifact"] = t.put(record["artifact"]["path"], raw, "batch")
+        record["reference"].update(size=len(raw), sha256=packet.digest(raw))
+    batch["execution"] = t.put(batch["execution"]["path"], execution, "provider")
+    t.lock["review_evidence"] = t.put("review.json", evidence)
+    t.auth = t.auth.model_copy(update={"native_development_lock": e.Artifact.model_validate(t.seal())})
+    with pytest.raises(ValueError, match="original_"):
+        check(t)
+    assert "held_out" not in t.selections
+
+
+def test_complete_retained_original_closure_stays_within_unchanged_kind_limits(reviewed_toys):
+    rows = e.NativeDevelopmentLock.model_validate(reviewed_toys.lock).files
+    counts = {kind: sum(row.kind == kind for row in rows) for kind in e.KINDS}
+    assert counts["terminal"] == 80 and counts["batch"] == 36 and counts["dispatch_review"] == 9
+    assert counts["control"] == 21 <= 32 and counts["provider"] == 9 <= 36
+
+
 @pytest.fixture
 def heldout_toys(reviewed_toys, monkeypatch, tmp_path):
     """160 newly authored tiny toy inputs, never the actual held-out corpus."""
@@ -252,8 +386,8 @@ def heldout_toys(reviewed_toys, monkeypatch, tmp_path):
     t.auth = t.auth.model_copy(update={"native_manifest_sha256": ref["sha256"]})
     original_select, original_verify, events = e.inputs.selected_cases, e.verify_native_development_lock, []
 
-    def verify(*args):
-        result = original_verify(*args)
+    def verify(*args, **kwargs):
+        result = original_verify(*args, **kwargs)
         events.append("complete-native40-review-matched")
         return result
 
