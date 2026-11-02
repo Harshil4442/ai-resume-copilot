@@ -35,6 +35,41 @@ fresh app/operator qualification, exact-head CI and Git Build tuple, followed by
 one fresh owned production Build and all existing native gates. Retain original
 failed-run artifacts; no legacy rescue flag substitutes for these checks.
 
+## Historical completed-source decoder
+
+The ordinary history selector must recognize the exact completed
+41108319542/41119586258 pair before retaining a new attempt. Its old canonical
+operator hash includes the maintenance workflow itself. The current workflow
+has changed, so executing that reader against current HEAD correctly refuses;
+that refusal does not mean the historical completion is absent.
+
+History normalization therefore invokes only `--mode select-history` from a
+fresh private Git worktree pinned to
+`f5e9ca03383afac4c6cda17134bfc854c3ba8116`, tree
+`7e92b98914ae1887951ed2667b0f9fba25d803ab`. Before import, the workflow verifies
+the clean whole tree, every local importable source, original three-file
+operator hash `3325a9f173c223d433fbfc51a1a7545761ca4e6aeead993fcc65c94e86e57871`,
+original fourteen-helper qualification `61b313bc…10ae50`, and identical locked
+dependencies. The frozen reader and CLI must also equal their current bytes.
+It uses the actual current workflow environment without changing GITHUB_SHA.
+This checkout is a historical decoder, never the current mutation operator.
+
+That exact role rereads GitHub metadata/archive bytes, the generation-bound old
+claim and historical Build/source archive, then checks the original completed
+receipt as identity. It does not call current-worker preflight/freshness,
+NativeAcceptance construction, claim creation, Build/Job creation or Run,
+promotion or PATCH. An expired original worker or later accepted definitions
+descendant does not alter historical decoding. Missing/expired artifacts or
+changed original source, archive, claim or receipt still refuse.
+
+The three-history bound stays unchanged. Normalization preserves original
+input trees and copies the exact completed history plus all four raw failed
+5080 Build files. It excludes the duplicate original only after genuine
+completed consumption is proved. The current source/helpers then independently
+verify the current worker/callers and failed-Build disposition before allocating
+a candidate. No old acceptance becomes current, no old mutation guard is
+relaxed, and a fresh directory grants no replay authority.
+
 ## Explicit recovery of an expired source V4 predecessor
 
 Ordinary refresh continues to require a current unexpired predecessor. If that
