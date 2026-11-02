@@ -185,7 +185,12 @@ class ReadOnlyMaintenanceMetadata:
                 self._physical_for_request += 1
                 self.resource_get_sends += 1
             remaining = self._remaining()
-            kwargs['timeout'] = min(SOCKET_SECONDS, remaining)
+            # The complete census may need more than the per-Service socket
+            # allowance. It still shares the same owned six-second wall alarm
+            # with both surrounding Service GETs; no deadline is extended.
+            listing = (target.hostname == 'run.googleapis.com'
+                and unquote(target.path) == '/v2/' + API + '/revisions')
+            kwargs['timeout'] = remaining if listing else min(SOCKET_SECONDS, remaining)
             kwargs['allow_redirects'] = False
             kwargs['stream'] = True
             response = original_send(request, **kwargs)
