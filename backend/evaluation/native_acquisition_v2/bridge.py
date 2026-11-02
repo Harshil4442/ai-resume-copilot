@@ -25,6 +25,13 @@ INSPECTOR = REPOSITORY + "hirewiz-document-inspector@sha256:"
 SCHEMA = "native-definitions-equivalence-metadata-v1"
 KIND = "native_cloud_build_fixed_renderer_definitions_v1"
 REFRESH_TEMPLATE_SHA256 = "8618952dc7f999d7e8138a421b5de0a59f9b518b5a8250da13cc407485509b5b"
+# Exact reviewed helper bytes, never a caller-selected recipe version. These
+# still require genuine Git/Build provenance before any native use.
+DEFINITION_HELPER_VERSIONS = {
+    "14fe5261476c196411e3ae7e701a95f483d017c7b01366edf3dd0fb5d09d68ed": 1,
+    "082a2c68248cd6193994589ccbfed850f4a65b713da7ecfc24e16d068cc5ba06": 1,
+    "3090f162a7ef8cfe43f592afcdd4488ab2c7adf83f6a06a931708df685c4af06": 2,
+}
 DOCKER_BUILDER = "gcr.io/cloud-builders/docker@sha256:40c2fb4fcd0ad51376eef166c2e7b2b40a3508d5776e2bf33db3783ab39d0f2e"
 POLICY = "22a012f2fb7b6d3b696d8772563e9363566b9f03fb83385cfeffbc84a26459eb"
 PATH = r"[A-Za-z0-9_-][A-Za-z0-9._-]*(?:/[A-Za-z0-9_-][A-Za-z0-9._-]*){0,7}"
@@ -92,6 +99,14 @@ class GenerationArtifact(Closed):
     artifact: Artifact
 
 
+class RecipeSource(Closed):
+    """Raw helper custody bound to the Build's source labels, not Git proof."""
+    source_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
+    qualification_sha256: Hash
+    helper_path: Literal["infra/gcp/document_source_candidate.py"]
+    helper: Artifact
+
+
 class DerivativeEdge(Closed):
     kind: Literal["native_cloud_build_fixed_renderer_definitions_v1"]
     parent_image: InspectorImage
@@ -103,6 +118,7 @@ class DerivativeEdge(Closed):
     raw_build: Artifact
     source_archive: GenerationArtifact
     recipe: Artifact
+    recipe_source: RecipeSource
     material_inventory: Artifact
     oci: OciEvidence
     layer_inventories: list[Artifact] = Field(min_length=2, max_length=2)
@@ -143,6 +159,7 @@ class OriginalEvidence(Closed):
     runner_build: Artifact
     inspector_build: Artifact
     inspector_source_archive: GenerationArtifact
+    inspector_recipe_source: RecipeSource | None = None
     renderer_origin: RendererOrigin
     inspector_image: InspectorImage
     material: MaterialIdentity
@@ -366,10 +383,34 @@ def _step_arguments(build: dict) -> list[dict]:
     return [{"name": row.get("name"), "args": row.get("args")} for row in steps]
 
 
-def _rendered_recipe(template: bytes, parent: str) -> bytes:
+def _recipe_version(closure: _Closure, source: RecipeSource | None, commit: str, qualification: str) -> int:
+    need(source is not None, "recipe_source_missing")
+    assert source is not None
+    need(source.source_commit == commit and source.qualification_sha256 == qualification,
+         "recipe_source_changed")
+    helper = closure.read(source.helper)
+    version = DEFINITION_HELPER_VERSIONS.get(hashlib.sha256(helper).hexdigest())
+    need(version is not None, "recipe_helper_unreviewed")
+    assert version is not None
+    return version
+
+
+def _rendered_recipe(template: bytes, parent: str, *, version: int) -> bytes:
     parents = re.findall(rb"^FROM ([^ ]+)(?: AS definitions)?$", template, re.M)
     need(len(parents) == 2 and parents[0] == parents[1], "template_parent")
-    return template.replace(parents[0], parent.encode())
+    recipe = template.replace(parents[0], parent.encode())
+    need(type(version) is int and version in {1, 2}, "recipe_version_unreviewed")
+    if version == 1:
+        return recipe
+    command = b"    && freshclam --stdout --datadir=/var/lib/clamav\n"
+    need(recipe.count(command) == 1, "definition_update_command_changed")
+    return recipe.replace(command, b"    && chown -R 100:101 /var/lib/clamav \\\n"
+        b"    && find /var/lib/clamav -type d -exec chmod 0755 {} + \\\n"
+        b"    && find /var/lib/clamav -type f -exec chmod 0644 {} + \\\n"
+        b"    && freshclam --stdout --datadir=/var/lib/clamav \\\n"
+        b"    && chown -R 0:0 /var/lib/clamav \\\n"
+        b"    && find /var/lib/clamav -type d -exec chmod 0555 {} + \\\n"
+        b"    && find /var/lib/clamav -type f -exec chmod 0444 {} +\n")
 
 
 def _archive_entries(raw: bytes, limit: int) -> dict[str, bytes]:
@@ -397,7 +438,8 @@ def _archive_entries(raw: bytes, limit: int) -> dict[str, bytes]:
 
 
 def _recipe(closure: _Closure, edge: DerivativeEdge, template: bytes) -> None:
-    wanted = _rendered_recipe(template, edge.parent_image)
+    version = _recipe_version(closure, edge.recipe_source, edge.source_commit, edge.qualification_sha256)
+    wanted = _rendered_recipe(template, edge.parent_image, version=version)
     need(closure.read(edge.recipe, 16384) == wanted, "rendered_recipe_changed")
     raw = closure.read(edge.source_archive.artifact, 256 * 1024)
     need(_archive_entries(raw, 65536) == {"Dockerfile": wanted}, "source_archive_recipe")
@@ -420,10 +462,11 @@ def _anchor_build(closure: _Closure, original: OriginalEvidence, template: bytes
     args = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg", "DOCUMENT_DEFINITIONS_NONCE=" + nonce]
     if tags[0] == KIND:
         need(len(tags) == 4 and re.fullmatch(r"[a-f0-9]{64}", tags[3]), "original_inspector_parent")
-        need(files == {"Dockerfile": _rendered_recipe(template, INSPECTOR + tags[3])}, "original_inspector_recipe")
+        version = _recipe_version(closure, original.inspector_recipe_source, tags[1], tags[2])
+        need(files == {"Dockerfile": _rendered_recipe(template, INSPECTOR + tags[3], version=version)}, "original_inspector_recipe")
         tag = REPOSITORY + "hirewiz-document-inspector:source-definitions-" + nonce
     else:
-        need(len(tags) == 3, "original_full_source_tags")
+        need(len(tags) == 3 and original.inspector_recipe_source is None, "original_full_source_tags")
         material = closure.json(original.material_inventory)["files"]["source"]
         policy_path = "infra/document-processing/policy.source-fixed-renderer.json"
         need(set(files) == set(material) | {policy_path}
@@ -516,11 +559,15 @@ def _original(closure: _Closure, original: OriginalEvidence, template: bytes) ->
              and matching[0].get("conclusion") == "success", "original_ci_qualification")
     tag = runner.get("image", "").split("@", 1)[0] + ":" + runner.get("release", "")
     images = build.get("results", {}).get("images", [])
+    build_steps = _step_arguments(build)
+    allowed_steps = [
+        [{"name": "gcr.io/cloud-builders/docker", "args": args},
+         {"name": "gcr.io/cloud-builders/docker", "args": ["push", tag]}]
+        for args in (["build", "--tag", tag, "."], ["build", "--tag=" + tag, "."])
+    ]
     need(build.get("id") == runner.get("build_id") and build.get("status") == "SUCCESS" and build.get("projectId") == PROJECT
          and build.get("sourceProvenance", {}).get("resolvedGitSource") == {"url": "https://github.com/Harshil4442/ai-resume-copilot.git", "revision": runner.get("release"), "dir": "."}
-         and _step_arguments(build)
-         == [{"name": "gcr.io/cloud-builders/docker", "args": ["build", "--tag", tag, "."]},
-             {"name": "gcr.io/cloud-builders/docker", "args": ["push", tag]}]
+         and build_steps in allowed_steps
          and len(images) == 1 and images[0].get("name") == tag
          and images[0].get("digest") == runner.get("image", "").split("@")[-1], "original_build")
     selected = plan.get("selected_cases", [])

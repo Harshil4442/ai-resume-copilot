@@ -18,6 +18,7 @@ from typing import Any
 from zipfile import ZipFile
 
 import pytest
+from infra.gcp import document_source_candidate as definition_source
 from infra.gcp import native_quality_acquisition_isolation as isolation
 from pydantic import ValidationError
 
@@ -683,6 +684,7 @@ def bridge_toys():
 
     template_raw = (Path(__file__).resolve().parents[2] / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes()
     template = put("refresh-template.Dockerfile", template_raw)
+    helper = put("source/document_source_candidate.py", Path(definition_source.__file__).read_bytes())
 
     maps = {kind: {"owned-toy-" + kind: b.digest(kind)} for kind in
             ("source", "parser", "runtime", "fonts", "scanner_binary", "compiler_runtime")}
@@ -712,7 +714,9 @@ def bridge_toys():
     original_oci, original_image = oci(0, layers, diff_ids, {})
     anchor_nonce, anchor_commit, anchor_qualification = "f" * 32, "e" * 40, b.digest("owned-toy-anchor-qualification")
     anchor_parent = b.INSPECTOR + "f" * 64
-    anchor_archive = put("original/inspector-source.tar.gz", archive_bytes(b._rendered_recipe(template_raw, anchor_parent)))
+    # Actual reviewed recipe renderer; this must not derive its expectation
+    # from the bridge helper under test.
+    anchor_archive = put("original/inspector-source.tar.gz", archive_bytes(definition_source.definition_recipe(anchor_parent)))
     anchor_source = {"bucket": b.PROJECT + "_cloudbuild", "object": "hirewiz-document-refresh-source/" + anchor_nonce + "/source.tar.gz", "generation": "100"}
     anchor_tag = b.REPOSITORY + "hirewiz-document-inspector:source-definitions-" + anchor_nonce
     anchor_args = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg", "DOCUMENT_DEFINITIONS_NONCE=" + anchor_nonce,
@@ -781,16 +785,17 @@ def bridge_toys():
         runner_receipt=runner, ci_metadata=ci, runner_build=build, inspector_build=anchor_build,
         inspector_source_archive=b.GenerationArtifact(bucket=anchor_source["bucket"], name=anchor_source["object"],
             generation=anchor_source["generation"], artifact=anchor_archive),
+        inspector_recipe_source=b.RecipeSource(source_commit=anchor_commit, qualification_sha256=anchor_qualification,
+            helper_path="infra/gcp/document_source_candidate.py", helper=helper),
         renderer_origin=origin_refs,
         inspector_image=original_image, material=material, material_inventory=materials("original/material.json"), oci=original_oci, cases=cases)
 
     def assemble(count=1, purpose="already_serving", age=timedelta(hours=1)):
         working = dict(raw)
         edges, parent, parent_layers, parent_diffs = [], original_image, list(layers), list(diff_ids)
-        template_parent = re.findall(rb"^FROM ([^ ]+)(?: AS definitions)?$", template_raw, re.M)[0]
         for index in range(count):
             nonce, commit, qualification = f"{index + 1:032x}", "b" * 40, b.digest("owned-toy-qualification")
-            recipe = put(f"chain-{index}/Dockerfile", template_raw.replace(template_parent, parent.encode()))
+            recipe = put(f"chain-{index}/Dockerfile", definition_source.definition_recipe(parent))
             stream = BytesIO()
             with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0) as zipped, tarfile.open(fileobj=zipped, mode="w") as archive:
                 row = tarfile.TarInfo("Dockerfile")
@@ -820,7 +825,9 @@ def bridge_toys():
             edges.append(b.DerivativeEdge(kind=b.KIND, parent_image=parent, image=child_image, build_id=build_id, nonce=nonce,
                 source_commit=commit, qualification_sha256=qualification, raw_build=build_ref,
                 source_archive=b.GenerationArtifact(bucket=source["bucket"], name=source["object"], generation=source["generation"], artifact=archive_ref),
-                recipe=recipe, material_inventory=materials(f"chain-{index}/material.json"), oci=child_oci, layer_inventories=delta))
+                recipe=recipe, recipe_source=b.RecipeSource(source_commit=commit, qualification_sha256=qualification,
+                    helper_path="infra/gcp/document_source_candidate.py", helper=helper),
+                material_inventory=materials(f"chain-{index}/material.json"), oci=child_oci, layer_inventories=delta))
             parent, parent_layers, parent_diffs = child_image, parent_layers + new_layers, parent_diffs + new_diffs
         issued = now - age
         native_execution = put("current/execution.json", {"name": "owned-toy-current-execution", "uid": "owned-toy-not-provider",
@@ -1103,3 +1110,89 @@ def test_bridge_source_archives_cannot_escape_alias_or_exceed_decompression_boun
         raw = stream.getvalue()
     with pytest.raises(ValueError):
         b._archive_entries(raw, 65536)
+
+
+def test_bridge_exact_v2_recipe_matches_actual_reviewed_renderer_and_v1_stays_exact():
+    template = (Path(definition_source.ROOT) / definition_source.courier.REFRESH_DOCKERFILE).read_bytes()
+    parent = b.INSPECTOR + "7" * 64
+    current = definition_source.definition_recipe(parent)
+    assert b._rendered_recipe(template, parent, version=2) == current
+    assert b"chown -R 100:101" in current and b"chown -R 0:0" in current
+    assert b"chmod 0755" in current and b"chmod 0444" in current
+    original_parent = re.findall(rb"^FROM ([^ ]+)(?: AS definitions)?$", template, re.M)[0]
+    legacy = template.replace(original_parent, parent.encode())
+    assert b._rendered_recipe(template, parent, version=1) == legacy
+    assert legacy != current
+    for unknown in (0, 3, True):
+        with pytest.raises(ValueError, match="recipe_version_unreviewed"):
+            b._rendered_recipe(template, parent, version=unknown)
+
+
+@pytest.mark.parametrize("change", ["helper_bytes", "edge_commit", "edge_qualification", "anchor_commit",
+    "missing_anchor_source", "unbound_helper", "wrong_uid", "writable_final", "arbitrary_command", "legacy_recipe"])
+def test_bridge_recipe_requires_exact_known_helper_and_build_source_binding(bridge_toys, change):
+    t = bridge_toys()
+    edge = t.evidence.chain[0]
+    if change == "helper_bytes":
+        ref = edge.recipe_source.helper
+        bridge_replace(t, ref, t.raw[ref.path] + b"\n# unreviewed helper change\n")
+    elif change in {"edge_commit", "edge_qualification"}:
+        field = "source_commit" if change == "edge_commit" else "qualification_sha256"
+        source = edge.recipe_source.model_copy(update={field: "9" * (40 if field == "source_commit" else 64)})
+        t.evidence = t.evidence.model_copy(update={"chain": [edge.model_copy(update={"recipe_source": source})]})
+    elif change in {"anchor_commit", "missing_anchor_source"}:
+        original = t.evidence.original
+        source = original.inspector_recipe_source
+        assert source is not None
+        source = source.model_copy(update={"source_commit": "9" * 40}) if change == "anchor_commit" else None
+        t.evidence = t.evidence.model_copy(update={"original": original.model_copy(update={"inspector_recipe_source": source})})
+    elif change == "unbound_helper":
+        t.evidence = t.evidence.model_copy(update={"files": [ref for ref in t.evidence.files if ref != edge.recipe_source.helper]})
+    else:
+        old = t.raw[edge.recipe.path]
+        if change == "wrong_uid":
+            changed = old.replace(b"chown -R 100:101", b"chown -R 0:0")
+        elif change == "writable_final":
+            changed = old.replace(b"chmod 0444", b"chmod 0666")
+        elif change == "arbitrary_command":
+            changed = old + b"\nRUN arbitrary-unreviewed-command\n"
+        else:
+            template = t.raw[t.evidence.refresh_template.path]
+            parent = re.findall(rb"^FROM ([^ ]+)(?: AS definitions)?$", template, re.M)[0]
+            changed = template.replace(parent, edge.parent_image.encode())
+        assert changed != old
+        bridge_replace(t, edge.recipe, changed)
+    with pytest.raises(ValueError):
+        b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.mark.parametrize("form", ["space", "equals", "wrong_tag", "extra_flag", "wrong_push", "override"])
+def test_bridge_original_runner_accepts_only_two_stock_literal_tag_forms(bridge_toys, form):
+    t = bridge_toys()
+    original = t.evidence.original
+    build = json.loads(t.raw[original.runner_build.path])
+    tag = build["results"]["images"][0]["name"]
+    args = ["build", "--tag", tag, "."] if form == "space" else ["build", "--tag=" + tag, "."]
+    if form == "wrong_tag":
+        args[1] = "--tag=owned-wrong-tag"
+    elif form == "extra_flag":
+        args.insert(1, "--network=host")
+    elif form == "wrong_push":
+        build["steps"][1]["args"][1] = "owned-wrong-tag"
+    elif form == "override":
+        build["steps"][0]["entrypoint"] = "sh"
+    build["steps"][0]["args"] = args
+    build_ref = bridge_replace(t, original.runner_build, build)
+    runner = json.loads(t.raw[original.runner_receipt.path])
+    runner["build_metadata_sha256"] = build_ref.sha256
+    runner_ref = bridge_replace(t, original.runner_receipt, runner)
+    lock = json.loads(t.raw[original.review_lock.path])
+    lock["build_metadata"]["sha256"] = build_ref.sha256
+    lock["runner_receipt"]["sha256"] = runner_ref.sha256
+    bridge_replace(t, original.review_lock, lock)
+    if form in {"space", "equals"}:
+        report = b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+        assert not report.native_approval and report.requires_native_provenance_verification
+    else:
+        with pytest.raises(ValueError, match="original_build|build_execution_override"):
+            b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
