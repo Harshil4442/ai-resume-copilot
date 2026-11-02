@@ -6,9 +6,9 @@ review, run a model, submit an employer application or authorize sales.
 
 ## Source boundary
 
-The component owns exactly seven Python package files: the two docstring-only
+The component owns exactly eight Python package files: the two docstring-only
 initializers and `engine.py`, `channel.py`, `job.py`, `qualification.py` and
-`isolation.py`. Its three test groups are `test_native_acquisition_v2_engine.py`,
+`isolation.py`, plus the pure `bridge.py`. Its three test groups are `test_native_acquisition_v2_engine.py`,
 `test_native_acquisition_v2_channel.py` (including Job controls), and
 `test_native_acquisition_v2_source.py`. This runbook, lock/configuration files,
 original proof helpers and the reused finite source dependencies are hash-bound.
@@ -29,7 +29,13 @@ exact literal data read by the engine. Conditional/function-local imports are
 included; actual reached module origins are checked in the source child.
 The operator's qualification/isolation/host-helper code is separately bound.
 CI/tests/runbook and the V1 reference snapshot do not silently become image
-runtime inputs. All seven package source files retain component binding.
+runtime inputs. All eight package source files retain component binding.
+The engine actually imports the bridge, so it is also in the reached image
+closure. The final `evaluation/development40_transport_v2.py` entry is a single
+explicit runtime **byte input**, never an imported or executed capture entry.
+The original development40 qualification sibling is controller-only; only the
+isolation module's explicit lazy import may reach it. A runtime import of either
+that sibling or the entry byte input refuses.
 An observed V1 reference refusal is metadata, never an exception to its unchanged
 guards: fresh all-five CI must still pass the existing V1 tests.
 
@@ -65,6 +71,37 @@ source fetch. A reviewer string or boolean cannot replace those artifacts.
 Native40 review and the model's80 development A/B records are separate locks.
 Native capture creates neither the model lock nor a quality or retail pass.
 
+### Closed development40 transport successor
+
+The original `native-development-review-lock-v2` and its V1 runner receipt and
+Job command are preserved. The new `native-development-review-lock-v3` instead
+requires the final `development40-transport-qualified-runner-v2` receipt, both
+the namespace transport entry and original semantic-entry hashes, actual source
+profile/tree, all-five CI and the stock Build/image. A V2 transport receipt is
+never parsed or rewritten as a V1 receipt. The original V1 Bundle, native worker
+responses, eighty journal phases and human review remain their original bytes.
+
+Each v3 lock adds exactly nine retained raw Run v2 Job snapshots and one closed
+source/native-origin record. The record binds the original controller source and
+CI, runner source/receipt, each original resource Plan, native Job UID/generation/
+template, completed Execution, bundle generation/hash and capture time. The Job
+and Execution must use exactly the final namespace transport command, sole GCS
+metadata-disable environment value, 2CPU/4GiB, private VPC, no retry/override and
+the unchanged 1+7x10+9 batch population. Historical permits remain expired data;
+these checks never renew them or authorize another development send.
+
+Before using a v3 lock externally, run `isolation.verify_development_transport_origin`
+under an active current held-out resource Plan with its exact lock SHA. It uses
+the existing genuine source/CI/Build verifier, the original producer's typed
+Job checks and exactly nine fresh Job plus nine fresh completed-Execution
+observations through the retained normal SDK manager. Its existing bounded
+transient GET retry policy applies; eighteen observations is not a claim of
+eighteen physical wire attempts or zero metadata cost. Source/controller and retained bytes
+are rechecked after those reads. A self-consistent JSON origin record alone is
+not native proof. This function grants no processing, funding or native approval;
+current worker/IAM, cost authorization and measured-memory qualification remain
+separate required gates. No command here creates or runs a Job or uploads data.
+
 The current Job uses **mirrors as transport custody**. An authorized preparer
 may read exact retained original generations and copy the complete reviewed
 bytes to the held-out prefix. New mirror ObjectRefs describe only that copy.
@@ -86,6 +123,13 @@ The Job accepts a raw Bundle at most2MiB, and populated native+authority inputs
 plus the reserved Bundle at most2GiB. Native sources are each at most5MiB; the
 manifest is at most256KiB. The complete authority closure has separate per-kind
 counts/sizes. Those per-file ceilings cannot all be consumed simultaneously.
+The v3 additions have their own finite kinds: `transport_job` allows nine files
+of at most256KiB, and `transport_origin` allows one of at most256KiB, at most
+2.5MiB combined. They share the existing2048 authority-object cap,1837 common
+objects,1903 total input objects and2GiB union. Existing sixteen kinds and the
+32-control cap are unchanged. No ten-file allowance is added to those global
+ceilings. If complete evidence cannot fit, preparation must refuse; no artifact
+omission or larger unreviewed budget is permitted.
 
 The operator's input catalog additionally binds a global union of immutable
 common generation references and fixed batch slots. It reserves all33 review
@@ -156,9 +200,14 @@ their original time. Scanner definitions have a3-day maximum age; daily refresh
 cadence and alerts24h before expiry are different constraints. Historical
 quality evidence is not permission to process new files with expired definitions.
 
-This is a blocking native-quality usability gap. A separate definitions-only
-bridge proposal must receive independent source review before any engine
-change or development funding. Its first scope keeps the same approved App
+This is a blocking native-quality usability gap. The pure definitions-only
+bridge is now the eighth source/proof member, but it carries no native authority.
+A v3 lock may identify a bounded pending bridge request; parsing any such request
+deterministically refuses **before any case selection** with
+`definitions_bridge_native60_current_serving_receipt_unavailable`, even when
+plausible receipt references are present. A genuine future Native60 producer,
+its current-serving verification and explicit source integration are not
+implemented by this slice. Future scope keeps the same approved App
 contract/entry, native compiler, parser/runtime/fonts/policy, preserves genuine
 original raw proof, verifies a genuine current derivative Build/source/parent
 chain and fresh native acceptance, budgets the additional rescans in the whole

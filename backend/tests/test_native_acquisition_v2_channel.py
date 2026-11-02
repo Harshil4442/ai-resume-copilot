@@ -18,10 +18,12 @@ import pytest
 from app.domains.analysis import quality_packet as packet
 from evaluation.native_acquisition_v2 import channel as c
 from evaluation.native_acquisition_v2 import engine as e
+from evaluation.native_acquisition_v2 import isolation as i
 from evaluation.native_acquisition_v2 import job as j
 from tests.test_native_acquisition_v2_engine import heldout_toys as heldout_toys  # noqa: F401
 from tests.test_native_acquisition_v2_engine import private_write
 from tests.test_native_acquisition_v2_engine import reviewed_toys as reviewed_toys  # noqa: F401
+from tests.test_native_acquisition_v2_engine import transport_toys as transport_toys  # noqa: F401
 
 
 class ToyObjects:
@@ -701,3 +703,89 @@ def test_main_never_prints_a_raw_provider_error(monkeypatch, capsys):
                    "--bundle-generation", "1", "--bundle-sha256", "0" * 64])
     output = capsys.readouterr()
     assert code == 2 and "TOY-PRIVATE" not in output.err + output.out
+
+
+def _transport_catalog(extra):
+    """Metadata-only union: no original input files or provider resources."""
+    rows: list[dict[str, Any]] = [{"group": "native", "path": path, "kind": "source", "object": {
+        "name": "input.pending", "generation": "1", "size": 1, "sha256": "a" * 64}}
+        for path in ["materialization-manifest.json", *(f"owned-{index:03}.pdf" for index in range(160))]]
+    rows.extend({"group": "authority", "path": f"owned-origin/{kind}-{index}.json", "kind": kind,
+        "object": {"name": "input.pending", "generation": "1", "size": size, "sha256": "b" * 64}}
+        for index, (kind, size) in enumerate(extra))
+    rows.sort(key=lambda row: (row["group"], row["path"]))
+    for index, row in enumerate(rows):
+        row["object"]["name"] = f"input.common.{index:04}"
+    return {"schema_version": "held-out-native-input-catalog-v2",
+        "provenance": "mirrored_bytes_original_references_retained",
+        "namespace": "gs://hirewiz-quality-dev-482412-20261031/quality-held-out/owned-transport-test/",
+        "native_development_lock_sha256": "c" * 64, "common_files": rows}
+
+
+def test_transport_origins_share_existing_authority_and_input_union_limits():
+    assert e.KINDS["control"] == (32, 256 * 1024)
+    assert len(e.KINDS) == 16 and set(e.AUTHORITY_KINDS) - set(e.KINDS) == {"transport_job", "transport_origin"}
+    assert e.MAX_AUTHORITY_FILES == 2048 and e.MAX_INPUT_BYTES == 2 * 1024**3
+    assert i.MAX_COMMON_FILES == 1837 and i.MAX_INPUT_OBJECTS == 1903
+    extra = [("transport_job", e.MAX_METADATA)] * 9 + [("transport_origin", e.MAX_METADATA)]
+    catalog = i.InputCatalog.model_validate(_transport_catalog(extra))
+    assert len(catalog.common_files) == 171
+    assert sum(row.object.size for row in catalog.common_files if row.group == "authority") == 2560 * 1024
+    assert sum(row.object.size for row in catalog.common_files) + i.RESERVED_VARIABLE_INPUT_BYTES < e.MAX_INPUT_BYTES
+    for kind in ("transport_job", "transport_origin"):
+        j.AuthorityInput(path="owned-origin.json", kind=kind, object=c.ObjectRef(
+            name="input.origin", generation="1", size=e.MAX_METADATA, sha256="a" * 64))
+        with pytest.raises(ValueError, match="authority_kind_or_size"):
+            j.AuthorityInput(path="owned-origin.json", kind=kind, object=c.ObjectRef(
+                name="input.origin", generation="1", size=e.MAX_METADATA + 1, sha256="a" * 64))
+
+
+@pytest.mark.parametrize("extra", [
+    [("transport_job", 1)] * 10, [("transport_origin", 1)] * 2,
+    [("control", 1)] * 32,
+    [("page", e.MAX_ARTIFACT)] * 137 + [("transport_job", e.MAX_METADATA)] * 9 + [("transport_origin", e.MAX_METADATA)],
+])
+def test_transport_origin_metadata_cannot_expand_kind_control_or_two_gib_union(extra):
+    with pytest.raises(ValueError, match="catalog_authority_count|experiment_input_union_bound"):
+        i.InputCatalog.model_validate(_transport_catalog(extra))
+
+
+def test_transport_authority_mirror_exhausts_all_ten_original_generation_references(transport_toys):
+    t = transport_toys
+    runner_funding = e.Artifact.model_validate(private_write(t.root, "heldout-runner-funding.json", {"owned": "not funding"}))
+    review = e.Artifact.model_validate(private_write(t.root, "heldout-review.json", {"owned": "not approval"}))
+    rows = {row["path"]: (row["sha256"], row["kind"]) for row in t.lock["files"]}
+    for control in (t.auth.native_development_lock, t.auth.funding_evidence, runner_funding, review):
+        rows[control.path] = control.sha256, "control"
+    files = [j.AuthorityInput(path=path, kind=kind, object=c.ObjectRef(
+        name=f"input.mirror-{index}", generation="999", size=(t.root / path).stat().st_size, sha256=sha))
+        for index, (path, (sha, kind)) in enumerate(sorted(rows.items()))]
+    bundle: Any = SimpleNamespace(authorization=t.auth, runner_funding_evidence=runner_funding,
+        dispatch=SimpleNamespace(external_authority_review=review), authority_files=files)
+    # Mirror generation999 is transport custody only; original retained native
+    # generations remain inside the unchanged lock/origin records.
+    j._exact_authority(bundle, t.root)
+    origin_rows = [row for row in files if row.kind in e.TRANSPORT_ORIGIN_KINDS]
+    assert len(origin_rows) == 10
+    bundle.authority_files = [row for row in files if row != origin_rows[0]]
+    with pytest.raises(ValueError, match="exact_review_and_funding_closure"):
+        j._exact_authority(bundle, t.root)
+    bundle.authority_files = [*files, j.AuthorityInput(path="unbound-origin.json", kind="transport_job",
+        object=c.ObjectRef(name="input.unbound", generation="1", size=1, sha256="a" * 64))]
+    with pytest.raises(ValueError, match="exact_review_and_funding_closure"):
+        j._exact_authority(bundle, t.root)
+
+
+@pytest.mark.parametrize("change", ["account", "sdk"])
+def test_development_native_get_factory_refuses_nonstandard_manager_before_sdk_auth(tmp_path, monkeypatch, change):
+    from infra.gcp import document_refresh_auth, document_refresh_probe, native_fresh_fence
+
+    sdk = tmp_path / "owned-official-sdk-not-opened"
+    calls: list[Any] = []
+    monkeypatch.setattr(document_refresh_probe, "sdk_library", lambda: sdk)
+    monkeypatch.setattr(native_fresh_fence, "SDKGoogleReads", lambda *args: calls.append(args))
+    account = document_refresh_auth.RELEASE_ACCOUNT
+    with pytest.raises(ValueError, match="development_normal_manager_required"):
+        i._development_reads(tmp_path / "foreign-sdk" if change == "sdk" else sdk,
+            "owned-foreign@example.invalid" if change == "account" else account)
+    assert not calls

@@ -25,7 +25,7 @@ if __package__ in {None, ""}:
 PREFIX = "backend/evaluation/native_acquisition_v2/"
 INITIALIZERS = ("backend/evaluation/__init__.py", PREFIX + "__init__.py")
 PACKAGE_PATHS = (*INITIALIZERS, *(PREFIX + name + ".py" for name in
-                  ("engine", "channel", "job", "qualification", "isolation")))
+                  ("engine", "channel", "job", "qualification", "isolation", "bridge")))
 SUITES = tuple("backend/tests/test_native_acquisition_v2_" + name + ".py" for name in ("engine", "channel", "source"))
 RUNBOOK = "docs/runbooks/NATIVE_QUALITY_HELD_OUT_V2.md"
 COMPONENT_PATHS = (*PACKAGE_PATHS, *SUITES, RUNBOOK)
@@ -33,6 +33,12 @@ SOURCE_ASSETS = tuple("backend/evals/assets/courier_prime/" + name for name in (
     "CourierPrime-Regular.ttf", "CourierPrime-Bold.ttf", "CourierPrime-Italic.ttf", "CourierPrime-BoldItalic.ttf",
     "OFL.txt", "provenance.json"))
 IMAGE_SEEDS = (*INITIALIZERS, *(PREFIX + name + ".py" for name in ("engine", "channel", "job")))
+RUNTIME_BYTE_INPUTS = ("backend/evaluation/development40_transport_v2.py",)
+CONTROLLER_ONLY_IMPORTS = {
+    PREFIX + "isolation.py": ("evaluation.development40_qualification_v2",),
+}
+CONTROLLER_ONLY_PATHS = tuple("backend/" + module.replace(".", "/") + ".py"
+    for modules in CONTROLLER_ONLY_IMPORTS.values() for module in modules)
 LITERAL_INPUTS = {
     "backend/scripts/qualify_native_quality_acquisition.py": ("APP_SHA256", "ENTRY", "ENTRY_SHA256", "HISTORICAL_RELEASE"),
     "backend/scripts/schema25_app_release_contract_v3.py": ("CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
@@ -125,7 +131,8 @@ def _import_fence(root: Path, closure: dict[str, str]) -> None:
                 if module.startswith("evaluation.") and (module in bases or candidates(module)):
                     need(module == "evaluation.native_acquisition_v2" or any(
                         module == path.removeprefix("backend/").removesuffix(".py").replace("/", ".")
-                        for path in PACKAGE_PATHS), "undeclared_evaluation_import")
+                        for path in PACKAGE_PATHS) or module in CONTROLLER_ONLY_IMPORTS.get(name, ()),
+                        "undeclared_evaluation_import")
 
 
 def _committed(root: Path, name: str, head: str, ports) -> bytes:
@@ -222,20 +229,30 @@ def source_identity(root: Path) -> dict[str, Any]:
         raw = _committed(root, name, head, q)
         need(raw, "source_asset")
         assets[name] = hashlib.sha256(raw).hexdigest()
-    execution = {**_imports(root, IMAGE_SEEDS, head, q), **assets,
+    runtime_imports = _imports(root, IMAGE_SEEDS, head, q)
+    need(PREFIX + "bridge.py" in runtime_imports, "bridge_not_reached_by_runtime")
+    need(not (set(RUNTIME_BYTE_INPUTS) | set(CONTROLLER_ONLY_PATHS)) & set(runtime_imports),
+         "runtime_data_or_controller_import")
+    runtime_bytes = {name: hashlib.sha256(_committed(root, name, head, q)).hexdigest()
+                     for name in RUNTIME_BYTE_INPUTS}
+    execution = {**runtime_imports, **runtime_bytes, **assets,
         **{name: hashlib.sha256(_committed(root, name, head, q)).hexdigest()
            for name in ("Dockerfile", "backend/pyproject.toml", "backend/uv.lock")}}
     controller = _imports(root, (PREFIX + "qualification.py", PREFIX + "isolation.py"), head, q)
+    need(set(CONTROLLER_ONLY_PATHS) <= set(controller), "controller_dependency_not_reached")
+    need(not set(RUNTIME_BYTE_INPUTS) & set(controller), "runtime_byte_input_import")
     literals = _literal_inputs(root, head, q)
     old_proof = {name: value for name, value in legacy["component_paths"].items()
                  if name.startswith("backend/tests/") or Path(name).suffix != ".py"}
     proof = {**legacy["proof_inputs"], **legacy["current_proof_inputs"], **old_proof,
+        PREFIX + "bridge.py": components[PREFIX + "bridge.py"],
         **{name: components[name] for name in (*SUITES, RUNBOOK)},
         **{name: execution[name] for name in ("backend/pyproject.toml", "backend/uv.lock")},
         ".github/workflows/ci.yml": hashlib.sha256(_committed(root, ".github/workflows/ci.yml", head, q)).hexdigest()}
     _import_fence(root, {**execution, **controller})
     body = {"schema_version": VERSION, "component_paths": components, "execution_dependencies": execution,
-        "controller_dependencies": controller, "literal_image_inputs": literals, "legacy_reference": reference,
+        "controller_dependencies": controller, "runtime_byte_inputs": runtime_bytes,
+        "literal_image_inputs": literals, "legacy_reference": reference,
         "proof_inputs": proof, "source_assets": assets,
         "absent_package_ancestors": list(q.ABSENT_ANCESTORS), "full_ci_suites": list(SUITES)}
     need(q.git(root, "rev-parse", "HEAD").decode().strip() == head
@@ -267,7 +284,9 @@ def _source_child(root: Path) -> dict[str, Any]:
     need(all(actual[name] == own[name] for name in ("runtime_dependencies_sha256", "component_sha256", "entry_sha256")),
          "controller_runner_image_inputs_changed")
     declared = {**own["execution_dependencies"], **own["controller_dependencies"]}
-    allowed = set(declared)
+    # Runtime source data is hash-bound, but may not execute in the source
+    # child merely because its bytes are part of the image identity.
+    allowed = set(declared) - set(RUNTIME_BYTE_INPUTS)
 
     def audit(event, args):
         if event == "exec":

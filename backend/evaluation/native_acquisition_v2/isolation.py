@@ -6,6 +6,7 @@ In particular, an exact 8Gi Job template is not measured process/tmpfs safety.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sys
 from datetime import UTC, datetime, timedelta
@@ -155,7 +156,7 @@ class CommonInput(Closed):
             maximum = e.MAX_METADATA if self.path == "materialization-manifest.json" else e.inspection.MAX_SOURCE_BYTES
             need(self.kind == "source" and self.object.size <= maximum, "catalog_native_bound")
         else:
-            need(self.kind in e.KINDS and self.object.size <= e.KINDS[self.kind][1], "catalog_authority_bound")
+            need(self.kind in e.AUTHORITY_KINDS and self.object.size <= e.AUTHORITY_KINDS[self.kind][1], "catalog_authority_bound")
         return self
 
 
@@ -180,7 +181,7 @@ class InputCatalog(Closed):
         authority = [row for row in rows if row.group == "authority"]
         need(len(native) == 161 and sum(row.path == "materialization-manifest.json" for row in native) == 1,
              "catalog_complete_native_files")
-        for kind, (maximum, _) in e.KINDS.items():
+        for kind, (maximum, _) in e.AUTHORITY_KINDS.items():
             need(sum(row.kind == kind for row in authority) <= maximum - (kind == "control"), "catalog_authority_count")
         need(sum(row.object.size for row in rows) + RESERVED_VARIABLE_INPUT_BYTES <= e.MAX_INPUT_BYTES,
              "experiment_input_union_bound")
@@ -398,3 +399,104 @@ def check(plan: Plan, snapshot: dict[str, Any], *, controller_sha256: str) -> di
         "runner_authority": "not_verified_by_offline_snapshot", "effective_iam_proven": False,
         "native_approval": False, "processing_authorized": False, "memory_qualified": False,
         "provider_calls": 0, "model_calls": 0, "authorizes_retail": False}
+
+
+def _development_reads(sdk_library: Path, account: str):
+    """The existing retained SDK manager, GET-only; no login or token extraction."""
+    from infra.gcp import document_refresh_auth, document_refresh_probe, native_fresh_fence
+
+    for module, path in ((native_fresh_fence, "native_fresh_fence.py"),
+            (document_refresh_auth, "document_refresh_auth.py"), (document_refresh_probe, "document_refresh_probe.py")):
+        need(Path(module.__file__).resolve() == ROOT / "infra/gcp" / path, "foreign_development_metadata_port")
+    need(account == document_refresh_auth.RELEASE_ACCOUNT and sdk_library == document_refresh_probe.sdk_library(),
+         "development_normal_manager_required")
+    return native_fresh_fence.SDKGoogleReads(sdk_library, account)
+
+
+def verify_development_transport_origin(plan: Plan, raw_lock: bytes, authority_root: Path, *,
+        runner_root: Path, controller_root: Path, sdk_library: Path, account: str) -> dict[str, Any]:
+    """Fresh native origin proof required externally before transport-v3 use.
+
+    Historical development Plans are inspected as historical data. They are not
+    renewed, re-authorized or replayed. The *current held-out* resource Plan must
+    still be active. This returns no permission to upload, run, fund or process.
+    Container-side JSON correlation alone cannot replace this gate or the
+    separate current worker/IAM, funding and measured-memory gates.
+    """
+    from evaluation import development40_qualification_v2 as development_source
+
+    need(Path(development_source.__file__).resolve() == ROOT / "backend/evaluation/development40_qualification_v2.py",
+         "foreign_development_source_port")
+    plan = checked_plan(plan)
+    need(plan.valid_from <= datetime.now(UTC) < plan.expires_at
+         and os.environ.get("CLOUDSDK_CORE_DISABLE_FILE_LOGGING") == "true"
+         and os.environ.get("CLOUDSDK_CORE_LOG_HTTP") == "false", "active_private_development_read")
+    need(type(raw_lock) is bytes and 0 < len(raw_lock) <= e.MAX_METADATA
+         and e.packet.digest(raw_lock) == plan.native_development_lock_sha256, "development_lock_bytes")
+    lock = e.load_development_lock(raw_lock)
+    need(isinstance(lock, e.NativeDevelopmentTransportLock), "development_transport_schema")
+    assert isinstance(lock, e.NativeDevelopmentTransportLock)
+    closure = e._Closure(authority_root, lock)
+    e._reviewed_runner(closure, lock)
+    origin = e._transport_origin(closure, lock)
+    raw_runner = closure.read(lock.runner_receipt, "control")
+    runner = e.ReviewedDevelopmentTransportRunner.model_validate(e._json(raw_runner))
+    controller = development_source.source_identity(controller_root)
+    need(controller["release"] == origin.controller_release
+         and controller["qualification_sha256"] == origin.controller_source_sha256,
+         "development_controller_source")
+    observed = development_source.runner_source(runner_root)
+    need(observed == origin.runner_source.model_dump(), "development_runner_source")
+    q = development_source.q
+    native, contract, release = q._source_modules()
+    compatibility = contract.source_fingerprint(runner_root, release.prior_app_files(runner_root, contract.PRIOR_RELEASE))
+    need(compatibility == runner.app_compatibility_sha256, "development_app_compatibility")
+    observer = native.Source26Boundary(runner_root)
+    observer.verify_source_image(release=runner.release, image_digest=runner.image.split("@", 1)[1],
+        build_id=runner.build_id, ci_run_id=runner.ci_run_id)
+    ci = q._successful_ci(observer, runner_root, runner.release, runner.ci_run_id)
+    build = observer._cloud("builds", "describe", runner.build_id, "--region", REGION)
+    controller_ci = q._successful_ci(native.Source26Boundary(controller_root), controller_root,
+        origin.controller_release, origin.controller_ci_run_id)
+    # The final producer hashes semantic source/provider JSON without a trailing
+    # newline. Keep that domain distinct from this held-out Plan's wire digest.
+    need(e.bridge.digest(ci) == runner.ci_metadata_sha256 and e.bridge.digest(build) == runner.build_metadata_sha256
+         and e.bridge.digest(controller_ci) == origin.controller_ci_metadata_sha256, "development_native_metadata_custody")
+    reads = _development_reads(sdk_library, account)
+    for batch in origin.batches:
+        historical = development_source.original.Plan.model_validate(batch.resource_plan.model_dump())
+        # Reuse producer V2's exact Job template check. The separate complete
+        # engine gate binds the original Bundles and journal before held-out
+        # selection; using this historical Plan never extends its permit.
+        development_source.check_job(historical, raw_runner,
+            e._json(closure.read(batch.job.artifact, "transport_job")), batch=batch.batch_index)
+        current_job = reads.get("run", f"projects/{PROJECT}/locations/{REGION}/jobs/{historical.job_name}", {})
+        development_source.check_job(historical, raw_runner, current_job, batch=batch.batch_index)
+        need(current_job.get("uid") == batch.job_uid
+             and str(current_job.get("generation")) == batch.job_generation
+             and e.bridge.digest(current_job.get("template")) == batch.job_template_sha256
+             and not any(key in current_job for key in ("overrides", "runOverrides", "containerOverrides")),
+             "development_native_job_changed")
+        execution = e._json(closure.read(batch.execution, "provider"))
+        expected = f"projects/{PROJECT}/locations/{REGION}/jobs/{historical.job_name}/executions/"
+        name = execution.get("name", "")
+        need(type(name) is str and re.fullmatch(re.escape(expected + historical.job_name + "-") + r"[a-z0-9]{1,20}", name),
+             "development_native_execution_name")
+        # A completed execution's retained response must match the fresh exact
+        # GET. Provider drift refuses; no invented projection or inferred ACK.
+        need(digest(reads.get("run", name, {})) == digest(execution), "development_native_execution_changed")
+    need(development_source.source_identity(controller_root) == controller
+         and development_source.runner_source(runner_root) == observed
+         and plan.valid_from <= datetime.now(UTC) < plan.expires_at, "development_origin_changed")
+    for name in tuple(closure.used):
+        row = closure.rows[name]
+        closure.read(row, row.kind)
+    return {"schema_version": "development40-transport-origin-verified-v1",
+        "held_out_resource_plan_sha256": digest(plan.model_dump(mode="json")),
+        "observed_at": datetime.now(UTC).isoformat(),
+        "native_development_lock_sha256": plan.native_development_lock_sha256,
+        "origin_record_sha256": lock.transport_origin.source_verification.artifact.sha256,
+        "runner_receipt_sha256": lock.runner_receipt.sha256, "runner_release": runner.release,
+        "controller_release": controller["release"], "fresh_source_CI_Build_and_18_exact_native_GETs": True,
+        "memory_qualified": False, "native_approval": False, "processing_authorized": False,
+        "funding_authorized": False, "authorizes_retail": False}
