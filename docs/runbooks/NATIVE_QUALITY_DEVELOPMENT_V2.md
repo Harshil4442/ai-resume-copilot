@@ -2,8 +2,10 @@
 
 This is a separately versioned GCS entry and source/isolation adapter. It is not
 a dispatcher, funding grant, native acceptance, retail qualification or evidence
-that a new image exists. Current C6 pilot deployment remains separate. Its image
-does not contain this new entry and must never be relabeled as doing so.
+that a new image exists. The existing pilot deployment remains separate. The
+retained C6 image does not contain this new entry and must never be relabeled as
+doing so. This source integration starts from `d0646218058ac1b8ce7cb5ca0d85d5ff3bbc912b`;
+it still requires its own genuine CI, Build and immutable image before native use.
 
 `backend/evaluation/development40_transport_v2.py` supplies a store to the unchanged
 V1 `run` seam. The original V1 main, Bundle, channel, semantic entry hash and all
@@ -75,7 +77,8 @@ in the declared source inventory. Dirty, foreign, linked or shadowed source
 refuses. No historical receipt/fingerprint or broad source exemption is adopted.
 
 Before local child imports, a bounded Git metadata read verifies and loads only
-the unchanged trusted-root C6 controller helper at its exact pinned hash, then
+the trusted-root controller helper from the reviewed `d0646218…` source at raw
+SHA256 `0824c1787981d8deabc98df6c9fdfed9f28e11c72a3c8c35d562e3cde23f0d5c`, then
 installs its existing I/O-denial controls. An exec-origin/source-byte fence
 already protects that loading interval. The child requires isolated Python,
 disabled bytecode writes and an empty private `-X pycache_prefix` so valid ignored
