@@ -51,6 +51,7 @@ CURRENT_EXECUTION_PATHS = (
     "infra/gcp/document_source_candidate.py",
     "infra/gcp/document_source_release.py",
     "infra/gcp/schema26_app_rolling_v3.py",
+    "infra/gcp/v3_readonly_adapter.py",
 )
 # Maintenance reads the current operator registry. The qualified runner retains
 # the exact registry bytes shipped at this immutable app source; neither source

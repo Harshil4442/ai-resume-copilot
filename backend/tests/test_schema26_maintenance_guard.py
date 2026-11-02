@@ -3,11 +3,16 @@
 import ast
 import copy
 import importlib
+import json
+import signal
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID
 
 import pytest
+import requests
 from pydantic import ValidationError
 
 from app.domains.recovery.gcp_contracts import RegistryPin
@@ -620,3 +625,228 @@ def test_owned_native_client_cleanup_attempts_all_and_redacts_errors():
     with pytest.raises(m.MaintenanceDenied, match="native_client_close_unavailable") as error:
         m._close_clients((Client(1), Client(2)))
     assert seen == [1, 2] and "private" not in str(error.value)
+
+
+def _owned_metadata_sdk():
+    """Portable message port, not installed-SDK or native acceptance evidence."""
+    class Client:
+        def __init__(self, *, url, get_credentials, http, log_request, log_response):
+            assert url == "https://run.googleapis.com/" and not get_credentials
+            assert not log_request and not log_response
+            self.http = http
+            self.num_retries = -1
+            self.projects_locations_services = SimpleNamespace(Get=self.get)
+            self.projects_locations_services_revisions = SimpleNamespace(List=self.list)
+
+        def call(self, path, parameters, global_params):
+            assert self.num_retries == 0
+            query = {"alt": "json", "prettyPrint": "0", "fields": global_params.fields,
+                     **parameters}
+            info, raw = self.http.request("https://run.googleapis.com/v2/" + path + "?"
+                + urlencode(query), method="GET", body=None, headers={})
+            if info.status != 200:
+                raise ValueError("owned SDK port non-success status")
+            return json.loads(raw)
+
+        def get(self, request, *, global_params):
+            return self.call(request.name, {}, global_params)
+
+        def list(self, request, *, global_params):
+            return self.call(request.parent + "/revisions", {
+                "pageSize": str(request.pageSize), "showDeleted": str(request.showDeleted)}, global_params)
+
+    return (SimpleNamespace(MessageToDict=lambda reply: reply), SimpleNamespace(RunV2=Client),
+        SimpleNamespace(StandardQueryParameters=SimpleNamespace,
+            RunProjectsLocationsServicesGetRequest=SimpleNamespace,
+            RunProjectsLocationsServicesRevisionsListRequest=SimpleNamespace))
+
+
+@pytest.fixture
+def metadata_wire(monkeypatch):
+    """Real requests send/cleanup with owned HTTP responses and no credentials.
+
+    The optional SDK tuple is used by a separate local installed-SDK proof;
+    portable CI controls never claim that this small message port is the SDK.
+    """
+    def build_wire(*, sdk=None, delays=(0.1, 2.5, 0.1), fault=None):
+        metadata = m.metadata
+        state = SimpleNamespace(clock=100.0, sends=[], responses=[], response_closes=[], closed=False)
+        expected = observation()
+        replies = [copy.deepcopy(expected["service"]),
+                   {"revisions": copy.deepcopy(expected["revisions"])},
+                   copy.deepcopy(expected["service"])]
+        if fault == "service_drift":
+            replies[2]["etag"] = "changed"
+        elif fault == "next_page":
+            replies[1]["nextPageToken"] = "owned-continuation"
+        elif fault == "257_revisions":
+            row = replies[1]["revisions"][0]
+            replies[1]["revisions"] = [{**copy.deepcopy(row),
+                "name": metadata.API + "/revisions/old-" + str(index),
+                "uid": str(UUID(int=index + 100))} for index in range(257)]
+        elif fault == "not_retired":
+            replies[1]["revisions"][0]["conditions"][0].pop("revisionReason")
+        elif fault == "foreign_uid":
+            replies[1]["revisions"][0]["uid"] = "not-a-native-uid"
+
+        class Info(dict):
+            @property
+            def status(self):
+                return int(self["status"])
+
+        class Adapter(requests.adapters.HTTPAdapter):
+            def send(self, request, **kwargs):
+                index = len(state.sends)
+                assert index < 3 and request.method == "GET"
+                assert urlsplit(request.url).hostname == "run.googleapis.com"
+                # Session.send consumes allow_redirects before the physical
+                # adapter; a redirect response below must still stop at one send.
+                assert kwargs["stream"] is True
+                assert self.max_retries.total == 0 and not kwargs.get("proxies")
+                state.sends.append((request.url, kwargs["timeout"]))
+                delay = delays[index]
+                state.clock += min(delay, kwargs["timeout"])
+                if delay > kwargs["timeout"]:
+                    raise requests.ReadTimeout("owned response-header timeout")
+                if fault == "wall_alarm" and index == 1:
+                    signal.raise_signal(signal.SIGALRM)
+                class Response(requests.Response):
+                    @property
+                    def content(self):
+                        if fault == "body_deadline" and index == 1:
+                            state.clock = 106.0
+                        return super().content
+
+                response = Response()
+                state.responses.append(index)
+                response.request, response.url = request, request.url
+                response.status_code = (307 if fault == "redirect" else
+                    401 if fault == "unauthorized" else 503 if fault == "server_error" else 200) if index == 1 else 200
+                response.headers["content-type"] = "application/json"
+                response._content = json.dumps(replies[index]).encode()
+                response._content_consumed = True
+                close = response.close
+
+                def close_owned():
+                    state.response_closes.append(index)
+                    close()
+                response.close = close_owned
+                return response
+
+        class Stock:
+            def __init__(self):
+                self.session = requests.Session()
+                self.session.mount("https://", Adapter(max_retries=0))
+                # Native manager stores its request wrapper as an owned stable
+                # callable; preserve that identity for the adapter's guard.
+                self.session.request = self.session.request
+                close = self.session.close
+
+                def close_owned():
+                    state.closed = True
+                    close()
+                self.session.close = close_owned
+
+            def request(self, uri, *, method, body, headers, **kwargs):
+                assert kwargs.get("redirections") == 0
+                response = self.session.request(method, uri, data=body, headers=headers)
+                return Info(status=str(response.status_code), **dict(response.headers)), response.content
+
+        stock = Stock()
+        monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
+        monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "false")
+        monkeypatch.setattr(metadata, "_normal_http", lambda: stock)
+        monkeypatch.setattr(metadata, "_sdk", lambda: sdk or _owned_metadata_sdk())
+        monkeypatch.setattr(metadata.time, "monotonic", lambda: state.clock)
+        reader = metadata.ReadOnlyMaintenanceMetadata()
+        return reader, state
+
+    return build_wire
+
+
+def test_metadata_list_borrows_only_remaining_six_second_window(metadata_wire):
+    reader, state = metadata_wire()
+    previous = signal.getsignal(signal.SIGALRM)
+    observed = reader.observe()
+    assert len(m.retirement_fingerprint(observed, baseline())) == 64
+    assert m.metadata.TOTAL_SECONDS == 6.0 and m.metadata.SOCKET_SECONDS == 2.0
+    assert observed["elapsed_ms"] >= 2600 and observed["elapsed_ms"] < 6000
+    assert len(state.sends) == reader.request_count == reader.resource_get_sends == 3
+    assert state.sends[0][1] <= 2 and 5.8 < state.sends[1][1] < 6
+    assert state.sends[2][1] <= 2
+    assert state.response_closes == [0, 1, 2] and state.closed
+    assert reader.resource_write_sends == 0 and reader.closed
+    assert signal.getsignal(signal.SIGALRM) == previous
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    with pytest.raises(m.metadata.MetadataUnavailable, match="one_observation_only"):
+        reader.observe()
+    assert len(state.sends) == 3
+    # A direct fourth physical resource GET is also denied before the adapter.
+    with pytest.raises(m.metadata.MetadataUnavailable, match="resource_resend"):
+        reader.stock.session.get(state.sends[0][0])
+    assert len(state.sends) == 3
+
+
+@pytest.mark.parametrize("fault,delays,expected_sends", [
+    (None, (0.1, 6.0, 0.1), 2),
+    (None, (0.1, 5.85, 0.1), 3),
+    ("wall_alarm", (0.1, 0.1, 0.1), 2),
+    ("body_deadline", (0.1, 0.1, 0.1), 2),
+    ("redirect", (0.1, 0.1, 0.1), 2),
+    ("unauthorized", (0.1, 0.1, 0.1), 2),
+    ("server_error", (0.1, 0.1, 0.1), 2),
+    ("next_page", (0.1, 0.1, 0.1), 2),
+    ("257_revisions", (0.1, 0.1, 0.1), 2),
+    ("foreign_uid", (0.1, 0.1, 0.1), 2),
+    ("service_drift", (0.1, 0.1, 0.1), 3),
+])
+def test_metadata_residual_list_budget_preserves_refusal_cleanup_and_no_replay(
+    metadata_wire, fault, delays, expected_sends,
+):
+    reader, state = metadata_wire(fault=fault, delays=delays)
+    previous = signal.getsignal(signal.SIGALRM)
+    with pytest.raises(m.metadata.MetadataUnavailable):
+        reader.observe()
+    assert len(state.sends) == expected_sends
+    assert reader.resource_get_sends == expected_sends and reader.resource_write_sends == 0
+    assert reader.closed and state.closed
+    assert state.response_closes == state.responses
+    assert signal.getsignal(signal.SIGALRM) == previous
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    with pytest.raises(m.metadata.MetadataUnavailable, match="one_observation_only"):
+        reader.observe()
+    assert len(state.sends) == expected_sends
+
+
+def test_metadata_slow_list_still_requires_every_old_revision_retired(metadata_wire):
+    reader, state = metadata_wire(fault="not_retired")
+    result = reader.observe()
+    with pytest.raises(m.metadata.MetadataUnavailable, match="not_retired"):
+        m.retirement_fingerprint(result, baseline())
+    assert len(state.sends) == 3 and state.response_closes == [0, 1, 2] and state.closed
+
+
+@pytest.mark.parametrize("mutation", ["fields", "page_size", "page_token", "parent", "write"])
+def test_metadata_census_route_projection_and_page_envelope_remain_exact(metadata_wire, mutation):
+    reader, state = metadata_wire()
+    query = {"prettyPrint": "0", "fields": m.metadata.REVISION_FIELDS,
+             "pageSize": "257", "showDeleted": "False"}
+    path = m.metadata.API + "/revisions"
+    method = "GET"
+    if mutation == "fields":
+        query["fields"] = "revisions(name)"
+    elif mutation == "page_size":
+        query["pageSize"] = "256"
+    elif mutation == "page_token":
+        query["pageToken"] = "owned-continuation"
+    elif mutation == "parent":
+        path = path.replace("services/ai-resume-parser", "services/foreign-service")
+    else:
+        method = "POST"
+    try:
+        with pytest.raises(m.metadata.MetadataUnavailable):
+            reader.request("https://run.googleapis.com/v2/" + path + "?" + urlencode(query), method=method)
+        assert not state.sends and reader.resource_get_sends == reader.resource_write_sends == 0
+    finally:
+        reader.close()
+    assert state.closed
