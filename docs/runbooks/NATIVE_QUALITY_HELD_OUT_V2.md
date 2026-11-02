@@ -49,6 +49,15 @@ an offline fingerprint is not a provider observation. The source test group runs
 the lock-installed Ruff/Mypy on the complete new namespace and all three groups;
 missing tools, errors or timeouts fail rather than skip.
 
+The new controller checks `qualify_native_quality_acquisition.py` against its
+exact reviewed raw source pin (`0824…0d5c`)
+and committed Git blob before compiling it; import-loader bytecode cannot
+replace that source. Parent source checks, fresh children and the standalone
+development-origin verifier share this boundary. The child additionally uses a
+private empty cache and source-origin/exec fences before its first helper import.
+The old helper and its I/O guards remain unchanged. These checks authenticate
+code; they grant no native, funding or processing permission.
+
 Retained runner proof metadata is checked against that runner's actual source
 and original CI/Build; it is never rewritten to current controller hashes.
 Current controller CI independently covers its current proof inputs. A benign

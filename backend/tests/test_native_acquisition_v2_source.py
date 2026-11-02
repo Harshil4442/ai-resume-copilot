@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import marshal
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,200 @@ from evaluation.native_acquisition_v2 import engine as e
 from evaluation.native_acquisition_v2 import isolation as i
 from evaluation.native_acquisition_v2 import job as j
 from evaluation.native_acquisition_v2 import qualification as q
+
+
+@pytest.fixture
+def bootstrap_source(tmp_path):
+    """Two committed Python sources only; never clone/materialize a corpus."""
+    root = (tmp_path / "owned-bootstrap-source").resolve()
+    for name in (q.PREFIX + "qualification.py", q.PORT_PATH):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((q.ROOT / name).read_bytes())
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+
+    def git(*args):
+        return subprocess.run(["/usr/bin/git", "-c", "core.fsmonitor=false", "-C", str(root), *args],
+            env=environment, stdin=subprocess.DEVNULL, capture_output=True, timeout=10, check=True)
+
+    git("init", "-q")
+    git("add", q.PREFIX + "qualification.py", q.PORT_PATH)
+    git("-c", "user.name=Owned", "-c", "user.email=owned@example.invalid", "commit", "-qm", "Owned two-source bootstrap")
+    return SimpleNamespace(root=root, git=git, temporary=tmp_path,
+        marker=tmp_path / "untrusted-helper-executed")
+
+
+def _fresh_bootstrap(state, mode, *, ports_only=False, prefix=True):
+    private = (state.temporary / "private-child").resolve()
+    private.mkdir(mode=0o700)
+    script = state.root / q.PREFIX / "qualification.py"
+    program = '''import sys,socket,subprocess,importlib.util,json
+from pathlib import Path
+root=Path(OWNED_ROOT)
+counts={'network':0,'unexpected_process':0,'git':0,'local_bind_denied':0,'evaluation_data_open':0}
+def denied(*a,**k):
+ counts['network']+=1
+ raise AssertionError('owned bootstrap denies network')
+socket.create_connection=socket.getaddrinfo=socket.gethostbyname=denied
+socket.socket.connect=socket.socket.connect_ex=socket.socket.listen=denied
+def bind(*a,**k):
+ counts['local_bind_denied']+=1
+ raise OSError('owned IPv6 capability probe denied without bind')
+socket.socket.bind=bind
+from sqlalchemy.engine import Engine
+Engine.connect=Engine.raw_connection=denied
+real=subprocess.Popen
+def process(argv,*a,**k):
+ if not isinstance(argv,(tuple,list)) or not argv or argv[0]!='/usr/bin/git':
+  counts['unexpected_process']+=1
+  raise AssertionError('owned bootstrap denies process')
+ if '-C' not in argv or argv[argv.index('-C')+1]!=str(root):
+  counts['unexpected_process']+=1
+  raise AssertionError('owned bootstrap denies foreign Git')
+ counts['git']+=1
+ return real(argv,*a,**k)
+subprocess.Popen=process
+def audit(event,args):
+ if event=='open' and isinstance(args[0],(str,bytes)) and '/backend/evals/' in str(args[0]):
+  counts['evaluation_data_open']+=1
+  raise AssertionError('owned bootstrap denies evaluation data')
+sys.addaudithook(audit)
+sys.argv=[SCRIPT,'--root',str(root)]+(['--source-child'] if MODE in {'child','runtime_entry'} else [])
+sys.path.insert(0,str(root/'backend'))
+spec=importlib.util.spec_from_file_location('owned_heldout_qualifier',SCRIPT)
+module=importlib.util.module_from_spec(spec);sys.modules[spec.name]=module
+try:
+ spec.loader.exec_module(module)
+ if PORTS_ONLY:
+  ports=module._ports()
+  result={'entry':ports.ENTRY,'helper':ports.__file__,'child_bootstrapped':module._CHILD_ROOT==root}
+ elif MODE=='runtime_entry':
+  module._ports()
+  import importlib
+  result=importlib.import_module('evaluation.development40_transport_v2')
+ elif MODE=='standalone':
+  from evaluation.native_acquisition_v2 import isolation
+  plan=isolation.Plan.model_validate_json((root/'owned-plan.json').read_bytes())
+  result=isolation.verify_development_transport_origin(plan,(root/'owned-lock.json').read_bytes(),root,
+   runner_root=root,controller_root=root,sdk_library=root/'not-opened-sdk',account='owned@example.invalid')
+ else:
+  result=module._source_child(root) if MODE=='child' else module.source_identity(root)
+ print(json.dumps({'result':result,'counts':counts}))
+except Exception as error:
+ print(json.dumps({'refused':type(error).__name__,'code':str(error),'counts':counts}))
+'''.replace("OWNED_ROOT", repr(str(state.root))).replace("SCRIPT", repr(str(script))).replace(
+        "MODE", repr(mode)).replace("PORTS_ONLY", repr(ports_only))
+    command = [sys.executable, "-I", "-B"]
+    if prefix:
+        command += ["-X", "pycache_prefix=" + str(private / "cache")]
+    result = subprocess.run([*command, "-"], input=program, text=True, cwd=private,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(private), "XDG_CONFIG_HOME": str(private), "LANG": "C.UTF-8",
+             "PYTHONDONTWRITEBYTECODE": "1", "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true", "CLOUDSDK_CORE_LOG_HTTP": "false"},
+        capture_output=True, timeout=30, check=False)
+    assert result.returncode == 0 and not result.stderr, (result.stdout, result.stderr)
+    payload = json.loads(result.stdout)
+    assert payload["counts"]["network"] == payload["counts"]["unexpected_process"] == 0
+    assert payload["counts"]["evaluation_data_open"] == 0
+    assert payload["counts"]["local_bind_denied"] <= 1
+    return payload
+
+
+@pytest.mark.parametrize("mode", ["parent", "child"])
+def test_pinned_helper_bootstraps_from_source_in_fresh_interpreter(bootstrap_source, mode):
+    payload = _fresh_bootstrap(bootstrap_source, mode, ports_only=True, prefix=mode == "child")
+    assert payload["result"] == {"entry": "backend/scripts/native_acquisition_job.py",
+        "helper": str(bootstrap_source.root / q.PORT_PATH), "child_bootstrapped": mode == "child"}
+
+
+@pytest.mark.parametrize("mode", ["parent", "child"])
+@pytest.mark.parametrize("change", ["dirty_helper", "committed_helper", "ignored_namespace", "linked_namespace",
+    "sourceless_namespace", "valid_helper_bytecode"])
+def test_fresh_source_paths_never_execute_untrusted_helper_or_namespace(bootstrap_source, mode, change):
+    t = bootstrap_source
+    marker = "from pathlib import Path\nPath(" + repr(str(t.marker)) + ").write_text('untrusted')\n"
+    helper = t.root / q.PORT_PATH
+    if change in {"dirty_helper", "committed_helper"}:
+        helper.write_text(helper.read_text() + "\n" + marker)
+        if change == "committed_helper":
+            t.git("add", q.PORT_PATH)
+            t.git("-c", "user.name=Owned", "-c", "user.email=owned@example.invalid", "commit", "-qm", "Owned helper successor")
+    elif change in {"ignored_namespace", "linked_namespace"}:
+        (t.root / ".git/info/exclude").write_text("backend/scripts/__init__.py\n")
+        initializer = t.root / "backend/scripts/__init__.py"
+        if change == "linked_namespace":
+            outside = t.temporary / "outside-package.py"
+            outside.write_text(marker)
+            initializer.symlink_to(outside)
+        else:
+            initializer.write_text(marker)
+    else:
+        # Timestamp-valid cache whose co_filename claims the legitimate helper.
+        import importlib.util
+        import struct
+
+        cache = t.root / "backend/scripts.pyc" if change == "sourceless_namespace" else (
+            Path(importlib.util.cache_from_source(str(helper))))
+        cache.parent.mkdir(exist_ok=True)
+        stat = helper.stat()
+        header = importlib.util.MAGIC_NUMBER + struct.pack("<III", 0, int(stat.st_mtime), stat.st_size)
+        cache.write_bytes(header + marshal.dumps(compile(marker, str(helper), "exec")))
+        (t.root / ".git/info/exclude").write_text("**/__pycache__/\n")
+    payload = _fresh_bootstrap(t, mode,
+        prefix=not (mode == "parent" and change in {"sourceless_namespace", "valid_helper_bytecode"}))
+    assert "refused" in payload and not t.marker.exists()
+
+
+def test_fresh_child_requires_private_cache_before_helper_execution(bootstrap_source):
+    payload = _fresh_bootstrap(bootstrap_source, "child", ports_only=True, prefix=False)
+    assert "refused" in payload and not bootstrap_source.marker.exists()
+
+
+def test_fresh_child_never_executes_transport_runtime_byte_input(bootstrap_source):
+    t = bootstrap_source
+    source = t.root / q.RUNTIME_BYTE_INPUTS[0]
+    source.parent.mkdir(exist_ok=True)
+    source.write_text("from pathlib import Path\nPath(" + repr(str(t.marker)) + ").write_text('untrusted')\n")
+    t.git("add", q.RUNTIME_BYTE_INPUTS[0])
+    t.git("-c", "user.name=Owned", "-c", "user.email=owned@example.invalid", "commit", "-qm", "Owned runtime source data")
+    payload = _fresh_bootstrap(t, "runtime_entry")
+    assert payload["code"] == "held_out_source_bootstrap_import_refused" and not t.marker.exists()
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_standalone_native_origin_gate_authenticates_helper_before_producer_import(
+    bootstrap_source, transport_toys, isolated_metadata, committed,
+):
+    t = bootstrap_source
+    # Derive only Python runtime imports as source data. This explicit toy
+    # reader is not a committed-source or native provenance substitute.
+    ports = SimpleNamespace(git=lambda root, _show, selector: (root / selector.split(":", 1)[1]).read_bytes())
+    runtime = q._imports(q.ROOT, q.IMAGE_SEEDS, "owned", ports)
+    names = sorted(set(runtime) | set(q.PACKAGE_PATHS))
+    for name in names:
+        path = t.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes((q.ROOT / name).read_bytes())
+    producer = t.root / q.CONTROLLER_ONLY_PATHS[0]
+    producer_marker = t.temporary / "untrusted-producer-executed"
+    producer.write_text("from scripts import qualify_native_quality_acquisition\nfrom pathlib import Path\nPath("
+        + repr(str(producer_marker)) + ").write_text('untrusted')\n")
+    t.git("add", *names, q.CONTROLLER_ONLY_PATHS[0])
+    t.git("-c", "user.name=Owned", "-c", "user.email=owned@example.invalid", "commit", "-qm", "Owned standalone source closure")
+    raw_lock = (transport_toys.root / "native-lock.json").read_bytes()
+    plan = isolated_metadata.plan.model_copy(update={"native_development_lock_sha256": e.packet.digest(raw_lock)})
+    (t.root / "owned-plan.json").write_text(plan.model_dump_json())
+    (t.root / "owned-lock.json").write_bytes(raw_lock)
+    helper = t.root / q.PORT_PATH
+    helper.write_text(helper.read_text() + "\nfrom pathlib import Path\nPath("
+        + repr(str(t.marker)) + ").write_text('untrusted')\n")
+    if committed:
+        t.git("add", q.PORT_PATH)
+        t.git("-c", "user.name=Owned", "-c", "user.email=owned@example.invalid", "commit", "-qm", "Owned standalone helper successor")
+    payload = _fresh_bootstrap(t, "standalone")
+    expected = "held_out_source_bootstrap_helper_changed" if committed else "held_out_source_bootstrap_import_changed"
+    assert payload["code"] == expected
+    assert not t.marker.exists() and not producer_marker.exists()
 
 
 def reference(name, *, size=1, sha256="1" * 64, generation="1"):

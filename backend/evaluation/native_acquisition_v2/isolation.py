@@ -423,10 +423,6 @@ def verify_development_transport_origin(plan: Plan, raw_lock: bytes, authority_r
     Container-side JSON correlation alone cannot replace this gate or the
     separate current worker/IAM, funding and measured-memory gates.
     """
-    from evaluation import development40_qualification_v2 as development_source
-
-    need(Path(development_source.__file__).resolve() == ROOT / "backend/evaluation/development40_qualification_v2.py",
-         "foreign_development_source_port")
     plan = checked_plan(plan)
     need(plan.valid_from <= datetime.now(UTC) < plan.expires_at
          and os.environ.get("CLOUDSDK_CORE_DISABLE_FILE_LOGGING") == "true"
@@ -436,6 +432,15 @@ def verify_development_transport_origin(plan: Plan, raw_lock: bytes, authority_r
     lock = e.load_development_lock(raw_lock)
     need(isinstance(lock, e.NativeDevelopmentTransportLock), "development_transport_schema")
     assert isinstance(lock, e.NativeDevelopmentTransportLock)
+    # The frozen producer imports q at module initialization. Authenticate that
+    # helper through the new trusted boundary first, even for standalone callers.
+    from evaluation.native_acquisition_v2 import qualification as held_out_source
+
+    held_out_source._ports()
+    from evaluation import development40_qualification_v2 as development_source
+
+    need(Path(development_source.__file__).resolve() == ROOT / "backend/evaluation/development40_qualification_v2.py",
+         "foreign_development_source_port")
     closure = e._Closure(authority_root, lock)
     e._reviewed_runner(closure, lock)
     origin = e._transport_origin(closure, lock)
