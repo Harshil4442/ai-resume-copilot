@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -570,3 +571,256 @@ def test_same_actual_head_and_CI_can_bind_both_independent_roles(native_ports):
     out = q.verify_qualified_runner(p, raw, runner_root=ROOT, controller_ci_run_id=1)
     assert out["controller_head"] == out["runner_release"]
     assert out["fresh_source_CI_Build_verified"] and not out["processing_authorized"]
+
+
+def _history_decoder_step():
+    import yaml
+
+    steps = yaml.safe_load((ROOT / ".github/workflows/document-refresh.yml").read_text())["jobs"]["maintenance"]["steps"]
+    return next(step["run"] for step in steps if step.get("name") == "Normalize only the exact completed source-readback history")
+
+
+@pytest.fixture(scope="module")
+def frozen_history_decoder(tmp_path_factory):
+    target = tmp_path_factory.mktemp("frozen-history-decoder") / "source"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1", GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(target)),
+                 ("-C", str(target), "checkout", "--quiet", "--detach", "f5e9ca03383afac4c6cda17134bfc854c3ba8116")):
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *args],
+                       env=environment, check=True, capture_output=True, timeout=30)
+    target.chmod(0o700)
+    return target
+
+
+def _validate_frozen_history_decoder(target, monkeypatch, *, current=ROOT):
+    code = _history_decoder_step().split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+    with monkeypatch.context() as context:
+        context.setattr(sys, "argv", ["owned-frozen-source-check", str(current), str(target)])
+        exec(compile(code, "owned-frozen-history-source-check", "exec"), {"__name__": "__main__"})
+
+
+def test_history_decoder_is_full_pinned_source_and_fixed_read_only_role(frozen_history_decoder, monkeypatch):
+    step = _history_decoder_step()
+    assert "umask 077" in step and "worktree add --detach" in step
+    assert "--mode select-history" in step and step.count("--mode ") == 1
+    assert 'GITHUB_SHA=' not in step and 'export GITHUB_' not in step
+    assert '"$GITHUB_WORKSPACE/backend/.venv/bin/python" -I -B' in step
+    _validate_frozen_history_decoder(frozen_history_decoder, monkeypatch)
+
+
+@pytest.mark.parametrize("change", ["tracked_code", "ignored_import", "lock", "wrong_head"])
+def test_frozen_history_decoder_refuses_drift_before_import(frozen_history_decoder, monkeypatch, tmp_path, change):
+    target = frozen_history_decoder
+    path = target / ("infra/gcp/document_source_readback_resume.py" if change == "tracked_code" else
+                     "backend/__pycache__/injected.pyc" if change == "ignored_import" else "backend/uv.lock")
+    original = path.read_bytes() if path.exists() else None
+    head = q.git(target, "rev-parse", "HEAD").decode().strip()
+    try:
+        if change == "wrong_head":
+            q.git(target, "checkout", "--quiet", "--detach", head + "^")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((original or b"") + b"\nOWNED-TOY-DRIFT\n")
+        with pytest.raises((AssertionError, subprocess.CalledProcessError)):
+            _validate_frozen_history_decoder(target, monkeypatch)
+    finally:
+        if change == "wrong_head":
+            q.git(target, "checkout", "--quiet", "--detach", head)
+        elif original is None:
+            path.unlink()
+            path.parent.rmdir()
+        else:
+            path.write_bytes(original)
+
+
+_FROZEN_HISTORY_ROLE_CONTROL = r'''
+import importlib.util, io, json, os, socket, subprocess, sys, zipfile
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+
+root, work, scenario = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+sys.path[:0] = [str(root), str(root / "backend"), str(root / "infra/gcp")]
+counts = {"outbound": 0, "local_import_bind_denied": 0, "mutations": 0, "historical_build_reads": 0}
+def denied(*args, **kwargs):
+    counts["outbound"] += 1
+    raise AssertionError("Owned control denied external IO")
+def no_bind(*args, **kwargs):
+    counts["local_import_bind_denied"] += 1
+    raise OSError("Owned control denied import capability bind")
+socket.socket.connect = socket.socket.connect_ex = socket.create_connection = socket.getaddrinfo = denied
+socket.socket.bind = no_bind
+import psycopg
+from sqlalchemy.engine import Engine
+psycopg.connect = Engine.connect = Engine.raw_connection = denied
+from infra.gcp import document_source_readback_resume as resume
+build, prior, source = resume.modules(root)
+prior.build_module = lambda: build  # One owned fake native-read port for the real historical path.
+profile = source.profile
+for module in (resume, build, source, source.transition):
+    assert Path(module.__file__).resolve().is_relative_to(root)
+def mutation(*args, **kwargs):
+    counts["mutations"] += 1
+    raise AssertionError("Owned control reached forbidden mutation/current authority")
+for name in ("claim", "resume", "trusted_context", "verify_operations"):
+    setattr(resume, name, mutation)
+for name in ("native_build", "source_definitions_candidate", "full_source_candidate", "finish_refresh"):
+    setattr(build, name, mutation)
+source.promote = source.transition.transition = prior.Clients = mutation
+source.SourceProbe._acceptance = source.SourceProbe.verify_current_successor = mutation
+profile.require_working_contract = mutation
+
+current_image = resume.IMAGE if scenario == "expired_current" else build.REPOSITORY + "@sha256:" + "b" * 64
+current_expiry = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+assert current_image and current_expiry  # Current state is deliberately unavailable to this historical role.
+issued = (datetime.now(UTC) - timedelta(days=5)).replace(microsecond=0)
+local = {"corpus": [{"scan": {"definitions": "123/" + issued.isoformat()}}] * 10,
+    "docx_layout_corpus": [{}] * 8, "pdf_reading_order_corpus": [{}] * 8, "request_clamd_corpus": [{}] * 6}
+local_raw = resume.canonical(local)
+frozen = profile.committed(resume.ORIGINAL_SOURCE, root=root)
+identity = {"version": 1, "kind": profile.KIND, "nonce": resume.NONCE,
+    "build_id": resume.BUILD_ID, "build_resource": prior.PARENT + "/builds/" + resume.BUILD_ID,
+    "builder_service_account": build.BUILDER, "source_bucket": build.PROJECT + "_cloudbuild",
+    "source_object": build.FULL_SOURCE_PREFIX + resume.NONCE + "/source.tar.gz", "source_generation": "123",
+    "source_archive_sha256": "a" * 64, "refresh_dockerfile_sha256": frozen.sources[frozen.dockerfile],
+    "fixed_renderer_base": source.courier.IMAGE, "immutable_image": resume.IMAGE,
+    "policy_sha256": frozen.policy, "source_sha256": frozen.sources, "source_commit": resume.ORIGINAL_SOURCE,
+    "qualification_sha256": frozen.qualification_sha256, "local_native_proof_sha256": resume.sha(local_raw)}
+binding = {"version": 4, "image": resume.IMAGE, "build_identity": identity}
+probe = source.SourceProbe(identity, root=root, serving_read=True)
+accepted = dict.fromkeys(prior.NativeAcceptance.__dataclass_fields__, "owned-historical-metadata-not-acceptance")
+accepted.update(image=resume.IMAGE, build_id=resume.BUILD_ID, build_resource=identity["build_resource"],
+    source_archive_sha256=identity["source_archive_sha256"], refresh_dockerfile_sha256=identity["refresh_dockerfile_sha256"],
+    source_sha256=frozen.sources, policy_sha256=frozen.policy, renderer_version=source.courier.RENDERER,
+    font_manifest_sha256=source.courier.FONT, contract_version=4, required_case_count=17,
+    job_name=prior.PARENT + "/jobs/hirewiz-doc-six-" + resume.NONCE[:12],
+    probe_sha256=resume.sha(probe._rendered(resume.IMAGE).encode()),
+    definition_expires_at=(issued + timedelta(days=3)).isoformat())
+complete = {"status": "document_refresh_serving", "image": resume.IMAGE, "prior_image": source.courier.IMAGE,
+    "native_acceptance_sha256": resume.sha(resume.canonical(accepted)), "all_three_caller_pins_verified": True,
+    "admission_restored": True, "synchronous_callers_drained": False, "current_native_proof_retained": True,
+    "automatic_replay": False}
+result = {**complete, "source_commit": resume.ORIGINAL_SOURCE, "renderer_contract_version": 4,
+    "required_case_count": 17, "definition_expires_at": accepted["definition_expires_at"],
+    "prior_evidence_retained": True, "prior_jobs_retained": True}
+history = work / "history"; history.mkdir(mode=0o700)
+original = history / str(resume.ORIGINAL_ARTIFACT); original.mkdir(mode=0o700)
+target = history / "13007164250"; target.mkdir(mode=0o700)
+def write(base, name, value):
+    path = base / name
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.write_bytes(value if isinstance(value, bytes) else resume.canonical(value)); path.chmod(0o600)
+original_files = {"marker.json": b'{"owned_original":true}', "native-proof/binding.json": resume.canonical(binding),
+                  "local-native-proof.json": local_raw}
+resume.FILES = {name: resume.sha(raw) for name, raw in original_files.items()}
+for name, raw in original_files.items(): write(original, name, raw); write(target, name, raw)
+context = {"run": 41119586258, "attempt": 1, "head": "f5e9ca03383afac4c6cda17134bfc854c3ba8116",
+    "path": resume.WORKFLOW, "operator_sha256": resume.operator_contract(root, "HEAD", working=True)}
+native = {}
+for mode, short, suffix in (("inventory", "1f2186a3d9a0", "7vc5n"), ("corpus", "0e31d2e468f2", "cshdp")):
+    job = prior.PARENT + "/jobs/hirewiz-doc-six-" + short
+    native[mode] = {"job": job, "job_uid": resume.JOBS[mode][0], "execution": job + "/executions/" + job.rsplit("/", 1)[1] + "-" + suffix,
+                    "execution_uid": resume.JOBS[mode][1]}
+preimage = {"owned_historical": True}; body = resume.claim_body(identity, native, preimage, context)
+ack = {"name": resume.CLAIM_OBJECT, "bucket": build.PROJECT + "_cloudbuild", "generation": "123"}
+manifest = {"version": 1, "kind": "completed_source_readback_v1", "original_run": resume.ORIGINAL_RUN,
+    "original_artifact": resume.ORIGINAL_ARTIFACT, "original_zip_sha256": resume.ORIGINAL_ZIP_SHA,
+    "original_files": resume.FILES, "candidate_nonce": resume.NONCE,
+    "build_identity_sha256": resume.sha(resume.canonical(identity)), "continuation": context,
+    "claim_body": body, "claim_acknowledgment": ack, "result_sha256": resume.sha(resume.canonical(result))}
+for name, value in {resume.MANIFEST_FILE: manifest, "result.json": result, "continuation-preimage.json": preimage,
+    "continuation-claim.started.json": {"body_sha256": resume.sha(resume.canonical(body)), "automatic_replay": False},
+    "continuation-claim.acknowledged.json": ack, "native-proof/acceptance.json": accepted,
+    "native-proof/transition.started.json": {"build_identity_sha256": resume.sha(resume.canonical(identity)),
+        "transition_journal": str(target / "transition"), "automatic_replay": False,
+        "unknown_outcome": "read_only_reconcile_exact_transition_only"},
+    "transition/native-acceptance.json": accepted, "transition/complete.json": complete}.items(): write(target, name, value)
+failed = history / "13034966606"; failed.mkdir(mode=0o700)
+failed_files = {name: b'{"owned_failed_build":true}' for name in
+    ("build-started.json", "source-upload-acknowledged.json", "build-create-started.json", "build-acknowledged.json")}
+for name, raw in failed_files.items(): write(failed, name, raw)
+stream = io.BytesIO()
+with zipfile.ZipFile(stream, "w") as z:
+    for path in target.rglob("*.json"): z.writestr(str(path.relative_to(target)), path.read_bytes())
+archive = stream.getvalue()
+run = {"id": context["run"], "head_sha": context["head"], "run_attempt": 1, "path": resume.WORKFLOW,
+    "head_branch": "main", "status": "completed", "conclusion": "success", "event": "workflow_dispatch",
+    "repository": {"full_name": resume.REPOSITORY}}
+artifact = {"id": int(target.name), "name": "document-refresh-full-source-refresh-41119586258-1", "expired": False,
+    "digest": "sha256:" + resume.sha(archive), "workflow_run": {"id": context["run"], "head_sha": context["head"], "head_branch": "main"}}
+def github(path, *, binary=False):
+    if path == "actions/artifacts/" + str(resume.ORIGINAL_ARTIFACT):
+        return {"id": resume.ORIGINAL_ARTIFACT, "name": resume.ORIGINAL_NAME, "digest": "sha256:" + resume.ORIGINAL_ZIP_SHA,
+            "expired": False, "size_in_bytes": 1, "workflow_run": {"id": resume.ORIGINAL_RUN,
+                "head_sha": resume.ORIGINAL_SOURCE, "head_branch": "main"}}
+    if path == "actions/runs/" + str(resume.ORIGINAL_RUN):
+        return {**run, "id": resume.ORIGINAL_RUN, "head_sha": resume.ORIGINAL_SOURCE, "conclusion": "failure"}
+    if path.endswith("/artifacts?per_page=100"): return {"artifacts": [artifact]}
+    if path.endswith("/zip"): assert binary; return archive
+    assert path == "actions/runs/41119586258"; return run
+resume.github = github
+wire = []
+class Http:
+    def request(self, uri, method="GET", body=None, **kwargs):
+        assert method == "GET" and body is None
+        assert uri.startswith(("https://storage.googleapis.com/", "https://cloudbuild.googleapis.com/"))
+        wire.append((method, uri))
+        return SimpleNamespace(status=200), resume.canonical(globals()["body"])
+    def close(self): pass
+build.native_http = Http
+def historical_build(value):
+    assert value == identity
+    counts["historical_build_reads"] += 1
+    Http().request("https://cloudbuild.googleapis.com/v1/" + identity["build_resource"])
+    Http().request("https://storage.googleapis.com/download/storage/v1/b/owned/o/source?generation=123")
+    return identity
+build.verify_native_build = historical_build
+def historical_local(value, contract, sources, *, now, **kwargs):
+    assert value == local and sources == frozen.sources and now == issued and kwargs["source_revision"] is True
+    return {}
+build.proof_contract = historical_local
+before_sha = os.environ.get("GITHUB_SHA")
+entry_spec = importlib.util.spec_from_file_location("owned_frozen_history_cli", root / "backend/scripts/resume_completed_document_source.py")
+entry = importlib.util.module_from_spec(entry_spec); entry_spec.loader.exec_module(entry)
+sys.argv = [entry.__file__, "--mode", "select-history", "--history-directory", str(history), "--output-directory", str(work / "normalized")]
+assert entry.main() == 0
+assert os.environ.get("GITHUB_SHA") == before_sha
+normalized = work / "normalized"
+assert not (normalized / original.name).exists() and (normalized / target.name / resume.MANIFEST_FILE).is_file()
+assert all((original / name).read_bytes() == raw for name, raw in original_files.items())
+assert all((normalized / failed.name / name).read_bytes() == raw and (failed / name).read_bytes() == raw for name, raw in failed_files.items())
+assert len(list(history.iterdir())) == 3 and len(list(normalized.iterdir())) == 2
+assert counts["mutations"] == counts["outbound"] == 0 and counts["historical_build_reads"] == 1
+assert wire and all(method == "GET" for method, _ in wire)
+print(json.dumps({"state": "owned_read_only_history_control_passed", "counts": counts,
+    "current_worker_unused": True, "originals_preserved": True, "native_approval": False}))
+'''
+
+
+@pytest.mark.parametrize("scenario", ["expired_current", "changed_definition_descendant"])
+def test_frozen_selector_keeps_historical_authority_separate_from_current_worker(frozen_history_decoder, tmp_path, scenario):
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", _FROZEN_HISTORY_ROLE_CONTROL,
+        str(frozen_history_decoder), str(tmp_path), scenario], stdin=subprocess.DEVNULL,
+        capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr[-3000:]
+    observed = json.loads(result.stdout.splitlines()[-1])
+    assert observed["current_worker_unused"] and observed["originals_preserved"] and not observed["native_approval"]
+    assert observed["counts"]["outbound"] == observed["counts"]["mutations"] == 0
+
+
+def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
+    from infra.gcp import document_application_context as applications
+
+    value = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())
+    baseline = q._registry_value(q._registry_snapshot(ROOT))
+    assert value["sources"][:5] == baseline["sources"] and len(value["sources"]) == 6
+    record = value["sources"][-1]
+    assert record == {"release": "c6a03af0636c7e9815159f807c9b126336d03233",
+        "image_digest": "sha256:2ebc717174904f6becc3309aedc5f487a47e31b7a5c60e4fc34b3494f6f8acb1",
+        "build_id": "32bc5596-a64b-4cf4-9cc0-311389d46f9d", "ci_run_id": 41500782361}
+    pin = applications.Source(**record)
+    pin.validate()
+    q.git(ROOT, "merge-base", "--is-ancestor", record["release"], "HEAD")
+    assert q.operator_data_hashes(ROOT)[q.OPERATOR_REGISTRY_PATH] != q.REGISTRY_RUNNER_SHA256

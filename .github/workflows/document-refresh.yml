@@ -167,8 +167,77 @@ jobs:
       - name: Normalize only the exact completed source-readback history
         if: env.RESUME_COMPLETED_SOURCE_READBACK != 'true' && (env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh')
         run: |
+          umask 077
+          # This is a fixed historical READ-ONLY decoder, not an old mutating
+          # operator. Keep the real current GITHUB_SHA and current helpers.
+          decoder_revision=f5e9ca03383afac4c6cda17134bfc854c3ba8116
+          decoder_directory="$RUNNER_TEMP/document-history-decoder-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          test ! -e "$decoder_directory"
+          git -c core.hooksPath=/dev/null -c core.fsmonitor=false worktree add --detach "$decoder_directory" "$decoder_revision"
+          backend/.venv/bin/python -I -B - "$GITHUB_WORKSPACE" "$decoder_directory" <<'PY'
+          import ast
+          import hashlib
+          import json
+          import os
+          import stat
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          current, decoder = map(Path, sys.argv[1:])
+          revision = "f5e9ca03383afac4c6cda17134bfc854c3ba8116"
+          assert decoder.is_absolute() and decoder.resolve() == decoder and decoder.is_dir()
+          assert decoder.stat().st_uid == os.getuid() and stat.S_IMODE(decoder.stat().st_mode) == 0o700
+          environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+          environment.update(GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1", GIT_TERMINAL_PROMPT="0",
+              GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
+          def git(*args):
+              result = subprocess.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+                  "-C", str(decoder), *args], env=environment, stdin=subprocess.DEVNULL,
+                  capture_output=True, check=True, timeout=15)
+              assert len(result.stdout) <= 1024 * 1024
+              return result.stdout
+          assert git("rev-parse", "HEAD").decode().strip() == revision
+          assert git("rev-parse", "HEAD^{tree}").decode().strip() == "7e92b98914ae1887951ed2667b0f9fba25d803ab"
+          assert not git("status", "--porcelain", "--untracked-files=all", "--ignored=matching")
+          git("diff", "--quiet", "--no-ext-diff", "--no-textconv", "HEAD", "--")
+          rows = [row for row in git("ls-tree", "-r", "-z", "--full-tree", "HEAD").split(b"\0") if row]
+          assert len(rows) == 1641
+          for row in rows:
+              metadata, name = row.split(b"\t", 1)
+              mode, kind, expected = metadata.split()
+              assert mode == b"100644" and kind == b"blob"
+              name = name.decode()
+              path = decoder / name
+              assert path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(decoder)
+              # Bind every importable local source, its policy/material data and
+              # public fonts. No evaluation case/oracle data is opened here.
+              if (path.suffix in {".py", ".pyi", ".so", ".pyd", ".pth"}
+                  or name.startswith(("infra/document-processing/", "backend/evals/assets/courier_prime/"))
+                  or name in {"backend/uv.lock", "backend/pyproject.toml", ".github/workflows/document-refresh.yml"}):
+                  raw = path.read_bytes()
+                  assert hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
+                      usedforsecurity=False).hexdigest().encode() == expected
+          paths = ("infra/gcp/document_source_readback_resume.py", "backend/scripts/resume_completed_document_source.py",
+                   ".github/workflows/document-refresh.yml")
+          operator = {name: hashlib.sha256((decoder / name).read_bytes()).hexdigest() for name in paths}
+          digest = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+          assert digest(operator) == "3325a9f173c223d433fbfc51a1a7545761ca4e6aeead993fcc65c94e86e57871"
+          for name in paths[:2]:
+              assert (current / name).read_bytes() == (decoder / name).read_bytes()
+          lock = (decoder / "backend/uv.lock").read_bytes()
+          assert hashlib.sha256(lock).hexdigest() == "427f77314ac25b72b0079ca4becb95f4eab5b9877b3d541997fb5ef17cad0dec"
+          assert (current / "backend/uv.lock").read_bytes() == lock
+          source = ast.parse((decoder / "infra/gcp/document_source_candidate.py").read_bytes())
+          legacy = next(ast.literal_eval(node.value) for node in source.body if isinstance(node, ast.Assign)
+              and any(isinstance(target, ast.Name) and target.id == "LEGACY_CONTRACT_PATHS" for target in node.targets))
+          helpers = {name: hashlib.sha256((decoder / name).read_bytes()).hexdigest()
+              for name in (*legacy, "infra/gcp/fresh_monetary_release.py")}
+          assert len(helpers) == 14 and digest(helpers) == "61b313bcb98d1d9931efd49ac8e9f8a3d307de0785e97e3c1705760a4c10ae50"
+          PY
           normalized="$RUNNER_TEMP/document-history-normalized-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          selected=$(backend/.venv/bin/python backend/scripts/resume_completed_document_source.py --mode select-history \
+          selected=$(cd "$decoder_directory" && "$GITHUB_WORKSPACE/backend/.venv/bin/python" -I -B \
+            backend/scripts/resume_completed_document_source.py --mode select-history \
             --history-directory "$HISTORY_DIRECTORY" --output-directory "$normalized")
           selected_path=$(printf '%s' "$selected" | python -c 'import json,sys; print(json.load(sys.stdin)["history_directory"])')
           echo "HISTORY_DIRECTORY=$selected_path" >> "$GITHUB_ENV"
