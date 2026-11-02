@@ -55,6 +55,9 @@ The runner's `dependency_hashes` remains strict about every actual file. Its
 registry bytes are the exact committed snapshot at
 `f361ac16aa17a53c640740a75c627421a9e758c9`, SHA256
 `f99d4294c232de5e09769e3582abf1cd4ba245bb65fa4faebd027ff16d7f16a5`.
+This is a historical data anchor only: that source's CI failed and no qualified
+native image is inferred. The actual application runner release and native image
+come only from the separately verified `QualifiedRunner` receipt.
 The controller explicitly uses that snapshot for this one runner-dependency
 slot and records its source/hash under `runner_snapshot_inputs`. Every other
 dependency retains the existing exact-byte checks. The separate
@@ -67,11 +70,14 @@ for arbitrary JSON or current HEAD runtime changes.
 Current registry bytes must be committed at one stable HEAD, with strict closed
 keys/types, unique releases and at most eight records. The five snapshot records
 retain their exact values and order. Every subsequent registry change in the
-bounded local ancestry is append-only against each parent, so a later commit
+bounded reachable Git history is append-only against each parent, so a later commit
 cannot edit, delete, reorder or conceal a rewrite of a previously appended row.
 Duplicate JSON keys, symlinks, dirty bytes and unknown histories refuse. The
 registry must descend from the exact runner snapshot; the history bound is64
-registry-changing commits and refuses instead of truncating older changes.
+registry-changing commits and refuses instead of truncating older changes. The
+history includes merged side branches forked before the snapshot; filtering to
+snapshot descendants would conceal their earlier rewrites. A stale pre-snapshot
+branch with unprovable registry history refuses rather than receiving an exception.
 
 Registry parsing and a source fingerprint grant no provider authority. Add a
 new row only after reviewing its actual source/CI/Build/image tuple, through the

@@ -215,7 +215,7 @@ def operator_data_hashes(root: Path) -> dict[str, str]:
     prior = snapshot["sources"]
     need(value["sources"][:len(prior)] == prior, "operator_registry_not_append_only")
     git(root, "merge-base", "--is-ancestor", REGISTRY_RUNNER_RELEASE, head)
-    changed = git(root, "log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65",
+    changed = git(root, "log", "--format=%H", "--full-history", "--max-count=65",
                   REGISTRY_RUNNER_RELEASE + ".." + head, "--", OPERATOR_REGISTRY_PATH).decode().splitlines()
     need(len(changed) <= 64, "operator_registry_history_bound")
     for commit in changed:
@@ -344,10 +344,10 @@ def _registry_git_read(values: list[str]) -> bool:
         return re.fullmatch(r"[a-f0-9]{40}", values[3]) is not None
     if len(values) == 5 and values[:4] == ["rev-list", "--parents", "-n", "1"]:
         return re.fullmatch(r"[a-f0-9]{40}", values[4]) is not None
-    return (len(values) == 8
-        and values[:5] == ["log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65"]
-        and re.fullmatch(re.escape(REGISTRY_RUNNER_RELEASE) + r"\.\.[a-f0-9]{40}", values[5]) is not None
-        and values[6:] == ["--", OPERATOR_REGISTRY_PATH])
+    return (len(values) == 7
+        and values[:4] == ["log", "--format=%H", "--full-history", "--max-count=65"]
+        and re.fullmatch(re.escape(REGISTRY_RUNNER_RELEASE) + r"\.\.[a-f0-9]{40}", values[4]) is not None
+        and values[5:] == ["--", OPERATOR_REGISTRY_PATH])
 
 
 def _child_guards(runner_root: Path):

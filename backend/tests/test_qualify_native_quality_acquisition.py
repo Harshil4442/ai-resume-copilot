@@ -460,6 +460,37 @@ def test_previously_appended_record_cannot_be_rewritten_later(registry_tree, cas
         q.source_identity(registry_tree)
 
 
+def test_fork_before_snapshot_cannot_hide_rewrite_behind_prefix_compatible_merge(registry_tree):
+    main = q.git(registry_tree, "rev-parse", "HEAD").decode().strip()
+    fork = q.git(registry_tree, "rev-parse", q.REGISTRY_RUNNER_RELEASE + "^").decode().strip()
+    assert q.git(registry_tree, "show", fork + ":" + q.OPERATOR_REGISTRY_PATH) == q._registry_snapshot(registry_tree)
+
+    def commit_tree(*parents):
+        q.git(registry_tree, "add", "--all")
+        tree = q.git(registry_tree, "write-tree").decode().strip()
+        return q.git(registry_tree, "-c", "user.name=Synthetic registry test",
+            "-c", "user.email=registry@example.invalid", "-c", "commit.gpgsign=false",
+            "commit-tree", tree, *(arg for parent in parents for arg in ("-p", parent)),
+            "-m", "Owned synthetic fork and merge control").decode().strip()
+
+    value = q._registry_value(q._registry_snapshot(registry_tree))
+    value["sources"].append(synthetic_registry_row())
+    write_registry(registry_tree, value, commit=False)
+    first = commit_tree(fork)
+    value["sources"][-1]["ci_run_id"] += 10
+    write_registry(registry_tree, value, commit=False)
+    rewritten = commit_tree(first)
+    merged = commit_tree(main, rewritten)
+    q.git(registry_tree, "reset", "--hard", merged)
+    # Both final parents are prefixes. Only the reachable side history exposes
+    # the rewrite; it is not a descendant of the pinned f361 snapshot.
+    old_history = q.git(registry_tree, "log", "--format=%H", "--full-history", "--ancestry-path",
+        q.REGISTRY_RUNNER_RELEASE + ".." + merged, "--", q.OPERATOR_REGISTRY_PATH).decode().splitlines()
+    assert rewritten not in old_history and first not in old_history
+    with pytest.raises(ValueError, match="operator_registry_history_not_append_only"):
+        q.source_identity(registry_tree)
+
+
 def test_other_committed_execution_dependency_is_not_operator_data(registry_tree):
     path = registry_tree / "backend/app/domains/analysis/native_input_acquisition.py"
     path.write_bytes(path.read_bytes() + b"\n# unrelated synthetic dependency drift\n")
@@ -468,20 +499,32 @@ def test_other_committed_execution_dependency_is_not_operator_data(registry_tree
         q.controller_dependency_hashes(registry_tree)
 
 
-def test_source_child_keeps_actual_f361_qualification_and_runner_bytes(tmp_path):
+def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tmp_path):
     # A local shared-object clone supplies actual committed source, not a mocked
     # qualification result. The existing isolated child refuses executing or
     # importing any file in this clone and denies provider/credential I/O.
     runner = tmp_path / "runner"
+    current = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
+    baseline = q._registry_value(q._registry_snapshot(ROOT))["sources"]
+    # Before registration, inspect this actual source HEAD. Once actual Build
+    # tuples exist, inspect the latest registered app source, not the later
+    # operator-only HEAD whose changed registry must fail strict runner reads.
+    application_release = (current[-1]["release"] if len(current) > len(baseline)
+                           else q.git(ROOT, "rev-parse", "HEAD").decode().strip())
+    q.git(ROOT, "cat-file", "-e", application_release + "^{commit}")
+    q.git(ROOT, "merge-base", "--is-ancestor", application_release,
+          q.git(ROOT, "rev-parse", "HEAD").decode().strip())
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
     for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(runner)),
-                 ("-C", str(runner), "checkout", "--quiet", "--detach", q.REGISTRY_RUNNER_RELEASE)):
+                 ("-C", str(runner), "checkout", "--quiet", "--detach", application_release)):
         subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], env=environment,
                        check=True, capture_output=True, timeout=30)
     observed = q.runner_source(runner)
-    assert observed["release"] == q.REGISTRY_RUNNER_RELEASE
-    assert observed["qualification_sha256"] == "0885ff9c9ec9df36556ee1c813e4c187267fbfc8f709d157a63ed56840b23475"
+    _, contract, release = q._source_modules()
+    fingerprint = contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
+    assert observed["release"] == application_release
+    assert observed["qualification_sha256"] == fingerprint
     assert observed["app_files"] == 289 and observed["app_sha256"] == q.APP_SHA256
     assert observed["runtime_dependencies_sha256"] == q.digest(q.controller_dependency_hashes(ROOT))
 
@@ -491,7 +534,7 @@ def test_child_registry_git_reads_have_exact_finite_argument_shapes():
     commands = [
         ["merge-base", "--is-ancestor", q.REGISTRY_RUNNER_RELEASE, head],
         ["rev-list", "--parents", "-n", "1", head],
-        ["log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65",
+        ["log", "--format=%H", "--full-history", "--max-count=65",
          q.REGISTRY_RUNNER_RELEASE + ".." + head, "--", q.OPERATOR_REGISTRY_PATH],
     ]
     for command in commands:
@@ -501,7 +544,8 @@ def test_child_registry_git_reads_have_exact_finite_argument_shapes():
     for command in (["merge-base", "--is-ancestor", "b" * 40, head],
                     ["rev-list", "--all"], ["log", "--all"], ["reset", "--hard", head],
                     commands[2][:-1] + ["backend/app/main.py"], commands[0][:-1] + ["HEAD"],
-                    commands[1][:-1] + ["HEAD"], commands[2][:4] + ["--max-count=9999"] + commands[2][5:]):
+                    commands[1][:-1] + ["HEAD"], commands[2][:3] + ["--max-count=9999"] + commands[2][4:],
+                    commands[2][:3] + ["--ancestry-path"] + commands[2][3:]):
         assert not q._registry_git_read(command)
 
 
