@@ -39,10 +39,18 @@ PROOF_PATHS = ("backend/tests/conftest.py", "backend/tests/expense_policy_fixtur
 CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
 # Only the explicitly reviewed runtime and prospective V3 controller successors
 # may differ from the failed historical runner. Other execution inputs stay fixed.
-CURRENT_EXECUTION_PATHS = ("backend/app/domains/credits/canary.py",
-                           "backend/app/domains/recovery/browser_pairing_production.py",
-                           "backend/scripts/schema25_app_release_contract_v3.py",
-                           "infra/gcp/schema26_app_rolling_v3.py")
+CURRENT_EXECUTION_PATHS = (
+    "backend/app/domains/credits/canary.py",
+    "backend/app/domains/recovery/browser_pairing_production.py",
+    "backend/scripts/document_refresh.py",
+    "backend/scripts/schema25_app_release_contract_v3.py",
+    "infra/gcp/document_consumed_native.py",
+    "infra/gcp/document_refresh_recovery.py",
+    "infra/gcp/document_refresh_transition.py",
+    "infra/gcp/document_source_candidate.py",
+    "infra/gcp/document_source_release.py",
+    "infra/gcp/schema26_app_rolling_v3.py",
+)
 ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
                     "infra/__init__.py", "infra/gcp/__init__.py")
 

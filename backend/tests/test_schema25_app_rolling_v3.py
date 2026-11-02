@@ -60,6 +60,26 @@ def test_complete_frozen_app_and_disjoint_schema26_source_is_required():
     assert app.PRIOR.image_digest.startswith("sha256:df4618fa")
 
 
+@pytest.mark.parametrize("name", contract.CURRENT_DOCUMENT_HELPERS)
+def test_uncommitted_document_maintenance_successor_refuses_source_authority(monkeypatch, name):
+    original = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# uncommitted maintenance drift\n"
+        if path == ROOT / name else original(path))
+    with pytest.raises(contract.v1.schema25.Schema25Denied, match="uncommitted_document_helper_changed"):
+        contract.current_document_helpers(ROOT)
+
+
+def test_other_document_qualification_helpers_remain_historically_frozen(monkeypatch):
+    name = "infra/gcp/document_source_receipt.py"
+    assert name not in contract.CURRENT_DOCUMENT_HELPERS
+    prior = app.initial.prior_app_files(ROOT, contract.PRIOR_RELEASE)
+    original = Path.read_bytes
+    monkeypatch.setattr(Path, "read_bytes", lambda path: original(path) + b"\n# unrelated helper drift\n"
+        if path == ROOT / name else original(path))
+    with pytest.raises(contract.v1.schema25.Schema25Denied, match="direct_document_qualification_changed"):
+        contract.source_fingerprint(ROOT, prior)
+
+
 def test_standalone_source_entrypoint_uses_only_the_trusted_checkout(tmp_path):
     # -I removes pytest's repo-root injection and all PYTHONPATH authority.
     # A hostile CWD must not satisfy an accidentally missing package bootstrap.

@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-02T15:50:06.959730+00:00",
+  "updated_at": "2026-11-02T17:05:55.293319+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -84,10 +84,11 @@
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
-        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json"
+        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
       ],
-      "status_observed_at": "2026-11-02T15:50:06.959730+00:00",
-      "local_result": "The prior native document qualification expired on 2 November at06:26:48UTC and needs renewal before use. Full200-case native/model quality, independent human scoring and adjudication remain pending; generation remains closed."
+      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
+      "local_result": "The expired scanner source has a reviewed repair for updater build permissions and explicit recovery; original failed Build5080a7ac was genuinely reconciled before any successor. Fresh native worker renewal, full200 native/model evidence and human adjudication remain pending; optimized AI stays closed."
     },
     {
       "number": 5,
@@ -105,10 +106,11 @@
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json"
+        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
       ],
-      "status_observed_at": "2026-11-02T15:50:06.959730+00:00",
-      "local_result": "Companion0.8.7 was loaded into the existing installation. Saved native identity verification and exact Razorpay form inspection succeeded. Candidate review then failed503 with Firestore metadata ResourceExhausted; local requests are paused, no employer fields/upload/submit occurred, and exact device revocation remains pending. Representative10,000-user workload gates remain pending."
+      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
+      "local_result": "The actual owner browser verified identity and inspected Razorpay, then hit a server Firestore quota error. Source now batches pairing identities without removing barriers and supports explicit40/minute API admission. Root integration checks passed; actual repaired deployment and original-file review/cancel/revoke remain pending. This pilot policy does not qualify10,000-user capacity."
     },
     {
       "number": 6,
@@ -127,10 +129,11 @@
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
-        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json"
+        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
       ],
-      "status_observed_at": "2026-11-02T15:50:06.959730+00:00",
-      "local_result": "Schema25 remains deployed with original balances preserved. The new source fixes actual canary timestamptz accounting across non-UTC PostgreSQL sessions; six owned-PG cases and158 focused source controls passed. Corrected-source CI, schema26 rollout and funded seven-day/200-operation shadow evidence remain pending. No production DDL or wallet conversion occurred."
+      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
+      "local_result": "Schema25 and original balances remain deployed. Canary UTC accounting is corrected and owned-PG-tested. New source explicitly binds the five reviewed scanner maintenance helpers and retains historical helper/custody proofs. Schema26 rollout, genuine shadow operations and funded seven-day observation remain pending."
     },
     {
       "number": 7,
@@ -152,10 +155,11 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-10-31-full-regression-remedy.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
-        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json"
+        "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
       ],
-      "local_result": "The existing e23 pilot continues serving. The a794 candidate passed four release jobs and the bounded native protocol, but one full-backend timezone regression failed after10,185 passes. The runtime UTC repair and exact-source binding renewal are committed locally; a new actual-source qualification and immutable Build are still required before rollout. Browser quota repair and document-qualification renewal remain pending. Checkout remains closed.",
-      "status_observed_at": "2026-11-02T15:50:06.959730+00:00"
+      "local_result": "UTC, metadata and expired-scanner source repairs are integrated locally. The old failed refresh produced no image or deployment; its original custody and expense are preserved. Current combined source still requires genuine final-source CI, immutable Git Build, native scanner renewal, fresh maintenance/migration/application plans and actual live verification. Production and payment gates are unchanged.",
+      "status_observed_at": "2026-11-02T17:05:55.293319+00:00"
     },
     {
       "number": 8,

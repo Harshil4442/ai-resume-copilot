@@ -15,9 +15,25 @@ nodes, source consumers, evidence fence, exact26 schema/issuer/catalog, operator
 owned-input acquisition tools, privacy recovery, financial successors, frontend
 contracts, native tests and their finite transitive helpers. The final app
 inventory is289 files, SHA256
-`446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce`.
+`67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2`.
 A changed helper changes the
 qualification; no old contract or native receipt is relabeled.
+
+Five explicitly reviewed document maintenance helpers now require exact current
+committed bytes; the other nine document helpers retain their e23 historical
+bytes. The full fingerprint also binds the new expiry-recovery tests. Worker22,
+runtime20, source policy and original native deadlines remain unchanged. The
+original failed definitions Build must be reconciled from its retained four-file
+journal before a separately bound successor is dispatched.
+
+For this pilot, capture the application plan with `--metadata-read-pilot` after
+the original closed-API maintenance baseline is verified. The typed API-only
+policy enables existing ListDatabases observation and shared40/minute metadata
+admission; it preserves every identity/signing barrier and uses no cross-request
+identity cache. Other services and all product/payment gates stay as captured.
+The option is capture-only; later stages use the exact persisted plan. Omitting
+it retains the historical default-off configuration. The pilot setting is not
+evidence of10,000-user capacity qualification.
 
 The finite current-source closure also binds all21 companion0.8.8 delivered
 files, its package/dependency metadata and reproducible public ZIP, the exact

@@ -21,6 +21,16 @@ PRIOR_APP_SHA256 = "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40
 # Exact reviewed-source inventory; this pin is not native qualification.
 CANDIDATE_APP_SHA256 = '67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2'
 CANDIDATE_APP_FILES = 289
+# Current maintenance fixes change only these five of the fourteen document
+# helpers. Their exact committed bytes enter this release fingerprint; retained
+# source/Build receipts continue to use their original historical helper bytes.
+CURRENT_DOCUMENT_HELPERS = (
+    "backend/scripts/document_refresh.py",
+    "infra/gcp/document_refresh_recovery.py",
+    "infra/gcp/document_refresh_transition.py",
+    "infra/gcp/document_source_candidate.py",
+    "infra/gcp/document_source_release.py",
+)
 COMPATIBILITY_STEP = "Qualify schema26 app v3 compatibility"
 COMPATIBILITY_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_compatibility.py"
 PROTOCOL_STEP = "Qualify schema26 app v3 native protocol"
@@ -56,7 +66,7 @@ PROOF_ROOTS = (*PROTOCOL_SUITES, *NATIVE_SUITES,
     "tests/test_schema25_app_rolling_v3.py", "tests/test_schema25_app_protocol_v3.py",
     "tests/test_qualify_schema25_retained_v2.py", "tests/browser_paired_assistance_chrome_bridge.py",
     "tests/browser_assistance_chrome_bridge.py", "tests/browser_submit_chrome_bridge.py",
-    "tests/test_browser_assistance_isolated.py")
+    "tests/test_browser_assistance_isolated.py", "tests/test_document_expired_source_recovery.py")
 PROTOCOL_FIXTURES = ('backend/pyproject.toml', 'backend/tests/expense_policy_fixtures.py', 'backend/tests/fixtures/candidate_ingress.py', 'backend/tests/fixtures/evidence_fence.py', 'backend/tests/fixtures/firestore_emulator.py', 'backend/tests/fixtures/gcp_closure.py', 'backend/tests/fixtures/gcp_partitioned_publication.py', 'backend/tests/fixtures/gcp_publication.py', 'backend/tests/fixtures/pairing_authority.py', 'backend/tests/fixtures/reviewed_runtime.py', 'backend/tests/fixtures/stage5_native.py', 'backend/tests/fixtures/transcription_source.py', 'backend/tests/model_cost_fixtures.py', 'backend/tests/test_ai_efficiency.py', 'backend/tests/test_browser_pairing_production.py', 'backend/tests/test_browser_submit_native.py', 'backend/tests/test_canary_admission.py', 'backend/tests/test_candidate_production_factory.py', 'backend/tests/test_candidate_scoped_lifecycle_emulator.py', 'backend/tests/test_document_processor.py', 'backend/tests/test_document_worker_deployment.py', 'backend/tests/test_employer_admissions.py', 'backend/tests/test_employer_admissions_postgres.py', 'backend/tests/test_employer_services.py', 'backend/tests/test_evidence_review.py', 'backend/tests/test_evidence_review_postgres.py', 'backend/tests/test_evidence_writer_adapters.py', 'backend/tests/test_evidence_writer_fence_postgres.py', 'backend/tests/test_free_core.py', 'backend/tests/test_gcp_journal_sdk.py', 'backend/tests/test_gcp_pairing_emulator.py', 'backend/tests/test_gcp_password_lifetime_emulator.py', 'backend/tests/test_gcp_password_reauth_emulator.py', 'backend/tests/test_gcp_rpc.py', 'backend/tests/test_gcp_scoped_authority_emulator.py', 'backend/tests/test_native_acquisition_channel.py', 'backend/tests/test_native_input_acquisition.py', 'backend/tests/test_native_metadata_admission.py', 'backend/tests/test_neon_linux_execution.py', 'backend/tests/test_neon_schema19_release_transport.py', 'backend/tests/test_owned_bootstrap.py', 'backend/tests/test_pairing_kms.py', 'backend/tests/test_privacy_erasure_postgres.py', 'backend/tests/test_resume_source.py', 'backend/tests/test_rolling_release.py', 'backend/tests/test_schema25_app_compatibility_postgres.py', 'backend/tests/test_schema25_app_compatibility_v3_postgres.py', 'backend/tests/test_schema25_app_rolling_release.py', 'backend/tests/test_schema26_catalog_postgres.py', 'backend/tests/test_source_transcription_review.py', 'backend/tests/test_source_transcription_review_postgres.py', 'backend/tests/test_supported_evaluation.py', 'backend/tests/test_unified_credits.py', 'backend/tests/test_unified_execution.py', 'backend/tests/test_unified_synchronous.py', 'backend/tests/test_unified_synchronous_postgres.py', 'backend/tests/browser_submit_owned.py', 'backend/tests/browser_submission_unified_fixture.py', 'backend/tests/test_browser_hosted_network.py', 'backend/tests/test_browser_submit_postgres.py', 'backend/tests/test_schema25_maintenance.py')
 HISTORICAL_PATHS = ("backend/scripts/schema25_app_release_contract.py",
     "backend/scripts/schema25_app_release_contract_v2.py", "backend/scripts/qualify_schema25_retained_v1.py",
@@ -192,6 +202,26 @@ def verify_ci(root):
     need(len(checkout) == 1 and checkout[0].get("with", {}).get("fetch-depth") == 0, "git_history_required")
 
 
+
+def current_document_helpers(root: Path):
+    """Read only the finite reviewed successors from one committed checkout."""
+    def git_at(*args):
+        return subprocess.run(["git", "-c", "core.fsmonitor=false", *args], cwd=root,
+            check=True, capture_output=True, timeout=10).stdout
+    head = git_at("rev-parse", "HEAD").decode().strip()
+    need(len(head) == 40 and all(c in "0123456789abcdef" for c in head), "document_helper_head")
+    values = {}
+    for name in CURRENT_DOCUMENT_HELPERS:
+        path = root / name
+        need(path.is_file() and not path.is_symlink() and path.resolve() == path,
+             "document_helper_path")
+        raw = path.read_bytes()
+        need(raw == git_at("show", head + ":" + name), "uncommitted_document_helper_changed")
+        values[name] = hashlib.sha256(raw).hexdigest()
+    need(git_at("rev-parse", "HEAD").decode().strip() == head, "document_helper_head_changed")
+    return values
+
+
 def source_fingerprint(root: Path, prior_files):
     import sys
     sys.path.insert(0, str(root / "infra/gcp"))
@@ -211,7 +241,10 @@ def source_fingerprint(root: Path, prior_files):
     worker = document.validate_policy(policy.read_bytes(), root)
     need(all(hashlib.sha256((root / name).read_bytes()).hexdigest() == expected for name, expected in worker.items()),
         "worker_source_changed")
-    need(all((root / name).read_bytes() == git_bytes(root, name) for name in document.CONTRACT_PATHS),
+    helpers = current_document_helpers(root)
+    need(set(helpers) <= set(document.CONTRACT_PATHS), "document_helper_not_in_contract")
+    need(all((root / name).read_bytes() == git_bytes(root, name)
+             for name in document.CONTRACT_PATHS if name not in helpers),
         "direct_document_qualification_changed")
     need(all(hashlib.sha256((root / name).read_bytes()).hexdigest() == expected
         for name, expected in HISTORICAL_COMPANION_PACKAGES), "historical_companion_package_changed")
@@ -221,6 +254,8 @@ def source_fingerprint(root: Path, prior_files):
         *NEW_PATHS, *FOLLOWON_PATHS, *PROTOCOL_FIXTURES, *("backend/" + name for name in PROOF_ROOTS),
         *worker, *document.CONTRACT_PATHS, document.POLICY_PATH}
     entries = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(names)}
+    need(all(entries[name] == stamp for name, stamp in helpers.items()),
+         "document_helper_changed_during_fingerprint")
     entries.update(prior_app=PRIOR_APP_SHA256, candidate_app=CANDIDATE_APP_SHA256,
         http_delta=digest([HTTP_PATHS, HTTP_SCHEMAS]), schema26=schema26.CONTRACT,
         financial_invariants=digest(v1.INVARIANTS))

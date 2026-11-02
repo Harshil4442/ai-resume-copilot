@@ -26,18 +26,18 @@ HEAD-exact bytes in `current_proof_inputs`. It is not imported by the acquisitio
 entry. Its source is also bound by the actual runner V3 qualification fingerprint;
 its fresh child-computed hash must match the controller's current proof context.
 The finite execution inventory still contains exactly464 inputs. Of those,
-462 retain exact historical7be bytes. Only the reviewed UTC correction in
-`backend/app/domains/credits/canary.py` and its prospective inventory in
-`backend/scripts/schema25_app_release_contract_v3.py` are explicit
-`CURRENT_EXECUTION_PATHS`. Both require exact committed HEAD bytes and enter
+454 retain exact historical7be bytes. The ten explicit `CURRENT_EXECUTION_PATHS`
+cover the reviewed UTC and pairing corrections, prospective V3 contract and
+controller, five document maintenance helpers and their consumed-history audit.
+Every successor requires exact committed HEAD bytes and enters
 `current_execution_inputs` and the full execution-dependency hash. Dirty bytes
 refuse; even a separately committed foreign successor refuses when its closure
 differs from the controller. This is not a wildcard or a replacement historical
 baseline. The historical7be failure remains ineligible, and old CI/Build/receipts
 cannot approve either changed current proof or runtime bytes. Dockerfile, locks,
-CI workflow, the other462 execution inputs and entry8eef remain byte-exact.
+CI workflow, the other454 execution inputs and entry8eef remain byte-exact.
 The current reviewed App289 inventory is
-`446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce`;
+`67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2`;
 it needs its own genuine all-five CI and immutable Build. Additional executable
 modules in those execution namespaces refuse; original default two-caller
 contracts and all signed/native deadlines are unchanged.
@@ -114,7 +114,7 @@ code is never imported/executed. Its output contains only source hashes/counts.
 The runner and controller may use the SAME actual clean head and all-five CI
 run; no distinct-head requirement or extra controller-only app Build exists.
 The QFP may legitimately change with reviewed test-only repairs even while
-App289/446 and entry8eef remain identical. The child does not spoof CI variables
+App289/67c and entry8eef remain identical. The child does not spoof CI variables
 or run any native suite. Unknown/timeout/dirty or changed source refuses.
 
 The Plan also binds genuine evaluatorUID/bucketmetageneration, current worker

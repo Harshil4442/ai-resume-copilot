@@ -28,10 +28,13 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
     assert len(value["execution_dependencies"]) == 464 and len(q.CURRENT_PROOF_PATHS) == 1
-    assert q.CURRENT_EXECUTION_PATHS == ("backend/app/domains/credits/canary.py",
-        "backend/app/domains/recovery/browser_pairing_production.py",
-        "backend/scripts/schema25_app_release_contract_v3.py",
-        "infra/gcp/schema26_app_rolling_v3.py")
+    assert q.CURRENT_EXECUTION_PATHS == (
+        "backend/app/domains/credits/canary.py", "backend/app/domains/recovery/browser_pairing_production.py",
+        "backend/scripts/document_refresh.py", "backend/scripts/schema25_app_release_contract_v3.py",
+        "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
+        "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
+        "infra/gcp/document_source_release.py", "infra/gcp/schema26_app_rolling_v3.py",
+    )
     assert set(value["current_execution_inputs"]) == set(q.CURRENT_EXECUTION_PATHS)
     assert all(value["execution_dependencies"][name] == digest
         for name, digest in value["current_execution_inputs"].items())
