@@ -324,18 +324,30 @@ def test_exact_validated_local_internal_runner_remains_separate_from_public_cana
 
 
 
-def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(factory, monkeypatch):
+@pytest.mark.parametrize("write_timezone,read_timezone", [
+    ("Asia/Kolkata", "America/Los_Angeles"),
+    ("America/Los_Angeles", "Asia/Kolkata"),
+    ("UTC", "Asia/Kolkata"),
+])
+def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(
+    factory, monkeypatch, write_timezone, read_timezone,
+):
     with factory() as db:
-        db.execute(text("SET LOCAL TIME ZONE 'Asia/Kolkata'"))
+        db.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": write_timezone})
         config, review, digest = prepare(db, monkeypatch)
         consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         proof = accept(db, config, source(db))
         db.commit()
         saved = db.get(models.AdminAuditEvent, proof["acceptance_id"])
-        assert saved.created_at == NOW.replace(tzinfo=None)
+        assert saved.created_at == NOW
+        # Check the stored instants, including review and consent writes, rather
+        # than relying on an ORM identity-map value or its display timezone.
+        epochs = db.execute(text("SELECT EXTRACT(EPOCH FROM created_at) FROM admin_audit_events" )).scalars().all()
+        assert len(epochs) == 3
+        assert all(float(epoch) == NOW.timestamp() for epoch in epochs)
     with factory() as db:
-        db.execute(text("SET LOCAL TIME ZONE 'America/Los_Angeles'"))
+        db.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": read_timezone})
         candidate = source(db, identity="timezone-second-candidate")
         with pytest.raises(finance.FundingUnavailable):
             accept(db, config, candidate)

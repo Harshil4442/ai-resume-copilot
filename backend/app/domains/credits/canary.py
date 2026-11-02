@@ -145,7 +145,9 @@ def _record(db: Session, *, identity: str, action: str, target: str, value: dict
     row = AdminAuditEvent(id=identity, actor_user_id=actor_id, actor_email=actor,
         action=action, target_type="credit_canary", target_id=target,
         reason="Explicit bounded canary review, owner choice or accepted business operation",
-        before_state={}, after_state=value, created_at=now.astimezone(UTC).replace(tzinfo=None))
+        # The migrated audit column is timestamptz. A naive UTC value would be
+        # interpreted in the PostgreSQL session's local timezone on insertion.
+        before_state={}, after_state=value, created_at=now.astimezone(UTC))
     db.add(row)
     db.flush([row])
     return row
@@ -493,8 +495,8 @@ def accept(db: Session, *, user_id: int, runtime, operation: str, source_id: str
     keys = _business_keys(db, review, now=current, exclude=(kind, source_id))
     previous = db.query(AdminAuditEvent.after_state).filter_by(action=ACCEPT_ACTION,
         target_type="credit_canary").filter(
-            AdminAuditEvent.created_at >= review.traffic_started_at.astimezone(UTC).replace(tzinfo=None),
-            AdminAuditEvent.created_at <= current.astimezone(UTC).replace(tzinfo=None)).limit(MAX_TRAFFIC + 1).all()
+            AdminAuditEvent.created_at >= review.traffic_started_at.astimezone(UTC),
+            AdminAuditEvent.created_at <= current.astimezone(UTC)).limit(MAX_TRAFFIC + 1).all()
     need(len(previous) <= MAX_TRAFFIC)
     canary_count = 0
     members = {row.user_id for row in review.members}
