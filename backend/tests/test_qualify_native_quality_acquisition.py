@@ -38,6 +38,7 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
         "infra/gcp/document_source_release.py", "infra/gcp/schema26_app_rolling_v3.py",
+        "infra/gcp/v3_readonly_adapter.py",
     )
     assert set(value["current_execution_inputs"]) == set(q.CURRENT_EXECUTION_PATHS)
     assert all(value["execution_dependencies"][name] == digest
