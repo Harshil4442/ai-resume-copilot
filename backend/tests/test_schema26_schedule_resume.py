@@ -20,9 +20,13 @@ m = importlib.import_module("schema26_schedule_resume")
 
 
 @pytest.fixture
-def ready(tmp_path):
+def ready(tmp_path, request):
     tmp_path.chmod(0o700)
     case = ClosedV3Fixture(tmp_path / "maintenance")
+    if getattr(request, "param", False):
+        case.plan = replace(case.plan, metadata_read_policy=m.app26.MetadataReadPolicy())
+        case.targets = {pin.service: m.app26.candidate_template(case.plan, pin, case.service(pin.service))
+            for pin in case.plan.services}
     controls = Controls()
     for pin in m.schedules(case.maintenance_plan):
         m.maintenance.resource_action(pin, controls, case.maintenance_journal, "pause")
@@ -111,6 +115,30 @@ def test_exact_three_state_only_resumes_keep_all_configuration_and_original_jour
     assert ready.journal.read(m.BINDING) == ready.binding()
     assert m.execute(ready, reconcile=True)["status"] == "schema26_schedules_restored"
     assert len(ready.controls.writes) == 3
+
+
+@pytest.mark.parametrize("ready", [True], indirect=True)
+def test_explicit_metadata_policy_preserves_original_journals_and_schedule_resume(ready):
+    policy = ready.application.metadata_read_policy
+    assert type(policy) is m.app26.MetadataReadPolicy
+    api = m.app26.SERVICES[0]
+    m.app26.v3_flags(ready.case.states[api]["template"], policy)
+    retained = {p.name: p.read_bytes() for p in ready.application_journal.directory.glob("*.json")}
+    assert m.execute(ready)["status"] == "schema26_schedules_restored"
+    assert len(ready.controls.writes) == 3
+    assert {p.name: p.read_bytes() for p in ready.application_journal.directory.glob("*.json")} == retained
+    assert ready.application_journal.plan_hash == m.rolling.sha(m.asdict(ready.application))
+    m.app26.v3_flags(ready.case.states[api]["template"], policy)
+
+
+@pytest.mark.parametrize("ready", [True], indirect=True)
+def test_changed_metadata_policy_target_refuses_before_any_schedule_resume(ready):
+    api = m.app26.SERVICES[0]
+    env = m.rolling.environment(ready.case.states[api]["template"])
+    env["CANDIDATE_METADATA_CALLS_PER_MINUTE"]["value"] = "41"
+    with pytest.raises(m.rolling.RollingDenied):
+        m.execute(ready)
+    assert not ready.controls.writes
 
 
 @pytest.mark.parametrize(
@@ -271,7 +299,7 @@ def test_both_original_journal_locks_exclude_parallel_controller(ready):
     assert ready.controls.writes == []
 
 
-def test_original_v3_global_checks_are_ast_exact_when_tiny_factoring_is_inlined():
+def test_original_v3_global_guards_change_only_by_exact_reviewed_metadata_policy():
     tree = ast.parse((ROOT / "infra/gcp/schema26_app_rolling_v3.py").read_bytes())
     cls = next(
         n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "NativeApp26Boundary"
@@ -291,6 +319,20 @@ def test_original_v3_global_checks_are_ast_exact_when_tiny_factoring_is_inlined(
         else:
             expanded.append(statement)
     global_check.body = expanded
+    # The explicit current-V3 policy is the only new guard branch. Bind that
+    # entire block exactly, then compare every original guard to its retained
+    # pre-policy AST. No other statement, call or predicate is normalized away.
+    expected = ast.parse("""
+if self.plan_type is App26V3Plan:
+    policy = (plan.metadata_read_policy if pin.service == SERVICES[0]
+        and rolling.environment(template).get("APP_RELEASE", {}).get("value") == plan.release else None)
+    v3_flags(template, policy)
+""").body[0]
+    branches = [node for node in ast.walk(global_check) if isinstance(node, ast.If)
+        and ast.dump(node.test, include_attributes=False) == ast.dump(expected.test, include_attributes=False)]
+    assert len(branches) == 1
+    assert ast.dump(branches[0], include_attributes=False) == ast.dump(expected, include_attributes=False)
+    branches[0].body = ast.parse("v3_flags(template)").body
     assert (
         hashlib.sha256(ast.dump(global_check, include_attributes=False).encode()).hexdigest()
         == "1a2a12d54e4e87fe68b8f4bb0c11405bb7edaa369bca2ec70b05026ccf999c22"

@@ -167,6 +167,25 @@ def verify_closed_api_baseline(baseline, plan, journal, run):
 
 
 @dataclass(frozen=True)
+class MetadataReadPolicy:
+    """Exact API-only transport admission; never product or customer authority."""
+
+    service: Literal["ai-resume-parser"] = "ai-resume-parser"
+    calls_per_minute: Literal[40] = 40
+
+    def validate(self):
+        need(type(self) is MetadataReadPolicy and self.service == SERVICES[0]
+             and type(self.calls_per_minute) is int and self.calls_per_minute == 40,
+             "metadata_read_policy_invalid")
+
+    def environment(self):
+        self.validate()
+        return {"CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED": "true",
+                "CANDIDATE_METADATA_ADMISSION_ENABLED": "true",
+                "CANDIDATE_METADATA_CALLS_PER_MINUTE": str(self.calls_per_minute)}
+
+
+@dataclass(frozen=True)
 class App26V3Plan(rolling.RollingPlan):
     schema_contract: Literal["hirewiz_schema26_app_rolling_v3"] = "hirewiz_schema26_app_rolling_v3"
     database_schema: Literal["20261031_0026"] = "20261031_0026"
@@ -176,6 +195,7 @@ class App26V3Plan(rolling.RollingPlan):
     protected_liabilities: tuple[tuple[str, str, int], ...] = ()
     reachable_revisions: tuple[historical.ReachablePin, ...] = ()
     maintenance_baseline: ClosedApiBaseline | None = None
+    metadata_read_policy: MetadataReadPolicy | None = None
 
     def disabled_flags(self):
         return CLOSED_FLAGS
@@ -203,6 +223,11 @@ class App26V3Plan(rolling.RollingPlan):
             "distinct_plan_required",
         )
         historical.validate_extensions(self)
+        if self.metadata_read_policy is not None:
+            need(type(self.metadata_read_policy) is MetadataReadPolicy, "metadata_read_policy_invalid")
+            self.metadata_read_policy.validate()
+            need(type(self.maintenance_baseline) is ClosedApiBaseline,
+                 "metadata_policy_requires_maintenance_baseline")
         if self.maintenance_baseline is not None:
             need(type(self.maintenance_baseline) is ClosedApiBaseline, "maintenance_baseline_required")
             self.maintenance_baseline.validate()
@@ -213,9 +238,16 @@ class App26V3Plan(rolling.RollingPlan):
                  and self.release != PRIOR.release, "maintenance_plan_pin_changed")
 
 
-def v3_flags(template):
-    historical.v2_flags(template)
+def v3_flags(template, metadata_policy=None):
     env = rolling.environment(template)
+    if metadata_policy is None:
+        historical.v2_flags(template)
+    else:
+        need(type(metadata_policy) is MetadataReadPolicy, "metadata_read_policy_invalid")
+        settings = metadata_policy.environment()
+        need(set(contract.STAGE5_FLAGS) == set(settings) - {"CANDIDATE_METADATA_CALLS_PER_MINUTE"}
+             and all(env.get(name) == {"name": name, "value": value}
+                     for name, value in settings.items()), "metadata_read_configuration_changed")
     need(
         contract.PRIVACY_FLAG not in env
         or env[contract.PRIVACY_FLAG] == {"name": contract.PRIVACY_FLAG, "value": "false"},
@@ -263,7 +295,16 @@ def candidate_template(plan, pin, current):
         need(rolling.template_sha(result, pin.service) == rolling.template_sha(expected, pin.service),
              "unrelated_candidate_configuration_changed")
         historical.observed_flags(result, pin.service)
-    v3_flags(result)
+    policy = plan.metadata_read_policy if pin.service == SERVICES[0] else None
+    if policy is not None:
+        need(type(policy) is MetadataReadPolicy, "metadata_read_policy_invalid")
+        # The complete base target was proved above. Only these exact transport
+        # settings are added; workers, secrets and product gates are preserved.
+        env = rolling.environment(result)
+        for name, value in policy.environment().items():
+            env[name] = {"name": name, "value": value}
+        result["containers"][0]["env"] = list(env.values())
+    v3_flags(result, policy)
     return result
 
 
@@ -484,7 +525,11 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
         observer_secret,
         retired_migration_secret,
         workers_release,
+        metadata_read_policy=None,
     ):
+        if metadata_read_policy is not None:
+            need(type(metadata_read_policy) is MetadataReadPolicy, "metadata_read_policy_invalid")
+            metadata_read_policy.validate()
         self.observer.verify_source_image(
             release=release, image_digest=image_digest, build_id=build_id, ci_run_id=ci_run_id
         )
@@ -530,6 +575,7 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
             protected_liabilities=liabilities,
             reachable_revisions=self._reachable(pins),
             maintenance_baseline=baseline,
+            metadata_read_policy=metadata_read_policy,
         )
         plan.validate()
         for pin in pins:
@@ -620,7 +666,9 @@ class NativeApp26Boundary(historical.NativeApp25Boundary):
                 observed_flags(template, pin.service, plan.maintenance_baseline
                     if rolling.environment(template).get("APP_RELEASE", {}).get("value") == PRIOR.release else None)
                 if self.plan_type is App26V3Plan:
-                    v3_flags(template)
+                    policy = (plan.metadata_read_policy if pin.service == SERVICES[0]
+                        and rolling.environment(template).get("APP_RELEASE", {}).get("value") == plan.release else None)
+                    v3_flags(template, policy)
                 rolling.verify_policy_bindings(plan.policies, pin, template)
                 rows = rolling.environment(template)
                 for secret in pin.secrets:
@@ -651,6 +699,9 @@ def load(raw):
         row = value["maintenance_baseline"]
         row["original_pilot_flags"] = tuple(tuple(pair) for pair in row["original_pilot_flags"])
         value["maintenance_baseline"] = ClosedApiBaseline(**row)
+    if value.get("metadata_read_policy") is not None:
+        need(type(value["metadata_read_policy"]) is dict, "metadata_read_policy_invalid")
+        value["metadata_read_policy"] = MetadataReadPolicy(**value["metadata_read_policy"])
     pins = []
     for row in value["services"]:
         row["secrets"] = tuple(rolling.SecretPin(**secret) for secret in row["secrets"])
@@ -827,7 +878,10 @@ def main():
     ):
         parser.add_argument("--" + name)
     parser.add_argument("--ci-run-id", type=int)
+    parser.add_argument("--metadata-read-pilot", action="store_true",
+        help="Capture the exact API-only two-identity List and shared40/minute admission policy")
     args = parser.parse_args()
+    need(not args.metadata_read_pilot or args.phase == "capture", "metadata_policy_capture_only")
     if args.phase == "source":
         fingerprint = contract.source_fingerprint(
             args.root, initial.prior_app_files(args.root, PRIOR.release)
@@ -866,7 +920,8 @@ def main():
             "workers_release",
         )
         need(all(getattr(args, name) is not None for name in names), "capture_arguments_required")
-        plan = boundary.capture_app(**{name: getattr(args, name) for name in names})
+        plan = boundary.capture_app(**{name: getattr(args, name) for name in names},
+            metadata_read_policy=MetadataReadPolicy() if args.metadata_read_pilot else None)
         need(
             args.plan.is_absolute()
             and args.plan.parent.resolve() == args.plan.parent

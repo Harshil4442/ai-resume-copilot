@@ -189,6 +189,99 @@ def test_stage5_activation_is_not_hidden_in_a_v3_template(context, flag):
         app.candidate_template(boundary.plan, pin, current)
 
 
+def metadata_pilot(case):
+    case.plan = replace(case.plan, metadata_read_policy=app.MetadataReadPolicy())
+    case.plan.validate()
+    case.targets = {pin.service: app.candidate_template(case.plan, pin, case.service(pin.service))
+        for pin in case.plan.services}
+    return case.plan
+
+
+def test_explicit_metadata_policy_is_typed_roundtrippable_and_changes_only_exact_api_transport(closed_context):
+    case, _ = closed_context
+    defaults = copy.deepcopy(case.targets)
+    plan = metadata_pilot(case)
+    assert app.load(rolling.canonical(asdict(plan))) == plan
+    api = app.SERVICES[0]
+    expected = copy.deepcopy(defaults[api])
+    expected["containers"][0]["env"].extend([
+        {"name": "CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "value": "true"},
+        {"name": "CANDIDATE_METADATA_ADMISSION_ENABLED", "value": "true"},
+        {"name": "CANDIDATE_METADATA_CALLS_PER_MINUTE", "value": "40"},
+    ])
+    assert rolling.template_sha(case.targets[api], api) == rolling.template_sha(expected, api)
+    app.v3_flags(case.targets[api], plan.metadata_read_policy)
+    for service in app.SERVICES[1:]:
+        assert case.targets[service] == defaults[service]
+        app.v3_flags(case.targets[service])
+    assert all(rolling.environment(case.targets[api])[flag]["value"] == "false" for flag in app.CLOSED_FLAGS)
+
+
+@pytest.mark.parametrize("policy", [False, {}, app.MetadataReadPolicy(calls_per_minute=39),
+    app.MetadataReadPolicy(calls_per_minute=True), app.MetadataReadPolicy(service="hirewiz-analysis-worker")])
+def test_metadata_policy_cannot_expand_budget_or_service_scope(context, policy):
+    case, _ = context
+    with pytest.raises(rolling.RollingDenied, match="metadata_read_policy_invalid"):
+        replace(case.plan, metadata_read_policy=policy).validate()
+    assert not case.writes
+
+
+@pytest.mark.parametrize("change", ["list_off", "admission_off", "budget", "secret_reference", "privacy", "paid"])
+def test_target_metadata_policy_rejects_missing_changed_or_security_expanded_settings(closed_context, change):
+    case, _ = closed_context
+    plan = metadata_pilot(case)
+    target = copy.deepcopy(case.targets[app.SERVICES[0]])
+    env = rolling.environment(target)
+    if change in {"list_off", "admission_off"}:
+        key = "CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED" if change == "list_off" else "CANDIDATE_METADATA_ADMISSION_ENABLED"
+        env[key]["value"] = "false"
+    elif change == "budget":
+        env["CANDIDATE_METADATA_CALLS_PER_MINUTE"]["value"] = "41"
+    elif change == "secret_reference":
+        env["CANDIDATE_METADATA_CALLS_PER_MINUTE"].pop("value")
+        env["CANDIDATE_METADATA_CALLS_PER_MINUTE"]["valueSource"] = {"secretKeyRef": {"secret": "synthetic", "version": "1"}}
+    elif change == "privacy":
+        target["containers"][0]["env"].append({"name": contract.PRIVACY_FLAG, "value": "true"})
+    else:
+        env["RAZORPAY_CHECKOUT_ENABLED"]["value"] = "true"
+    if change == "paid":
+        # The policy validator is only a transport setting check. Existing
+        # product-gate validation remains independently required and unchanged.
+        with pytest.raises(rolling.RollingDenied):
+            app.observed_flags(target, app.SERVICES[0])
+    else:
+        with pytest.raises(rolling.RollingDenied):
+            app.v3_flags(target, plan.metadata_read_policy)
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_metadata_policy_stage_advance_aliases_and_restricted_rollback_bind_full_target(tmp_path, closed):
+    tmp_path.chmod(0o700)
+    case = ClosedV3Fixture(tmp_path / "maintenance") if closed else V3Fixture()
+    if not closed:
+        with pytest.raises(rolling.RollingDenied, match="metadata_policy_requires_maintenance_baseline"):
+            metadata_pilot(case)
+        assert not case.writes
+        return
+    plan = metadata_pilot(case)
+    directory = tmp_path / "rollout"
+    directory.mkdir(mode=0o700)
+    journal = rolling.Journal(directory, plan)
+    assert app.execute("advance", plan, case, journal)["rolling_release_complete"] is True
+    for pin in plan.services:
+        assert case.states[pin.service]["template"] == case.targets[pin.service]
+        assert all(row["revision"] == plan.revision(pin.service)
+            for row in case.states[pin.service]["traffic"] if row.get("tag"))
+    before = len(case.writes)
+    assert app.execute("rollback", plan, case, journal)["old_source_evidence_writes_authorized"] is False
+    assert len(case.writes) > before
+    assert app.execute("reconcile", plan, case, journal)["replay_authorized"] is False
+    # A default-off plan is a different custody record, not permission to adopt
+    # this enabled target or its stage/advance acknowledgements.
+    with pytest.raises(rolling.RollingDenied, match="original_plan_journal_required"):
+        app.execute("reconcile", replace(plan, metadata_read_policy=None), case, journal)
+
+
 def test_new_privacy_mail_is_closed_without_disabling_the_authorized_password_reset(context):
     boundary, _ = context
     pin = boundary.plan.services[0]

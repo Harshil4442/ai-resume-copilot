@@ -603,6 +603,121 @@ def test_confirmation_metadata_budget_keeps_fresh_transaction_fences(pairing):
     assert metadata.call_count - before == 4
 
 
+def list_pairing_metadata(c, monkeypatch, *, mutate=None):
+    from google.cloud.firestore_admin_v1.types import Database, ListDatabasesResponse
+    from test_native_metadata_admission import inert_shared_redis
+
+    calls = []
+
+    def listed(request, **kwargs):
+        assert not c.sql_active and not c.native.views
+        assert request.parent == "projects/hirewiz-local-authority" and request.show_deleted is False
+        assert kwargs["timeout"] == 2.0
+        calls.append(len(c.kms.calls))
+        value = ListDatabasesResponse(databases=[Database(name=name, uid=uid, type_=1)
+            for name, uid in c.native.identities.items()])
+        return mutate(value, len(calls)) if mutate else value
+
+    c.native.sdk.admin.transport.list_databases.side_effect = listed
+    admission = inert_shared_redis(monkeypatch, project="hirewiz-local-authority")
+    monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "true")
+    return calls, admission
+
+
+def refresh_challenge(c, paired):
+    return device(c, "refresh-challenge", transport(c, "refresh_challenge",
+        paired["device_claim"]["payload"]["device_id"]))
+
+
+def refresh(c, challenge):
+    return device(c, "refresh", {"challenge_id": challenge["payload"]["challenge_id"],
+        "nonce": challenge["nonce"], "signature": sign(c.private, "device-challenge", challenge["payload"])})
+
+
+def test_pairing_list_batches_each_unchanged_fresh_barrier_without_get_fallback(pairing, monkeypatch):
+    c = pairing
+    context, prepared, challenge = start(c)
+    confirm(c, context, challenge)
+    paired = complete(c, prepared)
+    calls, admission = list_pairing_metadata(c, monkeypatch)
+    before_get = c.native.sdk.admin.transport.get_database.call_count
+    renewed = refresh_challenge(c, paired)
+    assert len(calls) == admission.grants == 2
+    before_kms = len(c.kms.calls)
+    result = refresh(c, renewed)
+    assert result["device_claim"]["payload"]["device_id"] == paired["device_claim"]["payload"]["device_id"]
+    # Entry, both signing barriers and exit remain four separate live Lists.
+    assert len(calls) == admission.grants == 6 and calls[2] == calls[3] == before_kms
+    assert calls[4] == calls[5] > before_kms
+    assert c.native.sdk.admin.transport.get_database.call_count == before_get
+    device(c, "status", transport(c, "status", prepared["request"]["pairing_id"]))
+    assert len(calls) == admission.grants == 8
+    assert c.native.sdk.admin.transport.get_database.call_count == before_get
+
+
+@pytest.mark.parametrize("barrier", [1, 2, 3, 4])
+@pytest.mark.parametrize("fault", ["uid", "missing", "deleted", "unreachable", "permission"])
+def test_pairing_list_failure_at_each_refresh_barrier_cannot_export_claim(pairing, monkeypatch, barrier, fault):
+    from google.api_core.exceptions import PermissionDenied
+    from google.protobuf.timestamp_pb2 import Timestamp
+
+    from app.domains.recovery.store import GuardUnavailable
+
+    c = pairing
+    context, prepared, challenge = start(c)
+    confirm(c, context, challenge)
+    renewed = refresh_challenge(c, complete(c, prepared))
+
+    def mutate(value, count):
+        if count == barrier:
+            if fault == "uid":
+                value.databases[0].uid = str(uuid4())
+            elif fault == "missing":
+                del value.databases[0]
+            elif fault == "deleted":
+                value.databases[0].delete_time = Timestamp(seconds=1)
+            elif fault == "unreachable":
+                value.unreachable.append("us-central1")
+            else:
+                raise PermissionDenied("Synthetic list denial")
+        return value
+
+    calls, _ = list_pairing_metadata(c, monkeypatch, mutate=mutate)
+    before_get, before_kms = c.native.sdk.admin.transport.get_database.call_count, len(c.kms.calls)
+    with pytest.raises(GuardUnavailable):
+        refresh(c, renewed)
+    assert len(calls) >= barrier
+    assert c.native.sdk.admin.transport.get_database.call_count == before_get
+    if barrier <= 2:
+        assert len(c.kms.calls) == before_kms
+
+
+@pytest.mark.parametrize("mode", ["invalid", "disabled_admission", "changed"])
+def test_pairing_list_mode_and_shared_admission_cannot_change_during_export(pairing, monkeypatch, mode):
+    from app.domains.recovery.store import GuardUnavailable
+
+    c = pairing
+    context, prepared, challenge = start(c)
+    confirm(c, context, challenge)
+    paired = complete(c, prepared)
+
+    def mutate(value, count):
+        if mode == "changed" and count == 1:
+            monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false")
+        return value
+
+    calls, _ = list_pairing_metadata(c, monkeypatch, mutate=mutate)
+    if mode == "invalid":
+        monkeypatch.setenv("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "invalid")
+    elif mode == "disabled_admission":
+        monkeypatch.setenv("CANDIDATE_METADATA_ADMISSION_ENABLED", "false")
+    before_get = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable):
+        refresh_challenge(c, paired)
+    assert bool(calls) is (mode == "changed")
+    assert c.native.sdk.admin.transport.get_database.call_count == before_get
+
+
 @pytest.mark.parametrize("marker", ["attempt", "password"])
 @pytest.mark.parametrize("fault", ["uid", "closure", "expiry", "marker_unavailable"])
 def test_compound_marker_reads_never_export_after_dependency_loss(pairing, monkeypatch, marker, fault):

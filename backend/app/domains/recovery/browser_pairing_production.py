@@ -6,6 +6,8 @@ import json
 import os
 import re
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from threading import Lock
 from typing import TYPE_CHECKING, Literal
@@ -244,13 +246,34 @@ class ConfiguredBrowserPairing:
         assert self._native is not None
         return self._native
 
-    def _observations(self, native: NativeBrowserPairing):
+    @contextmanager
+    def _observations(self, native: NativeBrowserPairing) -> Iterator[None]:
+        mode = os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false")
+        if mode not in {"true", "false"}:
+            raise GuardUnavailable("Browser pairing identity observation mode is unavailable")
         fixed = BrowserPairingNativeConfiguration.model_validate_json(self._raw)
-        return identity_observation_scope((
+        bindings = (
             (native.coordinator.registry.rpc, fixed.execution_witness_pin.registry),
             (native.paired_devices.scoped.publication.registry.rpc,
              fixed.publication_resource.pin.authority.registry),
-        ))
+        )
+        batch = None
+        if mode == "true":
+            from .gcp_rpc import FirestoreIdentityList
+            from .native_metadata_admission import require_enabled
+
+            require_enabled()
+            batch = FirestoreIdentityList((bindings[0][0], bindings[1][0]))
+        with identity_observation_scope(bindings, batch=batch):
+            try:
+                # All existing entry/exit and signing barriers remain fresh.
+                # Only the two physical identity reads at each barrier batch.
+                yield
+            finally:
+                if os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false") != mode:
+                    raise GuardUnavailable("Browser pairing identity observation mode changed")
+                if mode == "true":
+                    require_enabled()
 
     def assistance_context(self, device_id: str, public_key: dict[str, str]) -> SubmitContext:
         if os.environ.get("BROWSER_ASSISTANCE_NATIVE_PAIRING_ENABLED") != "true":
