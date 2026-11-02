@@ -1,8 +1,9 @@
 """Pure consistency checks for proposed native40 definitions-only bridge data.
 
-No callback/JSON can attest a provider or fund/claim/send a request. This module
-is not imported by the current engine, channel or Job. Its plans remain inert
-until separately qualified provenance, capture and integration work exists.
+No callback/JSON can attest a provider or fund/claim/send a request. The engine
+imports this eighth source member for pure checks and a deterministic pending
+Native60 refusal. Its plans remain inert until genuine native provenance,
+capture and current-serving verification exist.
 """
 from __future__ import annotations
 
@@ -64,6 +65,23 @@ class Artifact(Closed):
     path: str = Field(pattern="^" + PATH + "$", max_length=512)
     size: int = Field(strict=True, ge=1, le=MAX_SOURCE_ARCHIVE)
     sha256: Hash
+
+
+class PendingNative60(Closed):
+    """References requested for a future qualified bridge, never approval.
+
+    The current source slice has no native60 producer/current-serving receipt
+    verifier. Even plausible retained JSON cannot make this request usable.
+    """
+    schema_version: Literal["native60-current-serving-proof-required-v1"]
+    metadata: Artifact
+    native60_receipt: Artifact | None = None
+    current_serving_receipt: Artifact | None = None
+
+
+def require_native60_authority(request: PendingNative60) -> None:
+    PendingNative60.model_validate(request)
+    need(False, "native60_current_serving_receipt_unavailable")
 
 
 class MaterialIdentity(Closed):

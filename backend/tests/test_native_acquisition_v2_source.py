@@ -11,6 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_native_acquisition_v2_engine import reviewed_toys as reviewed_toys
+from test_native_acquisition_v2_engine import transport_toys as transport_toys
 
 from evaluation.native_acquisition_v2 import channel as c
 from evaluation.native_acquisition_v2 import engine as e
@@ -343,10 +345,14 @@ def test_future_bundle_cannot_switch_mirrors_or_input_budget(isolated_metadata, 
 def owned_source_view(tmp_path, monkeypatch):
     root = tmp_path / "owned-source"
     root.mkdir()
-    for path in (*q.COMPONENT_PATHS, *q.SOURCE_ASSETS):
+    for path in (*q.COMPONENT_PATHS, *q.SOURCE_ASSETS, *q.RUNTIME_BYTE_INPUTS, *q.CONTROLLER_ONLY_PATHS):
         destination = root / path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text('"""Owned code fixture; no input dataset or provider access."""\n')
+    (root / q.PREFIX / "engine.py").write_text("from . import bridge\n")
+    (root / q.PREFIX / "isolation.py").write_text(
+        "def owned_external_gate():\n    from evaluation import development40_qualification_v2\n")
+    (root / q.RUNTIME_BYTE_INPUTS[0]).write_text("raise AssertionError('runtime source is data, never an import')\n")
     dependencies = {}
     for path in ("Dockerfile", "backend/pyproject.toml", "backend/uv.lock", ".github/workflows/ci.yml",
                  "backend/app/__init__.py", "backend/app/owned_helper.py"):
@@ -359,7 +365,8 @@ def owned_source_view(tmp_path, monkeypatch):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("\n".join(name + " = " + repr(289 if name == "CANDIDATE_APP_FILES" else "owned-data") for name in constants))
     state = SimpleNamespace(root=root, dirty=False, head="a" * 40, dependencies=dependencies,
-        tracked={*q.COMPONENT_PATHS, *q.SOURCE_ASSETS, *q.LITERAL_INPUTS, *dependencies})
+        tracked={*q.COMPONENT_PATHS, *q.SOURCE_ASSETS, *q.RUNTIME_BYTE_INPUTS,
+            *q.CONTROLLER_ONLY_PATHS, *q.LITERAL_INPUTS, *dependencies})
 
     def git(where, *args):
         assert where == root
@@ -379,15 +386,98 @@ def owned_source_view(tmp_path, monkeypatch):
     return state
 
 
-def test_source_owns_exact7_package_files3_test_groups_and_dynamic_entry(owned_source_view):
+def test_source_owns_exact8_package_files3_test_groups_and_dynamic_entry(owned_source_view):
     t = owned_source_view
     result = q.source_identity(t.root)
-    assert len(q.PACKAGE_PATHS) == 7 and len(q.SUITES) == 3 and len(q.COMPONENT_PATHS) == 11
+    assert len(q.PACKAGE_PATHS) == 8 and len(q.SUITES) == 3 and len(q.COMPONENT_PATHS) == 12
     assert set(result["component_paths"]) == set(q.COMPONENT_PATHS)
     assert result["entry_sha256"] == hashlib.sha256((t.root / q.ENTRY).read_bytes()).hexdigest()
     assert result["component_sha256"] == q.digest({name: result["component_paths"][name] for name in q.PACKAGE_PATHS})
     assert result["runtime_dependencies_sha256"] == q.digest({"files": result["execution_dependencies"],
         "literal_data": result["literal_image_inputs"]})
+    bridge = q.PREFIX + "bridge.py"
+    assert result["execution_dependencies"][bridge] == result["component_paths"][bridge] == result["proof_inputs"][bridge]
+    assert result["runtime_byte_inputs"] == {name: result["execution_dependencies"][name] for name in q.RUNTIME_BYTE_INPUTS}
+    assert set(q.CONTROLLER_ONLY_PATHS) <= set(result["controller_dependencies"])
+    assert not set(q.CONTROLLER_ONLY_PATHS) & set(result["execution_dependencies"])
+    assert not set(q.RUNTIME_BYTE_INPUTS) & set(result["controller_dependencies"])
+
+
+def test_bridge_bytes_change_runtime_components_and_proof_together(owned_source_view):
+    t = owned_source_view
+    before = q.source_identity(t.root)
+    bridge = t.root / q.PREFIX / "bridge.py"
+    bridge.write_text(bridge.read_text() + "\nOWNED_BRIDGE_CHECK = True\n")
+    t.head = "b" * 40
+    after = q.source_identity(t.root)
+    assert all(after[name] != before[name] for name in (
+        "controller_sha256", "runtime_dependencies_sha256", "component_sha256", "proof_inputs_sha256"))
+
+
+def test_producer_entry_bytes_are_bound_without_importing_or_executing_them(owned_source_view):
+    t = owned_source_view
+    before = q.source_identity(t.root)
+    entry = t.root / q.RUNTIME_BYTE_INPUTS[0]
+    entry.write_text(entry.read_text() + "\n# Owned changed transport source data.\n")
+    t.head = "b" * 40
+    after = q.source_identity(t.root)
+    assert after["runtime_dependencies_sha256"] != before["runtime_dependencies_sha256"]
+    assert after["runtime_byte_inputs"] != before["runtime_byte_inputs"]
+    assert after["controller_sha256"] != before["controller_sha256"]
+    assert after["component_sha256"] == before["component_sha256"]
+    assert after["proof_inputs_sha256"] == before["proof_inputs_sha256"]
+
+
+@pytest.mark.parametrize("change", ["untracked", "missing", "linked"])
+def test_runtime_byte_input_requires_exact_committed_canonical_file(owned_source_view, change):
+    t = owned_source_view
+    entry = t.root / q.RUNTIME_BYTE_INPUTS[0]
+    if change == "untracked":
+        t.tracked.remove(q.RUNTIME_BYTE_INPUTS[0])
+    else:
+        entry.unlink()
+        if change == "linked":
+            entry.symlink_to(t.root / q.PREFIX / "bridge.py")
+    with pytest.raises(ValueError):
+        q.source_identity(t.root)
+
+
+def test_development_qualifier_is_a_reached_controller_dependency_not_a_ninth_member(owned_source_view):
+    t = owned_source_view
+    before = q.source_identity(t.root)
+    sibling = t.root / q.CONTROLLER_ONLY_PATHS[0]
+    sibling.write_text(sibling.read_text() + "\nOWNED_EXTERNAL_GUARD = True\n")
+    t.head = "b" * 40
+    after = q.source_identity(t.root)
+    assert after["controller_sha256"] != before["controller_sha256"]
+    assert after["runtime_dependencies_sha256"] == before["runtime_dependencies_sha256"]
+    assert after["component_sha256"] == before["component_sha256"]
+    assert after["proof_inputs_sha256"] == before["proof_inputs_sha256"]
+    assert q.CONTROLLER_ONLY_PATHS[0] not in q.PACKAGE_PATHS
+
+
+@pytest.mark.parametrize("change", ["bridge_not_reached", "controller_not_reached", "runtime_controller_import",
+    "runtime_byte_import", "controller_byte_import", "other_sibling"])
+def test_source_roles_require_actual_finite_import_edges(owned_source_view, change):
+    t = owned_source_view
+    engine, isolation = (t.root / q.PREFIX / name for name in ("engine.py", "isolation.py"))
+    if change == "bridge_not_reached":
+        engine.write_text('"""No bridge import."""\n')
+    elif change == "controller_not_reached":
+        isolation.write_text('"""No external controller import."""\n')
+    elif change == "runtime_controller_import":
+        engine.write_text(engine.read_text() + "from evaluation import development40_qualification_v2\n")
+    elif change == "runtime_byte_import":
+        engine.write_text(engine.read_text() + "from evaluation import development40_transport_v2\n")
+    elif change == "controller_byte_import":
+        isolation.write_text(isolation.read_text() + "from evaluation import development40_transport_v2\n")
+    else:
+        sibling = "backend/evaluation/unreviewed_controller.py"
+        (t.root / sibling).write_text('"""Owned unreviewed sibling."""\n')
+        t.tracked.add(sibling)
+        isolation.write_text(isolation.read_text() + "from evaluation import unreviewed_controller\n")
+    with pytest.raises(ValueError):
+        q.source_identity(t.root)
 
 
 @pytest.mark.parametrize("change", ["extra", "extra_binary", "missing", "initializer", "backend_initializer", "dirty", "new_import", "test_import"])
@@ -435,7 +525,8 @@ def test_unchanged_v1_checker_rejects_new_v2_imports_in_its_execution_closure(tm
             return head.encode()
         if args == ("ls-tree", "-r", "--name-only", "HEAD"):
             return "\n".join(sorted(current)).encode()
-        if args[:2] == ("show", head + ":" + old.CURRENT_EXECUTION_PATHS[0]) or args[:2] == ("show", head + ":" + old.CURRENT_EXECUTION_PATHS[1]):
+        if len(args) == 2 and args[0] == "show" and args[1] in {
+                head + ":" + name for name in old.CURRENT_EXECUTION_PATHS}:
             return (root / args[1].split(":", 1)[1]).read_bytes()
         assert args == ("ls-tree", "-r", "-z", "--full-tree", old.HISTORICAL_RELEASE)
         return b"".join(b"100644 blob " + hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
@@ -478,13 +569,14 @@ def test_reference_and_proof_changes_do_not_become_image_runtime_changes(owned_s
     assert not after["legacy_reference"]["runtime_authority"]
 
 
-def test_runtime_imports_have_declared_file_origin_and_hash(monkeypatch):
+@pytest.mark.parametrize("foreign_member", ["engine", "bridge"])
+def test_runtime_imports_have_declared_file_origin_and_hash(monkeypatch, foreign_member):
     closure = q.package_members(q.ROOT)
     q._runtime_modules(closure)
     real_import = q.importlib.import_module
 
     def foreign(name):
-        if name.endswith("engine"):
+        if name == "evaluation.native_acquisition_v2." + foreign_member:
             return SimpleNamespace(__file__=str(q.ROOT / "backend/tests/test_native_acquisition_v2_source.py"))
         return real_import(name)
 
@@ -607,3 +699,171 @@ def test_default_ci_explicitly_checks_new_namespace_with_locked_static_tools(tmp
             cwd=backend, stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False)
         assert result.returncode == 0, (module, result.stdout[-65536:].decode(), result.stderr[-65536:].decode())
         assert len(result.stdout) + len(result.stderr) <= 1024**2
+
+
+@pytest.fixture
+def development_origin_ports(transport_toys, isolated_metadata, monkeypatch, tmp_path):
+    """Owned metadata ports; real producer Job checker, no SDK/auth/GETs."""
+    from evaluation import development40_qualification_v2 as development_source
+
+    t = transport_toys
+    raw_lock = (t.root / "native-lock.json").read_bytes()
+    state = SimpleNamespace(toys=t, raw_lock=raw_lock,
+        plan=isolated_metadata.plan.model_copy(update={"native_development_lock_sha256": e.packet.digest(raw_lock)}),
+        runner_root=tmp_path / "owned-runner-source", controller_root=tmp_path / "owned-controller-source",
+        sdk_library=tmp_path / "owned-sdk-not-opened", account="owned-reader@example.invalid", calls=[], gets=[],
+        controller={"release": t.origin["controller_release"], "qualification_sha256": t.origin["controller_source_sha256"]},
+        observed=copy.deepcopy(t.origin["runner_source"]), compatibility=t.runner_data["app_compatibility_sha256"],
+        ci=json.loads((t.root / t.lock["ci_metadata"]["path"]).read_bytes()),
+        controller_ci=copy.deepcopy(t.origin["controller_ci_metadata"]),
+        build=json.loads((t.root / t.lock["build_metadata"]["path"]).read_bytes()),
+        jobs={value["name"]: copy.deepcopy(value) for value in t.transport_jobs}, executions={}, after_reads=lambda: None)
+    for batch in t.evidence["native_batches"]:
+        value = json.loads((t.root / batch["execution"]["path"]).read_bytes())
+        state.executions[value["name"]] = value
+
+    def source_identity(root):
+        assert root == state.controller_root
+        state.calls.append(("controller_source", root))
+        return copy.deepcopy(state.controller)
+
+    def runner_source(root):
+        assert root == state.runner_root
+        state.calls.append(("runner_source", root))
+        return copy.deepcopy(state.observed)
+
+    class Observer:
+        def __init__(self, root):
+            assert root in {state.runner_root, state.controller_root}
+            self.root = root
+
+        def verify_source_image(self, **kwargs):
+            state.calls.append(("source_image", kwargs))
+
+        def _cloud(self, *args):
+            assert args == ("builds", "describe", t.runner_data["build_id"], "--region", i.REGION)
+            state.calls.append(("build", args))
+            return copy.deepcopy(state.build)
+
+    def fingerprint(root, prior):
+        assert root == state.runner_root and prior == {"owned": b"source-only"}
+        state.calls.append(("compatibility", root))
+        return state.compatibility
+
+    def prior_files(root, prior):
+        assert root == state.runner_root and prior == "0" * 40
+        return {"owned": b"source-only"}
+
+    def successful_ci(observer, root, head, run_id):
+        assert type(observer) is Observer and observer.root == root
+        state.calls.append(("ci", root, head, run_id))
+        if root == state.runner_root:
+            assert (head, run_id) == (t.runner_data["release"], t.runner_data["ci_run_id"])
+            return copy.deepcopy(state.ci)
+        assert (head, run_id) == (t.origin["controller_release"], t.origin["controller_ci_run_id"])
+        return copy.deepcopy(state.controller_ci)
+
+    class Reads:
+        def get(self, kind, name, options):
+            assert kind == "run" and options == {}
+            state.gets.append(name)
+            if name in state.jobs:
+                value = state.jobs[name]
+            else:
+                assert name in state.executions
+                value = state.executions[name]
+            if len(state.gets) == 18:
+                state.after_reads()
+            return copy.deepcopy(value)
+
+    def reads(sdk_library, account):
+        assert (sdk_library, account) == (state.sdk_library, state.account)
+        state.calls.append(("read_port", sdk_library, account))
+        return Reads()
+
+    monkeypatch.setattr(development_source, "source_identity", source_identity)
+    monkeypatch.setattr(development_source, "runner_source", runner_source)
+    monkeypatch.setattr(development_source.q, "_source_modules", lambda: (
+        SimpleNamespace(Source26Boundary=Observer),
+        SimpleNamespace(PRIOR_RELEASE="0" * 40, source_fingerprint=fingerprint),
+        SimpleNamespace(prior_app_files=prior_files)))
+    monkeypatch.setattr(development_source.q, "_successful_ci", successful_ci)
+    monkeypatch.setattr(i, "_development_reads", reads)
+    monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
+    monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "false")
+    return state
+
+
+def _verify_owned_development_origin(state):
+    return i.verify_development_transport_origin(state.plan, state.raw_lock, state.toys.root,
+        runner_root=state.runner_root, controller_root=state.controller_root,
+        sdk_library=state.sdk_library, account=state.account)
+
+
+def test_development_origin_external_gate_requires18_exact_reads_and_keeps_all_authority_false(development_origin_ports):
+    t = development_origin_ports
+    result = _verify_owned_development_origin(t)
+    wanted: list[str] = []
+    for batch in t.toys.origin["batches"]:
+        name = "projects/ai-resume-parser-482412/locations/us-central1/jobs/" + batch["resource_plan"]["job_name"]
+        execution = json.loads((t.toys.root / batch["execution"]["path"]).read_bytes())
+        wanted.extend((name, execution["name"]))
+    assert t.gets == wanted and len(t.gets) == 18
+    assert result["fresh_source_CI_Build_and_18_exact_native_GETs"]
+    assert all(result[name] is False for name in (
+        "memory_qualified", "native_approval", "processing_authorized", "funding_authorized", "authorizes_retail"))
+    assert len([call for call in t.calls if call[0] == "source_image"]) == 1
+    assert len([call for call in t.calls if call[0] == "build"]) == 1
+    assert len([call for call in t.calls if call[0] == "controller_source"]) == 2
+    assert len([call for call in t.calls if call[0] == "runner_source"]) == 2
+
+
+@pytest.mark.parametrize("change", ["job_uid", "job_generation", "job_template", "execution", "execution_bool",
+    "controller_source", "runner_source", "compatibility", "runner_ci", "controller_ci", "build", "source_after_reads"])
+def test_development_origin_changed_native_or_source_proof_never_verifies(development_origin_ports, change):
+    t = development_origin_ports
+    job = next(iter(t.jobs.values()))
+    execution = next(iter(t.executions.values()))
+    if change == "job_uid":
+        job["uid"] = "ffffffff-1234-4321-abcd-123456789012"
+    elif change == "job_generation":
+        job["generation"] = job["observedGeneration"] = "2"
+    elif change == "job_template":
+        job["template"]["template"]["containers"][0]["resources"]["limits"]["cpu"] = "4"
+    elif change == "execution":
+        execution["uid"] = "ffffffff-1234-4321-abcd-123456789012"
+    elif change == "execution_bool":
+        execution["taskCount"] = True
+    elif change == "controller_source":
+        t.controller["qualification_sha256"] = "0" * 64
+    elif change == "runner_source":
+        t.observed["entry_sha256"] = "0" * 64
+    elif change == "compatibility":
+        t.compatibility = "0" * 64
+    elif change == "runner_ci":
+        t.ci["headSha"] = "0" * 40
+    elif change == "controller_ci":
+        t.controller_ci["headSha"] = "0" * 40
+    elif change == "build":
+        t.build["id"] = "ffffffff-1234-4321-abcd-123456789012"
+    else:
+        t.after_reads = lambda: t.controller.update(qualification_sha256="0" * 64)
+    with pytest.raises(ValueError):
+        _verify_owned_development_origin(t)
+
+
+@pytest.mark.parametrize("change", ["expired_plan", "logging", "raw_lock_hash"])
+def test_development_origin_inactive_or_unbound_input_stops_before_source_and_native_ports(
+    development_origin_ports, monkeypatch, change,
+):
+    t = development_origin_ports
+    if change == "expired_plan":
+        t.plan = t.plan.model_copy(update={"valid_from": datetime.now(UTC) - timedelta(hours=2),
+            "expires_at": datetime.now(UTC) - timedelta(hours=1)})
+    elif change == "logging":
+        monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "true")
+    else:
+        t.raw_lock += b" "
+    with pytest.raises(ValueError):
+        _verify_owned_development_origin(t)
+    assert not t.calls and not t.gets

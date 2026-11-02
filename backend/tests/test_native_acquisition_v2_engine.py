@@ -1196,3 +1196,248 @@ def test_bridge_original_runner_accepts_only_two_stock_literal_tag_forms(bridge_
     else:
         with pytest.raises(ValueError, match="original_build|build_execution_override"):
             b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.fixture
+def transport_toys(reviewed_toys):
+    """Complete owned transport-v2 correlation; no genuine source/native proof."""
+    t = reviewed_toys
+    t.original_transport_bundles = {}
+    t.evidence = json.loads((t.root / t.lock["review_evidence"]["path"]).read_bytes())
+    original = old.Authorization.model_validate_json((t.root / t.lock["development_authorization"]["path"]).read_bytes())
+    previous = json.loads((t.root / t.lock["runner_receipt"]["path"]).read_bytes())
+    producer_entry = Path(e.__file__).resolve().parents[2] / "evaluation/development40_transport_v2.py"
+    t.runner_data = {key: previous[key] for key in ("repository", "release", "ci_run_id", "build_id", "image",
+        "app_files", "app_sha256", "observed_at", "ci_metadata_sha256", "build_metadata_sha256")}
+    t.runner_data.update(schema_version="development40-transport-qualified-runner-v2", git_tree="6" * 40,
+        qualification_sha256="1" * 64, app_compatibility_sha256=previous["qualification_sha256"],
+        entry_path="backend/evaluation/development40_transport_v2.py", entry_sha256=packet.file_digest(producer_entry),
+        semantic_entry_path=source.ENTRY, semantic_entry_sha256=source.ENTRY_SHA256,
+        channel_sha256="89b65c3c3fb874368f28702f0048c19a3bbeccc7ab910dd12bc35a593225864e",
+        runtime_dependencies_sha256="2" * 64, component_sha256="3" * 64)
+    t.lock["runner_receipt"] = t.put("runner.json", t.runner_data)
+    t.lock.update(schema_version="native-development-review-lock-v3", origin_directory="transport-origin")
+    controller_ci = json.loads((t.root / t.lock["ci_metadata"]["path"]).read_bytes())
+    controller_ci["headSha"] = "d" * 40
+    source_observation = {key: t.runner_data[key] for key in e.TransportSourceObservation.model_fields}
+    t.origin = dict(schema_version="development40-transport-native-origin-v1",
+        runner_receipt_sha256=t.lock["runner_receipt"]["sha256"], runner_source=source_observation,
+        controller_release="d" * 40, controller_source_sha256="8" * 64, controller_ci_run_id=2,
+        controller_ci_metadata=controller_ci, controller_ci_metadata_sha256=source.digest(controller_ci),
+        source_verified_at=original.valid_from.isoformat(), native_verified_at=(t.now - timedelta(minutes=6)).isoformat(),
+        verification={"runner_receipt_sha256": t.lock["runner_receipt"]["sha256"],
+            "fresh_source_CI_Build_verified": True, "native_approval": False,
+            "processing_authorized": False, "funding_authorized": False}, batches=[])
+    t.transport_jobs = []
+
+    def retained(name, value, kind, generation):
+        raw = packet.canonical(value)
+        return {"artifact": t.put("transport-origin/" + name, raw, kind),
+            "reference": {"name": name, "generation": str(generation), "size": len(raw), "sha256": packet.digest(raw)}}
+
+    for index, batch in enumerate(t.evidence["native_batches"]):
+        raw_bundle = (t.root / batch["bundle"]["artifact"]["path"]).read_bytes()
+        t.original_transport_bundles[batch["bundle"]["artifact"]["path"]] = raw_bundle
+        bundle = original_job.Bundle.model_validate_json(raw_bundle)
+        resource = dict(schema_version="native-quality-isolation-v1",
+            purpose="unreviewed_development_capture_no_model_no_retail", evaluator=isolation.EVALUATOR,
+            evaluator_uid="109100000000000000001", bucket=isolation.BUCKET, bucket_metageneration="1",
+            experiment_id=original.experiment_id, valid_from=original.valid_from.isoformat(),
+            expires_at=original.expires_at.isoformat(), controller_sha256=t.origin["controller_source_sha256"],
+            job_name=bundle.job_name, qualified_runner_receipt_sha256=t.lock["runner_receipt"]["sha256"],
+            inspector_service_uid="owned-inspector", inspector_revision_uid="owned-inspector-revision",
+            compiler_service_uid="owned-compiler", compiler_revision_uid="owned-compiler-revision",
+            inspector_image=original.inspector.image, compiler_image=original.compiler.image,
+            inspector_release="a" * 40, compiler_release="b" * 40,
+            funding_evidence_sha256=original.funding_evidence.sha256,
+            acquisition_authorization_sha256=source.digest(original.model_dump(mode="json")),
+            native_dispatch_review_sha256=bundle.dispatch.external_authority_review.sha256,
+            bundle_name=batch["bundle"]["reference"]["name"],
+            bundle_generation=batch["bundle"]["reference"]["generation"],
+            bundle_sha256=batch["bundle"]["reference"]["sha256"])
+        # Literal producer ABI authored independently of the consumer helper.
+        template = {"taskCount": 1, "parallelism": 1, "template": {
+            "serviceAccount": isolation.EVALUATOR, "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
+            "maxRetries": 0, "timeout": "240s" if index == 0 else "1200s",
+            "vpcAccess": {"egress": "PRIVATE_RANGES_ONLY", "networkInterfaces": [
+                {"network": "hirewiz-private", "subnetwork": "hirewiz-callers-us-central1"}]},
+            "containers": [{"image": t.runner_data["image"], "command": ["/app/backend/.venv/bin/python"],
+                "args": ["-I", "-B", "/app/backend/evaluation/development40_transport_v2.py",
+                    "--namespace", f"gs://{isolation.BUCKET}/quality-development/{original.experiment_id}/",
+                    "--bundle-name", resource["bundle_name"], "--bundle-generation", resource["bundle_generation"],
+                    "--bundle-sha256", resource["bundle_sha256"], "--workspace", "/app/backend/.quality-development"],
+                "env": [{"name": "DISABLE_GCS_PYTHON_CLIENT_OTEL_BUCKET_METADATA", "value": "true"}],
+                "resources": {"limits": {"cpu": "2", "memory": "4Gi"}}}]}}
+        execution = json.loads((t.root / batch["execution"]["path"]).read_bytes())
+        execution["template"] = copy.deepcopy(template["template"])
+        batch["execution"] = t.put(batch["execution"]["path"], execution, "provider")
+        job_uid = f"{index + 100:08x}-1234-4321-abcd-{index + 100:012x}"
+        job = {"name": "projects/ai-resume-parser-482412/locations/us-central1/jobs/" + bundle.job_name,
+            "uid": job_uid, "generation": "1", "observedGeneration": "1", "reconciling": False,
+            "terminalCondition": {"state": "CONDITION_SUCCEEDED"}, "template": template}
+        t.transport_jobs.append(job)
+        job_record = retained(f"job-{index:02}.json", job, "transport_job", 2000 + index)
+        t.origin["batches"].append({"batch_index": index, "job": job_record, "job_uid": job_uid,
+            "job_generation": "1", "job_template_sha256": source.digest(template),
+            "execution": copy.deepcopy(batch["execution"]), "bundle": copy.deepcopy(batch["bundle"]["reference"]),
+            "resource_plan": resource, "captured_at": (t.now - timedelta(minutes=8)).isoformat()})
+    origin = retained("source-verification.json", t.origin, "transport_origin", 3000)
+    t.lock["transport_origin"] = {"source_verification": origin,
+        "jobs": [copy.deepcopy(row["job"]) for row in t.origin["batches"]]}
+
+    def reseal_transport():
+        for index, value in enumerate(t.transport_jobs):
+            current = t.origin["batches"][index]["job"]
+            current.update(retained(current["reference"]["name"], value, "transport_job", current["reference"]["generation"]))
+        current = t.lock["transport_origin"]["source_verification"]
+        current.update(retained(current["reference"]["name"], t.origin, "transport_origin", current["reference"]["generation"]))
+        t.lock["transport_origin"]["jobs"] = [copy.deepcopy(row["job"]) for row in t.origin["batches"]]
+        t.lock["review_evidence"] = t.put("review.json", t.evidence)
+        t.auth = t.auth.model_copy(update={"native_development_lock": e.Artifact.model_validate(t.seal())})
+
+    t.reseal_transport = reseal_transport
+    reseal_transport()
+    return t
+
+
+def test_transport_complete_toy_origin_preserves_semantic_bundles_and_still_grants_no_authority(transport_toys):
+    t = transport_toys
+    result = check(t)
+    lock = e.load_development_lock((t.root / "native-lock.json").read_bytes())
+    assert type(lock) is e.NativeDevelopmentTransportLock
+    assert len(lock.transport_origin.jobs) == len(t.origin["batches"]) == 9
+    assert len(result.case_ids) == 40 and not result.processing_authorized and not result.native_approval
+    assert t.runner_data["entry_sha256"] != t.runner_data["semantic_entry_sha256"] == source.ENTRY_SHA256
+    for path, raw in t.original_transport_bundles.items():
+        assert (t.root / path).read_bytes() == raw
+        assert original_job.Bundle.model_validate_json(raw).entry_sha256 == source.ENTRY_SHA256
+    assert set(t.selections) == {"development"}
+    with pytest.raises(ValueError):
+        e.NativeDevelopmentLock.model_validate_json((t.root / "native-lock.json").read_bytes())
+
+
+@pytest.mark.parametrize("change", ["entry", "environment", "job_uid", "job_generation", "observed_generation",
+    "job_template_hash", "source_observation", "controller_ci", "controller_ci_hash", "controller_source",
+    "bundle_generation", "duplicate_job_uid"])
+def test_transport_self_consistent_metadata_cannot_change_native_origin_abi(transport_toys, change):
+    t = transport_toys
+    job, row = t.transport_jobs[0], t.origin["batches"][0]
+    container = job["template"]["template"]["containers"][0]
+    if change == "entry":
+        container["args"][2] = "/app/backend/scripts/native_acquisition_job.py"
+        row["job_template_sha256"] = source.digest(job["template"])
+    elif change == "environment":
+        container["env"][0]["value"] = "false"
+        row["job_template_sha256"] = source.digest(job["template"])
+    elif change == "job_uid":
+        job["uid"] = "ffffffff-1234-4321-abcd-123456789012"
+    elif change == "job_generation":
+        job["generation"] = "2"
+    elif change == "observed_generation":
+        job["observedGeneration"] = "2"
+    elif change == "job_template_hash":
+        row["job_template_sha256"] = "0" * 64
+    elif change == "source_observation":
+        t.origin["runner_source"]["qualification_sha256"] = "0" * 64
+    elif change == "controller_ci":
+        t.origin["controller_ci_metadata"]["headSha"] = "9" * 40
+        t.origin["controller_ci_metadata_sha256"] = source.digest(t.origin["controller_ci_metadata"])
+    elif change == "controller_ci_hash":
+        t.origin["controller_ci_metadata_sha256"] = "0" * 64
+    elif change == "controller_source":
+        t.origin["controller_source_sha256"] = "0" * 64
+    elif change == "bundle_generation":
+        row["bundle"]["generation"] = "999"
+    else:
+        t.origin["batches"][1]["job_uid"] = row["job_uid"]
+        t.transport_jobs[1]["uid"] = row["job_uid"]
+    t.reseal_transport()
+    with pytest.raises(ValueError):
+        check(t)
+    assert "held_out" not in t.selections
+
+
+@pytest.mark.parametrize("change", ["argv", "environment", "override", "duplicate_uid", "origin_execution_hash"])
+def test_transport_execution_requires_exact_template_identity_and_origin_reference(transport_toys, change):
+    t = transport_toys
+    batch = t.evidence["native_batches"][1]
+    execution = json.loads((t.root / batch["execution"]["path"]).read_bytes())
+    if change == "argv":
+        execution["template"]["containers"][0]["args"][0] = "-m"
+    elif change == "environment":
+        execution["template"]["containers"][0]["env"].append({"name": "API_ENDPOINT_OVERRIDE", "value": "https://owned.invalid"})
+    elif change == "override":
+        execution["overrides"] = {"taskCount": 1}
+    elif change == "duplicate_uid":
+        first = t.evidence["native_batches"][0]["execution"]
+        execution["uid"] = json.loads((t.root / first["path"]).read_bytes())["uid"]
+    else:
+        t.origin["batches"][1]["execution"]["sha256"] = "0" * 64
+    if change != "origin_execution_hash":
+        batch["execution"] = t.put(batch["execution"]["path"], execution, "provider")
+        t.origin["batches"][1]["execution"] = copy.deepcopy(batch["execution"])
+    t.reseal_transport()
+    with pytest.raises(ValueError):
+        check(t)
+    assert "held_out" not in t.selections
+
+
+def test_transport_extra_unused_proof_cannot_escape_exact_closure(transport_toys):
+    t = transport_toys
+    t.put("unreferenced-transport-proof.json", {"owned_toy": "not consumed"})
+    t.reseal_transport()
+    with pytest.raises(ValueError, match="unused_or_missing_review_artifact"):
+        check(t)
+    assert "held_out" not in t.selections
+
+
+def test_transport_missing_origin_job_refuses_before_any_source_selection(transport_toys):
+    t = transport_toys
+    t.lock["transport_origin"]["jobs"].pop()
+    t.auth = t.auth.model_copy(update={"native_development_lock": e.Artifact.model_validate(t.seal())})
+    with pytest.raises(ValueError):
+        check(t)
+    assert not t.selections
+
+
+@pytest.mark.parametrize("change", ["schema", "transport_hash", "semantic_hash", "semantic_entry", "entry_path", "channel_hash"])
+def test_transport_runner_cannot_relabel_its_entry_or_original_semantics(transport_toys, change):
+    t = transport_toys
+    if change == "schema":
+        t.runner_data["schema_version"] = "native-quality-qualified-runner-v1"
+    elif change == "transport_hash":
+        t.runner_data["entry_sha256"] = "0" * 64
+    elif change == "semantic_hash":
+        t.runner_data["semantic_entry_sha256"] = t.runner_data["entry_sha256"]
+    elif change == "semantic_entry":
+        t.runner_data["semantic_entry_path"] = t.runner_data["entry_path"]
+    elif change == "entry_path":
+        t.runner_data["entry_path"] = source.ENTRY
+    else:
+        t.runner_data["channel_sha256"] = "0" * 64
+    t.lock["runner_receipt"] = t.put("runner.json", t.runner_data)
+    runner_sha = t.lock["runner_receipt"]["sha256"]
+    t.origin["runner_receipt_sha256"] = runner_sha
+    t.origin["verification"]["runner_receipt_sha256"] = runner_sha
+    t.origin["runner_source"] = {key: t.runner_data[key] for key in e.TransportSourceObservation.model_fields}
+    for row in t.origin["batches"]:
+        row["resource_plan"]["qualified_runner_receipt_sha256"] = runner_sha
+    t.reseal_transport()
+    with pytest.raises(ValueError):
+        check(t)
+    assert not t.selections
+
+
+@pytest.mark.parametrize("receipt_refs", [False, True])
+def test_transport_bridge_is_refused_before_any_packet_or_source_selection(transport_toys, receipt_refs):
+    t = transport_toys
+    pending = {"schema_version": "native60-current-serving-proof-required-v1",
+        "metadata": {"path": "unread-owned-bridge.json", "size": 2, "sha256": "1" * 64}}
+    if receipt_refs:
+        pending.update(native60_receipt={"path": "unread-owned-native60.json", "size": 2, "sha256": "2" * 64},
+            current_serving_receipt={"path": "unread-owned-current-serving.json", "size": 2, "sha256": "3" * 64})
+    t.lock["definitions_bridge"] = pending
+    t.reseal_transport()
+    with pytest.raises(ValueError, match="native60_current_serving_receipt_unavailable"):
+        check(t)
+    assert not t.selections

@@ -51,7 +51,7 @@ class AuthorityInput(Input):
 
     @model_validator(mode="after")
     def finite_kind(self) -> AuthorityInput:
-        need(self.kind in e.KINDS and self.object.size <= e.KINDS[self.kind][1], "authority_kind_or_size")
+        need(self.kind in e.AUTHORITY_KINDS and self.object.size <= e.AUTHORITY_KINDS[self.kind][1], "authority_kind_or_size")
         return self
 
 
@@ -79,7 +79,7 @@ class Bundle(e.Closed):
         need(sum(row.path == "materialization-manifest.json" for row in self.native_files) == 1
              and all(row.object.size <= (e.MAX_METADATA if row.path == "materialization-manifest.json"
                                          else e.inspection.MAX_SOURCE_BYTES) for row in self.native_files), "native_input_bound")
-        for kind, (count, _) in e.KINDS.items():
+        for kind, (count, _) in e.AUTHORITY_KINDS.items():
             need(sum(row.kind == kind for row in self.authority_files) <= count, "authority_kind_count")
         need(self.configuration.namespace.endswith("/quality-held-out/" + self.authorization.experiment_id + "/")
              and self.dispatch.maximum_requests == c.batch_limit(self.dispatch.batch_index), "experiment_or_batch")
@@ -151,8 +151,8 @@ def _native_membership(bundle: Bundle, packet_root: Path, native: Path) -> list[
 
 def _exact_authority(bundle: Bundle, root: Path) -> None:
     auth = bundle.authorization
-    lock = e.NativeDevelopmentLock.model_validate(e._json(e.read_artifact(root, auth.native_development_lock)))
-    expected = {row.path: (row.sha256, row.kind) for row in lock.files}
+    lock = e.load_development_lock(e.read_artifact(root, auth.native_development_lock))
+    expected: dict[str, tuple[str, str]] = {row.path: (row.sha256, row.kind) for row in lock.files}
     controls = [auth.native_development_lock, auth.funding_evidence, bundle.runner_funding_evidence,
                 bundle.dispatch.external_authority_review]
     for artifact in controls:

@@ -29,9 +29,13 @@ from app.domains.analysis import supported_evaluation_plan as inputs
 from app.services import document_ingestion as inspection
 from app.services import native_tex
 from app.services.resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
+from evaluation.native_acquisition_v2 import bridge
 
 VERSION = "held-out-native-service-acquisition-v2"
 LOCK_VERSION = "native-development-review-lock-v2"
+TRANSPORT_LOCK_VERSION = "native-development-review-lock-v3"
+TRANSPORT_ENTRY = "backend/evaluation/development40_transport_v2.py"
+TRANSPORT_CHANNEL_SHA256 = "89b65c3c3fb874368f28702f0048c19a3bbeccc7ab910dd12bc35a593225864e"
 MAX_METADATA = 256 * 1024
 MAX_BUNDLE_BYTES = 2 * 1024**2
 MAX_INPUT_BYTES = 2 * 1024**3
@@ -58,6 +62,8 @@ KINDS: dict[str, tuple[int, int]] = {
     "dispatch_review": (9, MAX_METADATA),
     "control": (32, MAX_METADATA),
 }
+TRANSPORT_ORIGIN_KINDS = {"transport_job": (9, MAX_METADATA), "transport_origin": (1, MAX_METADATA)}
+AUTHORITY_KINDS = {**KINDS, **TRANSPORT_ORIGIN_KINDS}
 
 
 class AcquisitionDenied(ValueError):
@@ -82,6 +88,13 @@ class EvidenceFile(Artifact):
     kind: Literal["source", "source_raw", "compile_raw", "compiled_pdf", "pdf_raw",
                   "intent", "retained", "result", "terminal", "validation", "text",
                   "page", "batch", "provider", "dispatch_review", "control"]
+
+
+class TransportEvidenceFile(Artifact):
+    kind: Literal["source", "source_raw", "compile_raw", "compiled_pdf", "pdf_raw",
+                  "intent", "retained", "result", "terminal", "validation", "text",
+                  "page", "batch", "provider", "dispatch_review", "control",
+                  "transport_job", "transport_origin"]
 
 
 class RetainedObjectReference(Closed):
@@ -216,6 +229,208 @@ class ReviewedDevelopmentRunner(Closed):
         return self
 
 
+class ReviewedDevelopmentTransportRunner(Closed):
+    """Exact final producer receipt data; no provider attestation is inferred."""
+    schema_version: Literal["development40-transport-qualified-runner-v2"]
+    repository: Literal["https://github.com/Harshil4442/ai-resume-copilot.git"]
+    release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    git_tree: str = Field(pattern=r"^[a-f0-9]{40}$")
+    ci_run_id: int = Field(strict=True, gt=0)
+    build_id: str = Field(pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
+    image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:[a-f0-9]{64}$")
+    qualification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    app_compatibility_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    app_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    app_files: int = Field(strict=True, ge=289, le=289)
+    entry_path: Literal["backend/evaluation/development40_transport_v2.py"]
+    entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    semantic_entry_path: Literal["backend/scripts/native_acquisition_job.py"]
+    semantic_entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    channel_sha256: Literal["89b65c3c3fb874368f28702f0048c19a3bbeccc7ab910dd12bc35a593225864e"]
+    runtime_dependencies_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    component_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    observed_at: datetime
+    ci_metadata_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    build_metadata_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def aware(self) -> ReviewedDevelopmentTransportRunner:
+        need(self.observed_at.tzinfo is not None, "runner_receipt_time")
+        return self
+
+
+class TransportSourceObservation(Closed):
+    release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    git_tree: str = Field(pattern=r"^[a-f0-9]{40}$")
+    qualification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    runtime_dependencies_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    component_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    semantic_entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    channel_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class TransportResourcePlan(Closed):
+    """Final producer's original Plan as closed data, never an active permit."""
+    schema_version: Literal["native-quality-isolation-v1"]
+    purpose: Literal["unreviewed_development_capture_no_model_no_retail"]
+    evaluator: Literal["hirewiz-quality-dev@ai-resume-parser-482412.iam.gserviceaccount.com"]
+    evaluator_uid: str = Field(pattern=r"^[0-9]{19,21}$")
+    bucket: Literal["hirewiz-quality-dev-482412-20261031"]
+    bucket_metageneration: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    experiment_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{7,79}$")
+    valid_from: datetime
+    expires_at: datetime
+    controller_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    job_name: str = Field(pattern=r"^hirewiz-quality-dev-[a-z0-9-]{8,32}$")
+    qualified_runner_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    inspector_service_uid: str = Field(min_length=1, max_length=128)
+    inspector_revision_uid: str = Field(min_length=1, max_length=128)
+    compiler_service_uid: str = Field(min_length=1, max_length=128)
+    compiler_revision_uid: str = Field(min_length=1, max_length=128)
+    inspector_image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:[a-f0-9]{64}$")
+    compiler_image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-native-tex@sha256:[a-f0-9]{64}$")
+    inspector_release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    compiler_release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    funding_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    acquisition_authorization_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bundle_name: str = Field(pattern=r"^input\.[A-Za-z0-9._-]{1,120}\.json$")
+    bundle_generation: str = Field(pattern=r"^[1-9][0-9]{0,20}$")
+    bundle_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    native_dispatch_review_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def finite(self) -> TransportResourcePlan:
+        need(self.valid_from.tzinfo is not None and self.expires_at.tzinfo is not None
+             and self.valid_from < self.expires_at <= self.valid_from + timedelta(days=1), "transport_plan_window")
+        return self
+
+
+class TransportSourceVerification(Closed):
+    runner_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    fresh_source_CI_Build_verified: Literal[True]
+    native_approval: Literal[False]
+    processing_authorized: Literal[False]
+    funding_authorized: Literal[False]
+
+
+class TransportBatchOrigin(Closed):
+    batch_index: int = Field(strict=True, ge=0, le=8)
+    job: RetainedObject
+    job_uid: str = Field(pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
+    job_generation: str = Field(pattern=r"^[1-9][0-9]{0,18}$")
+    job_template_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    execution: Artifact
+    bundle: RetainedObjectReference
+    resource_plan: TransportResourcePlan
+    captured_at: datetime
+
+
+class TransportOriginRecord(Closed):
+    """Retained source/native correlation, not a fresh external verification."""
+    schema_version: Literal["development40-transport-native-origin-v1"]
+    runner_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    runner_source: TransportSourceObservation
+    controller_release: str = Field(pattern=r"^[a-f0-9]{40}$")
+    controller_source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    controller_ci_run_id: int = Field(strict=True, gt=0)
+    controller_ci_metadata_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    controller_ci_metadata: dict[str, Any]
+    source_verified_at: datetime
+    native_verified_at: datetime
+    verification: TransportSourceVerification
+    batches: list[TransportBatchOrigin] = Field(min_length=9, max_length=9)
+
+    @model_validator(mode="after")
+    def finite(self) -> TransportOriginRecord:
+        need(all(t.tzinfo is not None for t in (self.source_verified_at, self.native_verified_at))
+             and self.source_verified_at <= self.native_verified_at, "transport_origin_time")
+        need([row.batch_index for row in self.batches] == list(range(9))
+             and all(row.captured_at.tzinfo is not None for row in self.batches), "transport_origin_batches")
+        need(len({row.job.artifact.path for row in self.batches}) == 9
+             and len({row.job_uid for row in self.batches}) == 9
+             and len({row.resource_plan.job_name for row in self.batches}) == 9,
+             "transport_origin_job_alias")
+        return self
+
+
+class TransportOriginFiles(Closed):
+    source_verification: RetainedObject
+    jobs: list[RetainedObject] = Field(min_length=9, max_length=9)
+
+
+class NativeDevelopmentTransportLock(Closed):
+    """Separate successor; original lock-v2 and V1 receipts are never rewritten."""
+    schema_version: Literal["native-development-review-lock-v3"]
+    purpose: Literal["reviewed_native_development_inputs_before_held_out_capture"]
+    state: Literal["locked_before_held_out_native_capture"]
+    manifest_sha256: str
+    corpus_sha256: str
+    protocol_sha256: str
+    rubric_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reviewed_by: str = Field(min_length=1, max_length=160)
+    reviewed_at: datetime
+    locked_at: datetime
+    native_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    journal_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    review_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    authorization_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    channel_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    origin_directory: str = Field(pattern="^" + PATH + "$", max_length=256)
+    development_authorization: Artifact
+    development_plan: Artifact
+    capture_registry: Artifact
+    validation_map: Artifact
+    review_evidence: Artifact
+    runner_receipt: Artifact
+    ci_metadata: Artifact
+    build_metadata: Artifact
+    channel_binding: RetainedObject
+    transport_origin: TransportOriginFiles
+    definitions_bridge: bridge.PendingNative60 | None = None
+    files: list[TransportEvidenceFile] = Field(min_length=1, max_length=MAX_AUTHORITY_FILES)
+
+    @model_validator(mode="after")
+    def finite(self) -> NativeDevelopmentTransportLock:
+        need((self.manifest_sha256, self.corpus_sha256, self.protocol_sha256)
+             == (inputs.MANIFEST_SHA, inputs.CORPUS_SHA, inputs.PROTOCOL_SHA), "lock_packet")
+        need(all(t.tzinfo is not None for t in (self.reviewed_at, self.locked_at))
+             and self.reviewed_at <= self.locked_at, "lock_time")
+        paths = [row.path for row in self.files]
+        need(len(paths) == len(set(paths)), "duplicate_lock_file")
+        counts = Counter(row.kind for row in self.files)
+        need(all(count <= AUTHORITY_KINDS[kind][0] for kind, count in counts.items()), "lock_kind_count")
+        directories = (self.native_directory, self.journal_directory, self.review_directory,
+                       self.authorization_directory, self.channel_directory, self.origin_directory)
+        need(len(set(directories)) == 6 and not any(a.startswith(b + "/")
+             for a in directories for b in directories if a != b), "lock_directories")
+        origin = self.transport_origin
+        refs = [origin.source_verification, *origin.jobs]
+        need(len({row.artifact.path for row in refs}) == 10
+             and len({row.reference.name for row in refs}) == 10
+             and all(row.artifact.path == self.origin_directory + "/" + row.reference.name
+                 and row.artifact.sha256 == row.reference.sha256 for row in refs), "transport_origin_inventory")
+        expected = {row.artifact.path: (row.artifact.sha256,
+            "transport_origin" if index == 0 else "transport_job") for index, row in enumerate(refs)}
+        need({row.path: (row.sha256, row.kind) for row in self.files if row.kind in TRANSPORT_ORIGIN_KINDS}
+             == expected, "transport_origin_inventory")
+        return self
+
+
+DevelopmentLock = NativeDevelopmentLock | NativeDevelopmentTransportLock
+
+
+def load_development_lock(raw: bytes) -> DevelopmentLock:
+    value = _json(raw)
+    if value.get("schema_version") == LOCK_VERSION:
+        return NativeDevelopmentLock.model_validate(value)
+    need(value.get("schema_version") == TRANSPORT_LOCK_VERSION, "lock_schema")
+    lock = NativeDevelopmentTransportLock.model_validate(value)
+    if lock.definitions_bridge is not None:
+        bridge.require_native60_authority(lock.definitions_bridge)
+    return lock
+
+
 def _json(raw: bytes) -> dict[str, Any]:
     def pairs(rows: list[tuple[str, Any]]) -> dict[str, Any]:
         need(len(rows) == len({key for key, _ in rows}), "duplicate_json_key")
@@ -282,15 +497,16 @@ class VerifiedDevelopment:
 
 
 class _Closure:
-    def __init__(self, root: Path, lock: NativeDevelopmentLock):
+    def __init__(self, root: Path, lock: DevelopmentLock):
         self.root, self.rows = root, {row.path: row for row in lock.files}
+        self.limits = AUTHORITY_KINDS if isinstance(lock, NativeDevelopmentTransportLock) else KINDS
         self.used: set[str] = set()
         self.bytes = 0
 
     def read(self, artifact: Artifact, kind: str) -> bytes:
         row = self.rows.get(artifact.path)
         need(row is not None and row.sha256 == artifact.sha256 and row.kind == kind, "unbound_review_artifact")
-        raw = read_artifact(self.root, artifact, KINDS[kind][1])
+        raw = read_artifact(self.root, artifact, self.limits[kind][1])
         if artifact.path not in self.used:
             self.bytes += len(raw)
             self.used.add(artifact.path)
@@ -314,7 +530,7 @@ def _active(auth: Authorization) -> Authorization:
     return auth
 
 
-def _reviewed_runner(closure: _Closure, lock: NativeDevelopmentLock) -> str:
+def _reviewed_runner(closure: _Closure, lock: DevelopmentLock) -> str:
     """Cross-bind retained metadata, never replace the fresh native verifier."""
     # Docker COPY ships backend, not the owner's infra checkout. Read finite
     # existing source constants as data rather than importing a controller and
@@ -337,11 +553,24 @@ def _reviewed_runner(closure: _Closure, lock: NativeDevelopmentLock) -> str:
     source = literals("qualify_native_quality_acquisition.py", {"APP_SHA256", "ENTRY", "ENTRY_SHA256", "HISTORICAL_RELEASE"})
     contract = literals("schema25_app_release_contract_v3.py", {"CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
         "COMPATIBILITY_STEP", "PROTOCOL_STEP", "RETAINED_STEP"})
-    runner = ReviewedDevelopmentRunner.model_validate_json(closure.read(lock.runner_receipt, "control"))
+    raw_runner = _json(closure.read(lock.runner_receipt, "control"))
+    transport = isinstance(lock, NativeDevelopmentTransportLock)
+    runner: ReviewedDevelopmentRunner | ReviewedDevelopmentTransportRunner
+    runner = (ReviewedDevelopmentTransportRunner.model_validate(raw_runner) if transport
+              else ReviewedDevelopmentRunner.model_validate(raw_runner))
     need(runner.app_sha256 == source["APP_SHA256"] == contract["CANDIDATE_APP_SHA256"]
          and runner.app_files == contract["CANDIDATE_APP_FILES"]
-         and runner.entry_path == source["ENTRY"] and runner.entry_sha256 == source["ENTRY_SHA256"]
          and runner.release != source["HISTORICAL_RELEASE"], "original_runner_contract")
+    if isinstance(runner, ReviewedDevelopmentTransportRunner):
+        entry = backend / "evaluation/development40_transport_v2.py"
+        need(runner.entry_path == TRANSPORT_ENTRY and entry.is_file() and not entry.is_symlink()
+             and runner.entry_sha256 == packet.file_digest(entry)
+             and runner.semantic_entry_path == source["ENTRY"]
+             and runner.semantic_entry_sha256 == source["ENTRY_SHA256"]
+             and runner.channel_sha256 == TRANSPORT_CHANNEL_SHA256, "transport_runner_contract")
+    else:
+        need(runner.entry_path == source["ENTRY"] and runner.entry_sha256 == source["ENTRY_SHA256"],
+             "original_runner_contract")
     ci = _json(closure.read(lock.ci_metadata, "control"))
     build = _json(closure.read(lock.build_metadata, "control"))
     def metadata_digest(value: dict[str, Any]) -> str:
@@ -364,17 +593,25 @@ def _reviewed_runner(closure: _Closure, lock: NativeDevelopmentLock) -> str:
     repository, digest = runner.image.split("@")
     tag = repository + ":" + runner.release
     images = build.get("results", {}).get("images", [])
+    stock_steps = [{"name": "gcr.io/cloud-builders/docker", "args": ["build", "--tag", tag, "."]},
+                   {"name": "gcr.io/cloud-builders/docker", "args": ["push", tag]}]
+    steps_projection = [{"name": s.get("name"), "args": s.get("args")} for s in build.get("steps", [])]
+    if transport:
+        need(all(not any(step.get(key) for key in ("entrypoint", "script", "env", "secretEnv", "dir", "volumes"))
+                 for step in build.get("steps", [])), "transport_build_override")
+        # Cloud Build's stock API accepts both literal Docker --tag spellings.
+        if steps_projection and steps_projection[0].get("args") == ["build", "--tag=" + tag, "."]:
+            stock_steps[0]["args"] = ["build", "--tag=" + tag, "."]
     need(build.get("id") == runner.build_id and build.get("projectId") == "ai-resume-parser-482412"
          and build.get("status") == "SUCCESS"
          and build.get("sourceProvenance", {}).get("resolvedGitSource") == {
              "url": runner.repository, "revision": runner.release, "dir": "."}
          and type(images) is list and len(images) == 1 and images[0].get("name") == tag
          and images[0].get("digest") == digest
-         and [{"name": s.get("name"), "args": s.get("args")} for s in build.get("steps", [])]
-         == [{"name": "gcr.io/cloud-builders/docker", "args": ["build", "--tag", tag, "."]},
-             {"name": "gcr.io/cloud-builders/docker", "args": ["push", tag]}], "original_build_binding")
-    need(runner.entry_path == "backend/scripts/native_acquisition_job.py"
-         and runner.entry_sha256 == packet.file_digest(Path(__file__).resolve().parents[2] / "scripts/native_acquisition_job.py"),
+         and steps_projection == stock_steps, "original_build_binding")
+    semantic_sha = (runner.semantic_entry_sha256 if isinstance(runner, ReviewedDevelopmentTransportRunner)
+                    else runner.entry_sha256)
+    need(semantic_sha == packet.file_digest(backend / "scripts/native_acquisition_job.py"),
          "original_entry_changed")
     return runner.image
 
@@ -402,11 +639,78 @@ def _review_pages(closure: _Closure, directory: str, reference: dict[str, Any], 
         need(value.get("inspected_artifact_sha256") == extracted.sha256, "reviewed_compiled_pdf")
 
 
-def _original_batches(closure: _Closure, lock: NativeDevelopmentLock, evidence: dict[str, Any],
+def _transport_template(plan: TransportResourcePlan, image: str, batch: int) -> dict[str, Any]:
+    """Literal final producer ABI, checked as data inside the keyless image."""
+    return {"taskCount": 1, "parallelism": 1, "template": {
+        "serviceAccount": plan.evaluator, "executionEnvironment": "EXECUTION_ENVIRONMENT_GEN2",
+        "maxRetries": 0, "timeout": "240s" if batch == 0 else "1200s",
+        "vpcAccess": {"egress": "PRIVATE_RANGES_ONLY", "networkInterfaces": [
+            {"network": "hirewiz-private", "subnetwork": "hirewiz-callers-us-central1"}]},
+        "containers": [{"image": image, "command": ["/app/backend/.venv/bin/python"],
+            "args": ["-I", "-B", "/app/" + TRANSPORT_ENTRY, "--namespace",
+                f"gs://{plan.bucket}/quality-development/{plan.experiment_id}/",
+                "--bundle-name", plan.bundle_name, "--bundle-generation", plan.bundle_generation,
+                "--bundle-sha256", plan.bundle_sha256, "--workspace", "/app/backend/.quality-development"],
+            "env": [{"name": "DISABLE_GCS_PYTHON_CLIENT_OTEL_BUCKET_METADATA", "value": "true"}],
+            "resources": {"limits": {"cpu": "2", "memory": "4Gi"}}}]}}
+
+
+def _transport_origin(closure: _Closure, lock: NativeDevelopmentTransportLock) -> TransportOriginRecord:
+    """Closed retained correlation only; the owner must still verify native GETs."""
+    bound = lock.transport_origin.source_verification
+    raw = closure.read(bound.artifact, "transport_origin")
+    need(bound.reference.size == len(raw), "transport_origin_size")
+    origin = TransportOriginRecord.model_validate(_json(raw))
+    runner = ReviewedDevelopmentTransportRunner.model_validate(_json(closure.read(lock.runner_receipt, "control")))
+    expected_source = {key: getattr(runner, key) for key in TransportSourceObservation.model_fields}
+    need(origin.runner_receipt_sha256 == lock.runner_receipt.sha256
+         == origin.verification.runner_receipt_sha256
+         and origin.runner_source.model_dump() == expected_source
+         and runner.observed_at <= origin.source_verified_at <= origin.native_verified_at <= lock.reviewed_at,
+         "transport_origin_source")
+    need(bridge.digest(origin.controller_ci_metadata) == origin.controller_ci_metadata_sha256,
+         "transport_controller_ci_hash")
+    controller_ci = origin.controller_ci_metadata
+    jobs = controller_ci.get("jobs", [])
+    need(controller_ci.get("headSha") == origin.controller_release
+         and controller_ci.get("workflowName") == "CI" and controller_ci.get("status") == "completed"
+         and controller_ci.get("conclusion") == "success" and type(jobs) is list and len(jobs) == 5
+         and {row.get("name") for row in jobs} == {"backend", "frontend", "security-and-container",
+             "browser-companion", "cold-browser-journey"}
+         and all(row.get("status") == "completed" and row.get("conclusion") == "success" for row in jobs),
+         "transport_controller_ci")
+    need([row.job for row in origin.batches] == lock.transport_origin.jobs, "transport_origin_jobs")
+    for row in origin.batches:
+        plan = row.resource_plan
+        raw_job = closure.read(row.job.artifact, "transport_job")
+        job = _json(raw_job)
+        name = "projects/ai-resume-parser-482412/locations/us-central1/jobs/" + plan.job_name
+        expected = _transport_template(plan, runner.image, row.batch_index)
+        need(row.job.reference.size == len(raw_job) and job.get("name") == name
+             and job.get("uid") == row.job_uid and str(job.get("generation")) == row.job_generation
+             == str(job.get("observedGeneration")) and job.get("reconciling", False) is False
+             and job.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED"
+             and packet.canonical(job.get("template")) == packet.canonical(expected)
+             and bridge.digest(expected) == row.job_template_sha256
+             and not any(job.get(key) for key in ("startExecutionToken", "runExecutionToken", "binaryAuthorization"))
+             and not any(key in job for key in ("overrides", "runOverrides", "containerOverrides")),
+             "transport_native_job")
+        need(plan.qualified_runner_receipt_sha256 == lock.runner_receipt.sha256
+             and plan.controller_sha256 == origin.controller_source_sha256
+             and plan.valid_from <= origin.source_verified_at < plan.expires_at
+             and plan.valid_from <= row.captured_at <= origin.native_verified_at
+             and (plan.bundle_name, plan.bundle_generation, plan.bundle_sha256)
+                 == (row.bundle.name, row.bundle.generation, row.bundle.sha256), "transport_origin_plan")
+    return origin
+
+
+def _original_batches(closure: _Closure, lock: DevelopmentLock, evidence: dict[str, Any],
                       original: development.Authorization, report: dict[str, Any], runner_image: str) -> None:
     """Validate original V1 data as V1, never authorize V2 through V1 code."""
     from scripts import native_acquisition_channel as original_channel
     from scripts import native_acquisition_job as original_job
+
+    origin = _transport_origin(closure, lock) if isinstance(lock, NativeDevelopmentTransportLock) else None
 
     def retained(value: RetainedObject, kind: str, *, channel_object: bool = True) -> bytes:
         need(value.reference.sha256 == value.artifact.sha256, "original_object_hash")
@@ -431,6 +735,7 @@ def _original_batches(closure: _Closure, lock: NativeDevelopmentLock, evidence: 
     prior_terminal = None
     prior_dispatch = None
     names: set[str] = set()
+    transport_execution_uids: set[str] = set()
     cursor = 0
     for index, raw_batch in enumerate(batches):
         batch = OriginalDevelopmentBatch.model_validate(raw_batch)
@@ -497,12 +802,32 @@ def _original_batches(closure: _Closure, lock: NativeDevelopmentLock, evidence: 
         expected_args = ["-B", "-m", "scripts.native_acquisition_job", "--namespace", configuration.namespace,
             "--bundle-name", batch.bundle.reference.name, "--bundle-generation", batch.bundle.reference.generation,
             "--bundle-sha256", batch.bundle.reference.sha256, "--workspace", "/app/backend/.quality-development"]
-        need(template.get("serviceAccount") == "hirewiz-quality-dev@ai-resume-parser-482412.iam.gserviceaccount.com"
-             and type(template.get("maxRetries")) is int and template["maxRetries"] == 0
-             and type(containers) is list and len(containers) == 1 and containers[0].get("image") == runner_image
-             and containers[0].get("command") == ["/app/backend/.venv/bin/python"]
-             and containers[0].get("args") == expected_args
-             and not containers[0].get("env") and not containers[0].get("envFrom"), "original_execution_bundle")
+        if origin is None:
+            need(template.get("serviceAccount") == "hirewiz-quality-dev@ai-resume-parser-482412.iam.gserviceaccount.com"
+                 and type(template.get("maxRetries")) is int and template["maxRetries"] == 0
+                 and type(containers) is list and len(containers) == 1 and containers[0].get("image") == runner_image
+                 and containers[0].get("command") == ["/app/backend/.venv/bin/python"]
+                 and containers[0].get("args") == expected_args
+                 and not containers[0].get("env") and not containers[0].get("envFrom"), "original_execution_bundle")
+        else:
+            proof = origin.batches[index]
+            resource = proof.resource_plan
+            need(execution["uid"] not in transport_execution_uids
+                 and not any(key in execution for key in ("overrides", "runOverrides", "containerOverrides")),
+                 "transport_execution_identity")
+            transport_execution_uids.add(execution["uid"])
+            need(proof.execution == batch.execution and proof.bundle == batch.bundle.reference
+                 and resource.job_name == bundle.job_name and resource.experiment_id == original.experiment_id
+                 and configuration.namespace == f"gs://{resource.bucket}/quality-development/{resource.experiment_id}/"
+                 and original.valid_from <= resource.valid_from < resource.expires_at <= original.expires_at
+                 and resource.valid_from <= started < resource.expires_at and finished <= proof.captured_at
+                 and resource.acquisition_authorization_sha256 == bridge.digest(original.model_dump(mode="json"))
+                 and resource.funding_evidence_sha256 == original.funding_evidence.sha256
+                 and resource.native_dispatch_review_sha256 == bundle.dispatch.external_authority_review.sha256
+                 and resource.inspector_image == original.inspector.image
+                 and resource.compiler_image == original.compiler.image
+                 and packet.canonical(template) == packet.canonical(_transport_template(resource, runner_image, index)["template"]),
+                 "transport_execution_bundle")
         context = _json(retained(batch.job_context, "batch"))
         need(batch.job_context.reference.name == "job." + packet.digest(ack) + ".context.json"
              and type(context.get("task_index")) is int and type(context.get("task_attempt")) is int
@@ -552,7 +877,7 @@ def verify_native_development_lock(packet_root: Path, auth: Authorization,
     need(auth.state == "authorized", "authorized_record_required")
     funding = read_artifact(authorization_root, auth.funding_evidence)
     raw_lock = read_artifact(authorization_root, auth.native_development_lock)
-    lock = NativeDevelopmentLock.model_validate(_json(raw_lock))
+    lock = load_development_lock(raw_lock)
     need(lock.locked_at <= auth.valid_from, "lock_after_permit")
     closure = _Closure(authorization_root, lock)
     runner_image = _reviewed_runner(closure, lock)
