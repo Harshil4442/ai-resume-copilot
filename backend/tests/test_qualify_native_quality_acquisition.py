@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import os
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -501,34 +503,89 @@ def test_other_committed_execution_dependency_is_not_operator_data(registry_tree
         q.controller_dependency_hashes(registry_tree)
 
 
-def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tmp_path):
-    # A local shared-object clone supplies actual committed source, not a mocked
-    # qualification result. The existing isolated child refuses executing or
-    # importing any file in this clone and denies provider/credential I/O.
-    runner = tmp_path / "runner"
-    current = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
-    baseline = q._registry_value(q._registry_snapshot(ROOT))["sources"]
-    # Before registration, inspect this actual source HEAD. Once actual Build
-    # tuples exist, inspect the latest registered app source, not the later
-    # operator-only HEAD whose changed registry must fail strict runner reads.
-    application_release = (current[-1]["release"] if len(current) > len(baseline)
-                           else q.git(ROOT, "rev-parse", "HEAD").decode().strip())
-    q.git(ROOT, "cat-file", "-e", application_release + "^{commit}")
-    q.git(ROOT, "merge-base", "--is-ancestor", application_release,
-          q.git(ROOT, "rev-parse", "HEAD").decode().strip())
+def _owned_source_clone(target, release):
+    """Share immutable local objects without checking out evaluation data."""
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
-    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(runner)),
-                 ("-C", str(runner), "checkout", "--quiet", "--detach", application_release)):
-        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], env=environment,
-                       check=True, capture_output=True, timeout=30)
-    observed = q.runner_source(runner)
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0",
+        GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1")
+    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(target)),
+                 ("-C", str(target), "reset", "--soft", release),
+                 ("-C", str(target), "read-tree", "--empty")):
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *args],
+                       env=environment, check=True, capture_output=True, timeout=30)
+    target.chmod(0o700)
+
+
+def test_registered_c6_old_metadata_reader_cannot_qualify_current_runtime(tmp_path):
+    # Registration attests the genuine old event, not current runtime equality.
+    # Select that preserved tuple explicitly; a later row7 is not this fixture.
+    application_release = "c6a03af0636c7e9815159f807c9b126336d03233"
+    rows = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
+    assert len([row for row in rows if row["release"] == application_release]) == 1
+    expected = q.controller_dependency_hashes(ROOT)
+    runner = tmp_path / "historical-runner"
+    _owned_source_clone(runner, application_release)
+    # Only source execution inputs are materialized. The mismatch must refuse
+    # before a full-checkout qualification, import, CI or provider operation.
+    archive = q.git(ROOT, "archive", "--format=tar", application_release, "--", *sorted(expected))
+    materialized = set()
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source:
+        for member in source.getmembers():
+            if member.isdir():
+                continue
+            assert member.isfile() and member.name in expected and member.size <= 1024 * 1024
+            stream = source.extractfile(member)
+            assert stream is not None
+            target = runner / member.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(stream.read())
+            materialized.add(member.name)
+    assert materialized == set(expected) and not (runner / "backend/evals").exists()
+    actual = q.dependency_hashes(runner)
+    assert len(expected) == len(actual) == 464
+    assert {name for name in expected if expected[name] != actual[name]} == {"infra/gcp/v3_readonly_adapter.py"}
+    with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
+        q._runner_source(runner)
+    with pytest.raises(ValueError, match="runner_source_child_refused"):
+        q.runner_source(runner)
+
+
+def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tmp_path):
+    # The synthetic code-only tree has today's exact runtime and the immutable
+    # runner registry snapshot. It is not a registered release/CI/Build receipt.
     _, contract, release = q._source_modules()
+    import document_source_candidate as document
+
+    dependencies = q.controller_dependency_hashes(ROOT)
+    worker = document.validate_policy((ROOT / document.POLICY_PATH).read_bytes(), ROOT)
+    paths = {*dependencies, *q.COMPONENT_PATHS, *q.PROOF_PATHS, *q.CURRENT_PROOF_PATHS,
+        *contract.v2.QUALIFICATION_PATHS, *contract.v2.TRANSPORT_PATHS, *contract.v2.BOOTSTRAP_PATHS,
+        *contract.HISTORICAL_PATHS, *contract.NEW_PATHS, *contract.FOLLOWON_PATHS,
+        *contract.PROTOCOL_FIXTURES, *("backend/" + name for name in contract.PROOF_ROOTS),
+        *worker, *document.CONTRACT_PATHS, document.POLICY_PATH}
+    public_fonts = {"backend/evals/assets/courier_prime/" + name for name in (
+        "CourierPrime-Regular.ttf", "CourierPrime-Bold.ttf", "CourierPrime-Italic.ttf",
+        "CourierPrime-BoldItalic.ttf", "OFL.txt", "provenance.json")}
+    assert {name for name in paths if name.startswith("backend/evals/")} == public_fonts
+    assert not any(".." in Path(name).parts for name in paths)
+    runner = tmp_path / "owned-current-source"
+    _owned_source_clone(runner, q.git(ROOT, "rev-parse", "HEAD").decode().strip())
+    for name in paths:
+        target = runner / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(q._registry_snapshot(ROOT) if name == q.OPERATOR_REGISTRY_PATH
+                           else (ROOT / name).read_bytes())
+    registry_commit(runner)
+    synthetic_release = q.git(runner, "rev-parse", "HEAD").decode().strip()
+    assert not (runner / "backend/evals/unified_credit_v2").exists()
+    assert (runner / q.OPERATOR_REGISTRY_PATH).read_bytes() == q._registry_snapshot(ROOT)
+    assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 464
+    observed = q.runner_source(runner)
     fingerprint = contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
-    assert observed["release"] == application_release
+    assert observed["release"] == synthetic_release
     assert observed["qualification_sha256"] == fingerprint
     assert observed["app_files"] == 289 and observed["app_sha256"] == q.APP_SHA256
-    assert observed["runtime_dependencies_sha256"] == q.digest(q.controller_dependency_hashes(ROOT))
+    assert observed["runtime_dependencies_sha256"] == q.digest(dependencies)
 
 
 def test_child_registry_git_reads_have_exact_finite_argument_shapes():
@@ -816,8 +873,8 @@ def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
 
     value = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())
     baseline = q._registry_value(q._registry_snapshot(ROOT))
-    assert value["sources"][:5] == baseline["sources"] and len(value["sources"]) == 6
-    record = value["sources"][-1]
+    assert value["sources"][:5] == baseline["sources"] and 6 <= len(value["sources"]) <= 8
+    record = value["sources"][5]
     assert record == {"release": "c6a03af0636c7e9815159f807c9b126336d03233",
         "image_digest": "sha256:2ebc717174904f6becc3309aedc5f487a47e31b7a5c60e4fc34b3494f6f8acb1",
         "build_id": "32bc5596-a64b-4cf4-9cc0-311389d46f9d", "ci_run_id": 41500782361}
