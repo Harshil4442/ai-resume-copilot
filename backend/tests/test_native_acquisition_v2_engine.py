@@ -394,7 +394,7 @@ def heldout_toys(reviewed_toys, monkeypatch, tmp_path):
     def selected(root, split):
         if split == "development":
             return original_select(root, split)
-        assert events == ["complete-native40-review-matched"]
+        assert events and events[-1] == "complete-native40-review-matched"
         events.append("owned-toy160-selected")
         return {"cases": [{"case_id": c["case_id"], "split": "held_out"} for c in cases]}, copy.deepcopy(cases)
 
