@@ -362,9 +362,12 @@ def _native_history_prefixes(steps):
     selectors = []
     for step in steps:
         for line in step.get("run", "").splitlines():
-            if not re.match(r'''\s*gh api ["']repos/\$GITHUB_REPOSITORY/actions/artifacts(?:\?|["'])''', line):
+            if not re.match(r'\s*gh\s+api(?:\s|$)', line):
                 continue
-            command = shlex.split(line)
+            command = shlex.split(line.rstrip().removesuffix("\\"))
+            endpoint = "repos/$GITHUB_REPOSITORY/actions/artifacts"
+            if not any(value == endpoint or value.startswith(endpoint + "?") for value in command[2:]):
+                continue
             assert command[:3] == ["gh", "api", "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"]
             assert command.count("--jq") == 1
             selectors.append((step.get("name"), command[command.index("--jq") + 1]))
@@ -418,7 +421,8 @@ def test_native_history_selector_ignores_unrelated_inline_python_prefixes(same_s
     assert _native_history_prefixes(steps) == before
 
 
-@pytest.mark.parametrize("change", ["diagnostics", "broad_prefix", "remove_native", "bypass_name", "second_listing"])
+@pytest.mark.parametrize("change", ["diagnostics", "broad_prefix", "remove_native", "bypass_name",
+                                    "second_listing", "flag_before_endpoint"])
 def test_changed_native_artifact_selector_still_refuses_diagnostics_or_unreviewed_history(change):
     steps = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())["jobs"]["maintenance"]["steps"]
     retrieval = next(step for step in steps if step.get("name") == "Retrieve prior owned native proof journals")
@@ -431,6 +435,11 @@ def test_changed_native_artifact_selector_still_refuses_diagnostics_or_unreviewe
         retrieval["run"] = retrieval["run"].replace(original + " or ", "")
     elif change == "bypass_name":
         retrieval["run"] = retrieval["run"].replace("select(.expired == false and", "select(.expired == false or")
+    elif change == "flag_before_endpoint":
+        listing = next(line for line in retrieval["run"].splitlines() if "actions/artifacts?per_page=100" in line)
+        changed = listing.replace("gh api ", "gh api --paginate ", 1).replace(original,
+            'startswith("document-refresh-diagnostics-")')
+        steps.append({"name": "Owned flagged second artifact listing", "run": changed})
     else:
         steps.append({"name": "Owned unexpected second artifact listing", "run": retrieval["run"]})
     with pytest.raises(AssertionError):
