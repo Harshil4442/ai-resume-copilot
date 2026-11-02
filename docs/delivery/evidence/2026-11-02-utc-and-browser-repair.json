@@ -1,0 +1,70 @@
+{
+  "observed_at": "2026-11-02T15:50:06.959730+00:00",
+  "scope": "Existing delivery stages; no new milestone or activation",
+  "production": {
+    "api_health_ok": true,
+    "release": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+    "schema_last_verified": "20261028_0025",
+    "new_schema26_ddl": false,
+    "checkout_enabled": false
+  },
+  "candidate_ci": {
+    "source": "a7949770a5ccbcaad272d6a9161bf70f552cd257",
+    "run_id": 41188874393,
+    "attempt": 1,
+    "conclusion": "failure",
+    "other_four_jobs": "success",
+    "native_v3_protocol": "44 passed; 255.06 seconds",
+    "backend": {
+      "passed": 10185,
+      "failed": 1,
+      "skipped": 47,
+      "subtests": 253,
+      "seconds": 2982.11
+    },
+    "failed_case": "test_traffic_numerator_is_utc_stable_across_postgres_session_timezones",
+    "eligible_for_build_or_promotion": false
+  },
+  "runtime_correction": {
+    "commit": "ebb4887",
+    "behavior": "Retain UTC offsets when writing timestamptz canary audit rows and filtering the traffic window",
+    "postgres": {
+      "passed": 6,
+      "seconds": 5.23,
+      "schema": "20261031_0026",
+      "owned_cluster_stopped": true,
+      "production_database_used": false
+    },
+    "related_sqlite_passed": 49,
+    "source_binding_commit": "6166fcc5e3cb71dac57753004519f8cb925e82c6",
+    "focused_source_controls": {
+      "passed": 158,
+      "skipped": 0,
+      "seconds": 9.11
+    },
+    "app_files": 289,
+    "app_sha256": "446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce",
+    "deployed": false
+  },
+  "browser": {
+    "companion": "Same existing installation reloaded from0.8.6 to0.8.7",
+    "native_identity": "Verified",
+    "form_inspection": "Succeeded",
+    "candidate_review": "Blocked by backend503; native diagnostic ResourceExhausted at firestore_rpc.identity",
+    "local_requests": "Paused",
+    "answers_filled": 0,
+    "employer_resume_upload": false,
+    "employer_submission": false,
+    "device_revocation": "Not completed; reconcile server dependency before further action"
+  },
+  "document_qualification": {
+    "historical_expiry": "2026-11-02T06:26:48Z",
+    "current_use": "Requires renewal; expiration not observed cause of browser review503"
+  },
+  "limits": [
+    "No stage marked complete",
+    "No new CI or Build yet for corrected source",
+    "Full200 native/model/human quality still pending",
+    "Full shadow/capacity/financial/commercial gates remain pending"
+  ]
+}
