@@ -1,22 +1,25 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
 from backend.app.database import Base
 from backend.app.domains.analysis import schemas, service, tasks
-from backend.app.models import AnalysisRun, ModelCallEvent, Opportunity, Resume, User
+from backend.app.models import AnalysisRun, JobMatch, ModelCallEvent, Opportunity, Resume, User
 from backend.app.routers.public_endpoints import OptimizeBulletRequest, optimize_bullet
 from backend.app.services import llm_client, parsing
 from backend.app.services.basic_matching import basic_match
 from backend.app.services.interview_catalog import curated_interview_questions
 from backend.app.services.market.skill_extractor import extract_skill_mentions
+from backend.tests.fixtures.transcription_source import source_for_text
 from docx import Document
 from google import genai
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
 from starlette.requests import Request
 
 
@@ -88,15 +91,30 @@ def test_public_diagnostics_never_invent_a_bullet_or_treat_a_version_as_impact()
 
 
 def _database():
-    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False)
-    with factory() as db:
-        db.add(User(id=1, email='synthetic@example.com', ai_credits=100, tier='free'))
-        db.add(Resume(id=1, user_id=1, original_filename='resume.docx', raw_text='Python engineer', skills=['Python'], sections={'experience': 'Developed Python services'}, experience_years=1))
-        db.add(Opportunity(id='opp_test', user_id=1, resume_id=1, title='Software Engineer', company='Example', job_description='Build Python and Docker services for our customers.', job_snapshot={}))
-        db.commit()
-    return engine, factory
+    # The actual dispatcher rechecks inputs through another Session. Give that
+    # Session its own connection instead of rolling back the staged match.
+    temporary = TemporaryDirectory(prefix='hirewiz-ai-efficiency-')
+    engine = None
+    try:
+        engine = create_engine('sqlite:///' + str(Path(temporary.name) / 'analysis.sqlite'),
+            connect_args={'check_same_thread': False}, poolclass=QueuePool)
+        event.listen(engine, 'engine_disposed', lambda _engine: temporary.cleanup())
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine, autoflush=False)
+        with factory() as db:
+            db.add(User(id=1, email='synthetic@example.com', ai_credits=100, tier='free'))
+            db.add(Resume(id=1, user_id=1, original_filename='resume.pdf', raw_text='Python engineer', skills=['Python'], sections={'experience': 'Developed Python services'}, experience_years=1,
+                source_format='pdf', source_document=source_for_text('Python engineer')))
+            db.add(Opportunity(id='opp_test', user_id=1, resume_id=1, title='Software Engineer', company='Example', job_description='Build Python and Docker services for our customers.', job_snapshot={}))
+            db.commit()
+        return engine, factory
+    except BaseException:
+        try:
+            if engine is not None:
+                engine.dispose()
+        finally:
+            temporary.cleanup()
+        raise
 
 
 def _create(factory, operation='job_match', key='request-key-001', mode=None):
@@ -246,6 +264,7 @@ def test_enhanced_mode_preserves_generation_and_records_actual_model_and_tokens(
             assert run.result_payload['mode'] == 'enhanced'
             assert run.model == calls[-1]
             assert run.generation_attempt_count == 2
+            assert db.query(JobMatch).count() == 1
             events = db.query(ModelCallEvent).filter_by(analysis_run_id=run_id).order_by(ModelCallEvent.attempt_number).all()
             assert len(events) == 2
             assert events[-1].model == calls[-1]

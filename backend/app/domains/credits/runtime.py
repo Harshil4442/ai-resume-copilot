@@ -142,7 +142,7 @@ def has_unified_contract(db, user_id: int) -> bool:
     does not require newly migrated credit tables during a compatibility deploy.
     """
     from ...models import AdminAuditEvent, AnalysisRun, PaymentOrder
-    from ..employer.models import EmployerSearch
+    from ..employer.models import EmployerApplication, EmployerSearch
 
     if db.query(AdminAuditEvent.id).filter_by(action="credit_canary_consent", target_type="credit_canary",
             actor_user_id=user_id).filter(AdminAuditEvent.after_state["choice"].as_string() == "opt_in").first():
@@ -151,6 +151,11 @@ def has_unified_contract(db, user_id: int) -> bool:
         return True
     if db.query(EmployerSearch.id).filter(EmployerSearch.user_id == user_id,
             EmployerSearch.scope["billing_currency"].as_string() == "credits").first():
+        return True
+    if db.query(EmployerApplication.id).filter(EmployerApplication.user_id == user_id,
+            EmployerApplication.pricing_snapshot["schema_version"].as_string() == "unified-browser-submission-v1",
+            EmployerApplication.pricing_snapshot["billing_currency"].as_string() == "credits",
+            EmployerApplication.approved_at.is_not(None)).first():
         return True
     return (
         db.query(AnalysisRun.id)

@@ -243,6 +243,7 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
         'backend/alembic/versions/20261027_0023_unified_execution_reservations.py',
         'backend/alembic/versions/20261027_0024_funded_free_core.py',
         'backend/alembic/versions/20261028_0025_unified_discovery_batches.py',
+        'backend/alembic/versions/20261031_0026_evidence_writer_fence.py',
     }
     assert {catalogue, browser, pacing, typed, native, reset} | unified <= tracked
     # Preserve the historical chain check in a finite copy before the catalogue
@@ -263,6 +264,7 @@ def test_legacy_release_still_refuses_the_current_extended_chain(tmp_path):
     assert release.source_guard.migration_chain(ROOT, tracked, allow_literal_sql=True) == (
         *release.CHAIN, "20261015_0019", "20261023_0020", "20261023_0021",
         "20261027_0022", "20261027_0023", "20261027_0024", "20261028_0025",
+        "20261031_0026",
     )
 
 

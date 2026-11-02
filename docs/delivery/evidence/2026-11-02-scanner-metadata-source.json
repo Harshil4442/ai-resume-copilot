@@ -1,0 +1,62 @@
+{
+  "observed_at": "2026-11-02T17:05:55.293319+00:00",
+  "scope": "Source corrections within existing stages; no new completed checkpoint",
+  "metadata": {
+    "author_commit": "ffeff6d114a240d97f9f679d21964bcea8df395d",
+    "integrated_commit": "e0a462f",
+    "behavior": "Pairing uses six batched identity Lists instead of twelve Gets while retaining every signing/identity barrier; optional typed V3 policy activates existing API-only40/minute shared admission",
+    "new_IAM_grants": false,
+    "cross_request_identity_cache": false,
+    "root_tests": "295 passed plus one source CLI test passed separately after the parent guard was corrected without source-path injection; original guard refusal retained",
+    "live_reverification": "pending"
+  },
+  "scanner": {
+    "original_failed_workflow": 41180637852,
+    "original_build": "5080a7ac-24a9-4c76-ba4f-5f7619e0c2b3",
+    "native_readback": "FAILURE; Dockerstep0exit10; pushunstarted; noimmutableimage; originalflowstoppedbeforeJobs/transition",
+    "cause": "FreshClam UID100/GID101 could not write its temporary database directory",
+    "repair_commit": "6415421aef30cde1c8c5f83efc15a0ce086906e7",
+    "integrated_commit": "ca886cb",
+    "behavior": "Temporarily permit updater writes during build, then restore root-owned read-only database; explicit expired-V4 structural predecessor never becomes processing acceptance; retain original four-file failed-Build custody and unresolved expense",
+    "fresh_candidate_requirements": "Original31 local checks, singleton inventory and17-case native corpus, new definitions younger than24h, exact parent and caller restoration",
+    "independent_peer": "No unresolvedcriticalfinding in seven finalruntime/workflow files; initialparentcrossbindfindingfixed",
+    "author_tests": {
+      "passed": 50,
+      "skipped": 0,
+      "seconds": 40.4,
+      "limits": "Earlier broader344pass/2fixturefailures corrected in final50; not a claimed single346green run"
+    },
+    "worker_files": 22,
+    "runtime_files": 20,
+    "policy_sha256": "22a012f2fb7b6d3b696d8772563e9363566b9f03fb83385cfeffbc84a26459eb",
+    "helper_files": 14,
+    "new_helper_aggregate_sha256": "53d71f0e6869ef6659c36830fab47782248201035576cde484271a6632d42008",
+    "historical_helper_aggregate_preserved": "61b313bcb98d1d9931efd49ac8e9f8a3d307de0785e97e3c1705760a4c10ae50",
+    "native_renewal": "pending",
+    "author_helper_aggregate_sha256": "11100f92b9e4d9903f52aa07723f6fc98bc8554b4cccad3f283645d2c929177a",
+    "root_typecheck_correction": "Pass recover_expired_source explicitly in recursive refresh call; avoids unsafe generic kwargs typing while preserving its Boolean value"
+  },
+  "source_binding": {
+    "app_files": 289,
+    "app_sha256": "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e",
+    "execution_inputs": 464,
+    "current_exact_committed_successors": 10,
+    "historically_unchanged_execution_inputs": 454,
+    "current_document_helpers": 5,
+    "historically_unchanged_document_helpers": 9,
+    "all_five_source_CI": "pending; prior de6run41475832833 cancelled when replaced by actual source corrections",
+    "changed_path_mypy": "5runtime/script paths passed after explicit Boolean argument correction",
+    "actual_full_CI_type_failure": {
+      "run": 41491280441,
+      "diagnosis": "FirestoreIdentityList requires two concrete FirestoreRpc clients; partial five-file Mypy had inferred a less precise imported type",
+      "correction": "Explicit runtime client narrowing before existing batch constructor; no cast, ignore, fallback or barrier removal"
+    },
+    "full_CI_type_scope": "284 source files passed on Linux target; native macOS target separately flagged only two Linux-only os/socket attributes in unchanged worker code"
+  },
+  "provider_mutations": false,
+  "production_changed": false,
+  "wallet_conversion": false,
+  "optimized_AI_enabled": false,
+  "checkout_enabled": false,
+  "employer_fill_upload_submit": false
+}

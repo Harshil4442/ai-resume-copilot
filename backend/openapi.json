@@ -1200,6 +1200,18 @@
       "CandidateRequest": {
         "additionalProperties": false,
         "properties": {
+          "accepted_service_quote_id": {
+            "anyOf": [
+              {
+                "pattern": "^csq_[a-f0-9]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Service Quote Id"
+          },
           "confirmed": {
             "default": false,
             "title": "Confirmed",
@@ -2345,6 +2357,165 @@
         "title": "CreditWalletView",
         "type": "object"
       },
+      "DashboardOpportunities": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardOpportunity"
+            },
+            "maxItems": 8,
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "DashboardOpportunities",
+        "type": "object"
+      },
+      "DashboardOpportunity": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "stage": {
+            "enum": [
+              "saved",
+              "evaluating",
+              "preparing",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn",
+              "archived"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "company",
+          "stage",
+          "next_action"
+        ],
+        "title": "DashboardOpportunity",
+        "type": "object"
+      },
+      "DashboardReminder": {
+        "additionalProperties": false,
+        "properties": {
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 240,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "due_at"
+        ],
+        "title": "DashboardReminder",
+        "type": "object"
+      },
+      "DashboardResumeSignal": {
+        "additionalProperties": false,
+        "properties": {
+          "evidenced_skills": {
+            "minimum": 0.0,
+            "title": "Evidenced Skills",
+            "type": "integer"
+          },
+          "verification_rate": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Verification Rate",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "evidenced_skills",
+          "verification_rate"
+        ],
+        "title": "DashboardResumeSignal",
+        "type": "object"
+      },
+      "DashboardSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "applications_count": {
+            "minimum": 0.0,
+            "title": "Applications Count",
+            "type": "integer"
+          },
+          "average_match_score": {
+            "title": "Average Match Score",
+            "type": "number"
+          },
+          "resume_count": {
+            "minimum": 0.0,
+            "title": "Resume Count",
+            "type": "integer"
+          },
+          "resume_quality": {
+            "$ref": "#/components/schemas/DashboardResumeSignal"
+          }
+        },
+        "required": [
+          "resume_count",
+          "applications_count",
+          "average_match_score",
+          "resume_quality"
+        ],
+        "title": "DashboardSummary",
+        "type": "object"
+      },
       "DimensionScore": {
         "properties": {
           "evidence_ids": {
@@ -2678,6 +2849,75 @@
         "title": "EmptyEnrollmentChallenge",
         "type": "object"
       },
+      "ErasureCompleted": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "ACCOUNT_ERASED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ErasureCompleted",
+        "type": "object"
+      },
+      "ErasureConfirm": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_erasure": {
+            "const": true,
+            "title": "Confirm Erasure",
+            "type": "boolean"
+          },
+          "token": {
+            "format": "password",
+            "maxLength": 43,
+            "minLength": 43,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token",
+          "confirm_erasure"
+        ],
+        "title": "ErasureConfirm",
+        "type": "object"
+      },
+      "ErasureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "ErasureRequest",
+        "type": "object"
+      },
+      "ErasureRequested": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "ERASURE_LINK_REQUESTED",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ErasureRequested",
+        "type": "object"
+      },
       "EvidenceCreate": {
         "additionalProperties": false,
         "properties": {
@@ -2829,6 +3069,12 @@
             "title": "Skills",
             "type": "array"
           },
+          "snapshot_fingerprint": {
+            "description": "Bind review to every exact returned fact, source and approval field.",
+            "readOnly": true,
+            "title": "Snapshot Fingerprint",
+            "type": "string"
+          },
           "source_ref": {
             "anyOf": [
               {
@@ -2863,7 +3109,8 @@
           "approval_state",
           "confidence",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "snapshot_fingerprint"
         ],
         "title": "EvidenceResponse",
         "type": "object"
@@ -2912,6 +3159,18 @@
               }
             ],
             "title": "Evidence Text"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
           },
           "metrics": {
             "anyOf": [
@@ -5407,6 +5666,76 @@
           "unavailable"
         ],
         "title": "OwnedBootstrapView",
+        "type": "object"
+      },
+      "OwnedDashboardView": {
+        "additionalProperties": false,
+        "properties": {
+          "bootstrap": {
+            "$ref": "#/components/schemas/OwnedBootstrapView"
+          },
+          "opportunities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardOpportunities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DashboardReminder"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminders"
+          },
+          "schema_version": {
+            "const": "owned-dashboard-v1",
+            "default": "owned-dashboard-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unavailable": {
+            "items": {
+              "enum": [
+                "summary",
+                "opportunities",
+                "reminders"
+              ],
+              "type": "string"
+            },
+            "title": "Unavailable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bootstrap",
+          "summary",
+          "opportunities",
+          "reminders",
+          "unavailable"
+        ],
+        "title": "OwnedDashboardView",
         "type": "object"
       },
       "PackageUpdate": {
@@ -7942,6 +8271,172 @@
           "next_action"
         ],
         "title": "TailoringFailureGuidance",
+        "type": "object"
+      },
+      "TranscriptionReviewAction": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "correct_transcription",
+              "confirm_visible_text"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "evidence_text": {
+            "maxLength": 20000,
+            "minLength": 2,
+            "title": "Evidence Text",
+            "type": "string"
+          },
+          "expected_assessment_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Assessment Fingerprint"
+          },
+          "expected_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Fingerprint"
+          },
+          "section": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "action",
+          "evidence_text"
+        ],
+        "title": "TranscriptionReviewAction",
+        "type": "object"
+      },
+      "TranscriptionReviewResponse": {
+        "properties": {
+          "assessment_fingerprint": {
+            "title": "Assessment Fingerprint",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptionSectionReview"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "not_required",
+              "needs_review",
+              "reviewed",
+              "editable_source_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unmapped_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unmapped Text"
+          }
+        },
+        "required": [
+          "resume_id",
+          "filename",
+          "source_format",
+          "source_sha256",
+          "assessment_fingerprint",
+          "status",
+          "sections"
+        ],
+        "title": "TranscriptionReviewResponse",
+        "type": "object"
+      },
+      "TranscriptionSectionReview": {
+        "properties": {
+          "evidence_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Fingerprint"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "original_text": {
+            "title": "Original Text",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section",
+          "original_text",
+          "evidence_id",
+          "evidence_fingerprint",
+          "reviewed"
+        ],
+        "title": "TranscriptionSectionReview",
         "type": "object"
       },
       "UploadCreate": {
@@ -10669,6 +11164,32 @@
         ]
       }
     },
+    "/api/auth/dashboard": {
+      "get": {
+        "operationId": "get_owned_dashboard_api_auth_dashboard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnedDashboardView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Owned Dashboard",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/delete-account": {
       "post": {
         "description": "Deletes account/profile/resume/job data and unlinks retained financial\nrecords. Payment, refund, and webhook audit rows are retained for fraud,\nreconciliation, tax, and legal obligations without a live User foreign key.",
@@ -11485,6 +12006,308 @@
         "summary": "Request Link",
         "tags": [
           "password-reset"
+        ]
+      }
+    },
+    "/api/auth/privacy-erasure/confirm": {
+      "post": {
+        "operationId": "confirm_api_auth_privacy_erasure_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureConfirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureCompleted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "summary": "Confirm",
+        "tags": [
+          "privacy-erasure"
+        ]
+      }
+    },
+    "/api/auth/privacy-erasure/request": {
+      "post": {
+        "operationId": "request_link_api_auth_privacy_erasure_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErasureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErasureRequested"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "summary": "Request Link",
+        "tags": [
+          "privacy-erasure"
         ]
       }
     },
@@ -16727,6 +17550,53 @@
         ]
       }
     },
+    "/api/v1/evidence-items/transcription-review/{resume_id}": {
+      "get": {
+        "operationId": "transcription_review_snapshot_api_v1_evidence_items_transcription_review__resume_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resume_id",
+            "required": true,
+            "schema": {
+              "title": "Resume Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Transcription Review Snapshot",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
     "/api/v1/evidence-items/{evidence_id}": {
       "delete": {
         "operationId": "delete_evidence_api_v1_evidence_items__evidence_id__delete",
@@ -16738,6 +17608,22 @@
             "schema": {
               "title": "Evidence Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_fingerprint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Fingerprint"
             }
           }
         ],
@@ -16817,6 +17703,63 @@
           }
         ],
         "summary": "Update Evidence",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/evidence-items/{evidence_id}/transcription-review": {
+      "post": {
+        "operationId": "review_transcription_api_v1_evidence_items__evidence_id__transcription_review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TranscriptionReviewAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Review Transcription",
         "tags": [
           "career-workspace"
         ]

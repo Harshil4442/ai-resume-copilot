@@ -11,6 +11,7 @@ import pytest
 from backend.app import models
 from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
 from backend.app.domains.analysis import operations, schemas, service, tasks
+from backend.app.domains.career.evidence_write_fence import flush_evidence_writes
 from backend.app.routers import resume as resume_routes
 from backend.app.services import docx_artifact, guardrails, llm_client, result_commit
 from backend.app.services.generation_budget import current_budget
@@ -83,20 +84,6 @@ def _retained_only(factory):
 @pytest.mark.parametrize("order", ["write_first", "delete_first"])
 def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(factory, monkeypatch, order):
     configure_native_docx_worker(monkeypatch)
-    with factory() as db:
-        resume = db.get(models.Resume, 1)
-        resume.source_document, resume.source_format = _native_source(), "docx"
-        db.add(models.EvidenceItem(
-            id="evd_approved", user_id=1, resume_id=1, category="experience",
-            title="Synthetic platform", evidence_text=SOURCE_EXPERIENCE, skills=["python"],
-            approval_state="approved", metrics={},
-        ))
-        db.commit()
-        run, _ = service.create_run(db, user_id=1, payload=schemas.AnalysisRunCreate(
-            operation="resume_tailor", opportunity_id="opp_test", input={},
-            accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
-        ), header_idempotency_key="synthetic-real-tailor")
-        run_id = run.id
     roles, ready, release = _gate(monkeypatch, order=order)
     calls, rendered, version_writes, unit_commits = [], [], [], []
     def generation(**kwargs):
@@ -106,7 +93,25 @@ def test_actual_tailoring_worker_result_and_unit_commit_serialize_after_render(f
         record = admit(budget)
         budget.finish(record, latency_ms=1, response=usage())
         return _source_edit_response(kwargs["source_units"])
+    # The quote binds this callable's real output contract. Install the fixed
+    # provider boundary before admission, rather than changing it afterward.
     monkeypatch.setattr(llm_client, "tailor_resume_from_evidence", generation)
+    with factory() as db:
+        resume = db.get(models.Resume, 1)
+        resume.source_document, resume.source_format = _native_source(), "docx"
+        evidence = models.EvidenceItem(
+            id="evd_approved", user_id=1, resume_id=1, category="experience",
+            title="Synthetic platform", evidence_text=SOURCE_EXPERIENCE, skills=["python"],
+            approval_state="approved", metrics={},
+        )
+        db.add(evidence)
+        flush_evidence_writes(db, [evidence])
+        db.commit()
+        run, _ = service.create_run(db, user_id=1, payload=schemas.AnalysisRunCreate(
+            operation="resume_tailor", opportunity_id="opp_test", input={},
+            accepted_quote={"pricing_version": ANALYSIS_PRICING_VERSION, "units": 2},
+        ), header_idempotency_key="synthetic-real-tailor")
+        run_id = run.id
     native_render = docx_artifact.prepare_artifact
     def render(*args, **kwargs):
         assert not getattr(roles, "guarded", False), "render must precede result guard"

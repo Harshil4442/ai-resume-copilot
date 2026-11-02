@@ -1,56 +1,75 @@
 # HireWiz development and deployment progress
 
-Updated **29 October 2026 (IST)**. The schema25 base release is deployed.
-The active October27 goal implements the credit/cost/quality requirements across
-the existing eight stages in `UNIFIED_CREDIT_ROLLOUT.md`; it is not complete.
-The six accepted October26 pilot outcomes below are preserved history, not the
-completion definition for this later goal.
-Public mobile/desktop and SEO acceptance passed. Current signed-in account and
-companion acceptance remain pending: maintenance closed the native account
-lifecycle switch, and the first pilot reopening omitted it. The separately linked,
-same-image correction is now applied on API generation350; authenticated health
-and website registration/enrollment availability passed. The current real-account
-journey still requires manual password sign-in and Mac unlock. Do not report the
-current release as fully accepted until that journey passes.
+Updated **31 October 2026 (IST)**. The e23 schema25 API and application workers
+are deployed; the refreshed document inspector and frontend companion 0.8.7 serve
+alongside them. The active 27 October goal implements the credit/cost/quality
+requirements across the existing eight stages in `UNIFIED_CREDIT_ROLLOUT.md`;
+it is not complete. The six accepted 26 October pilot outcomes below remain
+historical acceptance, not the completion definition for this later goal.
 
-The six outcomes below record **historical acceptance on 26 October**, within the
-approved twenty-origin pilot. They are not fresh evidence that every feature is
-currently available. New AI generation/tailoring, unified credits, free-core
-processing, checkout and final employer submission remain closed. Worldwide
-coverage, commercial launch and the new credit/quality program retain their
-separate requirements gates.
+Current signed-in acceptance remains partial. The repaired 0.8.6 companion paired
+successfully on the existing browser identity, and its current-connection check
+succeeded. The 0.8.7 update fixes stuck progress and stale popup replies; its public
+package and the same-folder local source update are verified. Native reload,
+original-file review, cancellation before Fill and exact-device revocation await
+Mac unlock. No employer form was filled and no application was submitted in this
+current acceptance attempt. Earlier mobile/desktop and SEO observations remain
+scoped to their original releases; they are not fresh field performance proof.
+
+New AI generation/tailoring, unified credits, funded free-core processing,
+checkout and final employer submission remain closed. Worldwide expansion,
+commercial launch and the new credit/quality program retain their separate gates.
 
 ## Latest verified releases
 
 | Component | Current release | Verification |
 |---|---|---|
-| API and application workers | Source `8cbdfaeb9bb6cf6674c18ca8d59bc123fbf73a2a`; image `sha256:956735cd476c1159397ef21143b497f0b4d40df4d47f6b5d54cd8818a544eafa`; schema `20261028_0025` | Immutable build `45473be6-d177-49e1-a8a3-7970df8271db`, exact-source CI `40784200833`, checked stage/promotion journals, separate six-flag pilot reopening and the linked account-lifecycle correction on API generation350. Fourteen new tables and retained data, financial digests and ACL were verified. Current account acceptance remains pending. |
-| Frontend | Source `b0c4581fe66b88369fca0219cabca8d1229684ba`; `dpl_CBiaNHpwCJHGbWcBeD3t7z9Kx3t3` | Production READY and canonical alias promoted. Exact-source CI `40840161705`. Public pages explicitly disclose the limited pilot and unavailable purchases/AI generation. |
-| Document inspector | Configuration source `b281118da4ff810cadff196dbe8bc4cade3cecf3`; image `sha256:5811233d8dd35b1fadc73f4c1a43783c83edde47c5e90142a1e96c1428312db9` | Fresh native ten-case corpus and V2 to V3 transition; read-only reconciliation run `40811330747`. |
-| Companion | Historical acceptance **0.8.4** | The October26 exact-file review/cancel/revoke evidence below is preserved. Current installation and account journey require fresh verification after the account repair. |
+| API and application workers | Source `e23c940e6133323c3c1ff11e646a4ca9b2b0b165`; image `sha256:df4618fa19a05645384a4e0aba92ad691e5f40c55344b34da55c95fc1b44c77f`; schema `20261028_0025` | Immutable build `3a251d77-44e7-4b7a-9987-2c991c8e6d89`, exact-source CI `41095660943`, and accepted app staging/promotion readbacks. All three app services serve that release at 100%. Current owner journey acceptance remains pending. |
+| Frontend | Source `8648118cace6284f5b7e7347607475d6cb4e0f92`; `dpl_9XTqBWiudei8KdkYikG6wV1YoK14` | Exact-source CI `41158935649`; the same staged production artifact was promoted on both public domains. Public readiness returns204; invalid Origin returns403. The 0.8.7 package matches its reviewed hash;0.8.6 remains unchanged. |
+| Document inspector | Image `sha256:e2880102f6149cd62c800fbd33c775ed371c98a2ca74dce4935374685488fbef` | Accepted native continuation `41119586258`, original build `0d685ff9-d002-4e4b-912d-a8b64c6592ea`, and accepted serving proof. Definition proof expires `2026-11-02T06:26:48Z`. This is not the representative 200-case quality gate. |
+| Companion | Public/source files **0.8.7**; native loaded version last observed **0.8.6** | Same browser installation, keys and permissions retained. Repaired pairing succeeded. The 0.8.7 reload and review/cancel/revoke require fresh verification; 26 October acceptance below remains historical. |
 
-The final filtered configuration readback found all five services Ready, three
-worker queues RUNNING, the application queue PAUSED and three schedules ENABLED.
-The coordinator retains its own captured source `7a00839d`; it is not relabeled as
-the document configuration source. Temporary health-check IAM access was removed
-and independently read back absent after both the original release and the
-account-lifecycle correction.
+Schema26 remains source-only in PR83. Exact-source CI41172074414 retained all61
+PostgreSQL cases and prior v1/v2 checks, then stopped at the unchanged240-second
+native protocol limit. Its safe observer recorded a started malformed-input-path
+test; isolated execution refused the path immediately. Profiling found repeated
+40-document synthetic fixture preparation. The reviewed follow-up reuses only
+fully bound immutable test bytes, retaining every case and fresh per-test records;
+its actual Linux deadline acceptance is still pending.
 
-Public checks at widths 390/1440 passed layout, images, purchase closure, canonical
-metadata, robots and sitemap. All observed CLS values were 0. The homepage's first
-mobile LCP was 7.388s; a focused diagnostic was 1.452s. Both remain in the record;
-the first slow result has no proven cause. Pricing mobile LCP was 1.760s. These
-samples do not establish field p75 or capacity qualification.
+A read-only production check confirmed that all three maintenance schedules are
+ENABLED. The source follow-up adds a distinct26 continuation to restore those
+same states after their required migration pause. It uses original maintenance
+and completed app journals and never resends unknown writes. No schedules were
+paused or resumed during this source work. Typed account-operation checks,
+retired-revision custody and the reviewed migration remain required. Generic V3
+rollback after schedule restoration remains unqualified and is not presented as
+restored service or RTO evidence.
 
-The Gemini provider monthly spend cap is now **INR450**. Provider enforcement can
-lag by approximately ten minutes; this is secondary protection, not a substitute
-for application cost reservations or reconciled financial qualification.
+The combined source candidate adds explicit three-credit browser-submission quotes,
+central wallet/cash holds, current-quote canary admission and matching companion0.8.8
+reviews. Existing accepted20-credit applications retain their original obligations.
+Independent source reviews and owned local wire controls passed; the combined
+PostgreSQL/build/rollout and real-canary gates remain pending. Companion0.8.8 is
+source-only and has not replaced the installed owner client.
 
-[Current release evidence](evidence/2026-10-29-schema25-production-base.json) and
+The earlier 29 October configuration and responsive measurements remain recorded
+in the linked historical release evidence. The coordinator retains its separate
+captured source `7a00839d`; it is not relabeled as an app/document release. The
+current frontend update changes no backend configuration, database, credentials,
+paid plan or activation gate. Temporary health-check IAM access was removed.
+Manual frontend domain assignment was reapplied after promotion; a fresh native
+settings-screen read remains pending while the Mac is locked.
+
+The Gemini monthly spend cap remains **INR450**. Provider enforcement can lag;
+application cost reservations and reconciled financial qualification remain
+required. Retail purchases are unavailable.
+
+[Current release evidence](evidence/2026-10-31-pilot-deployment-status.json) and
 [the eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md) distinguish
 completed deployment work from remaining functional and commercial acceptance.
-CI and regression checks are evidence, not additional development checkpoints.
-No original effort totals are available; missing estimates remain null.
+CI checks are evidence, not additional development checkpoints. No original total
+effort estimate is retained; missing estimates remain null.
 
 ## Original six outcomes — historical acceptance on 26 October
 

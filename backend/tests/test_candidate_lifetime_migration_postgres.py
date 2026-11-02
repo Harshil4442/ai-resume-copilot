@@ -47,7 +47,7 @@ def test_sql_native_projection_cannot_change_owner_or_reduce_generation(pg_engin
 
 
 def test_deleted_sql_account_keeps_schema_use_history_and_refuses_downgrade(pg_engine):
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     sessions = sessionmaker(bind=pg_engine)
     with sessions() as db:
         db.add(User(id=1, email="candidate@example.com", password_hash="synthetic"))

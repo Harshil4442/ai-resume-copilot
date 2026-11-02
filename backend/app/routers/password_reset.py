@@ -70,7 +70,7 @@ def _changed_delivery(token: str) -> None:
     try:
         with SessionLocal() as db:
             from ..models import PasswordResetToken
-            row = db.query(PasswordResetToken).filter_by(token_sha256=email_reset.digest(token), status="COMPLETED").one_or_none()
+            row = db.query(PasswordResetToken).filter_by(token_sha256=email_reset.digest(token), purpose="password_reset", status="COMPLETED").one_or_none()
             if row is not None:
                 item = db.query(NotificationOutbox.id).filter_by(idempotency_key="password-changed:" + row.id).scalar()
                 if item is not None:

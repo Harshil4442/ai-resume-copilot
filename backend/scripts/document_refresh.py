@@ -758,7 +758,7 @@ def source_definitions_build_request(nonce: str, source: dict[str, str], commit:
     need(type(commit) is str and type(parent) is str and type(legacy_source) is bool, "document_source_recipe_changed")
     assert isinstance(parent, str)
     current = infra("document_source_candidate").committed(commit, root=ROOT, legacy=legacy_source)
-    infra("document_source_candidate").definition_recipe(parent, ROOT)
+    infra("document_source_candidate").definition_recipe(parent, ROOT, source_commit=commit)
     body = build_request(nonce, source)
     tag = REPOSITORY + ":source-definitions-" + nonce
     body.update(steps=[{"name": DOCKER_BUILDER, "args": ["build", "--pull=false", "--platform=linux/amd64", "--build-arg",
@@ -854,7 +854,8 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
     if source_definitions:
         source_profile = infra("document_source_candidate")
         current = source_profile.committed(source_commit, root=ROOT, legacy=legacy_source)
-        need(recipe_sha == hashlib.sha256(source_profile.definition_recipe(source_parent, ROOT)).hexdigest(),
+        need(recipe_sha == hashlib.sha256(source_profile.definition_recipe(source_parent, ROOT,
+             source_commit=source_commit)).hexdigest(),
              "document_source_recipe_changed")
         result.update(fixed_renderer_base=source_parent, policy_sha256=current.policy,
             source_commit=current.commit, qualification_sha256=current.qualification_sha256)
@@ -956,7 +957,7 @@ def build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
 
 def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, full_source: bool = False,
                  candidate_v3: bool = False, source_revision: bool = False, source_definitions: bool = False,
-                 source_parent: str | None = None) -> dict[str, Any]:
+                 source_parent: str | None = None, recover_expired_source: bool = False) -> dict[str, Any]:
     from urllib.parse import urlencode
 
     nonce = uuid.uuid4().hex if nonce is None else nonce
@@ -971,11 +972,14 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
          "document_refresh_contract_version_invalid")
     need(type(source_definitions) is bool and (not source_definitions or not (full_source or candidate_v3 or source_revision)),
          "document_refresh_contract_version_invalid")
+    need(type(recover_expired_source) is bool and (not recover_expired_source or source_definitions),
+         "document_refresh_expired_source_mode_refused")
     current = infra("document_source_candidate").committed(root=ROOT, clean=True) if source_revision or source_definitions else None
     source_commit = current.commit if current is not None else None
     if source_definitions:
         need(recipe == infra("document_source_candidate").definition_recipe(source_parent, ROOT), "document_source_recipe_changed")
-        infra("document_source_release").parent_before_build(source_parent, current)
+        infra("document_source_release").parent_before_build(source_parent, current,
+            **({"recover_expired_source": True} if recover_expired_source else {}))
     recipe_sha = hashlib.sha256(recipe).hexdigest()
     if full_source:
         contents, _, _ = full_source_snapshot(source_revision=source_revision)
@@ -1135,7 +1139,8 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
             if source_definitions:
                 need(type(tags[3]) is str and re.fullmatch(r"[a-f0-9]{64}", tags[3]), "document_source_recipe_changed")
                 source_parent = REPOSITORY + "@sha256:" + tags[3]
-                recipe_sha = hashlib.sha256(infra("document_source_candidate").definition_recipe(source_parent, ROOT)).hexdigest()
+                recipe_sha = hashlib.sha256(infra("document_source_candidate").definition_recipe(source_parent, ROOT,
+                    source_commit=source_commit)).hexdigest()
         need(not (full_source and historical_v1), "document_source_historical_profile_refused")
         need(not (candidate_v3 and full_source), "document_source_historical_profile_refused")
         need(not historical_profile or full_source, "document_refresh_renderer_build_profile_changed")
@@ -1262,15 +1267,18 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
 
 
 def source_definitions_candidate(directory: Path, *, publish: bool, now: datetime,
-                                 parent: str, nonce: str | None = None) -> dict[str, Any]:
+                                 parent: str, nonce: str | None = None,
+                                 recover_expired_source: bool = False) -> dict[str, Any]:
     sys.path.insert(0, str(ROOT / "backend"))
     from scripts import document_test_image as engines
 
+    need(type(recover_expired_source) is bool, "document_refresh_expired_source_mode_refused")
     need(publish, "document_refresh_explicit_native_build_required")
     source_profile = infra("document_source_candidate")
     _, before, policy = full_source_snapshot(source_revision=True)
     recipe = source_profile.definition_recipe(parent, ROOT)
-    identity = native_build(directory, recipe, nonce=nonce, source_definitions=True, source_parent=parent)
+    identity = native_build(directory, recipe, nonce=nonce, source_definitions=True, source_parent=parent,
+        **({"recover_expired_source": True} if recover_expired_source else {}))
     image = identity["immutable_image"]
     docker = engines.docker_command()
     command(docker + ["pull", image], seconds=180)
@@ -1350,12 +1358,18 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             rescue_expired_v2: bool = False,
             upgrade_current_v2_to_v3: bool = False, reviewed_application_context: bool = False,
             consumed_history_bundle: Path | None = None, application_context: Any = None,
-            consumed_history: Any = None, source_revision: bool = False) -> dict[str, Any]:
+            consumed_history: Any = None, source_revision: bool = False,
+            recover_expired_source: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
     need(type(source_revision) is bool and (not source_revision or full_source and publish
          and not (retire_expired_v2 or rescue_expired_v2 or upgrade_current_v2_to_v3)),
          "document_refresh_source_revision_mode_required")
+    need(type(recover_expired_source) is bool and (not recover_expired_source or publish
+         and not (full_source or source_revision or retire_expired_v2 or rescue_expired_v2
+                  or upgrade_current_v2_to_v3) and recover_failed_native_job is None
+         and (reviewed_application_context or application_context is not None)),
+         "document_refresh_expired_source_mode_refused")
     need(type(full_source) is bool and type(retire_expired_v2) is bool
          and type(rescue_expired_v2) is bool and type(upgrade_current_v2_to_v3) is bool
          and sum((retire_expired_v2, rescue_expired_v2, upgrade_current_v2_to_v3)) <= 1,
@@ -1382,7 +1396,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         try:
             delegate = native_http()
             boundary = boundary_module.NativeAudit(ROOT, consumed_history_bundle if required else None,
-                                                   clients, delegate, probe)
+                clients, delegate, probe,
+                **({"recover_expired_source": True} if recover_expired_source else {}))
             if required:
                 assert consumed_history_bundle is not None
                 disposition = boundary_module.history.audit(consumed_history_bundle, boundary)
@@ -1396,7 +1411,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             return refresh(directory, publish=publish, now=now, prior_journal=prior_journal,
                 history=history, recover_failed_native_job=recover_failed_native_job,
                 application_context=boundary.applications, consumed_history=disposition,
-                full_source=full_source, source_revision=source_revision)
+                full_source=full_source, source_revision=source_revision,
+                recover_expired_source=recover_expired_source)
         finally:
             clients.close()
             if delegate is not None:
@@ -1419,6 +1435,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
                if application_context is not None else {})
     if source_revision:
         context["source_revision"] = True
+    if recover_expired_source:
+        context["recover_expired_source"] = True
     nonce = infra("document_refresh_recovery").prepare(
         directory, history, recover_failed_native_job, refresh_module=sys.modules[__name__],
         retire_expired_v2=retire_expired_v2, rescue_expired_v2=rescue_expired_v2,
@@ -1431,6 +1449,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     current_image = serving["template"]["containers"][0]["image"]
     current_policy = probe.policy_for_serving(serving, current_image)
     from infra.gcp import document_source_candidate as source_profile
+    need(not recover_expired_source or current_policy == source_profile.POLICY_SHA256,
+         "document_refresh_expired_source_profile_refused")
     need(current_policy != source_profile.LEGACY_POLICY_SHA256 or source_revision,
          "document_refresh_legacy_source_read_only")
     if rescue_expired_v2:
@@ -1448,9 +1468,11 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             now=now, nonce=nonce, retire_expired_v2=True)
     if current_policy == source_profile.POLICY_SHA256 and not source_revision:
         need(not full_source and application_context is not None, "document_refresh_source_revision_app_context_required")
-        value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce, parent=current_image)
+        mode = {"recover_expired_source": True} if recover_expired_source else {}
+        value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce,
+            parent=current_image, **mode)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
-            directory / "transition", application_context=application_context)
+            directory / "transition", application_context=application_context, **mode)
     if source_revision:
         value = full_source_candidate(directory, publish=publish, now=now, nonce=nonce, source_revision=True)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
@@ -1755,6 +1777,7 @@ def main() -> None:
     parser.add_argument("--retire-expired-v2", action="store_true")
     parser.add_argument("--rescue-expired-v2", action="store_true")
     parser.add_argument("--upgrade-current-v2-to-v3", action="store_true")
+    parser.add_argument("--recover-expired-source", action="store_true")
     parser.add_argument("--resume-candidate-directory", type=Path)
     parser.add_argument("--resume-manifest-sha256")
     parser.add_argument("--resume-transition-directory", type=Path)
@@ -1787,6 +1810,12 @@ def main() -> None:
          and not args.rescue_expired_v2
          and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
          "document_refresh_fresh_v2_upgrade_requires_dispatch")
+    need(not args.recover_expired_source or (args.mode == "refresh" and args.publish_candidate
+         and args.reviewed_application_context and not args.source_revision
+         and not (args.retire_expired_v2 or args.rescue_expired_v2 or args.upgrade_current_v2_to_v3)
+         and args.recover_failed_native_job is None
+         and (os.getenv("GITHUB_ACTIONS") != "true" or os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch")),
+         "document_refresh_expired_source_requires_dispatch")
     need(args.output_directory.is_absolute() and not args.output_directory.exists(),
          "document_refresh_fresh_output_directory_required")
     args.output_directory.mkdir(mode=0o700)
@@ -1861,6 +1890,8 @@ def main() -> None:
             arguments["rescue_expired_v2"] = True
         if args.upgrade_current_v2_to_v3:
             arguments["upgrade_current_v2_to_v3"] = True
+        if args.recover_expired_source:
+            arguments["recover_expired_source"] = True
         if args.reviewed_application_context:
             arguments["reviewed_application_context"] = True
         if args.consumed_history_bundle is not None:

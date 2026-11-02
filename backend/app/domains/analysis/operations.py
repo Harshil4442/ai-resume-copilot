@@ -229,16 +229,19 @@ def _record_model_call(
 
 def complete_matching_context(db: Session, *, user_id: int, resume, payload: dict) -> dict:
     from ...services import matching_contract
-    from ...services.interview_contract import load_approved_evidence
+    from ..career import transcription_review
 
-    if not resume.source_document or not resume.raw_text:
-        raise matching_contract.MatchingContextUnavailable("Upload the original resume and review its extracted facts before enhanced comparison.")
+    effective = transcription_review.require_effective_transcription(db, user_id, resume.id)
     value = payload.get("job_description", "")
     description = value if isinstance(value, str) else "\n".join(map(str, value))
-    context = {"resume": {"raw_text": resume.raw_text, "sections": resume.sections or {},
+    context = {"resume": {"raw_text": effective.raw_text, "sections": dict(effective.sections),
         "skills": resume.skills or [], "experience_years": resume.experience_years or 0},
         "job": {"title": str(payload.get("job_title") or "Target role"), "description": description},
-        "approved_evidence": load_approved_evidence(db, user_id, resume.id)}
+        "approved_evidence": [{"id": row.id, "title": row.title, "text": row.evidence_text,
+            "metrics": row.metrics or {}, "skills": row.skills or []}
+            for row in sorted(transcription_review.owned_evidence(db, user_id, resume.id), key=lambda row: row.id)
+            if row.approval_state == "approved"]}
+    context["transcription"] = transcription_review.context_binding(effective)
     matching_contract.messages(context)  # Validate complete context before spending.
     return context
 
@@ -308,6 +311,9 @@ def execute_job_match(
         }
 
     from ...services.llm_client import analyze_job_match_complete_llm, analyze_job_match_mega_llm
+    from ..career import transcription_review
+
+    effective = transcription_review.require_effective_transcription(db, user_id, resume.id)
 
     complete = run is not None and (run.model_cost_quote or {}).get("billing_currency") == "credits"
     if run is not None and (run.id.startswith("qev2_") or (run.input_payload or {}).get("schema_version") == "supported-quality-evaluation-v2"):
@@ -344,7 +350,7 @@ def execute_job_match(
             mega_result = analyze_job_match_complete_llm(context)
         else:
             mega_result = analyze_job_match_mega_llm(
-                resume_sections=resume.sections or {},
+                resume_sections=dict(effective.sections),
                 resume_skills=resume.skills or [],
                 experience_years=resume.experience_years or 0.0,
                 jd_text=jd_text,
@@ -985,6 +991,17 @@ def execute_resume_tailor(
 
 def execute_operation(db: Session, run: models.AnalysisRun) -> dict[str, Any]:
     payload = dict(run.input_payload or {})
+    if run.operation == "resume_tailor" or (run.operation == "job_match" and payload.get("mode") == "enhanced"):
+        from .service import guard_analysis_inputs
+
+        complete = (run.model_cost_quote or {}).get("billing_currency") == "credits" or run.id.startswith("qev2_")
+        with guard_analysis_inputs(db, run, paid_context=complete) as check:
+            if run.operation == "resume_tailor":
+                result = execute_resume_tailor(db, user_id=run.user_id, payload=payload, run=run)
+            else:
+                result = execute_job_match(db, user_id=run.user_id, payload=payload, run=run)
+            check()
+            return result
     if run.operation == "job_match":
         return execute_job_match(db, user_id=run.user_id, payload=payload, run=run)
     if run.operation == "interview_questions":

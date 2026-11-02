@@ -4,6 +4,7 @@ import test from "node:test";
 import { showStartupFailure, startupDiagnostic, startupStatus, STARTUP_STATUS_TIMEOUT_MS } from "../extension/startup-diagnostics.js";
 
 const html = await readFile(new URL("../extension/popup.html", import.meta.url), "utf8");
+const submissionVector = JSON.parse(await readFile(new URL("../../backend/tests/fixtures/browser_submission_v5.json", import.meta.url), "utf8"));
 const code = (kind) => `HW-COMPANION-START-${kind}`;
 const secret = "sk-synthetic-secret@example.invalid https://credentials.invalid/token?key=private";
 const deferred = () => {
@@ -269,6 +270,28 @@ function assertAssistanceUnavailable(document) {
   assert.equal(document.getElementById("native-pause").disabled, false);
   assert.equal(document.getElementById("native-refresh").disabled, false);
 }
+
+for (const version of [4, 5]) test(`actual popup keeps protocol ${version} held units explicit without any automatic action`, async () => {
+  const initial = { ...activeAssistance(), phase: "unknown", review_id: submissionVector.unified5.review_response.id, review_protocol_version: version,
+    ...(version === 5 ? { billing: submissionVector.unified5.review_response.billing } : {}) };
+  await assistancePopup(() => assert.fail("No automatic follow-up or action"), async (document, calls) => {
+    assert.match(document.getElementById("assistance-state").textContent, version === 5 ? /3 unified credits/ : /20 legacy service credits/);
+    assert.equal(document.getElementById("assistance-fill").disabled, true);
+    assert.deepEqual(calls, [{ type: "status" }]);
+  }, initial);
+});
+test("actual popup locks malformed unified status while preserving the original no-replay state fence", async () => {
+  const malformed = { ...activeAssistance(), phase: "unknown", review_protocol_version: 5 };
+  await assistancePopup(async ({ type }) => {
+    if (["assistance_check", "assistance_status"].includes(type)) return { ok: true, value: malformed };
+    if (type === "pairing_status") return { ok: true, value: pairedConnection() };
+    assert.fail("No automatic application action: " + type);
+  }, async (document, calls, click) => {
+    await click("assistance-check"); assertAssistanceUnavailable(document);
+    assert.equal(calls.filter(({ type }) => type === "assistance_fill").length, 0);
+    assert.equal(calls.filter(({ type }) => type === "assistance_prepare_submit").length, 0);
+  });
+});
 
 test("actual popup ends optimistic Working and stays locked when action and status both fail", async () => {
   const response = deferred();

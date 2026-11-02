@@ -31,7 +31,17 @@ def pg_engine():
 
 @pytest.fixture
 def pg_cost_context(pg_engine):
-    _migrate(pg_engine, "head")
+    return _cost_context_at_revision(pg_engine, "head")
+
+
+@pytest.fixture
+def historical25_cost_context(pg_engine):
+    # This rehearsal must reach the original model-cost downgrade guard.
+    return _cost_context_at_revision(pg_engine, "20261028_0025")
+
+
+def _cost_context_at_revision(pg_engine, revision):
+    _migrate(pg_engine, revision)
     factory = sessionmaker(bind=pg_engine, autoflush=False)
     with factory() as db:
         db.add(models.User(id=1, email="synthetic-model-cost@example.com", ai_credits=100))
@@ -150,7 +160,7 @@ def test_postgres_legacy_populated_migration_roundtrip_keeps_history_unquoted(pg
             (id,analysis_run_id,user_id,provider,model,prompt_version,input_tokens,output_tokens,tokens_estimated,
              attempt_number,latency_ms,estimated_cost_micros,status,created_at)
             VALUES ('mdl_legacy','run_cost',1,'google','gemini-3.6-flash','legacy',10,0,true,1,0,0,'attempted',CURRENT_TIMESTAMP)"""))
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     factory = sessionmaker(bind=pg_engine, autoflush=False)
     with persistent_run_budget(factory, "run_cost") as budget:
         with pytest.raises(ModelCostUnavailable, match="legacy"):
@@ -162,13 +172,13 @@ def test_postgres_legacy_populated_migration_roundtrip_keeps_history_unquoted(pg
         assert event.estimated_cost_micros == 0 and event.cost_state == "unavailable"
     _migrate(pg_engine, "20261008_0009", direction="downgrade")
     assert "model_cost_quote" not in {c["name"] for c in inspect(pg_engine).get_columns("analysis_runs")}
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     with factory() as db:
         assert db.get(models.AnalysisRun, "run_cost").generation_attempt_count == 1
 
 
-def test_postgres_downgrade_refuses_high_value_history_without_truncation(pg_cost_context, pg_engine):
-    factory = pg_cost_context
+def test_postgres_downgrade_refuses_high_value_history_without_truncation(historical25_cost_context, pg_engine):
+    factory = historical25_cost_context
     run_id = new_run(factory)
     with persistent_run_budget(factory, run_id) as budget:
         record = admit(budget)

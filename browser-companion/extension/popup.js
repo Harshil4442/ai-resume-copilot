@@ -1,4 +1,5 @@
 import { CONFIG } from "./config.js";
+import { isSubmissionBilling, isSubmissionVersion, submissionUnits } from "./submission-billing.js";
 import { decode64 } from "./protocol.js";
 import { nativeStorageOrigin } from "./greenhouse-native-network.js";
 import { showStartupFailure, startupDiagnostic, startupStatus } from "./startup-diagnostics.js";
@@ -142,6 +143,7 @@ element("native-confirmed").addEventListener("change", () => {
 
 async function showAssistance(value, revision = ++assistanceViewRevision) {
   if (revision !== assistanceViewRevision) return;
+  if (value?.review_protocol_version === 5 && !isSubmissionBilling(value.billing)) throw new Error("The current unified submission quote is unavailable.");
   const origins = [`${CONFIG.websiteOrigin}/*`, `${CONFIG.portalOrigin}/*`];
   const permitted = await chrome.permissions.contains({ origins });
   if (revision !== assistanceViewRevision) return;
@@ -164,12 +166,12 @@ async function showAssistance(value, revision = ++assistanceViewRevision) {
   element("assistance-prepare-submit").disabled = element("assistance-prepare").disabled || !value.submit_available;
   element("assistance-reconcile").disabled = !permitted || !value.can_reconcile;
   element("assistance-fill").disabled = !permitted || !value.can_fill || value.native_upload && !storageAllowed;
-  element("assistance-fill").textContent = value.review_protocol_version === 4 ? "Submit the approved application once" : value.review_protocol_version === 3 ? value.native_upload ? "Upload approved resume once" : "Select approved resume" : "Fill approved answers";
+  element("assistance-fill").textContent = isSubmissionVersion(value.review_protocol_version) ? "Submit the approved application once" : value.review_protocol_version === 3 ? value.native_upload ? "Upload approved resume once" : "Select approved resume" : "Fill approved answers";
   element("assistance-cancel").disabled = !value.review_id;
   const list = element("assistance-fingerprint"); list.replaceChildren();
   pair(list, "Browser key SHA-256", value.key_sha256);
   if(storageOrigin)pair(list,"Reviewed employer storage",storageOrigin);
-  element("assistance-state").textContent = value.message || (value.review_protocol_version === 4 ? `Submission state: ${value.phase}. A possible-send attempt cannot be replayed. Employer receipt is unverified; 20 credits stay held after an uncertain send.` : value.review_protocol_version === 3
+  element("assistance-state").textContent = value.message || (isSubmissionVersion(value.review_protocol_version) ? `Submission state: ${value.phase}. A possible-send attempt cannot be replayed. Employer receipt is unverified; ${submissionUnits(value.review_protocol_version)} stay held after an uncertain send.` : value.review_protocol_version === 3
     ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
     : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
 }

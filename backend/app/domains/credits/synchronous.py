@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -18,6 +19,8 @@ from ... import models, schemas
 from ...services import synchronous_contracts as contracts
 from ...services.result_commit import ResultOwnerGone, begin_result_commit
 from ..analysis.models import AnalysisRequestKey
+from ..career import schemas as career_schemas
+from ..career import transcription_review
 from ..common import payload_fingerprint, public_id, utcnow
 from . import admission, execution, finance, pricing, runtime, service
 from .models import CreditServiceQuote
@@ -90,14 +93,19 @@ def owned_context(db: Session, *, user_id: int, payload: SynchronousServiceReque
     resume = db.query(models.Resume).filter_by(id=resume_id, user_id=user_id).populate_existing().one_or_none()
     if resume is None:
         raise HTTPException(404, "Resume not found for this user")
-    facts = db.query(models.EvidenceItem).filter_by(user_id=user_id, resume_id=resume.id, approval_state="approved").order_by(models.EvidenceItem.id).populate_existing().all()
-    context = {
+    effective = transcription_review.require_effective_transcription(db, user_id, resume.id)
+    facts = sorted((row for row in transcription_review.owned_evidence(db, user_id, resume.id)
+        if row.approval_state == "approved"), key=lambda row: row.id)
+    context: dict[str, Any] = {
         "request": normalized,
-        "resume": _snapshot(resume, ("id", "raw_text", "skills", "experience_years", "sections", "source_format")),
+        "resume": {**_snapshot(resume, ("id", "skills", "experience_years", "source_format")),
+                   "raw_text": effective.raw_text, "sections": dict(effective.sections)},
+        "transcription": transcription_review.context_binding(effective),
         "approved_evidence": [{"id": item.id, "title": item.title, "text": item.evidence_text,
             "skills": item.skills or [], "metrics": item.metrics or {}, "source_ref": item.source_ref,
             "category": item.category, "confidence": item.confidence,
-            "provenance": item.provenance, "updated_at": item.updated_at.isoformat() if item.updated_at else None} for item in facts],
+            "provenance": item.provenance, "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+            "snapshot_fingerprint": career_schemas.evidence_snapshot_fingerprint(item)} for item in facts],
         "versions": dict(contracts.VERSIONS),
         # Internal paired evaluation prepares both sides before execution. Its
         # independently validated caller can bind the declared side here; this
@@ -187,6 +195,21 @@ def require_current_inputs(db: Session, *, user_id: int, payload: SynchronousSer
         )
     require_current_resources(fresh)
     return fresh
+
+
+@contextmanager
+def guard_prepared_inputs(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
+                         prepared: PreparedSynchronous, run_id: str,
+                         trusted_generation_configuration: dict | None = None):
+    from ...services.provider_input_guard import guard_provider_inputs
+
+    factory = sessionmaker(bind=db.get_bind(), autoflush=False)
+    def check():
+        with factory() as fresh:
+            require_current_inputs(fresh, user_id=user_id, payload=payload, prepared=prepared,
+                trusted_generation_configuration=trusted_generation_configuration)
+    with guard_provider_inputs(check, run_id=run_id):
+        yield
 
 
 def _replay(run, fingerprint):
@@ -320,7 +343,8 @@ def execute(db: Session, *, user_id: int, payload: SynchronousServiceRequest,
 
         with execution.persistent_execution_budget(sessionmaker(bind=db.get_bind()), user_id=user_id,
                 hold_id=hold_id, route=route, policy=config.policy, analysis_run_id=identity):
-            result = generate_prepared(prepared)
+            with guard_prepared_inputs(db, user_id=user_id, payload=payload, prepared=prepared, run_id=identity):
+                result = generate_prepared(prepared)
         begin_result_commit(db, user_id, identity)
         require_current_inputs(db, user_id=user_id, payload=payload, prepared=prepared)
         current = db.get(models.AnalysisRun, identity, populate_existing=True)

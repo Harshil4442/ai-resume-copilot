@@ -31,6 +31,7 @@ class CandidateRequest(StrictModel):
     key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     confirmed: bool = False
     hosted_answers: dict[str, str] | None = None
+    accepted_service_quote_id: str | None = Field(default=None, pattern=r"^csq_[a-f0-9]{32}$")
 
     @field_validator("confirmed", mode="before")
     @classmethod

@@ -216,13 +216,13 @@ it("pauses an unsettled approval at forty seconds without replay or private erro
 
 it("offers the distinct recovery package and preserves an existing install without any request", () => {
   render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={null} />);
-  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.7" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.7.zip");
+  expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.8" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.8.zip");
   expect(screen.getByText(/replace its files and reload that same extension; keep its browser storage/)).toBeInTheDocument();
   expect(request).not.toHaveBeenCalled();
 });
 
 describe("separate exact final-submit approval", () => {
-  const approve = () => screen.getByRole("button", { name: "Approve final submission · reserve 20 credits" });
+  const approve = () => screen.getByRole("button", { name: "Approve final submission · reserve 20 legacy service credits" });
   const consent = () => screen.getByRole("checkbox", { name: /I reviewed every answer, candidate, opening/ });
   async function load(result = finalSubmitReview()) {
     request.mockResolvedValueOnce(Response.json(result));
@@ -250,7 +250,7 @@ describe("separate exact final-submit approval", () => {
     expect(apiDownload).not.toHaveBeenCalled(); expect(request).toHaveBeenCalledTimes(1);
     request.mockResolvedValueOnce(Response.json({ ...draft, state: "approved" }));
     await userEvent.click(consent()); expect(approve()).toBeEnabled(); await userEvent.click(approve());
-    expect(await screen.findByText(/Final submission approved and 20 credits reserved/)).toBeVisible();
+    expect(await screen.findByText(/Final submission approved and 20 legacy service credits reserved/)).toBeVisible();
     expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: draft.review_digest });
     expect(request.mock.calls[1][1].headers["X-Hirewiz-Account-CSRF"]).toBe("9".repeat(64));
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
@@ -299,13 +299,13 @@ describe("separate exact final-submit approval", () => {
     request.mockResolvedValueOnce(Response.json(changed));
     await userEvent.click(consent()); await userEvent.click(approve());
     expect(await screen.findByRole("alert")).toHaveTextContent("approved review changed");
-    expect(screen.queryByText(/Final submission approved and 20 credits reserved/)).toBeNull();
+    expect(screen.queryByText(/Final submission approved and 20 legacy service credits reserved/)).toBeNull();
     expect(consent()).toBeDisabled(); expect(approve()).toBeDisabled(); expect(request).toHaveBeenCalledTimes(2);
   });
 
   it("reports an unknown employer outcome and held credits truthfully without approval or automatic resend", async () => {
     await load(finalSubmitReview("unknown"));
-    expect(screen.getByRole("status")).toHaveTextContent("No verified receipt is available; 20 credits remain held");
+    expect(screen.getByRole("status")).toHaveTextContent("No verified receipt is available; 20 legacy service credits remain held");
     expect(screen.getByRole("status")).toHaveTextContent("Do not resend automatically");
     expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull();
     expect(screen.queryByText(/0 application credits/)).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
@@ -315,7 +315,7 @@ describe("separate exact final-submit approval", () => {
     request.mockResolvedValueOnce(Response.json({ ...finalSubmitReview("unknown"), payload: {} }));
     render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
     await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(/20 credits.*held/);
+    expect(await screen.findByRole("status")).toHaveTextContent(/20 legacy service credits.*held/);
     expect(screen.getByRole("status")).toHaveTextContent(/no.*receipt|receipt.*unverified/i);
     expect(screen.getByRole("status")).toHaveTextContent(/no.*resend|no.*retry/i);
     expect(screen.queryByText("Synthetic Alice")).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
@@ -342,7 +342,7 @@ describe("separate exact final-submit approval", () => {
     render(<BrowserAssistanceReview deviceId={null} reviewId={identity} applicationId={application} />);
     await userEvent.click(screen.getByRole("button", { name: "Load exact application review" }));
     expect(await screen.findByRole("status")).toHaveTextContent(confirmed ? /receipt.*verified|verified.*receipt/i : /verified.*no application was submitted|verified.*not.*submitted|verified.*non.*submission/i);
-    expect(screen.queryByText(/20 credits.*held/)).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText(/20 legacy service credits.*held/)).toBeNull(); expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull(); expect(screen.queryByRole("alert")).toBeNull(); expect(request).toHaveBeenCalledTimes(1);
   });
 });
@@ -957,7 +957,7 @@ describe("native exact resume upload and employer receipt review", () => {
   it("shows a confirmed native final receipt only on consistent backend terminal metadata", async () => {
     const result = nativeFinalReview("filled"); result.submission_status = "confirmed"; result.employer_confirmed = true; result.filled_count = 1;
     await load(result);
-    expect(await screen.findByText(/Employer receipt independently verified/)).toHaveTextContent("20 credits charged");
+    expect(await screen.findByText(/Employer receipt independently verified/)).toHaveTextContent("20 legacy service credits charged");
     expect(screen.queryByRole("checkbox")).toBeNull(); expect(screen.queryByRole("button", { name: /Approve final submission/ })).toBeNull();
     expect(screen.queryByText(/Employer application ID/)).toBeNull();
   });

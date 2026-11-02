@@ -37,7 +37,11 @@ class ReadOnlyHttp:
 
 
 class NativeAudit:
-    def __init__(self, root, bundle, clients, http, probe):
+    recover_expired_source = False
+
+    def __init__(self, root, bundle, clients, http, probe, *, recover_expired_source=False):
+        history.need(type(recover_expired_source) is bool, "expired_source_mode_invalid")
+        self.recover_expired_source = recover_expired_source
         self.root, self.bundle, self.clients, self.probe = root, bundle, clients, probe
         self.http = ReadOnlyHttp(http)
         if bundle is not None:
@@ -121,10 +125,17 @@ class NativeAudit:
         # Build/Job/Execution/log proof instead of depending forever on 581.
         worker = self.clients.preflight()["service"]
         image = worker["template"]["containers"][0]["image"]
-        accepted = self.probe.verify_current_successor(image, worker)
+        if self.recover_expired_source:
+            from infra.gcp import document_source_release
+            predecessor = document_source_release.verify_expired_current_source_predecessor(image, worker)
+        else:
+            accepted = self.probe.verify_current_successor(image, worker)
         policy = self.probe.policy_for_serving(worker, image)
         self.probe.verify_caller_pins(self.clients, image, policy_sha256=policy,
                                      caller_serving_validator=self.applications.serving)
         history.need(self.clients.service(apps.PARENT + "/services/hirewiz-document-inspector") == worker,
                      "current_document_changed")
+        if self.recover_expired_source:
+            return {"expired_structural_predecessor": predecessor.report(),
+                    "worker_generation": str(worker["generation"]), "processing_authorized": False}
         return {"current_native_acceptance": asdict(accepted), "worker_generation": str(worker["generation"])}

@@ -9,7 +9,7 @@ export async function accountMutationHeaders(): Promise<Record<string, string>> 
 
 export function accountApiPath(path: string): string {
   const operations: Record<string, string> = {
-    "/auth/profile": "profile", "/auth/bootstrap": "bootstrap", "/auth/me": "me", "/auth/export-account": "export", "/auth/delete-account": "delete",
+    "/auth/profile": "profile", "/auth/bootstrap": "bootstrap", "/auth/dashboard": "dashboard", "/auth/me": "me", "/auth/export-account": "export", "/auth/delete-account": "delete",
   };
   return operations[path] ? `/api/account/${operations[path]}` : `/api/backend${path}`;
 }

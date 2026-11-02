@@ -9,6 +9,7 @@ import * as uploads from "../lib/resumeUpload";
 import type { EmployerApplication, JobServiceCatalog } from "../lib/employerJobs";
 import { accountMutationHeaders } from "../lib/accountTransportClient";
 import EmployerApplicationPanel from "./EmployerApplicationPanel";
+import submissionVector from "../../backend/tests/fixtures/browser_submission_v5.json";
 
 vi.mock("../lib/api", () => ({
   apiGet: vi.fn(), apiPostForm: vi.fn(), apiPostJson: vi.fn(), apiPutJson: vi.fn(),
@@ -85,6 +86,34 @@ beforeEach(() => {
   vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) });
 });
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+describe("explicit browser submission wallet units", () => {
+  async function showApplication(value: EmployerApplication) {
+    const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 20, pricing_version: "legacy", max_search_jobs: 20, balance: 100, sources: [] };
+    vi.mocked(apiGet).mockImplementation(async path => path.endsWith("/catalog") ? catalog : value);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
+    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+    await screen.findByRole("heading", { name: "Engineer" });
+  }
+  it("shows an actual quoted three-credit unknown hold in unified units without interpreting the legacy balance", async () => {
+    await showApplication({ ...application(), status: "unknown", credit_cost: 3, reserved_credits: 3, billing_currency: "credits", billing: structuredClone(submissionVector.unified5.review_response.billing) as NonNullable<EmployerApplication["billing"]> });
+    expect(screen.getByText("3 unified credits currently reserved · 0 charged.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Approve and submit/ })).not.toBeInTheDocument();
+    expect(apiPostJson).not.toHaveBeenCalled();
+  });
+  it("does not convert a preparation estimate into an accepted quote or charge", async () => {
+    await showApplication({ ...application(), credit_cost: 3, reserved_credits: 0, billing_currency: "credits" });
+    expect(screen.getByText(/No final submission quote has been accepted/)).toBeVisible();
+    expect(screen.getByText("0 unified credits currently reserved · 0 charged.")).toBeVisible();
+    expect(apiPostJson).not.toHaveBeenCalled();
+  });
+  it("refuses a hold with no corresponding immutable quote instead of fabricating successful balance metadata", async () => {
+    await showApplication({ ...application(), status: "unknown", credit_cost: 3, reserved_credits: 3, billing_currency: "credits" });
+    expect(screen.getByText(/Application pricing is unavailable/)).toBeVisible();
+    expect(screen.queryByText(/3 unified credits currently reserved/)).not.toBeInTheDocument();
+    expect(apiPostJson).not.toHaveBeenCalled();
+  });
+});
 
 async function upload(file: File) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });

@@ -19,6 +19,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { featureDecisionsOptions } from "../lib/ownedBootstrapClient";
+import { ownedDashboardOptions } from "../lib/ownedDashboardClient";
 import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../lib/ownerProfile";
 import { creditAvailabilityOptions, creditWalletOptions, creditWalletKey } from "../lib/unifiedCreditClient";
 import Logo from "./ui/Logo";
@@ -58,19 +59,26 @@ export default function Nav() {
   const authenticated = status === "authenticated";
   // Keep unrelated header reads out of the quota-sensitive connection/review path.
   const companionPage = pathname === "/browser-companion";
+  const dashboardPage = pathname === "/dashboard";
   const [mobileOpen, setMobileOpen] = useState(false);
   const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
-  const profile = useQuery({
+  const baseProfile = useQuery({
     ...ownerProfileQueryOptions(),
-    enabled: authenticated && !companionPage,
+    enabled: authenticated && !companionPage && !dashboardPage,
   });
-  const features = useQuery({
+  const baseFeatures = useQuery({
     ...featureDecisionsOptions(),
-    enabled: authenticated && !companionPage,
+    enabled: authenticated && !companionPage && !dashboardPage,
   });
-  const creditAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !companionPage });
+  const dashboard = useQuery({ ...ownedDashboardOptions(), enabled: authenticated && dashboardPage });
+  const advisory = dashboard.isError ? undefined : dashboard.data?.bootstrap;
+  const profile = dashboardPage ? { data: advisory?.profile ?? undefined } : baseProfile;
+  const features = dashboardPage ? { data: advisory?.features ? { features: advisory.features } : undefined } : baseFeatures;
+  const baseAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !companionPage && !dashboardPage });
+  const creditAvailability = dashboardPage ? { data: advisory?.credit_availability, isSuccess: Boolean(advisory?.credit_availability) } : baseAvailability;
   const unifiedWalletEnabled = !companionPage && creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;
-  const creditWallet = useQuery({ ...creditWalletOptions(), enabled: authenticated && !companionPage && unifiedWalletEnabled });
+  const baseWallet = useQuery({ ...creditWalletOptions(), enabled: authenticated && !companionPage && !dashboardPage && unifiedWalletEnabled });
+  const creditWallet = dashboardPage ? { data: advisory?.credit_wallet, isSuccess: Boolean(advisory?.credit_wallet) } : baseWallet;
 
   useEffect(() => {
     localStorage.removeItem("access_token");

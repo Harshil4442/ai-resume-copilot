@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -42,13 +44,10 @@ def ask_ai_about_match(
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found for this user")
 
-    evidence = (
-        db.query(models.EvidenceItem)
-        .filter(models.EvidenceItem.user_id == current_user.id,
-                models.EvidenceItem.resume_id == resume.id,
-                models.EvidenceItem.approval_state == "approved")
-        .order_by(models.EvidenceItem.created_at).all()
-    )
+    from ..domains.career import transcription_review
+
+    evidence = sorted((row for row in transcription_review.owned_evidence(db, current_user.id, resume.id)
+        if row.approval_state == "approved"), key=lambda row: row.created_at)
     answer_input = {
         "resume": resume,
         "match": match,
@@ -78,14 +77,26 @@ def ask_ai_about_match(
             return unavailable_enhanced_answer()
 
     try:
+        request = synchronous.request("enhanced_qa", payload)
+        prepared = synchronous.owned_context(db, user_id=current_user.id, payload=request)
+        effective_resume = SimpleNamespace(id=resume.id, skills=prepared.context["resume"]["skills"],
+            raw_text=prepared.context["resume"]["raw_text"], sections=prepared.context["resume"]["sections"])
+        answer_input = {**answer_input, "resume": effective_resume, "approved_evidence": prepared.context["approved_evidence"]}
         with billable_operation(
             user_id=current_user.id,
             db=db,
             operation="match_question",
             amount=1,
-            input_payload={"job_match_id": match.id, "resume_id": resume.id, "mode": payload.mode},
-        ):
-            return ask_match_ai(**answer_input, mode=payload.mode)
+            input_payload={"job_match_id": match.id, "resume_id": resume.id, "mode": payload.mode,
+                "context_fingerprint": prepared.fingerprint},
+        ) as run, synchronous.guard_prepared_inputs(db, user_id=current_user.id, payload=request,
+                prepared=prepared, run_id=run.id):
+            result = ask_match_ai(**answer_input, mode=payload.mode)
+            from ..services.result_commit import begin_result_commit
+
+            begin_result_commit(db, current_user.id, run.id)
+            synchronous.require_current_inputs(db, user_id=current_user.id, payload=request, prepared=prepared)
+            return result
     except EnhancedAnswerUnavailable:
         # The context has rolled back the deliverable and restored the product
         # charge. Real provider expense remains in its independent cost ledger.

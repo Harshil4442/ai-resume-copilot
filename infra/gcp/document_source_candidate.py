@@ -6,6 +6,7 @@ the exact retained commit and the generation-bound source archive independently.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -41,6 +42,11 @@ BASE_PAYLOAD_SHA256 = "bd3d526e421356527cffd1660170bca9bedb3eae2b3959c6ae5d25cb8
 # Reconstruct exact historical bytes, not new execution or a claim about the
 # historical Build's Git provenance. Every member is checked against frozen V3.
 FROZEN_V3_SOURCE_COMMIT = "ab2deadd1b1cecbe9cb10c73806dbcde851bf5e2"
+DEFINITION_RECIPE_VERSION = 2
+LEGACY_DEFINITION_HELPERS = frozenset({
+    "14fe5261476c196411e3ae7e701a95f483d017c7b01366edf3dd0fb5d09d68ed",
+    "082a2c68248cd6193994589ccbfed850f4a65b713da7ecfc24e16d068cc5ba06",
+})
 
 
 class SourceDenied(RuntimeError):
@@ -173,14 +179,36 @@ def historical_v3_contents(root=ROOT):
     return contents
 
 
-def definition_recipe(parent_image, root=ROOT):
+def definition_recipe(parent_image, root=ROOT, *, source_commit=None):
     need(type(parent_image) is str and re.fullmatch(
         r"us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz-document-inspector@sha256:[a-f0-9]{64}",
         parent_image) and parent_image != courier.IMAGE, "definition_parent_invalid")
     raw = (root / courier.REFRESH_DOCKERFILE).read_bytes()
     need(digest(raw) == courier.REFRESH_SHA256 and raw.count(courier.IMAGE.encode()) == 2,
          "definition_recipe_changed")
-    return raw.replace(courier.IMAGE.encode(), parent_image.encode())
+    legacy = False
+    if source_commit is not None:
+        need(type(source_commit) is str and re.fullmatch(r"[a-f0-9]{40}", source_commit), "definition_commit_invalid")
+        helper = git(root, "show", source_commit + ":infra/gcp/document_source_candidate.py")
+        legacy = digest(helper) in LEGACY_DEFINITION_HELPERS
+        if not legacy:
+            versions = [node.value.value for node in ast.parse(helper).body if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "DEFINITION_RECIPE_VERSION"
+                        for target in node.targets) and isinstance(node.value, ast.Constant)]
+            need(versions == [DEFINITION_RECIPE_VERSION] and type(versions[0]) is int,
+                 "definition_recipe_version_unreviewed")
+    recipe = raw.replace(courier.IMAGE.encode(), parent_image.encode())
+    if legacy:
+        return recipe  # Historical readback must reproduce the original failed recipe.
+    command = b"    && freshclam --stdout --datadir=/var/lib/clamav\n"
+    need(recipe.count(command) == 1, "definition_update_command_changed")
+    return recipe.replace(command, b"    && chown -R 100:101 /var/lib/clamav \\\n"
+        b"    && find /var/lib/clamav -type d -exec chmod 0755 {} + \\\n"
+        b"    && find /var/lib/clamav -type f -exec chmod 0644 {} + \\\n"
+        b"    && freshclam --stdout --datadir=/var/lib/clamav \\\n"
+        b"    && chown -R 0:0 /var/lib/clamav \\\n"
+        b"    && find /var/lib/clamav -type d -exec chmod 0555 {} + \\\n"
+        b"    && find /var/lib/clamav -type f -exec chmod 0444 {} +\n")
 
 
 def require_working_contract(source, root=ROOT):

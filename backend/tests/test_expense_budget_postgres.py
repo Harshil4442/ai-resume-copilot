@@ -165,7 +165,7 @@ def test_expense_snapshot_downgrade_preserves_paid_history(pg_engine):
     from backend.tests.test_employer_admissions_postgres import _migrate
     from sqlalchemy import text
 
-    _migrate(pg_engine, "head")
+    _migrate(pg_engine, "20261028_0025")
     with pg_engine.begin() as db:
         original_revision = db.scalar(text("SELECT version_num FROM alembic_version"))
         db.execute(

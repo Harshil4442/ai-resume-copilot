@@ -1,6 +1,7 @@
 """Pure owned credit availability; shared by legacy reads and account bootstrap."""
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,18 @@ def route_available(route, user_id: int | None, email: str = "") -> bool:
     asynchronous = {"enhanced_job_match", "interview_questions", "resume_tailor",
                     "resume_tailor_extended", "market_report"}
     synchronous = {"resume_enrichment", "bullet_rewrite", "enhanced_qa", "learning_strategy"}
+    if route.operation == "verified_submission":
+        from ..browser_assistance import attachments, hosted_network, submissions
+        from ..browser_assistance import service as browser
+        from . import submission
+
+        # Product support only; the owner/quote/cash/native checks still run
+        # independently at approval and immediately before the one-shot send.
+        return (submission.enabled() and browser.enabled() and browser.typed_controls_enabled()
+            and attachments.enabled() and hosted_network.enabled() and submissions.enabled()
+            and os.getenv("BROWSER_SUBMIT_NATIVE_ENABLED", "false").lower() == "true"
+            and route.mode == "native" and not route.model_quotes and route.credits == 3
+            and route.output_contract_sha256 == submission.delivery_contract())
     if route.operation not in asynchronous | synchronous | {"job_discovery_batch"}:
         return False  # A future tariff alone never makes a service purchasable.
     if route.mode == "enhanced" and not generation_enabled():

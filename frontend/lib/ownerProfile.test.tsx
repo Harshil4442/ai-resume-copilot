@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   get: vi.fn(),
-  pathname: "/dashboard",
+  pathname: "/profile",
   auth: { status: "authenticated", data: { user: { id: "owner-a", email: "a@example.test" } } } as {
     status: "loading" | "authenticated" | "unauthenticated";
     data: { user: { id: string; email: string } } | null;
@@ -30,12 +30,13 @@ function Reader({ label }: { label: string }) {
   return <p>{label}: {query.data ? `${query.data.email} / ${query.data.ai_credits}` : "Loading"}</p>;
 }
 function tree(extra = false) {
-  return <SessionProviderWrapper><Nav /><Reader label="Dashboard" />{extra ? <Reader label="Later consumer" /> : null}</SessionProviderWrapper>;
+  return <SessionProviderWrapper><Nav /><Reader label="Profile" />{extra ? <Reader label="Later consumer" /> : null}</SessionProviderWrapper>;
 }
 const reads = () => state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap");
 
 beforeEach(() => {
-  state.pathname = "/dashboard";
+  // The dashboard has its own snapshot; Profile and Nav share this bootstrap.
+  state.pathname = "/profile";
   state.auth = { status: "authenticated", data: { user: { id: "owner-a", email: "a@example.test" } } };
   state.get.mockReset();
 });
@@ -52,15 +53,16 @@ describe("shared owner profile", () => {
     await waitFor(() => expect(reads()).toHaveLength(1));
     expect(reads()[0][1]).toBeInstanceOf(AbortSignal);
     await act(async () => { resolve(profile("a@example.test", 7)); });
-    await screen.findByText("Dashboard: a@example.test / 7");
+    await screen.findByText("Profile: a@example.test / 7");
     expect(screen.getByTitle("7 analysis units remaining")).toBeInTheDocument();
     view.rerender(tree(true));
     await screen.findByText("Later consumer: a@example.test / 7");
     expect(reads()).toHaveLength(1);
     act(() => { window.dispatchEvent(new Event("refresh_analysis_units")); });
-    await screen.findByText("Dashboard: a@example.test / 9");
+    await screen.findByText("Profile: a@example.test / 9");
     expect(screen.getByTitle("9 analysis units remaining")).toBeInTheDocument();
     expect(reads()).toHaveLength(2);
+    expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/bootstrap", "/auth/bootstrap"]);
   });
 
   it("isolates a direct owner switch and rejects a late previous-owner result", async () => {
@@ -74,20 +76,21 @@ describe("shared owner profile", () => {
     const oldSignal = reads()[0][1] as AbortSignal;
     state.auth = { status: "authenticated", data: { user: { id: "owner-b", email: "b@example.test" } } };
     view.rerender(tree());
-    await screen.findByText("Dashboard: b@example.test / 3");
+    await screen.findByText("Profile: b@example.test / 3");
     expect(clients.size).toBe(2);
     expect(oldSignal.aborted).toBe(true);
     await act(async () => { oldReply(profile("a@example.test", 999)); });
     expect(screen.queryByText(/a@example.test/)).not.toBeInTheDocument();
     expect(screen.getByTitle("3 analysis units remaining")).toBeInTheDocument();
     expect(reads()).toHaveLength(2);
+    expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/bootstrap", "/auth/bootstrap"]);
   });
 
   it("removes private profile views on logout/loading and uses a fresh cache for the next login", async () => {
     state.get.mockImplementation((path: string) => path === "/auth/bootstrap"
       ? Promise.resolve(ownedBootstrapFixture({ profile: profile(state.auth.data!.user.email, 7) })) : Promise.resolve({ features: {} }));
     const view = render(tree());
-    await screen.findByText("Dashboard: a@example.test / 7");
+    await screen.findByText("Profile: a@example.test / 7");
     for (const status of ["loading", "unauthenticated"] as const) {
       state.auth = { status, data: null };
       view.rerender(tree());
@@ -97,7 +100,7 @@ describe("shared owner profile", () => {
     }
     state.auth = { status: "authenticated", data: { user: { id: "owner-b", email: "b@example.test" } } };
     view.rerender(tree());
-    await screen.findByText("Dashboard: b@example.test / 7");
+    await screen.findByText("Profile: b@example.test / 7");
     expect(reads()).toHaveLength(2);
   });
 

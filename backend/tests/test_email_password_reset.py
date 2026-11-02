@@ -229,7 +229,7 @@ def test_legacy_google_signin_remains_usable_after_email_password_reset(owned, m
         assert verify_password(NEW, db.get(User, 1).password_hash)
 
 
-def test_security_worker_recovers_stale_claim_without_enabling_marketing(owned, monkeypatch):
+def test_security_worker_preserves_unknown_stale_claim_without_resend_or_marketing(owned, monkeypatch):
     _, factory = owned
     token, _ = issue(factory)
     with factory() as db:
@@ -241,9 +241,13 @@ def test_security_worker_recovers_stale_claim_without_enabling_marketing(owned, 
         db.commit()
         calls = []
         monkeypatch.setattr(notifications, "_send", lambda item: calls.append(item.notification_type))
-        result = notifications.deliver_pending_notifications(db)
-        assert calls == ["password_changed"] and result.sent == 1 and result.configured
-        assert db.get(NotificationOutbox, "unrelated").status == "pending"
+        original_payload, original_attempts = dict(item.payload), item.attempt_count
+        for _ in range(2):
+            result = notifications.deliver_pending_notifications(db)
+            assert calls == [] and result.sent == 0 and result.configured
+            assert item.status == "mail_unknown" and item.claimed_at is None
+            assert item.payload == original_payload and item.attempt_count == original_attempts
+            assert db.get(NotificationOutbox, "unrelated").status == "pending"
 
 
 def test_native_rotated_cookie_refuses_current_account_unavailable(native, monkeypatch):

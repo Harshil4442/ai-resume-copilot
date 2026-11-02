@@ -154,7 +154,10 @@ def availability() -> dict:
         return {"enabled": False, "allowed_actions": [], "fee_credits": 0}
     public_signer()
     return {"enabled": True, "allowed_actions": ["fill", *(["attach"] if attachments.enabled() else []), *(["submit"] if submissions.enabled() else [])],
-            "fee_credits": 0, **({"submit_fee_credits":20} if submissions.enabled() else {}), "portal_origin": ORIGIN, "tenant": TENANT}
+            "fee_credits": 0, **({"submit_fee_credits":20} if submissions.enabled() else {}),
+            "unified_submit_available": submissions.enabled() and os.getenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "false").lower() == "true",
+            "submit_protocol_versions": [4, 5] if submissions.enabled() and os.getenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "false").lower() == "true" else [4] if submissions.enabled() else [],
+            "portal_origin": ORIGIN, "tenant": TENANT}
 
 
 def _public_key(value: object) -> tuple[dict, ec.EllipticCurvePublicKey]:
@@ -193,7 +196,9 @@ def _device_response(device: Device) -> dict:
     return {"id": device.id, "state": device.state, "key_sha256": device.key_sha256,
             "extension_id": device.extension_id, "expires_at_ms": _ms(device.pairing_expires_at),
             "authority_key": public_signer(), "attachment_available": attachments.enabled(), "submit_available": submissions.enabled(),
-            "native_upload_available": attachments.enabled() and hosted_network.enabled()}
+            "native_upload_available": attachments.enabled() and hosted_network.enabled(),
+            "unified_submit_available": submissions.enabled() and os.getenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "false").lower() == "true",
+            "submit_protocol_versions": [4, 5] if submissions.enabled() and os.getenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "false").lower() == "true" else [4] if submissions.enabled() else []}
 
 
 def _review_response(review: Review, *, include_payload: bool = True) -> dict:
@@ -204,9 +209,11 @@ def _review_response(review: Review, *, include_payload: bool = True) -> dict:
         response["review_protocol_version"] = review.review_protocol_version
     if review.review_protocol_version == 3:
         response["attachment_status"] = "selected_upload_unconfirmed" if review.state == "filled" else "unknown"
-    if review.review_protocol_version == 4:
+    if review.review_protocol_version in {4, 5}:
         response.update(submission_status="unknown" if review.state in {"running", "unknown", "cancelled", "expired"} else "not_launched",
-                        employer_confirmed=False, fee_credits=20)
+                        employer_confirmed=False, fee_credits=20 if review.review_protocol_version == 4 else 3)
+        if review.review_protocol_version == 5 and review.payload.get("billing"):
+            response["billing"] = dict(review.payload["billing"])
     return response
 
 
@@ -222,9 +229,9 @@ def expire_reviews(db: Session, limit: int = 100) -> int:
     require(type(limit) is int and 1 <= limit <= 100)
     rows = db.query(Review).filter(Review.expires_at <= now(), cast(Review.payload, Text) != "{}").order_by(Review.expires_at).limit(limit).with_for_update(skip_locked=True).all()
     for review in rows:
-        if review.review_protocol_version == 4 and review.state in {"draft", "approved", "running"}:
+        if review.review_protocol_version in {4, 5} and review.state in {"draft", "approved", "running"}:
             _owner_lock(db,review.user_id)
-            submissions.cancel(db,review)
+            submissions.cancel(db,review,expired=True)
             if review.state != "filled":
                 review.state="expired"
         _expire(review)
@@ -271,8 +278,8 @@ def _application(db: Session, review_or_id, user_id: int, *, allow_submitting: b
 
 def field_mapping(app, review_protocol_version: int = 1, hosted_rows: object = None) -> list[dict]:
     """Exact job-specific semantics; v1 approvals never acquire v2 controls."""
-    require(type(review_protocol_version) is int and review_protocol_version in {1, 2, 3, 4})
-    if review_protocol_version == 4:
+    require(type(review_protocol_version) is int and review_protocol_version in {1, 2, 3, 4, 5})
+    if review_protocol_version in {4, 5}:
         require(submissions.enabled(), 503)
         review_protocol_version = 2
     if review_protocol_version == 3:
@@ -330,6 +337,7 @@ def field_mapping(app, review_protocol_version: int = 1, hosted_rows: object = N
 
 def candidate(db: Session, user_id: int, operation: str, request: CandidateRequest) -> dict:
     require(enabled(), 503)
+    require(request.accepted_service_quote_id is None or operation == "approve")
     _owner_lock(db, user_id)
     identity = str(request.identity)
     if operation in {"device", "confirm", "revoke"}:
@@ -346,7 +354,7 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
             require(device.user_id == user_id and request.confirmed is True)
             device.state, device.revoked_at = "revoked", now()
             for review in db.query(Review).filter_by(device_id=device.id, user_id=user_id).filter(Review.state.in_(["draft", "approved", "running"])):
-                if review.review_protocol_version == 4:
+                if review.review_protocol_version in {4, 5}:
                     submissions.cancel(db, review)
                 else:
                     review.state, review.payload = "cancelled", {}
@@ -354,8 +362,8 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
     else:
         review = db.query(Review).filter_by(id=identity, user_id=user_id).with_for_update().first()
         require(review is not None, 404)
-        if review.review_protocol_version == 4 and _aware(review.expires_at) <= now() and review.state in {"draft", "approved", "running"}:
-            submissions.cancel(db,review)
+        if review.review_protocol_version in {4, 5} and _aware(review.expires_at) <= now() and review.state in {"draft", "approved", "running"}:
+            submissions.cancel(db,review,expired=True)
             if review.state != "filled":
                 review.state="expired"
         _expire(review)
@@ -371,34 +379,35 @@ def candidate(db: Session, user_id: int, operation: str, request: CandidateReque
             require(device is not None and review.state == "draft" and bool(review.payload))
             _application(db, review, user_id)
             version = review.review_protocol_version
-            require(version == 1 or version == 2 and typed_controls_enabled() or version == 3 and attachments.enabled() or version == 4 and submissions.enabled(), 503)
+            require(version == 1 or version == 2 and typed_controls_enabled() or version == 3 and attachments.enabled() or version in {4, 5} and submissions.enabled(), 503)
             require(request.confirmed is True and request.review_digest == review.review_digest)
-            require(bool(review.payload.get("fields")) or version in {3, 4})
-            if version == 4:
-                submissions.approve(db, device, review)
+            require(bool(review.payload.get("fields")) or version in {3, 4, 5})
+            if version in {4, 5}:
+                require(version != 5 or (request.key_sha256 is None and request.hosted_answers is None))
+                submissions.approve(db, device, review, accepted_quote_id=request.accepted_service_quote_id)
             review.state, review.approved_at = "approved", now()
         elif operation == "cancel":
             require(request.confirmed is True)
-            if review.review_protocol_version == 4:
+            if review.review_protocol_version in {4, 5}:
                 submissions.cancel(db, review)
             else:
                 review.state, review.payload = "cancelled", {}
         else:
             require(operation == "review", 404)
-        response = (submissions.status(db, review) if review.review_protocol_version == 4 else
+        response = (submissions.status(db, review) if review.review_protocol_version in {4, 5} else
                     attachments.status(db, review) if review.review_protocol_version == 3 else _review_response(review))
     db.commit()
     return response
 
 
-def _inspection(body: dict, app, posting, artifact, *, db=None, record=None) -> dict:
+def _inspection(body: dict, app, posting, artifact, *, db=None, record=None, review_id=None) -> dict:
     require(set(body) == {"application_id", "inspection"})
     inspection = body["inspection"]
     require(isinstance(inspection, dict))
     values = inspection.get("assisted_values")
     version = inspection.get("review_protocol_version", 1)
     rows = inspection.get("hosted_rows")
-    require(rows is None or version in {2, 4})
+    require(rows is None or version in {2, 4, 5})
     mapping = field_mapping(app, version, rows)
     identities = {field["id"] for field in mapping}
     require(isinstance(values, dict) and set(values) == identities)
@@ -409,9 +418,9 @@ def _inspection(body: dict, app, posting, artifact, *, db=None, record=None) -> 
     if "context" in inspection:
         require(isinstance(inspection["context"], dict) and inspection["context_digest"] == digest(inspection["context"]))
     require(all(isinstance(values[field], str) and len(values[field]) <= 255 for field in identities))
-    if version == 4:
+    if version in {4, 5}:
         require(db is not None and record is not None)
-        return submissions.review_payload(db, record, inspection, app, posting, artifact, mapping)
+        return submissions.review_payload(db, record, inspection, app, posting, artifact, mapping, review_id=review_id)
     if version == 3:
         return attachments.review_payload(inspection, app, posting, artifact, mapping)
     hosted_ids = {field["id"] for field in hosted.mapping(rows)} if rows is not None else set()
@@ -515,14 +524,14 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
         if request.body.get("review_id"):
             review = db.query(Review).filter_by(id=request.body["review_id"], device_id=identity, user_id=record.user_id).first()
             require(review is not None, 404)
-            if review.review_protocol_version == 4 and _aware(review.expires_at) <= now() and review.state in {"draft", "approved", "running"}:
-                submissions.cancel(db,review)
+            if review.review_protocol_version in {4, 5} and _aware(review.expires_at) <= now() and review.state in {"draft", "approved", "running"}:
+                submissions.cancel(db,review,expired=True)
                 if review.state != "filled":
                     review.state="expired"
             _expire(review)
-            response["review"] = (submissions.status(db, review) if review.review_protocol_version == 4 else
+            response["review"] = (submissions.status(db, review) if review.review_protocol_version in {4, 5} else
                                   attachments.status(db, review) if review.review_protocol_version == 3 else _review_response(review))
-            if review.review_protocol_version == 4:
+            if review.review_protocol_version in {4, 5}:
                 action=db.query(RequestRecord).filter_by(review_id=review.id,operation="submit").first()
                 if action:
                     response["review"]["submission"]={"action_id":action.id,"target_url":action.response["binding"]["target_url"],
@@ -532,37 +541,38 @@ def device(db: Session, origin: str, request: DeviceRequest) -> dict | attachmen
         if request.operation == "application":
             require(set(request.body) <= {"application_id", "review_protocol_version", "hosted_rows"} and isinstance(request.body.get("application_id"), str))
             requested_version = request.body.get("review_protocol_version", 1)
-            require(type(requested_version) is int and requested_version in {1, 2, 3, 4})
+            require(type(requested_version) is int and requested_version in {1, 2, 3, 4, 5})
             require(requested_version != 3 or attachments.enabled(), 503)
-            version = 4 if requested_version == 4 else 3 if requested_version == 3 else 2 if requested_version == 2 and typed_controls_enabled() else 1
+            version = requested_version if requested_version in {3, 4, 5} else 2 if requested_version == 2 and typed_controls_enabled() else 1
             app, posting, artifact = _application(db, request.body["application_id"], record.user_id)
-            if version == 4:
-                submissions.prepare(db, app, posting, artifact)
+            if version in {4, 5}:
+                submissions.prepare(db, app, posting, artifact, version=version)
             response = {"application_id": app.id, "target_url": posting.apply_url, "field_mapping": field_mapping(app, version, request.body.get("hosted_rows"))}
-            if version == 4:
+            if version in {4, 5}:
                 response["upload"] = submissions.upload_provenance(db,record,app,artifact)
             if version == 3:
                 from . import hosted_network
                 response["native_upload_available"] = hosted_network.enabled()
-            if version in {2, 4}:
+            if version in {2, 4, 5}:
                 response["hosted_controls_available"] = True
             if version > 1:
                 response["review_protocol_version"] = version
         elif request.operation == "inspect":
             require(isinstance(request.body.get("application_id"), str))
             app, posting, artifact = _application(db, request.body["application_id"], record.user_id)
-            payload = _inspection(request.body, app, posting, artifact, db=db, record=record)
-            review = Review(id=str(uuid4()), user_id=record.user_id, device_id=identity, application_id=app.id,
+            review_id = str(uuid4())
+            payload = _inspection(request.body, app, posting, artifact, db=db, record=record, review_id=review_id)
+            review = Review(id=review_id, user_id=record.user_id, device_id=identity, application_id=app.id,
                             package_digest=app.package_digest, artifact_sha256=artifact.sha256, context_digest=payload["context_digest"],
                             review_digest=digest(payload), payload=payload, state="draft", next_index=0,
                             review_protocol_version=payload.get("review_protocol_version", 1),
-                            expires_at=now() + timedelta(minutes=5))
+                            expires_at=min(now() + timedelta(minutes=5), datetime.fromtimestamp(payload["billing"]["quote_expires_at_ms"] / 1000, UTC)) if payload.get("review_protocol_version") == 5 else now() + timedelta(minutes=5))
             db.add(review)
             db.flush()
             response = _review_response(review)
         else:
             selected = db.query(Review).filter_by(id=request.body.get("review_id"), device_id=record.id, user_id=record.user_id).with_for_update().first()
-            if selected is not None and selected.review_protocol_version == 4:
+            if selected is not None and selected.review_protocol_version in {4, 5}:
                 if request.operation == "begin":
                     return submissions.begin(db, record, selected, request, request_sha)
                 if request.operation in {"outcome", "reconcile"}:

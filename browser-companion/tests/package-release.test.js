@@ -15,10 +15,10 @@ async function fixture(t) {
   }
   const pack = (...args) => spawnSync("python3", ["browser-companion/scripts/package-reviewed.py", ...args], { cwd: directory, encoding: "utf8" });
   const check = () => spawnSync(process.execPath, ["browser-companion/scripts/check-package.js"], { cwd: directory, encoding: "utf8" });
-  return { directory, pack, check, archive: `${directory}/frontend/public/downloads/hirewiz-browser-companion-0.8.7.zip` };
+  return { directory, pack, check, archive: `${directory}/frontend/public/downloads/hirewiz-browser-companion-0.8.8.zip` };
 }
 
-test("official0.8.7 archive is source-exact and reproducible without altering historical downloads", async (t) => {
+test("official0.8.8 archive is source-exact and reproducible without altering historical downloads", async (t) => {
   const f = await fixture(t);
   assert.equal(f.check().status, 0);
   assert.equal(f.pack().status, 0);
@@ -26,7 +26,7 @@ test("official0.8.7 archive is source-exact and reproducible without altering hi
   assert.equal(f.pack("--check").status, 0);
   assert.equal(f.pack().status, 0);
   assert.equal(sha(await readFile(f.archive)), sha(first));
-  assert.equal(sha(first), sha(await readFile(new URL("frontend/public/downloads/hirewiz-browser-companion-0.8.7.zip", root))));
+  assert.equal(sha(first), sha(await readFile(new URL("frontend/public/downloads/hirewiz-browser-companion-0.8.8.zip", root))));
 });
 
 test("source drift makes archive verification refuse without rewriting the delivered bytes", async (t) => {

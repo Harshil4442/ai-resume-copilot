@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { browserAssistanceGateway } from "./browserAssistanceGateway";
 import { maxDuration as candidateMaxDuration } from "../app/api/browser-assistance/candidate/[operation]/route";
 import { maxDuration as deviceMaxDuration } from "../app/api/browser-assistance/device/[operation]/route";
+import submissionVector from "../../backend/tests/fixtures/browser_submission_v5.json";
+import { SUBMISSION_BILLING_KEYS } from "./browserSubmissionBilling";
 
 vi.mock("next-auth/jwt", () => ({ getToken: vi.fn() }));
 const origin = "https://hirewiz.example";
@@ -73,6 +75,39 @@ beforeEach(() => {
   upstream.mockResolvedValue(Response.json(publicDevice)); vi.stubGlobal("fetch", upstream);
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+
+describe("protocol five immutable quote transport", () => {
+  it("forwards exactly the accepted quote identifier with the same owned account authorization", async () => {
+    const body = JSON.stringify(submissionVector.unified5.approve_request);
+    upstream.mockResolvedValueOnce(Response.json({ ...submissionVector.unified5.review_response, state: "approved" }));
+    const reply = await candidate("approve", { body }); expect(reply.status).toBe(200);
+    expect(new TextDecoder().decode(upstream.mock.calls[0][1].body)).toBe(body);
+    expect(upstream.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${backendBearer}`);
+    expect(upstream).toHaveBeenCalledTimes(1); privateResponse(reply);
+  });
+  it.each(SUBMISSION_BILLING_KEYS)("rejects upstream quote success missing %s", async key => {
+    const result = structuredClone(submissionVector.unified5.review_response);
+    delete (result.billing as Record<string, unknown>)[key]; upstream.mockResolvedValueOnce(Response.json(result));
+    const reply = await candidate("review"); expect(reply.status).toBe(503); expect(upstream).toHaveBeenCalledTimes(1); privateResponse(reply);
+  });
+  it.each([{ credits: 3 }, { billing_currency: "credits" }, { confirmed: "true" }, { accepted_service_quote_id: "" }, { accepted_service_quote_id: null }])("rejects price injection or invalid consent %j before upstream", async mutation => {
+    const reply = await candidate("approve", { body: JSON.stringify({ ...submissionVector.unified5.approve_request, ...mutation }) });
+    expect(reply.status).toBe(422); expect(upstream).not.toHaveBeenCalled();
+  });
+  it("preserves accepted legacy protocol four and rejects fee-only protocol five negotiation", async () => {
+    upstream.mockResolvedValueOnce(Response.json(submissionVector.legacy4.review_response));
+    expect((await candidate("review")).status).toBe(200);
+    const changed = { ...submissionVector.unified5.review_response, fee_credits: 20 };
+    upstream.mockResolvedValueOnce(Response.json(changed)); expect((await candidate("review")).status).toBe(503);
+  });
+  it("checks signed device status embedded review without rewriting or replaying the signed body", async () => {
+    const body = JSON.stringify({ operation: "status", signature: "synthetic-signature-retained-exactly", body: {} });
+    upstream.mockResolvedValueOnce(Response.json({ state: "active", review: submissionVector.unified5.review_response }));
+    const reply = await device("status", { body }); expect(reply.status).toBe(200);
+    expect(new TextDecoder().decode(upstream.mock.calls[0][1].body)).toBe(body);
+    expect(upstream.mock.calls[0][1].headers.Authorization).toBeUndefined(); expect(upstream).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("browser assistance NextAuth and device transport boundaries", () => {
   it.each(["approve", "review"])("preserves a valid slow %s response beyond the old twelve-second gateway deadline", async (operation) => {

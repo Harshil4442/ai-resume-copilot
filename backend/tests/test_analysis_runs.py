@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import logging
 from io import BytesIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 import pytest
 from backend.app.billing.catalog import ANALYSIS_PRICING_VERSION
@@ -31,9 +34,9 @@ from docx import Document as DocxDocument
 from fastapi import HTTPException
 from pypdf import PdfReader
 from reportlab.pdfgen.canvas import Canvas
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
 
 SOURCE_EXPERIENCE = "Developed reliable Python services for customers and improved system performance."
 # Keep this positive control's word widths unchanged in the bundled monospace
@@ -67,40 +70,91 @@ def _native_source():
 
 
 def _database():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    with factory() as db:
-        db.add_all(
-            [
-                User(id=1, email="owner@example.com", ai_credits=50, tier="free"),
-                User(id=2, email="other@example.com", ai_credits=50, tier="free"),
-                Resume(
-                    id=10,
-                    user_id=1,
-                    original_filename="owner.docx",
-                    source_document=_native_source(),
-                    source_format="docx",
-                    raw_text="Python engineer",
-                    skills=["python"],
-                    sections={"experience": "Built Python services"},
-                ),
-                Resume(
-                    id=20,
-                    user_id=2,
-                    original_filename="other.pdf",
-                    raw_text="Private resume",
-                    skills=["java"],
-                    sections={"experience": "Private"},
-                ),
-            ]
+    # Independent validation sessions must not roll back the caller's pending
+    # result through a shared in-memory StaticPool connection. This is still an
+    # owned SQLite component fixture, never PostgreSQL/native qualification.
+    temporary = TemporaryDirectory(prefix="hirewiz-analysis-runs-")
+    engine = None
+    try:
+        engine = create_engine(
+            "sqlite:///" + str(Path(temporary.name) / "analysis.sqlite"),
+            connect_args={"check_same_thread": False},
+            poolclass=QueuePool,
         )
-        db.commit()
-    return engine, factory
+        event.listen(engine, "engine_disposed", lambda _engine: temporary.cleanup())
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        with factory() as db:
+            db.add_all(
+                [
+                    User(id=1, email="owner@example.com", ai_credits=50, tier="free"),
+                    User(id=2, email="other@example.com", ai_credits=50, tier="free"),
+                    Resume(
+                        id=10,
+                        user_id=1,
+                        original_filename="owner.docx",
+                        source_document=_native_source(),
+                        source_format="docx",
+                        raw_text="Python engineer",
+                        skills=["python"],
+                        sections={"experience": "Built Python services"},
+                    ),
+                    Resume(
+                        id=20,
+                        user_id=2,
+                        original_filename="other.pdf",
+                        raw_text="Private resume",
+                        skills=["java"],
+                        sections={"experience": "Private"},
+                    ),
+                ]
+            )
+            db.commit()
+        return engine, factory
+    except BaseException:
+        try:
+            if engine is not None:
+                engine.dispose()
+        finally:
+            temporary.cleanup()
+        raise
+
+
+def test_fresh_input_check_preserves_staged_version_and_owned_fixture_lifetime():
+    """Real guard/SQL sessions; no model, native renderer or funded operation."""
+    from backend.app.services import generation_budget
+
+    engine, factory = _database()
+    database = Path(engine.url.database) if engine.url.database else None
+    connections = set()
+    event.listen(engine, "checkout", lambda dbapi, *_: connections.add(id(dbapi)))
+    def forbidden(*args, **kwargs):
+        pytest.fail("A persistence-only guard control must never call a supplier")
+    try:
+        with factory() as db:
+            run = SimpleNamespace(id="synthetic-persistence-control", operation="resume_tailor", user_id=1,
+                opportunity_id=None, input_payload={"resume_id": 10})
+            run.input_fingerprint = analysis_service._current_input_fingerprint(db, run, run.input_payload,
+                paid_context=False)
+            budget = generation_budget.GenerationBudget(run_id=run.id, limit=1, before=forbidden, after=forbidden)
+            with generation_budget.generation_budget(budget):
+                with analysis_service.guard_analysis_inputs(db, run, paid_context=False) as check:
+                    db.add(ResumeVersion(id="synthetic-version-control", user_id=1, resume_id=10,
+                        version_number=1, label="Synthetic SQL control", structured_content={"synthetic": True},
+                        evidence_ids=[], approval_state="draft"))
+                    db.flush()
+                    assert db.query(ResumeVersion).count() == 1
+                    check()
+                    assert db.query(ResumeVersion).count() == 1
+                    assert database is not None and database.is_file()
+                db.commit()
+            assert not budget.attempts
+        with factory() as db:
+            assert db.query(ResumeVersion).count() == 1
+        assert len(connections) >= 2 and database is not None and database.is_file()  # Session.close is not fixture cleanup.
+    finally:
+        engine.dispose()
+    assert database is not None and not database.exists() and not database.parent.exists()
 
 
 def _payload(*, resume_id: int = 10, title: str = "Platform Engineer"):

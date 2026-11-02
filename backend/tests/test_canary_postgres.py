@@ -20,7 +20,6 @@ from uuid import uuid4
 
 import pytest
 from backend.app import models
-from backend.app.database import Base
 from backend.app.domains.credits import canary, finance, service
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.tests.test_canary_admission import accept, baseline, consent, prepare, source
@@ -80,7 +79,7 @@ def factory(request):
     # CI reuses the established exact local owned database guard and a new
     # per-test schema. Local operator tests can instead start the private PG17
     # cluster above; an existing public schema is never reset by the CI path.
-    from backend.tests.test_employer_admissions_postgres import pg_engine
+    from backend.tests.test_employer_admissions_postgres import _migrate, pg_engine
     if os.getenv("HIREWIZ_CANARY_TEST_ROOT"):
         _, url = request.getfixturevalue("owned_cluster")
         engine = create_engine(url, connect_args={"options": "-clock_timeout=5000 -cstatement_timeout=10000"})
@@ -93,10 +92,10 @@ def factory(request):
         engines = pg_engine.__wrapped__()
     try:
         for engine in engines:
-            Base.metadata.create_all(engine)
-            with engine.begin() as connection:
-                connection.execute(text("CREATE TABLE alembic_version (version_num varchar(32) PRIMARY KEY)"))
-                connection.execute(text("INSERT INTO alembic_version VALUES ('20261028_0025')"))
+            # Exercise the canonical current schema, including the real evidence
+            # writer fence required by the actual synchronous service setup. The
+            # explicitly pinned historical CLI rehearsal below alone stays25.
+            _migrate(engine, getattr(request, "param", "head"))
             maker = sessionmaker(engine, autoflush=False)
             with maker() as db:
                 db.add_all([models.User(id=1, email="canary-fixture-1@example.com", ai_credits=17),
@@ -207,6 +206,7 @@ def test_actual_canary_endpoint_settlement_refund_and_saved_reads_survive_revoca
         assert db.get(models.User, 1).ai_credits == 17
 
 
+@pytest.mark.parametrize("factory", ["20261028_0025"], indirect=True)
 def test_cli_capture_approve_observe_exact_native_database_and_private_review_artifact(factory, monkeypatch, owned_cluster):
     root, url = owned_cluster
     with factory() as db:
@@ -324,18 +324,30 @@ def test_exact_validated_local_internal_runner_remains_separate_from_public_cana
 
 
 
-def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(factory, monkeypatch):
+@pytest.mark.parametrize("write_timezone,read_timezone", [
+    ("Asia/Kolkata", "America/Los_Angeles"),
+    ("America/Los_Angeles", "Asia/Kolkata"),
+    ("UTC", "Asia/Kolkata"),
+])
+def test_traffic_numerator_is_utc_stable_across_postgres_session_timezones(
+    factory, monkeypatch, write_timezone, read_timezone,
+):
     with factory() as db:
-        db.execute(text("SET LOCAL TIME ZONE 'Asia/Kolkata'"))
+        db.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": write_timezone})
         config, review, digest = prepare(db, monkeypatch)
         consent(db, config, review, digest, expected_sequence=0)
         baseline(db)
         proof = accept(db, config, source(db))
         db.commit()
         saved = db.get(models.AdminAuditEvent, proof["acceptance_id"])
-        assert saved.created_at == NOW.replace(tzinfo=None)
+        assert saved.created_at == NOW
+        # Check the stored instants, including review and consent writes, rather
+        # than relying on an ORM identity-map value or its display timezone.
+        epochs = db.execute(text("SELECT EXTRACT(EPOCH FROM created_at) FROM admin_audit_events" )).scalars().all()
+        assert len(epochs) == 3
+        assert all(float(epoch) == NOW.timestamp() for epoch in epochs)
     with factory() as db:
-        db.execute(text("SET LOCAL TIME ZONE 'America/Los_Angeles'"))
+        db.execute(text("SELECT set_config('TimeZone', :zone, true)"), {"zone": read_timezone})
         candidate = source(db, identity="timezone-second-candidate")
         with pytest.raises(finance.FundingUnavailable):
             accept(db, config, candidate)

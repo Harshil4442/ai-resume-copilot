@@ -1,4 +1,5 @@
 import logging
+from contextlib import nullcontext
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -30,6 +31,13 @@ def match_job(
         raise HTTPException(status_code=422, detail="Job description is too short")
 
     from ..domains.analysis.operations import execute_job_match
+    from ..domains.analysis.service import _dependency_snapshot, guard_dependency_inputs
+    from ..domains.common import payload_fingerprint
+
+    source_input = {"resume_id": resume.id, "job_title": payload.job_title, "company": payload.company or "",
+        "job_description": jd_text, "mode": payload.mode}
+    source_binding = (payload_fingerprint(_dependency_snapshot(db, current_user.id, "job_match", None, source_input))
+        if payload.mode == "enhanced" else None)
 
     try:
         with billable_operation(
@@ -37,8 +45,10 @@ def match_job(
             db=db,
             operation="job_match_legacy",
             amount=1,
-            input_payload={"resume_id": resume.id, "job_title": payload.job_title, "mode": payload.mode},
-        ):
+            input_payload={"resume_id": resume.id, "job_title": payload.job_title, "mode": payload.mode,
+                **({"source_binding": source_binding} if source_binding else {})},
+        ) as run, (guard_dependency_inputs(db, user_id=current_user.id, operation="job_match",
+            payload=source_input, fingerprint=source_binding, run_id=run.id) if source_binding else nullcontext()) as check:
             result = execute_job_match(
                 db,
                 user_id=current_user.id,
@@ -50,6 +60,11 @@ def match_job(
                     "mode": payload.mode,
                 },
             )
+            if check is not None:
+                from ..services.result_commit import begin_result_commit
+
+                begin_result_commit(db, current_user.id, run.id)
+                check()
     except HTTPException:
         raise
     except Exception as exc:
@@ -117,6 +132,12 @@ def tailor_resume(
     if not resume:
         raise HTTPException(status_code=404, detail="Associated resume not found")
 
+    from ..domains.analysis.service import _dependency_snapshot, guard_dependency_inputs
+    from ..domains.common import payload_fingerprint
+
+    source_input = {"resume_id": resume.id}
+    source_binding = payload_fingerprint(_dependency_snapshot(db, current_user.id, "resume_tailor", None, source_input))
+
     approved_evidence = (
         db.query(models.EvidenceItem)
         .filter(
@@ -149,8 +170,10 @@ def tailor_resume(
                 "resume_id": resume.id,
                 "template_type": payload.template_type,
                 "evidence_ids": [item["id"] for item in evidence_payload],
+                "source_binding": source_binding,
             },
-        ):
+        ) as run, guard_dependency_inputs(db, user_id=current_user.id, operation="resume_tailor",
+                payload=source_input, fingerprint=source_binding, run_id=run.id) as check:
             from ..services.llm_client import tailor_resume_mega_llm
 
             tailored_latex = tailor_resume_mega_llm(
@@ -167,10 +190,16 @@ def tailor_resume(
             from ..services.native_tex import compile_project
             from ..services.resume_layout import ResumeLayoutError
             try:
+                check()
                 pdf, _image = compile_project(tailored_latex.encode(), "tex")
                 pdf_b64 = base64.b64encode(pdf).decode()
             except ResumeLayoutError as exc:
                 raise HTTPException(422, str(exc)) from exc
+
+            from ..services.result_commit import begin_result_commit
+
+            begin_result_commit(db, current_user.id, run.id)
+            check()
 
             return schemas.ResumeTailorResponse(
                 tailored_resume_markdown=tailored_latex,

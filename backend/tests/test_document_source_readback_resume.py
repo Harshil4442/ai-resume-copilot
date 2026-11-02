@@ -80,12 +80,27 @@ class Http:
 
 def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     profile = importlib.import_module("infra.gcp.document_source_candidate")
+    from scripts import schema25_app_release_contract_v3 as current
+
     assert len(resume.FILES) == 21
     assert resume.sha(resume.canonical(resume.FILES)) == "79bf3b8761fd51125a2dc785b408d7c96eed685d624c07735e9ea412f8ae9cc0"
     assert len(profile.SOURCES) == 22 and len(profile.CONTRACT_PATHS) == 14
-    for name in set(profile.CONTRACT_PATHS) | set(profile.SOURCES) | {profile.POLICY_PATH}:
+    original = profile.committed(resume.ORIGINAL_SOURCE, root=ROOT)
+    assert original.qualification_sha256 == "61b313bcb98d1d9931efd49ac8e9f8a3d307de0785e97e3c1705760a4c10ae50"
+    for name in set(profile.SOURCES) | {profile.POLICY_PATH}:
         assert (ROOT / name).read_bytes() == subprocess.check_output(["git", "show", resume.ORIGINAL_SOURCE + ":" + name], cwd=ROOT)
-    assert subprocess.check_output(["git", "diff", resume.ORIGINAL_SOURCE, "--", "backend/app"], cwd=ROOT) == b""
+    changed = {name for name in profile.CONTRACT_PATHS if (ROOT / name).read_bytes()
+        != subprocess.check_output(["git", "show", resume.ORIGINAL_SOURCE + ":" + name], cwd=ROOT)}
+    assert changed == set(current.CURRENT_DOCUMENT_HELPERS)
+    # Retained readback still reconstructs its original helper qualification.
+    # Its historical mutation entry must refuse this different current helper
+    # tree rather than adopting the new maintenance code under an old receipt.
+    with pytest.raises(profile.SourceDenied, match="working_contract_changed"):
+        profile.require_working_contract(original, root=ROOT)
+    # App features outside the inspector are admitted by their own release
+    # context. Freeze every worker runtime member, rather than the entire app.
+    assert len(profile.courier.RUNTIME) == 20
+    assert set(profile.courier.RUNTIME) <= profile.SOURCES
 
 
 def test_create_only_claim_fits_existing_namespace_and_second_directory_cannot_resend(tmp_path):

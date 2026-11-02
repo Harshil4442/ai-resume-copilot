@@ -547,13 +547,16 @@ def test_legacy_tailoring_endpoint_new_request_uses_two_units(cost_db, monkeypat
     from backend.app.routers import jobs
     from backend.app.schemas import ResumeTailorRequest
     from backend.app.services import llm_client, native_tex
+    from backend.tests.fixtures.transcription_source import source_for_text
 
     user = User(id=1, email="synthetic-tailor@example.com", ai_credits=2)
     resume = Resume(
         id=1,
         user_id=1,
-        original_filename="synthetic.txt",
+        original_filename="synthetic.pdf",
         raw_text="Built Python tools.",
+        source_format="pdf",
+        source_document=source_for_text("Built Python tools."),
         skills=["Python"],
         sections={},
     )

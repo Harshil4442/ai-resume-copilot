@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 from threading import get_ident
+from types import ModuleType
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
@@ -57,15 +58,24 @@ def contract_digest(operation):
         resume_layout,
         tailoring_contract,
     )
+    from ..career import evidence_fence_definition, evidence_write_fence
     from ..credits import canary
     from . import operations, service
 
     if operation not in inputs.OPERATIONS:
         raise ValueError("Only the explicitly implemented production adapters are supported")
-    modules = (operations, service, generation_budget, model_cost_policy, llm_client,
+    modules: tuple[ModuleType, ...] = (operations, service, generation_budget, model_cost_policy, llm_client,
                interview_contract, tailoring_contract, personal_claims, prompt_privacy,
                resume_artifacts, resume_layout, inputs, canary, document_ingestion,
-               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import, matching_contract)
+               docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import, matching_contract,
+               evidence_fence_definition, evidence_write_fence)
+    if _sync().supports(operation) or operation in {"job_match", "resume_tailor"}:
+        from ...services import provider_input_guard, source_transcription
+        from ..career import transcription_review
+
+        # These actual inputs/dispatch helpers are part of the frozen operation,
+        # even when their direct consumer module bytes have not changed.
+        modules += (source_transcription, transcription_review, provider_input_guard)
     return inputs.digest({"operation": operation, "runner": packet.file_digest(Path(__file__)),
                           "sources": {m.__name__: packet.file_digest(Path(str(m.__file__)))
                                       for m in (*modules, _sync(), *_sync().contract_sources())}})
@@ -349,6 +359,20 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
     if not set(inspect(engine).get_table_names(schema=schema)) <= set(Base.metadata.tables):
         raise ValueError("Unknown tables exist in this evaluation schema")
     Base.metadata.create_all(engine)
+    # This already-authorized owned evaluation namespace has no complete
+    # Alembic catalog. Install the identical real fence, never a no-op marker or
+    # a claim that metadata.create_all qualified the public migration chain.
+    from ..career import evidence_fence_definition, evidence_write_fence
+
+    with engine.begin() as connection:
+        exists = connection.execute(text("SELECT count(*) FROM pg_catalog.pg_trigger t "
+            "JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=:schema AND c.relname='evidence_items' AND NOT t.tgisinternal"),
+            {"schema": schema}).scalar_one()
+        if exists == 0:
+            evidence_fence_definition.install(connection, schema)
+        evidence_write_fence.require_installed(connection, schema)
     rows, _ = inputs.native_inputs(packet_root, native_root, auth, authorization_root, native_receipts)
     expected = {_run_id(auth, side, row["case_id"]) for row in rows for side in inputs.SIDES}
     with factory() as db:
@@ -384,11 +408,18 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
                     title=case["job"]["title"], company="Synthetic evaluation", source="internal_evaluation",
                     job_description=case["job"]["description"], job_snapshot={"case_sha256": inputs.digest(case)})
                 db.add(opportunity)
+                from ..career.evidence_write_fence import flush_evidence_writes
+
+                new_evidence = []
                 for fact in case["resume"]["evidence"]:
                     if fact["approved_in_fixture"]:
-                        db.add(models.EvidenceItem(id=fact["id"], user_id=owner.id, resume_id=resume.id,
+                        item = models.EvidenceItem(id=fact["id"], user_id=owner.id, resume_id=resume.id,
                             category="synthetic", title=fact["id"], evidence_text=fact["text"], metrics={}, skills=[],
-                            provenance="synthetic_fixture", approval_state="approved"))
+                            provenance="synthetic_fixture", approval_state="approved")
+                        db.add(item)
+                        new_evidence.append(item)
+                if new_evidence:
+                    flush_evidence_writes(db, new_evidence)
                 db.flush()
             for side, route in auth.routes.items():
                 identity = _run_id(auth, side, case_id)

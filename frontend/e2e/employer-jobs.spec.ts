@@ -10,7 +10,9 @@ import type { components } from "../lib/generated/api";
 import { searchSummary, type EmployerApplication, type EmployerSearch, type JobServiceCatalog } from "../lib/employerJobs";
 import type { ServiceCreditHistoryPage } from "../lib/serviceCreditHistory";
 import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { ownedDashboardFixture } from "../lib/fixtures/ownedDashboard";
 import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
+import { parseOwnedDashboard } from "../lib/ownedDashboardContract";
 
 const base = "/v1/employer-jobs";
 const now = "2026-10-08T10:00:00Z";
@@ -46,7 +48,7 @@ function fixture() {
   const unexpected: string[] = [];
   const searches: EmployerSearch[] = [];
   const runs: Record<string, unknown>[] = [];
-  const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved", source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
+  const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved" as const, source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
   const resumes = [{ id: 1, filename: "Taylor-resume.docx", source_available: true, source_format: "docx", created_at: now }, { id: 2, filename: "Custom-resume.docx", source_available: true, source_format: "docx", created_at: now }];
   const products = ([
     { sku: "starter_bundle", name: "Starter", description: "Finite prepaid pack", amount_minor: 64900, amount_display: "₹649", entitlement_quantity: 100, analysis_units: 2 },
@@ -78,19 +80,28 @@ function fixture() {
     const token = await encode({ secret: process.env.PLAYWRIGHT_AUTH_SECRET || "playwright-secret-at-least-thirty-two-characters", token: { sub: "424242", email: "fixture@example.com", name: "Taylor Example", hirewizUserId: 424242, accessToken: "local-fixture-token" }, maxAge: 3600 });
     await context.addCookies([{ name: "next-auth.session-token", value: token, url: baseURL, httpOnly: true, sameSite: "Lax" }]);
     await context.addInitScript(() => { localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() })); });
-    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|me|bootstrap)$/.test(url.pathname), async (route) => {
+    await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|me|bootstrap|dashboard)$/.test(url.pathname), async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      const path = url.pathname.replace(/^\/api\/account\/(profile|me|bootstrap)$/, "/auth/$1").replace("/api/backend", "");
+      const path = url.pathname.replace(/^\/api\/account\/(profile|me|bootstrap|dashboard)$/, "/auth/$1").replace("/api/backend", "");
       const method = request.method();
       const body = request.headers()["content-type"]?.includes("application/json") ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, query: url.searchParams.toString() });
       let value: unknown; let status = 200;
-      if (path === "/auth/bootstrap" && method === "GET") {
-        value = ownedBootstrapFixture({ profile: { email: "fixture@example.com", tier: state.premium ? "premium" : "free",
+      if ((path === "/auth/bootstrap" || path === "/auth/dashboard") && method === "GET") {
+        const bootstrap = ownedBootstrapFixture({ profile: { email: "fixture@example.com", tier: state.premium ? "premium" : "free",
           ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], premium_until: "2026-11-08T10:00:00Z" },
           wallet: { schema_version: "unified-credits-v1", server_time: now, available_credits: 7, reserved_credits: 0, debt_credits: 0, lots: [] } });
-        expect(parseOwnedBootstrap(value)).not.toBeNull();
+        expect(parseOwnedBootstrap(bootstrap)).not.toBeNull();
+        if (path === "/auth/dashboard") {
+          const dashboard = { ...ownedDashboardFixture(bootstrap),
+            summary: { resume_count: 1, applications_count: 0, average_match_score: 0,
+              resume_quality: { evidenced_skills: 0, verification_rate: 0 } },
+            opportunities: { total: 1, items: [{ id: opportunity.id, title: opportunity.title,
+              company: opportunity.company, stage: opportunity.stage, next_action: opportunity.next_action }] }, reminders: [] } satisfies ReturnType<typeof ownedDashboardFixture>;
+          expect(parseOwnedDashboard(dashboard)).not.toBeNull();
+          value = dashboard;
+        } else value = bootstrap;
       }
       else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, profile_completeness: 80, full_name: "Taylor Example", skills: ["Python"], missing_fields: [], premium_until: "2026-11-08T10:00:00Z" } satisfies components["schemas"]["UserProfileResponse"];
       else if (path === "/auth/me") value = { id: 424242, email: "fixture@example.com", tier: state.premium ? "premium" : "free", ai_credits: 40, job_service_credits: catalog.balance } satisfies components["schemas"]["UserMeResponse"];
@@ -101,6 +112,12 @@ function fixture() {
       else if (path === "/v1/opportunities" && method === "GET") value = { items: [opportunity], total: 1 };
       else if (path === "/v1/opportunities/opp_existing_fixture") value = opportunity;
       else if (path === "/v1/evidence-items") value = [];
+      else if (path.startsWith("/v1/evidence-items/transcription-review/") && method === "GET") {
+        const resume = resumes.find((item) => item.id === Number(path.split("/").at(-1)));
+        if (!resume) { status = 404; value = { detail: "Resume not found." }; }
+        else value = { resume_id: resume.id, filename: resume.filename, source_format: resume.source_format,
+          source_sha256: digest, assessment_fingerprint: "d".repeat(64), status: "not_required", sections: [], unmapped_text: null } satisfies components["schemas"]["TranscriptionReviewResponse"];
+      }
       else if (path === "/v1/analysis-runs" && method === "POST") { const run = { id: `run_fixture_${runs.length}`, operation: body.operation, status: "failed", usage_state: "released", estimated_units: 1, committed_units: 0, error_code: "FixtureError" }; runs.push(run); value = run; }
       else if (path.startsWith("/v1/analysis-runs/run_fixture_")) value = runs.find((run) => run.id === path.split("/").at(-1));
       else if (path === "/resume/list") value = { resumes };

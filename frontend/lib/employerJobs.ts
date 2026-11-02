@@ -192,6 +192,8 @@ export type EmployerApplication = {
   credit_cost: number;
   charged_credits: number;
   reserved_credits?: number;
+  billing_currency?: "credits";
+  billing?: import("./browserSubmissionBilling").SubmissionBilling;
   cancel_requested?: boolean;
   receipt?: Record<string, unknown> | null;
   candidate_report?: { source: "candidate_report"; reported_at: string; saved_package_digest: string; employer_confirmed: false; used_file_verified: false } | null;

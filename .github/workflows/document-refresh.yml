@@ -36,6 +36,10 @@ on:
         description: Explicitly upgrade a freshly verified V2 worker through fresh V3 inventory and eleven-case native proof
         type: boolean
         default: false
+      recover_expired_source:
+        description: Replace an expired source V4 predecessor only after new definitions and full native acceptance
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,6 +65,7 @@ jobs:
       RETIRE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.retire_expired_v2 || false }}
       RESCUE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.rescue_expired_v2 || false }}
       UPGRADE_CURRENT_V2_TO_V3: ${{ github.event_name == 'workflow_dispatch' && inputs.upgrade_current_v2_to_v3 || false }}
+      RECOVER_EXPIRED_SOURCE: ${{ github.event_name == 'workflow_dispatch' && inputs.recover_expired_source || false }}
       SOURCE_REVISION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_revision || false }}
       RESUME_COMPLETED_SOURCE_READBACK: ${{ github.event_name == 'workflow_dispatch' && inputs.resume_completed_source_readback || false }}
       GH_TOKEN: ${{ github.token }}
@@ -94,6 +99,7 @@ jobs:
           test "$RESCUE_EXPIRED_V2" != true || test -z "$RECOVER_FAILED_NATIVE_JOB"
           test "$RETIRE_EXPIRED_V2" != true || test "$RESCUE_EXPIRED_V2" != true
           test "$UPGRADE_CURRENT_V2_TO_V3" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true; }
+          test "$RECOVER_EXPIRED_SOURCE" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true && test "$UPGRADE_CURRENT_V2_TO_V3" != true && test "$SOURCE_REVISION" != true && test "$RESUME_COMPLETED_SOURCE_READBACK" != true; }
           test "$RESUME_COMPLETED_SOURCE_READBACK" != true || { test "$REFRESH_MODE" = full-source-refresh && test "$SOURCE_REVISION" = true && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" = false && test "$RESCUE_EXPIRED_V2" = false && test "$UPGRADE_CURRENT_V2_TO_V3" = false; }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         if: env.RESUME_COMPLETED_SOURCE_READBACK == 'true'
@@ -320,6 +326,9 @@ jobs:
           fi
           if [[ "$UPGRADE_CURRENT_V2_TO_V3" = true ]]; then
             args+=(--upgrade-current-v2-to-v3)
+          fi
+          if [[ "${RECOVER_EXPIRED_SOURCE:-false}" = true ]]; then
+            args+=(--recover-expired-source)
           fi
           if [[ "$RETIRE_EXPIRED_V2" != true && "$RESCUE_EXPIRED_V2" != true && "$UPGRADE_CURRENT_V2_TO_V3" != true ]]; then
             args+=(--reviewed-application-context --consumed-history-bundle "$CONSUMED_BUNDLE")

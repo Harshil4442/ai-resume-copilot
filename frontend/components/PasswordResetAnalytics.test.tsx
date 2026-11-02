@@ -30,7 +30,7 @@ describe("reset surfaces never activate consented analytics", () => {
     trackEvent("essential-only-event");
     expect(posthog.capture).not.toHaveBeenCalled(); expect(window.gtag).not.toHaveBeenCalled();
   });
-  it.each(["/forgot-password", "/reset-password", "/account-recovery"])("keeps %s free of analytics scripts, pageviews and form events despite saved consent", (path) => {
+  it.each(["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm"])("keeps %s free of analytics scripts, pageviews and form events despite saved consent", (path) => {
     state.path = path; history.replaceState(null, "", path);
     const view = render(<AnalyticsConsent {...props} />);
     expect(view.container).toBeEmptyDOMElement();

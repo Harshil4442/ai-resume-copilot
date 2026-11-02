@@ -19,13 +19,18 @@ def authority():
     return production_submit_authority()
 
 
-def prepare(db, app, posting, artifact):
+def prepare(db, app, posting, artifact, *, version=4):
+    from ..credits import runtime
+    from ..credits import submission as unified
     from ..employer import service as employer_service
     from . import service as s
 
     s.require(enabled() and s.typed_controls_enabled(), 503)
     # Configuration is structural only. No native/provider IO while SQL locks exist.
     authority()
+    if version == 5:
+        return unified.prepare(db, app, posting, artifact, now=s.now())
+    s.require(version == 4 and not runtime.requires_unified_billing(db, app.user_id))
     s.require(app.application_mode in {"manual", "browser"} and app.batch_id is None)
     if app.application_mode == "manual":
         s.require(app.credit_cost == 0 and app.charged_credits == 0 and app.reservation_id is None)
@@ -50,12 +55,18 @@ def prepare(db, app, posting, artifact):
     s.require(app.credit_cost == FEE and app.pricing_snapshot["unit_price"] == FEE)
 
 
-def review_payload(db, record, inspection, app, posting, artifact, mapping):
+def review_payload(db, record, inspection, app, posting, artifact, mapping, *, review_id=None):
+    from ..credits import runtime
+    from ..credits import submission as unified
     from . import attachments
     from . import hosted_network as network
     from . import service as s
 
-    s.require(enabled() and app.application_mode == "browser" and app.credit_cost == FEE, 503)
+    version = inspection.get("review_protocol_version")
+    fee = 3 if version == 5 else FEE
+    s.require(type(version) is int and version in {4, 5})
+    s.require(enabled() and app.application_mode == "browser" and app.credit_cost == fee, 503)
+    s.require(version == 5 or not runtime.requires_unified_billing(db, app.user_id))
     s.require(app.reservation_id is None and app.receipt is None)
     s.require(str(posting.external_id) == posting.apply_url.rsplit("/", 1)[-1])
     s.require(
@@ -127,7 +138,7 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
     )
     descriptor = attachments.descriptor(app, artifact)
     payload = {
-        "review_protocol_version": 4,
+        "review_protocol_version": version,
         "application_id": app.id,
         "candidate_id": record.user_id,
         "package_digest": app.package_digest,
@@ -157,7 +168,7 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
             "label": "Submit application",
         },
         "allowed_actions": ["submit"],
-        "fee_credits": FEE,
+        "fee_credits": fee,
         "pricing": copy.deepcopy(app.pricing_snapshot),
         "admission": copy.deepcopy(app.admission_snapshot),
         "disclosures": [
@@ -192,6 +203,10 @@ def review_payload(db, record, inspection, app, posting, artifact, mapping):
         ]
     else:
         s.require("native_context" not in inspection)
+    if version == 5:
+        s.require(isinstance(review_id, str))
+        return unified.issue(db, record, app, posting, artifact, payload,
+                             review_id=review_id, now=s.now())
     return payload
 
 
@@ -208,16 +223,23 @@ def credential_context(db, user_id):
     return SubmitContext(**revision.model_dump(mode="json"))
 
 
-def approve(db, record, review):
+def approve(db, record, review, *, accepted_quote_id=None):
+    from ..credits import runtime
+    from ..credits import submission as unified
     from ..employer import admissions, credits
     from . import service as s
 
-    s.require(enabled() and review.payload.get("fee_credits") == FEE, 503)
+    version = review.review_protocol_version
+    s.require(type(version) is int and version in {4, 5})
+    fee = 3 if version == 5 else FEE
+    s.require(enabled() and review.payload.get("fee_credits") == fee, 503)
+    s.require(version == 5 or (accepted_quote_id is None
+        and not runtime.requires_unified_billing(db, review.user_id)))
     authority()
     context = credential_context(db, review.user_id)
-    app, posting, _ = s._application(db, review, review.user_id)
+    app, posting, artifact = s._application(db, review, review.user_id)
     s.require(
-        app.application_mode == "browser" and app.credit_cost == FEE and app.reservation_id is None
+        app.application_mode == "browser" and app.credit_cost == fee and app.reservation_id is None
     )
     s.require(
         app.pricing_snapshot == review.payload["pricing"]
@@ -225,16 +247,13 @@ def approve(db, record, review):
     )
     source = db.query(s.employer.EmployerSource).filter_by(id=posting.source_id).one()
     admissions.reserve(db, app, source)
-    reservation = credits.reserve(
-        db,
-        user_id=app.user_id,
-        operation="job_application",
-        source_id=app.id,
-        unit_price=FEE,
-        count=1,
-        pricing_version=app.pricing_snapshot["pricing_version"],
-    )
-    app.reservation_id = reservation.id
+    if version == 5:
+        unified.accept(db, record, review, app, posting, artifact, accepted_quote_id, now=s.now())
+    else:
+        reservation = credits.reserve(
+            db, user_id=app.user_id, operation="job_application", source_id=app.id,
+            unit_price=FEE, count=1, pricing_version=app.pricing_snapshot["pricing_version"])
+        app.reservation_id = reservation.id
     db.add(
         s.RequestRecord(
             id=str(uuid4()),
@@ -295,6 +314,7 @@ def _binding(db, record, review, app, artifact, issued, deadline):
 
 
 def begin(db, record, review, request, request_sha):
+    from ..credits import submission as unified
     from ..employer import admissions
     from ..recovery.gcp_submit_contracts import SubmitContext
     from . import service as s
@@ -324,26 +344,17 @@ def begin(db, record, review, request, request_sha):
         db.query(s.RequestRecord.id).filter_by(review_id=review.id, field_index=0).first() is None
     )
     app, posting, artifact = s._application(db, review, record.user_id)
-    s.require(
-        app.reservation_id is not None
-        and app.application_mode == "browser"
-        and app.credit_cost == FEE
-    )
-    reservation = (
-        db.query(s.employer.ServiceCreditReservation)
-        .filter_by(
-            id=app.reservation_id,
-            user_id=record.user_id,
-            source_id=app.id,
-            operation="job_application",
-            state="reserved",
-            unit_price=FEE,
-            reserved_amount=FEE,
-        )
-        .with_for_update()
-        .first()
-    )
-    s.require(reservation is not None)
+    s.require(app.application_mode == "browser")
+    if review.review_protocol_version == 5:
+        unified.require_launch(db, app, now=s.now())
+        s.require(app.credit_cost == 3 and review.payload["billing"] == app.pricing_snapshot)
+    else:
+        s.require(app.reservation_id is not None and app.credit_cost == FEE)
+        reservation = (db.query(s.employer.ServiceCreditReservation).filter_by(
+            id=app.reservation_id, user_id=record.user_id, source_id=app.id,
+            operation="job_application", state="reserved", unit_price=FEE,
+            reserved_amount=FEE).with_for_update().first())
+        s.require(reservation is not None)
     saved = (
         db.query(s.RequestRecord).filter_by(review_id=review.id, operation="submit_approval").one()
     )
@@ -466,9 +477,12 @@ def begin(db, record, review, request, request_sha):
             and current.payload["artifact"] == s.attachments.descriptor(app, artifact)
             and artifact.gcs_generation == binding.artifact_generation
         )
+        if current.review_protocol_version == 5:
+            unified.require_launch(db, app, now=s.now())
+            s.require(current.payload["billing"] == app.pricing_snapshot)
         lease = {
             "protocol_version": 1,
-            "review_protocol_version": 4,
+            "review_protocol_version": current.review_protocol_version,
             "action_id": identity,
             "review_id": review.id,
             "device_id": record.id,
@@ -484,7 +498,7 @@ def begin(db, record, review, request, request_sha):
             "field_id": "final-submit",
             "control_type": "submit",
             "allowed_actions": ["submit"],
-            "fee_credits": FEE,
+            "fee_credits": 3 if current.review_protocol_version == 5 else FEE,
             "native_proof_sha256": s.digest(proof),
             "upload": current.payload["upload"],
             "upload_continuity": current.payload["upload_continuity"],
@@ -492,6 +506,8 @@ def begin(db, record, review, request, request_sha):
             "issued_at_ms": binding.issued_at_ms,
             "deadline": binding.deadline_ms,
         }
+        if current.review_protocol_version == 5:
+            lease["billing"] = copy.deepcopy(current.payload["billing"])
         if current.payload.get("receipt_contract"):
             from . import hosted_network as network
             s.require(network.enabled(), 503)
@@ -508,6 +524,7 @@ def begin(db, record, review, request, request_sha):
 
 def reconciled(db, review, app=None):
     """Browser reports cannot overwrite an independently adjudicated terminal state."""
+    from ..credits import submission as unified
     from . import service as s
 
     app = (
@@ -517,29 +534,35 @@ def reconciled(db, review, app=None):
         .with_for_update()
         .one()
     )
-    if app.reservation_id is None:
+    if review.review_protocol_version == 5:
+        if review.package_digest != app.package_digest or unified.reservation(db, app) is None:
+            return None
+        reservation, hold = unified.held(db, app)
+        committed, fee = reservation.committed_credits, 3
+        if reservation.state != "settled":
+            return None
+        s.require(hold.delivery_state in {"delivered", "failed"})
+    elif app.reservation_id is None:
         return None
-    reservation = (
-        db.query(s.employer.ServiceCreditReservation)
-        .filter_by(id=app.reservation_id, user_id=review.user_id)
-        .with_for_update()
-        .one()
-    )
-    if reservation.state != "settled":
-        return None
+    else:
+        reservation = (db.query(s.employer.ServiceCreditReservation)
+            .filter_by(id=app.reservation_id, user_id=review.user_id).with_for_update().one())
+        if reservation.state != "settled":
+            return None
+        committed, fee = reservation.committed_amount, FEE
     if (
         app.status == "confirmed"
         and app.receipt
         and app.receipt.get("completion_verified") is True
-        and app.charged_credits == FEE
-        and reservation.committed_amount == FEE
+        and app.charged_credits == fee
+        and committed == fee
     ):
         review.state, review.next_index = "filled", 1
         return "confirmed"
     if (
         app.status == "failed"
         and app.error_code == "verified_not_submitted"
-        and reservation.committed_amount == 0
+        and committed == 0
     ):
         review.state, review.payload = "cancelled", {}
         return "verified_not_submitted"
@@ -551,6 +574,9 @@ def status(db, review):
 
     terminal = reconciled(db, review)
     result = s._review_response(review)
+    if review.review_protocol_version == 5:
+        from ..credits import submission as unified
+        result["billing"] = unified.billing_for_review(db, review)
     if terminal:
         result.update(submission_status=terminal, employer_confirmed=terminal == "confirmed")
     elif (
@@ -615,17 +641,25 @@ def observe(db, record, review, body):
         # The original immutable action binding survives review TTL/cancellation.
         # This only adjudicates an already captured exchange; it never sends.
         receipt = network.submit_receipt(body["receipt"], review=review, action=action)
-        reservation = db.query(s.employer.ServiceCreditReservation).filter_by(
-            id=app.reservation_id, user_id=record.user_id, source_id=app.id,
-            operation="job_application").with_for_update().one()
-        s.require(reservation.state == "reserved" and reservation.unit_price == FEE
-                  and reservation.reserved_amount == FEE and reservation.requested_count == 1)
+        if review.review_protocol_version == 5:
+            from ..credits import submission as unified
+            unified.held(db, app, pending=True)
+        else:
+            reservation = db.query(s.employer.ServiceCreditReservation).filter_by(
+                id=app.reservation_id, user_id=record.user_id, source_id=app.id,
+                operation="job_application").with_for_update().one()
+            s.require(reservation.state == "reserved" and reservation.unit_price == FEE
+                      and reservation.reserved_amount == FEE and reservation.requested_count == 1)
         app.status, attempt.state, action.state = "confirmed", "confirmed", "filled"
         app.receipt = attempt.receipt = receipt
         attempt.response_status, attempt.completed_at, attempt.error_code = 200, s.now(), None
         app.error_code = app.error_message = None
-        credits.settle(db, reservation, completed_count=1, reason="Exact reviewed Greenhouse hosted application accepted over a direct secure native exchange")
-        app.charged_credits = reservation.committed_amount
+        if review.review_protocol_version == 5:
+            row = unified.settle(db, app, delivered=True, now=s.now())
+            app.charged_credits = row.committed_credits
+        else:
+            credits.settle(db, reservation, completed_count=1, reason="Exact reviewed Greenhouse hosted application accepted over a direct secure native exchange")
+            app.charged_credits = reservation.committed_amount
         admissions.finish(db, app, "confirmed")
         action.response = {**action.response, "observation": observation,
                            "employer_confirmed": True, "receipt_sha256": s.digest(receipt)}
@@ -640,7 +674,7 @@ def observe(db, record, review, body):
     # This JSON is explicitly an observation, never app.receipt/provider receipt.
     action.response = {**action.response, "observation": observation, "employer_confirmed": False}
     app.error_code = "browser_submission_unverified"
-    app.error_message = "The browser may have submitted the application. Portal observations cannot verify employer receipt; 20 credits remain held. No automatic resend is allowed."
+    app.error_message = "The browser may have submitted the application. Portal observations cannot verify employer receipt; the accepted credits remain held. No automatic resend is allowed."
     return status(db, review)
 
 
@@ -685,13 +719,14 @@ def _unknown(db, user_id, review_id, action_id):
     attempt.error_code = "browser_submit_authority_unknown"
     admissions.finish(db, app, "unknown")
     app.error_code = "browser_submit_authority_unknown"
-    app.error_message = "Submission authority has an uncertain outcome. No automatic resend is allowed; 20 application credits remain held for reconciliation."
+    app.error_message = "Submission authority has an uncertain outcome. No automatic resend is allowed; the accepted application credits remain held for reconciliation."
     db.commit()
     return {"state": "unknown"}
 
 
-def cancel(db, review):
+def cancel(db, review, *, expired=False):
     """Refund only before any durable possible-send claim, otherwise retain hold."""
+    from ..credits import submission as unified
     from ..employer import admissions, credits
     from . import service as s
 
@@ -701,6 +736,10 @@ def cancel(db, review):
         .with_for_update()
         .one()
     )
+    if review.review_protocol_version == 5 and review.package_digest != app.package_digest:
+        # A cancelled/replaced display cannot cancel a newer accepted quote.
+        review.state, review.payload = "cancelled", {}
+        return
     if reconciled(db, review, app):
         return
     claimed = (
@@ -713,7 +752,14 @@ def cancel(db, review):
         .first()
     )
     if claimed is None:
-        if app.reservation_id:
+        if review.review_protocol_version == 5 and expired and unified.reservation(db, app) is None:
+            # Expiring an unaccepted display consumes no source identity or
+            # application attempt. Only a NEW explicit inspect may issue a quote.
+            review.state, review.payload = "expired", {}
+            return
+        if review.review_protocol_version == 5 and unified.reservation(db, app) is not None:
+            unified.settle(db, app, delivered=False, now=s.now())
+        elif app.reservation_id:
             reservation = (
                 db.query(s.employer.ServiceCreditReservation)
                 .filter_by(id=app.reservation_id, user_id=review.user_id)
@@ -741,7 +787,7 @@ def cancel(db, review):
         attempt.error_code = "browser_submit_cancelled_after_claim"
         attempt.completed_at = s.now()
         app.error_code = "browser_submit_cancelled_after_claim"
-        app.error_message = "Cancellation stops future actions but cannot undo an authorized click. 20 credits remain held; inspect and reconcile without resubmitting."
+        app.error_message = "Cancellation stops future actions but cannot undo an authorized click. The accepted credits remain held; inspect and reconcile without resubmitting."
     app.cancel_requested = True
     review.state, review.payload = "cancelled", {}
 

@@ -16,6 +16,7 @@ from app import models
 from app.domains.analysis import supported_evaluation as core
 from app.domains.analysis import supported_evaluation_plan as inputs
 from app.domains.analysis import supported_evaluation_synchronous as sync
+from app.domains.career.evidence_write_fence import flush_evidence_writes
 from app.domains.free_core.models import FreeCoreReservation
 from app.services import (
     llm_client,
@@ -178,7 +179,9 @@ def test_matching_tamper_refuses_even_with_recomputed_stored_fingerprint(evaluat
         with factory() as db:
             run = db.get(models.AnalysisRun, identity)
             if changed == "evidence":
-                db.query(models.EvidenceItem).filter_by(resume_id=run.input_payload["resume_id"]).first().approval_state = "rejected"
+                evidence = db.query(models.EvidenceItem).filter_by(resume_id=run.input_payload["resume_id"]).first()
+                evidence.approval_state = "rejected"
+                flush_evidence_writes(db, [evidence])
             elif changed == "job":
                 db.get(models.Opportunity, run.opportunity_id).job_description += " Changed scope."
             elif changed == "request":

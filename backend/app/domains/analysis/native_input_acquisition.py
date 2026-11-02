@@ -299,7 +299,7 @@ def _verify_journal(root, report, native_root, auth):
                 _validate(root, row, phase, source, raw, auth)
 
 
-def execute(packet_root, native_root, auth, authorization_root, journal, *, maximum_requests=1, transport=None, initialize=False):
+def execute(packet_root, native_root, auth, authorization_root, journal, *, maximum_requests=1, transport=None, initialize=False, channel=None):
     need(type(maximum_requests) is int and 1 <= maximum_requests <= 10, "invocation_bound")
     report = plan(packet_root, native_root, auth, authorization_root)
     now = datetime.now(UTC)
@@ -307,6 +307,13 @@ def execute(packet_root, native_root, auth, authorization_root, journal, *, maxi
     _journal_matches(journal, auth)
     with locked(journal, report, create=initialize):
         _verify_journal(journal, report, native_root, auth)
+        if channel is not None:
+            from scripts.native_acquisition_channel import Channel
+            need(type(channel) is Channel, "exact_durable_channel_required")
+            channel.begin(journal, report, initialize=initialize, maximum_requests=maximum_requests)
+        else:
+            marker = journal / "durable-channel.json"
+            need(not marker.exists() and not marker.is_symlink(), "durable_channel_required")
         sent = 0
         status = _status(journal, report)
         need(not any(p["state"] == "unknown_no_replay" for r in status["cases"] for p in r["phases"].values()), "unknown_reconcile_only")
@@ -330,8 +337,13 @@ def execute(packet_root, native_root, auth, authorization_root, journal, *, maxi
                     "authorization_sha256": report["authorization_sha256"], "reserved_minor": auth.reserved_minor_per_request,
                     "actual_native_cost_minor": None, "created_at": datetime.now(UTC).isoformat(), "replay_authorized": False}
                 _new(journal, key + ".intent.json", packet.canonical(intent))
+                if channel is not None:
+                    channel.before_send(journal, key)
                 sent += 1
                 try:
+                    # A durable ACK can outlive the original funded window.
+                    # Keep its intent/reserve UNKNOWN; it cannot extend consent.
+                    need(auth.valid_from <= datetime.now(UTC) < auth.expires_at, "authorization_expired")
                     raw = transport.compile(auth.compiler, source, row["source_format"]) if phase == "compile" else transport.inspect(auth.inspector, source, "pdf" if phase == "pdf" else row["source_format"])
                     need(type(raw) is bytes and 0 < len(raw) <= (MAX_ARTIFACT if phase == "compile" else inspection.MAX_RESPONSE_BYTES), "response_bound")
                     artifact = _new(journal, key + ".raw.json", raw)
@@ -342,6 +354,8 @@ def execute(packet_root, native_root, auth, authorization_root, journal, *, maxi
                     if isinstance(exc, inspection.DocumentInspectionError) and exc.status_code != 422:
                         raise ValueError("native_acquisition_unknown_reconcile_only") from None
                     _new(journal, key + ".result.json", packet.canonical({"state": "refused_no_replay", "reserved_minor": auth.reserved_minor_per_request, "actual_native_cost_minor": None}))
+                    if channel is not None:
+                        channel.terminal(journal, key)
                     break
                 except BaseException:
                     # Durable intent remains UNKNOWN, including interruption or
@@ -349,9 +363,13 @@ def execute(packet_root, native_root, auth, authorization_root, journal, *, maxi
                     raise ValueError("native_acquisition_unknown_reconcile_only") from None
                 try:
                     _validate(journal, row, phase, source, raw, auth, create_pdf=True)
-                    _new(journal, key + ".result.json", packet.canonical({"state": "captured_unreviewed", "reserved_minor": auth.reserved_minor_per_request, "actual_native_cost_minor": None}))
+                    state = "captured_unreviewed"
                 except Exception:
-                    _new(journal, key + ".result.json", packet.canonical({"state": "invalid_response_no_replay", "reserved_minor": auth.reserved_minor_per_request, "actual_native_cost_minor": None}))
+                    state = "invalid_response_no_replay"
+                _new(journal, key + ".result.json", packet.canonical({"state": state, "reserved_minor": auth.reserved_minor_per_request, "actual_native_cost_minor": None}))
+                if channel is not None:
+                    channel.terminal(journal, key)
+                if state != "captured_unreviewed":
                     break
         return _status(journal, report)
 

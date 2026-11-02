@@ -13,6 +13,8 @@ vi.mock("next/navigation", () => ({ usePathname: () => state.pathname }));
 
 import Nav from "./Nav";
 import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import { ownedDashboardFixture } from "../lib/fixtures/ownedDashboard";
+import { ownedDashboardKey } from "../lib/ownedDashboardClient";
 import { ownedBootstrapKey } from "../lib/ownedBootstrapClient";
 
 const clients = new Set<QueryClient>();
@@ -30,7 +32,7 @@ beforeEach(() => {
   state.pathname = "/dashboard";
   state.authenticated = true;
   state.get.mockReset();
-  state.get.mockImplementation(() => Promise.resolve(ownedBootstrapFixture({ profile: account, features: { career_workspace: false } })));
+  state.get.mockImplementation((path: string) => { const value = ownedBootstrapFixture({ profile: account, features: { career_workspace: false } }); return Promise.resolve(path === "/auth/dashboard" ? ownedDashboardFixture(value) : value); });
 });
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.clear(); onlineManager.setOnline(true); });
 
@@ -56,6 +58,7 @@ describe("connection-page header request budget", () => {
   it("hides cached balances and does not invalidate shared profile/catalog data after navigating to companion", async () => {
     const client = createClient();
     client.setQueryData(ownedBootstrapKey, ownedBootstrapFixture({ profile: account, features: { career_workspace: false } }));
+    client.setQueryData(ownedDashboardKey, ownedDashboardFixture(ownedBootstrapFixture({ profile: account, features: { career_workspace: false } })));
     client.setQueryData(["employer-jobs", "catalog"], { balance: 3 });
     const view = render(tree(client));
     expect(screen.getByTitle("7 analysis units remaining")).toBeInTheDocument();
@@ -94,7 +97,7 @@ describe("connection-page header request budget", () => {
     expect(screen.queryByTitle(/job service credits/)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Workspace" })).not.toBeInTheDocument();
     await act(async () => { window.dispatchEvent(new Event("refresh_analysis_units")); });
-    await waitFor(() => expect(state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap")).toHaveLength(2));
+    await waitFor(() => expect(state.get.mock.calls.filter(([path]) => path === (state.pathname === "/dashboard" ? "/auth/dashboard" : "/auth/bootstrap"))).toHaveLength(2));
     expect(state.get.mock.calls.some(([path]) => path === "/v1/features")).toBe(false);
   });
 
@@ -110,23 +113,23 @@ describe("connection-page header request budget", () => {
 
   it("shows only the authoritative unified balance after rollout and refreshes it separately", async () => {
     let credits = 11;
-    state.get.mockImplementation(() => Promise.resolve(ownedBootstrapFixture({ profile: account,
+    state.get.mockImplementation((path: string) => { const value = ownedBootstrapFixture({ profile: account,
       availability: { catalog_enabled: true }, wallet: { schema_version: "unified-credits-v1", server_time: "2026-10-27T00:00:00Z",
-        available_credits: credits, reserved_credits: 0, debt_credits: 0, lots: [] } })));
+        available_credits: credits, reserved_credits: 0, debt_credits: 0, lots: [] } }); return Promise.resolve(path === "/auth/dashboard" ? ownedDashboardFixture(value) : value); });
     const client = createClient(); const view = render(tree(client));
     await screen.findByTitle("11 credits available");
     expect(screen.queryByTitle(/analysis units remaining/)).not.toBeInTheDocument();
     expect(screen.queryByTitle(/job service credits/)).not.toBeInTheDocument();
     credits = 9; act(() => { window.dispatchEvent(new Event("refresh_unified_credits")); });
     await screen.findByTitle("9 credits available");
-    expect(state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap")).toHaveLength(2);
+    expect(state.get.mock.calls.filter(([path]) => path === (state.pathname === "/dashboard" ? "/auth/dashboard" : "/auth/bootstrap"))).toHaveLength(2);
     state.pathname = "/browser-companion"; view.rerender(tree(client));
     expect(screen.queryByTitle(/credits available/)).not.toBeInTheDocument();
   });
 
   it("does not infer rollout from a wallet, a missing flag or a truthy string", async () => {
-    state.get.mockImplementation(() => Promise.resolve(ownedBootstrapFixture({ profile: account, availability: null,
-      wallet: { schema_version: "unified-credits-v1", server_time: "2026-10-27T00:00:00Z", available_credits: 99, reserved_credits: 0, debt_credits: 0, lots: [] } })));
+    state.get.mockImplementation((path: string) => { const value = ownedBootstrapFixture({ profile: account, availability: null,
+      wallet: { schema_version: "unified-credits-v1", server_time: "2026-10-27T00:00:00Z", available_credits: 99, reserved_credits: 0, debt_credits: 0, lots: [] } }); return Promise.resolve(path === "/auth/dashboard" ? ownedDashboardFixture(value) : value); });
     render(tree(createClient())); await screen.findByTitle("7 analysis units remaining");
     expect(state.get.mock.calls.some(([path]) => path === "/v1/credits/wallet")).toBe(false);
   });

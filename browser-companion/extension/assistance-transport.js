@@ -1,5 +1,7 @@
 import { base64url, canonical, decode64, digest } from "./protocol.js";
 
+import { isSubmissionBilling, isSubmissionVersion } from "./submission-billing.js";
+
 const encode = new TextEncoder();
 // Network waiting never extends the separately verified action lease.
 const REQUEST_TIMEOUT_MS = 40000;
@@ -107,11 +109,13 @@ export class AssistanceTransport {
     const key = await crypto.subtle.importKey("jwk", this.authorityKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
     if (!await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, decode64(envelope.signature), domain("lease", payload))) throw new Error("The exact action signature could not be verified.");
     if (payload.protocol_version !== 1 || payload.device_id !== this.identity.device_id || !UUID.test(payload.action_id)
+      || ![1, 2, 3, 4, 5].includes(payload.review_protocol_version ?? 1)
       || !Number.isSafeInteger(payload.issued_at_ms) || !Number.isSafeInteger(payload.deadline)
       || payload.issued_at_ms > this.now() + 2000 || payload.deadline <= this.now()
       || payload.deadline <= payload.issued_at_ms || payload.deadline - payload.issued_at_ms > 10000
-      || canonical(payload.allowed_actions) !== (payload.review_protocol_version === 4 ? '["submit"]' : payload.review_protocol_version === 3 ? payload.upload_plan ? '["upload_resume"]' : '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
-    if (payload.review_protocol_version === 4 && (payload.fee_credits !== 20 || payload.field_id !== "final-submit" || payload.control_type !== "submit" || !/^[a-f0-9]{64}$/.test(payload.native_proof_sha256 || ""))) throw new Error("The distinct final-submit authority is missing.");
+      || canonical(payload.allowed_actions) !== (isSubmissionVersion(payload.review_protocol_version) ? '["submit"]' : payload.review_protocol_version === 3 ? payload.upload_plan ? '["upload_resume"]' : '["attach"]' : '["fill"]')) throw new Error("The reviewed field action expired or changed.");
+    if (isSubmissionVersion(payload.review_protocol_version) && (payload.fee_credits !== (payload.review_protocol_version === 5 ? 3 : 20) || payload.field_id !== "final-submit" || payload.control_type !== "submit" || !/^[a-f0-9]{64}$/.test(payload.native_proof_sha256 || ""))) throw new Error("The distinct final-submit authority is missing.");
+    if (payload.review_protocol_version === 5 ? !isSubmissionBilling(payload.billing) || payload.deadline > payload.billing.quote_expires_at_ms || this.now() >= payload.billing.quote_expires_at_ms : payload.billing !== undefined) throw new Error("The immutable submission quote expired or changed.");
     return payload;
   }
 }

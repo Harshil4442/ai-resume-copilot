@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleAccount } from "./accountTransportServer";
 import { ownedBootstrapFixture } from "./fixtures/ownedBootstrap";
+import { ownedDashboardFixture } from "./fixtures/ownedDashboard";
 const origin="https://account.example.com", secret="synthetic-dedicated-account-secret";
 const csrf="a".repeat(64);
 const profile={email:"synthetic@example.com",full_name:"Synthetic Candidate",profile_completeness:20,missing_fields:[],tier:"free",ai_credits:2,premium_until:null};
@@ -101,6 +102,45 @@ describe("finite owned bootstrap read", () => {
  ])("rejects malformed/private nested data without credential export", async (value) => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(value)));
   const response = await handleAccount(await req("bootstrap"), "bootstrap");
+  expect(response.status).toBe(503); expect(await response.text()).not.toContain("synthetic-secret");
+ });
+});
+
+describe("fixed owned dashboard read", () => {
+ it("forwards one exact signed empty GET and validates its bounded advisory response", async () => {
+  const value = ownedDashboardFixture(); const fetch = vi.fn(async () => Response.json(value)); vi.stubGlobal("fetch", fetch);
+  const response = await handleAccount(await req("dashboard"), "dashboard");
+  expect(response.status).toBe(200); expect(await response.json()).toEqual(value); expect(fetch).toHaveBeenCalledTimes(1);
+  expect((fetch.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe("https://backend.example.com/api/auth/dashboard");
+ });
+ it("passes only a dashboard404 as old-server compatibility, without forwarding private error bytes", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Not Found" }, { status: 404 })));
+  const response = await handleAccount(await req("dashboard"), "dashboard");
+  expect(response.status).toBe(404); expect(await response.text()).not.toContain("synthetic-secret");
+ });
+ it("does not treat an owned-data404 or malformed404 as an absent new route", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Owned record not found", access_token: "synthetic-secret" }, { status: 404 })));
+  const response = await handleAccount(await req("dashboard"), "dashboard");
+  expect(response.status).toBe(503); expect(await response.text()).not.toContain("synthetic-secret");
+ });
+ it.each([401, 429, 503])("does not convert dashboard%s into compatibility404", async (status) => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status })));
+  expect((await handleAccount(await req("dashboard"), "dashboard")).status).toBe(status);
+ });
+ it.each(["POST", "PUT", "DELETE", "PATCH"])("refuses dashboard method%s without forwarding", async (method) => {
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  expect((await handleAccount(await req("dashboard", method), "dashboard")).status).toBe(405);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it("refuses anonymous or client-selected owner scope", async () => {
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  expect((await handleAccount(await req("dashboard", "GET", { anonymous: true }), "dashboard")).status).toBe(401);
+  expect((await handleAccount(new NextRequest(`${origin}/api/account/dashboard?user_id=99`), "dashboard")).status).toBe(404);
+  expect(fetch).not.toHaveBeenCalled();
+ });
+ it("fails the whole malformed or credential-bearing reply", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...ownedDashboardFixture(), candidate_lifetime: { secret: "synthetic-secret" } })));
+  const response = await handleAccount(await req("dashboard"), "dashboard");
   expect(response.status).toBe(503); expect(await response.text()).not.toContain("synthetic-secret");
  });
 });
