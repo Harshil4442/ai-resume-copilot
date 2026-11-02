@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import stat
 import sys
 from pathlib import Path
@@ -355,6 +356,31 @@ def test_read_only_audited_modes_keep_no_heartbeat_and_existing_receipt_shape(mo
         assert "diagnostics" not in console
 
 
+def _native_history_prefixes(steps):
+    # Inspect the actual artifact-list command, not unrelated Python string
+    # predicates in another shell/heredoc (for example the GIT_ environment filter).
+    selectors = []
+    for step in steps:
+        for line in step.get("run", "").splitlines():
+            if not re.match(r'''\s*gh api ["']repos/\$GITHUB_REPOSITORY/actions/artifacts(?:\?|["'])''', line):
+                continue
+            command = shlex.split(line)
+            assert command[:3] == ["gh", "api", "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100"]
+            assert command.count("--jq") == 1
+            selectors.append((step.get("name"), command[command.index("--jq") + 1]))
+    assert len(selectors) == 1 and selectors[0][0] == "Retrieve prior owned native proof journals"
+    match = re.fullmatch(
+        r'\.artifacts\[\] \| select\(\.expired == false and \(\.name \| \((.+)\)\)\)'
+        r' \| \[\.workflow_run\.id, \.id, \.name, \.workflow_run\.head_branch\] \| @tsv', selectors[0][1])
+    assert match is not None
+    predicates = [re.fullmatch(r'startswith\("([^"\n]+)"\)', part) for part in match[1].split(" or ")]
+    assert len(predicates) == 3 and all(predicate is not None for predicate in predicates)
+    prefixes = {predicate[1] for predicate in predicates if predicate is not None}
+    assert prefixes == {"document-refresh-refresh-", "document-refresh-full-source-refresh-",
+                        "document-refresh-resume-full-source-refresh-"}
+    return prefixes
+
+
 def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
     steps = workflow["jobs"]["maintenance"]["steps"]
@@ -370,11 +396,7 @@ def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
     assert diagnostic["with"]["if-no-files-found"] == "ignore"
     assert diagnostic["with"]["name"] == (
         "document-refresh-diagnostics-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}")
-    prefixes = set()
-    for step in steps:
-        prefixes.update(re.findall(r'startswith\("([^"\n]+)"\)', step.get("run", "")))
-    assert prefixes == {"document-refresh-refresh-", "document-refresh-full-source-refresh-",
-                        "document-refresh-resume-full-source-refresh-"}
+    prefixes = _native_history_prefixes(steps)
     for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh", "monitor",
                  "audit-consumed-v2-history", "reconcile-final-v2-transition"):
         name = f"document-refresh-diagnostics-{mode}-123456-1"
@@ -382,3 +404,34 @@ def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
     # Native evidence is still retained under its exact original prefixes.
     for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh"):
         assert sum(f"document-refresh-{mode}-123456-1".startswith(prefix) for prefix in prefixes) == 1
+
+
+@pytest.mark.parametrize("same_step", [False, True])
+def test_native_history_selector_ignores_unrelated_inline_python_prefixes(same_step):
+    steps = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())["jobs"]["maintenance"]["steps"]
+    before = _native_history_prefixes(steps)
+    inline = '\npython - <<\'PY\'\nkey.startswith("GIT_")\nname.startswith("document-refresh-diagnostics-")\nPY\n'
+    if same_step:
+        next(step for step in steps if step.get("name") == "Retrieve prior owned native proof journals")["run"] += inline
+    else:
+        steps.append({"name": "Owned unrelated Python", "run": inline})
+    assert _native_history_prefixes(steps) == before
+
+
+@pytest.mark.parametrize("change", ["diagnostics", "broad_prefix", "remove_native", "bypass_name", "second_listing"])
+def test_changed_native_artifact_selector_still_refuses_diagnostics_or_unreviewed_history(change):
+    steps = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())["jobs"]["maintenance"]["steps"]
+    retrieval = next(step for step in steps if step.get("name") == "Retrieve prior owned native proof journals")
+    original = 'startswith("document-refresh-refresh-")'
+    if change == "diagnostics":
+        retrieval["run"] = retrieval["run"].replace(original, original + ' or startswith("document-refresh-diagnostics-")')
+    elif change == "broad_prefix":
+        retrieval["run"] = retrieval["run"].replace(original, 'startswith("document-refresh-")')
+    elif change == "remove_native":
+        retrieval["run"] = retrieval["run"].replace(original + " or ", "")
+    elif change == "bypass_name":
+        retrieval["run"] = retrieval["run"].replace("select(.expired == false and", "select(.expired == false or")
+    else:
+        steps.append({"name": "Owned unexpected second artifact listing", "run": retrieval["run"]})
+    with pytest.raises(AssertionError):
+        _native_history_prefixes(steps)
