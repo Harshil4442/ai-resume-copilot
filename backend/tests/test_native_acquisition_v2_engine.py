@@ -5,7 +5,10 @@ import ast
 import base64
 import builtins
 import copy
+import hashlib
 import json
+import re
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
@@ -20,6 +23,7 @@ from pydantic import ValidationError
 
 from app.domains.analysis import native_input_acquisition as old
 from app.domains.analysis import quality_packet as packet
+from evaluation.native_acquisition_v2 import bridge as b
 from evaluation.native_acquisition_v2 import engine as e
 from scripts import native_acquisition_channel as original_channel
 from scripts import native_acquisition_job as original_job
@@ -653,3 +657,449 @@ def test_parallel_phase_intents_cannot_overrun_one_shared_journal_budget(tmp_pat
     assert outcomes.count(True) == 1
     assert sum(path.stat().st_size for path in root.iterdir()) == limit
     assert len(list(root.glob("*.intent.json"))) == 1
+
+
+# These are artificial metadata/OCI objects, not captured native evidence.
+@pytest.fixture
+def bridge_toys():
+    import gzip
+    import tarfile
+
+    now = datetime(2026, 11, 3, 12, tzinfo=UTC)
+    raw: dict[str, bytes] = {}
+
+    def put(name, value):
+        content = value if isinstance(value, bytes) else b.canonical(value)
+        raw[name] = content
+        return b.Artifact(path=name, size=len(content), sha256=hashlib.sha256(content).hexdigest())
+
+    def archive_bytes(recipe):
+        stream = BytesIO()
+        with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0) as zipped, tarfile.open(fileobj=zipped, mode="w") as archive:
+            row = tarfile.TarInfo("Dockerfile")
+            row.size, row.mode = len(recipe), 0o644
+            archive.addfile(row, BytesIO(recipe))
+        return stream.getvalue()
+
+    template_raw = (Path(__file__).resolve().parents[2] / "infra/document-processing/refresh-courier-v3.Dockerfile").read_bytes()
+    template = put("refresh-template.Dockerfile", template_raw)
+
+    maps = {kind: {"owned-toy-" + kind: b.digest(kind)} for kind in
+            ("source", "parser", "runtime", "fonts", "scanner_binary", "compiler_runtime")}
+    execution_config = {"User": "65534:65534", "Entrypoint": ["/usr/local/bin/python3", "-I", "/opt/document/service.py"],
+        "WorkingDir": "/opt/document", "Labels": {}}
+    material = b.MaterialIdentity(app_sha256=b.digest("owned-toy-app"), app_files=289,
+        original_entry_path="backend/scripts/native_acquisition_job.py", original_entry_sha256=b.digest("owned-toy-entry"),
+        compiler_image=b.REPOSITORY + "hirewiz-native-tex@sha256:" + "c" * 64,
+        compiler_policy_sha256=b.digest("owned-toy-compiler-policy"), inspector_policy_sha256=b.POLICY,
+        **{key + "_sha256": b.digest(maps[key]) for key in ("source", "parser", "runtime", "fonts", "scanner_binary", "compiler_runtime")},
+        execution_configuration_sha256=b.digest(execution_config), non_definition_tree_sha256=b.digest("owned-toy-tree"),
+        renderer_version="Owned toy renderer, not native evidence", scanner_version="1.4.3")
+
+    def materials(name):
+        return put(name, {"schema_version": "native-material-inventory-v1", "identity": material.model_dump(mode="json"),
+                          "files": maps, "execution_configuration": execution_config})
+
+    def oci(index, layers, diff_ids, labels):
+        config = put(f"oci/config-{index}.json", {"architecture": "amd64", "os": "linux",
+            "rootfs": {"type": "layers", "diff_ids": diff_ids}, "config": execution_config | {"Labels": labels}})
+        manifest = put(f"oci/manifest-{index}.json", {"schemaVersion": 2,
+            "config": {"digest": "sha256:" + config.sha256, "size": config.size}, "layers": layers})
+        return b.OciEvidence(manifest=manifest, configuration=config), b.INSPECTOR + manifest.sha256
+
+    layers = [{"digest": "sha256:" + b.digest("owned-toy-parent-layer"), "size": 7}]
+    diff_ids = ["sha256:" + b.digest("owned-toy-parent-diff")]
+    original_oci, original_image = oci(0, layers, diff_ids, {})
+    anchor_nonce, anchor_commit, anchor_qualification = "f" * 32, "e" * 40, b.digest("owned-toy-anchor-qualification")
+    anchor_parent = b.INSPECTOR + "f" * 64
+    anchor_archive = put("original/inspector-source.tar.gz", archive_bytes(b._rendered_recipe(template_raw, anchor_parent)))
+    anchor_source = {"bucket": b.PROJECT + "_cloudbuild", "object": "hirewiz-document-refresh-source/" + anchor_nonce + "/source.tar.gz", "generation": "100"}
+    anchor_tag = b.REPOSITORY + "hirewiz-document-inspector:source-definitions-" + anchor_nonce
+    anchor_args = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg", "DOCUMENT_DEFINITIONS_NONCE=" + anchor_nonce,
+        "--label", "hirewiz.document-source.commit=" + anchor_commit, "--label", "hirewiz.document-source.qualification=" + anchor_qualification,
+        "--tag", anchor_tag, "."]
+    anchor_build = put("original/inspector-build.json", {"id": "ffffffff-ffff-ffff-ffff-ffffffffffff", "status": "SUCCESS", "projectId": b.PROJECT,
+        "source": {"storageSource": anchor_source}, "sourceProvenance": {"resolvedStorageSource": anchor_source},
+        "serviceAccount": "projects/" + b.PROJECT + "/serviceAccounts/hirewiz-builder-20261014@" + b.PROJECT + ".iam.gserviceaccount.com",
+        "tags": [b.KIND, anchor_commit, anchor_qualification, "f" * 64],
+        "steps": [{"name": b.DOCKER_BUILDER, "args": anchor_args}, {"name": b.DOCKER_BUILDER, "args": ["push", anchor_tag]}],
+        "results": {"images": [{"name": anchor_tag, "digest": "sha256:" + original_image.split("@sha256:")[1]}]}})
+    cases = [b.Case(case_id=f"synth-{i:03}", source_format=kind, source_sha256=b.digest(["source", i]), source_size=100 + i,
+        compiled_pdf_sha256=b.digest(["pdf", i]) if kind in {"tex", "texzip"} else None,
+        compiled_pdf_size=200 + i if kind in {"tex", "texzip"} else None,
+        extracted_text_sha256=b.digest(["text", i]), page_sha256=[b.digest(["page", i])])
+        for i, kind in enumerate([kind for kind in ("pdf", "docx", "tex", "texzip") for _ in range(10)])]
+    pages = put("original/pages.json", {case.case_id: {"source_sha256": case.source_sha256,
+        "artifact_sha256": case.compiled_pdf_sha256 or case.source_sha256,
+        "extracted_text_sha256": case.extracted_text_sha256, "page_sha256": case.page_sha256} for case in cases})
+    original_execution = put("original/renderer-execution.json", {"name": "owned-toy-render-execution", "uid": "owned-toy-not-provider",
+        "succeededCount": 1, "template": {"containers": [{"image": original_image}]}})
+    origin_inventory = put("original/renderer-inventory.json", {"material_sha256": b.digest(material.model_dump(mode="json")),
+        "source_sha256": material.source_sha256, "fonts_sha256": material.fonts_sha256})
+    origin = put("original/renderer-origin.json", {"schema_version": "native-renderer-origin-v1", "image": original_image,
+        "execution_sha256": original_execution.sha256, "inventory_sha256": origin_inventory.sha256,
+        "page_manifest_sha256": pages.sha256, "execution_name": "owned-toy-render-execution",
+        "inspector_build_sha256": anchor_build.sha256, "inspector_source_archive_sha256": anchor_archive.sha256})
+    ci = put("original/ci.json", {"headSha": "a" * 40, "workflowName": "CI", "conclusion": "success", "status": "completed",
+        "jobs": [{"name": name, "status": "completed", "conclusion": "success", "steps": [
+            {"name": step, "status": "completed", "conclusion": "success"} for step in
+            ("Qualify schema26 app v3 compatibility", "Qualify schema26 app v3 native protocol", "Qualify retained actual-source schema25 app v2")]
+            if name == "backend" else []} for name in ("backend", "frontend", "security-and-container", "browser-companion", "cold-browser-journey")]})
+    tag = b.REPOSITORY + "hirewiz:" + "a" * 40
+    build = put("original/build.json", {"id": "11111111-1111-1111-1111-111111111111", "status": "SUCCESS", "projectId": b.PROJECT,
+        "sourceProvenance": {"resolvedGitSource": {"url": "https://github.com/Harshil4442/ai-resume-copilot.git", "revision": "a" * 40, "dir": "."}},
+        "steps": [{"name": "gcr.io/cloud-builders/docker", "args": ["build", "--tag", tag, "."]},
+                  {"name": "gcr.io/cloud-builders/docker", "args": ["push", tag]}],
+        "results": {"images": [{"name": tag, "digest": "sha256:" + "d" * 64, "pushTiming": {}}]}})
+    runner = put("original/runner.json", {"schema_version": "native-quality-qualified-runner-v1",
+        "qualification_contract": "hirewiz_schema26_app_rolling_v3", "app_sha256": material.app_sha256, "app_files": material.app_files,
+        "entry_path": material.original_entry_path, "entry_sha256": material.original_entry_sha256,
+        "repository": "https://github.com/Harshil4442/ai-resume-copilot.git", "release": "a" * 40,
+        "image": b.REPOSITORY + "hirewiz@sha256:" + "d" * 64, "build_id": "11111111-1111-1111-1111-111111111111",
+        "ci_metadata_sha256": ci.sha256, "build_metadata_sha256": build.sha256})
+    development_plan = put("original/plan.json", {"schema_version": "development-native-service-acquisition-v1", "split": "development",
+        "selected_cases": [{"case_id": case.case_id, "source_format": case.source_format, "source": {"sha256": case.source_sha256}} for case in cases]})
+    captures = put("original/captures.json", {"custody": "operator_reviewed_native_capture_v1", "captures": {
+        case.case_id: {"source_sha256": case.source_sha256, **({"compilation": {"source_sha256": case.source_sha256,
+            "pdf": {"sha256": case.compiled_pdf_sha256}}} if case.compiled_pdf_sha256 else {})} for case in cases}})
+    lock_rows = [{"kind": "source", "sha256": case.source_sha256} for case in cases]
+    lock_rows += [{"kind": "compiled_pdf", "sha256": case.compiled_pdf_sha256} for case in cases if case.compiled_pdf_sha256]
+    lock_rows += [{"kind": "text", "sha256": case.extracted_text_sha256} for case in cases]
+    lock_rows += [{"kind": "page", "sha256": sha} for case in cases for sha in case.page_sha256]
+    origin_refs = b.RendererOrigin(record=origin, execution=original_execution, inventory=origin_inventory, pages=pages)
+    review = put("original/review.json", {"state": "completed_native_development_review",
+        "reviewed_at": (now - timedelta(hours=2)).isoformat(), "reviewed_by": "owned-toy-reviewer-not-authority",
+        "development_plan_sha256": development_plan.sha256, "capture_registry_sha256": captures.sha256,
+        "native_renderer_origin_refs": origin_refs.model_dump(mode="json")})
+    lock = put("original/lock.json", {"schema_version": "native-development-review-lock-v2", "state": "locked_before_held_out_native_capture",
+        "locked_at": (now - timedelta(hours=2)).isoformat(), "runner_receipt": {"sha256": runner.sha256},
+        "reviewed_at": (now - timedelta(hours=2)).isoformat(), "reviewed_by": "owned-toy-reviewer-not-authority",
+        "review_evidence": {"sha256": review.sha256},
+        "ci_metadata": {"sha256": ci.sha256}, "build_metadata": {"sha256": build.sha256},
+        "development_plan": {"sha256": development_plan.sha256}, "capture_registry": {"sha256": captures.sha256}, "files": lock_rows})
+    original = b.OriginalEvidence(review_lock=lock, review_evidence=review, development_plan=development_plan, capture_registry=captures,
+        runner_receipt=runner, ci_metadata=ci, runner_build=build, inspector_build=anchor_build,
+        inspector_source_archive=b.GenerationArtifact(bucket=anchor_source["bucket"], name=anchor_source["object"],
+            generation=anchor_source["generation"], artifact=anchor_archive),
+        renderer_origin=origin_refs,
+        inspector_image=original_image, material=material, material_inventory=materials("original/material.json"), oci=original_oci, cases=cases)
+
+    def assemble(count=1, purpose="already_serving", age=timedelta(hours=1)):
+        working = dict(raw)
+        edges, parent, parent_layers, parent_diffs = [], original_image, list(layers), list(diff_ids)
+        template_parent = re.findall(rb"^FROM ([^ ]+)(?: AS definitions)?$", template_raw, re.M)[0]
+        for index in range(count):
+            nonce, commit, qualification = f"{index + 1:032x}", "b" * 40, b.digest("owned-toy-qualification")
+            recipe = put(f"chain-{index}/Dockerfile", template_raw.replace(template_parent, parent.encode()))
+            stream = BytesIO()
+            with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0) as zipped, tarfile.open(fileobj=zipped, mode="w") as archive:
+                row = tarfile.TarInfo("Dockerfile")
+                row.size, row.mode = recipe.size, 0o644
+                archive.addfile(row, BytesIO(raw[recipe.path]))
+            archive_ref = put(f"chain-{index}/source.tar.gz", stream.getvalue())
+            new_layers = [{"digest": "sha256:" + b.digest([index, "layer", n]), "size": 7} for n in range(2)]
+            new_diffs = ["sha256:" + b.digest([index, "diff", n]) for n in range(2)]
+            child_oci, child_image = oci(index + 1, parent_layers + new_layers, parent_diffs + new_diffs,
+                {"hirewiz.document-source.commit": commit, "hirewiz.document-source.qualification": qualification})
+            delta = [put(f"chain-{index}/layer-{n}.json", {"schema_version": "oci-layer-path-inventory-v1",
+                "layer_digest": new_layers[n]["digest"], "diff_id": new_diffs[n], "parent_image": parent, "image": child_image,
+                "non_definition_tree_sha256": material.non_definition_tree_sha256,
+                "changed_paths": ["/var/lib/clamav" if n == 0 else "/var/lib/clamav/daily.cld"]}) for n in range(2)]
+            source = {"bucket": b.PROJECT + "_cloudbuild", "object": "hirewiz-document-refresh-source/" + nonce + "/source.tar.gz", "generation": str(index + 1)}
+            tag = b.REPOSITORY + "hirewiz-document-inspector:source-definitions-" + nonce
+            build_id = f"00000000-0000-0000-0000-{index + 1:012x}"
+            args = ["build", "--pull=false", "--platform=linux/amd64", "--build-arg", "DOCUMENT_DEFINITIONS_NONCE=" + nonce,
+                "--label", "hirewiz.document-source.commit=" + commit, "--label", "hirewiz.document-source.qualification=" + qualification,
+                "--tag", tag, "."]
+            build_ref = put(f"chain-{index}/build.json", {"id": build_id, "projectId": b.PROJECT, "status": "SUCCESS",
+                "source": {"storageSource": source}, "sourceProvenance": {"resolvedStorageSource": source},
+                "serviceAccount": "projects/" + b.PROJECT + "/serviceAccounts/hirewiz-builder-20261014@" + b.PROJECT + ".iam.gserviceaccount.com",
+                "steps": [{"name": b.DOCKER_BUILDER, "args": args}, {"name": b.DOCKER_BUILDER, "args": ["push", tag]}],
+                "tags": [b.KIND, commit, qualification, parent.split("@sha256:")[1]],
+                "results": {"images": [{"name": tag, "digest": "sha256:" + child_image.split("@sha256:")[1], "pushTiming": {}}]}})
+            edges.append(b.DerivativeEdge(kind=b.KIND, parent_image=parent, image=child_image, build_id=build_id, nonce=nonce,
+                source_commit=commit, qualification_sha256=qualification, raw_build=build_ref,
+                source_archive=b.GenerationArtifact(bucket=source["bucket"], name=source["object"], generation=source["generation"], artifact=archive_ref),
+                recipe=recipe, material_inventory=materials(f"chain-{index}/material.json"), oci=child_oci, layer_inventories=delta))
+            parent, parent_layers, parent_diffs = child_image, parent_layers + new_layers, parent_diffs + new_diffs
+        issued = now - age
+        native_execution = put("current/execution.json", {"name": "owned-toy-current-execution", "uid": "owned-toy-not-provider",
+            "succeededCount": 1, "template": {"containers": [{"image": parent}]}})
+        inventory = put("current/inventory.json", {"material_sha256": b.digest(material.model_dump(mode="json"))})
+        native = put("current/native.json", {"contract_version": 4, "required_case_count": 17, "image": parent,
+            "build_id": edges[-1].build_id, "source_archive_sha256": edges[-1].source_archive.artifact.sha256,
+            "source_generation": edges[-1].source_archive.generation,
+            "policy_sha256": material.inspector_policy_sha256, "execution_sha256": native_execution.sha256,
+            "inventory_sha256": inventory.sha256, "definition_issued_at": issued.isoformat(), "execution_name": "owned-toy-current-execution",
+            "acceptance_purpose": purpose, "verifier": "SourceProbe.verify_successor" if purpose == "new_candidate_and_promotion" else "SourceProbe.verify_current_successor"})
+        service = put("current/service.json", {"uid": "owned-toy-service", "template": {"containers": [{"image": parent}]},
+            "terminalCondition": {"state": "CONDITION_SUCCEEDED"}})
+        local = put("current/local.json", {"image": parent, "definition_issued_at": issued.isoformat(),
+            "material_sha256": b.digest(material.model_dump(mode="json"))}) if purpose == "new_candidate_and_promotion" else None
+        current = b.CurrentAcceptance(purpose=purpose, profile="source_v4_17_cases", image=parent, material=material,
+            definition_issued_at=issued, native_record=native, execution=native_execution, inventory=inventory, service=service, local_candidate_proof=local)
+        # Each invocation returns an independent exact metadata closure.
+        names = {name for name in raw if name in working or name.startswith("current/") or any(name.startswith(f"chain-{i}/") for i in range(count))
+                 or any(name == f"oci/{part}-{i}.json" for i in range(1, count + 1) for part in ("config", "manifest"))}
+        if local is None:
+            names.discard("current/local.json")
+        artifacts = [b.Artifact(path=name, size=len(raw[name]), sha256=hashlib.sha256(raw[name]).hexdigest()) for name in sorted(names)]
+        evidence = b.BridgeEvidence(schema_version=b.SCHEMA, original=original, refresh_template=template,
+            chain=edges, current=current, files=artifacts)
+        return SimpleNamespace(evidence=evidence, raw={name: raw[name] for name in names}, now=now)
+
+    return assemble
+
+
+def bridge_replace(t, ref, value):
+    content = value if isinstance(value, bytes) else b.canonical(value)
+    replacement = b.Artifact(path=ref.path, size=len(content), sha256=hashlib.sha256(content).hexdigest())
+    t.raw[ref.path] = content
+    data = t.evidence.model_dump(mode="json")
+
+    def replace(node):
+        if isinstance(node, dict):
+            if node == ref.model_dump(mode="json"):
+                return replacement.model_dump(mode="json")
+            return {key: replace(value) for key, value in node.items()}
+        return [replace(value) for value in node] if isinstance(node, list) else node
+
+    t.evidence = b.BridgeEvidence.model_validate(replace(data))
+    return replacement
+
+
+def bridge_permit(t):
+    quote = b.ExpenseQuote(currency="INR", native_per_request_minor=2, native_reserved_minor=120,
+        render_reserved_minor=10, runner_reserved_minor=20, provenance_io_reserved_minor=5,
+        build_acceptance_reserved_minor=0, build_acceptance_mode="retained_current_proof", total_reserved_minor=155)
+    namespace = "gs://owned-toy-private-bucket/quality-native-equivalence/owned-toy-epoch/"
+    data = {"schema_version": "native40-bridge-funding-metadata-v1", "purpose": "unreviewed_native40_rescan_no_model_no_heldout",
+        "epoch_id": "owned-toy-epoch", "namespace": namespace, "bridge_evidence_sha256": b.digest(t.evidence.model_dump(mode="json")),
+        "request_limit": 60, "quote": quote.model_dump(mode="json")}
+    content = b.canonical(data)
+    funding = b.Artifact(path="funding.json", size=len(content), sha256=hashlib.sha256(content).hexdigest())
+    t.raw[funding.path] = content
+    return b.BridgePermit(schema_version="native40-definitions-bridge-permit-v1", purpose=data["purpose"], epoch_id=data["epoch_id"],
+        namespace=namespace, bridge_evidence_sha256=data["bridge_evidence_sha256"],
+        original_review_lock_sha256=t.evidence.original.review_lock.sha256, inspector_image=t.evidence.current.image,
+        valid_from=t.now - timedelta(minutes=1), expires_at=t.now + timedelta(minutes=30), request_limit=60,
+        quote=quote, funding_evidence=funding)
+
+
+@pytest.mark.parametrize("count", [1, 3, 32])
+def test_bridge_complete_contiguous_chain_is_only_unverified_metadata(bridge_toys, count):
+    t = bridge_toys(count)
+    before = copy.deepcopy(t.raw)
+    result = b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+    assert result.chain_edges == count and result.state == "consistent_unverified_metadata"
+    assert not result.native_approval and not result.processing_authorized and not result.authorizes_scan and not result.authorizes_retail
+    assert result.requires_native_provenance_verification and t.raw == before
+
+
+def test_bridge_all60_intents_bind_original_review_origin_current_profile_and_separate_permit(bridge_toys):
+    t = bridge_toys(3)
+    permit = bridge_permit(t)
+    plan = b.scan_plan(t.evidence, permit, lambda ref: t.raw[ref.path], now=t.now)
+    assert len(plan.intents) == plan.maximum_http_requests == 60 and plan.new_compilations == 0
+    assert Counter(intent.phase for intent in plan.intents) == {"bridge_source": 40, "bridge_compiled_pdf": 20}
+    assert len({intent.case_id for intent in plan.intents}) == 40
+    assert all(intent.original_review_lock == t.evidence.original.review_lock
+               and intent.original_renderer_origin == t.evidence.original.renderer_origin.record
+               and intent.current_image == t.evidence.current.image and not intent.replay_authorized
+               and intent.bridge_evidence_sha256 == plan.evidence_sha256 for intent in plan.intents)
+    assert not any((plan.processing_authorized, plan.native_approval, plan.authorizes_scan, plan.authorizes_retail, plan.reserved_expense_released))
+    assert plan.total_reserved_minor == 155 and plan.actual_native_cost_minor is None
+
+
+@pytest.mark.parametrize("purpose,age,accepted", [("new_candidate_and_promotion", timedelta(hours=23, minutes=59), True),
+    ("new_candidate_and_promotion", timedelta(hours=24), False), ("already_serving", timedelta(hours=25), True),
+    ("already_serving", timedelta(days=3), False), ("already_serving", timedelta(seconds=-1), False)])
+def test_bridge_candidate24h_and_actual_serving3days_are_distinct(bridge_toys, purpose, age, accepted):
+    t = bridge_toys(purpose=purpose, age=age)
+    if accepted:
+        assert not b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now).processing_authorized
+    else:
+        with pytest.raises(ValueError, match="acceptance_age"):
+            b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.mark.parametrize("change", ["missing_edge", "cycle", "duplicate_build", "wrong_generation", "outside_database",
+    "recipe_changed", "changed_material", "missing_origin", "bare_origin", "compiled_pdf", "raw_bytes", "extra_artifact", "bool_execution"])
+def test_bridge_refuses_incomplete_changed_or_self_approved_metadata(bridge_toys, change):
+    t = bridge_toys(3)
+    if change == "missing_edge":
+        t.evidence = t.evidence.model_copy(update={"chain": [t.evidence.chain[0], t.evidence.chain[2]]})
+    elif change == "cycle":
+        edge = t.evidence.chain[1].model_copy(update={"image": t.evidence.original.inspector_image})
+        t.evidence = t.evidence.model_copy(update={"chain": [t.evidence.chain[0], edge, t.evidence.chain[2]]})
+    elif change == "duplicate_build":
+        edge = t.evidence.chain[1].model_copy(update={"build_id": t.evidence.chain[0].build_id})
+        t.evidence = t.evidence.model_copy(update={"chain": [t.evidence.chain[0], edge, t.evidence.chain[2]]})
+    elif change == "wrong_generation":
+        edge = t.evidence.chain[0].model_copy(update={"source_archive": t.evidence.chain[0].source_archive.model_copy(update={"generation": "999"})})
+        t.evidence = t.evidence.model_copy(update={"chain": [edge, *t.evidence.chain[1:]]})
+    elif change == "outside_database":
+        ref = t.evidence.chain[0].layer_inventories[0]
+        bridge_replace(t, ref, json.loads(t.raw[ref.path]) | {"changed_paths": ["/opt/document/processor.py"]})
+    elif change == "recipe_changed":
+        bridge_replace(t, t.evidence.chain[0].recipe, b"FROM unrelated\nRUN arbitrary\n")
+    elif change == "changed_material":
+        ref = t.evidence.chain[0].material_inventory
+        value = json.loads(t.raw[ref.path])
+        value["identity"]["fonts_sha256"] = "0" * 64
+        bridge_replace(t, ref, value)
+    elif change == "missing_origin":
+        t.raw.pop(t.evidence.original.renderer_origin.record.path)
+    elif change == "bare_origin":
+        bridge_replace(t, t.evidence.original.renderer_origin.record, {"passed": True, "approved": True})
+    elif change == "compiled_pdf":
+        case = t.evidence.original.cases[-1].model_copy(update={"compiled_pdf_sha256": "0" * 64})
+        original = t.evidence.original.model_copy(update={"cases": [*t.evidence.original.cases[:-1], case]})
+        t.evidence = t.evidence.model_copy(update={"original": original})
+    elif change == "raw_bytes":
+        t.raw[t.evidence.chain[0].raw_build.path] += b" "
+    elif change == "bool_execution":
+        ref = t.evidence.current.execution
+        updated = bridge_replace(t, ref, json.loads(t.raw[ref.path]) | {"succeededCount": True})
+        native = t.evidence.current.native_record
+        bridge_replace(t, native, json.loads(t.raw[native.path]) | {"execution_sha256": updated.sha256})
+    else:
+        ref = b.Artifact(path="unrelated.json", size=2, sha256=hashlib.sha256(b"{}").hexdigest())
+        t.raw[ref.path] = b"{}"
+        t.evidence = t.evidence.model_copy(update={"files": [*t.evidence.files, ref]})
+    with pytest.raises((ValueError, KeyError)):
+        b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.mark.parametrize("change", ["old320_permit", "old_heldout_namespace", "underfunded60", "unquoted_render", "new_build_free", "expired", "late_review"])
+def test_bridge_never_reuses320_permit_or_omits_full_costs(bridge_toys, change):
+    t = bridge_toys()
+    permit = bridge_permit(t)
+    data = permit.model_dump(mode="json")
+    if change == "old320_permit":
+        data["request_limit"] = 320
+    elif change == "old_heldout_namespace":
+        data["namespace"] = data["namespace"].replace("quality-native-equivalence", "quality-held-out")
+    elif change == "underfunded60":
+        data["quote"]["native_reserved_minor"] = 119
+    elif change == "unquoted_render":
+        data["quote"]["render_reserved_minor"] = 0
+    elif change == "new_build_free":
+        data["quote"]["build_acceptance_mode"] = "new_work_reserved"
+    elif change == "late_review":
+        data["valid_from"] = (t.now - timedelta(hours=3)).isoformat()
+    else:
+        data["expires_at"] = t.now.isoformat()
+    with pytest.raises(ValueError):
+        b.scan_plan(t.evidence, b.BridgePermit.model_validate(data), lambda ref: t.raw[ref.path], now=t.now)
+
+
+def test_bridge_depth33_missing_renderer_and_authority_flags_are_not_accepted(bridge_toys):
+    t = bridge_toys()
+    with pytest.raises(ValueError):
+        b.BridgeEvidence.model_validate(t.evidence.model_dump() | {"chain": t.evidence.chain * 33})
+    data = t.evidence.original.model_dump()
+    data.pop("renderer_origin")
+    with pytest.raises(ValueError):
+        b.OriginalEvidence.model_validate(data)
+    with pytest.raises(ValueError):
+        b.MetadataReport.model_validate({"evidence_sha256": "a" * 64, "original_review_lock_sha256": "b" * 64,
+            "current_image": t.evidence.current.image, "material_sha256": "c" * 64, "chain_edges": 1, "native_approval": True})
+
+
+@pytest.mark.parametrize("field", ["app_sha256", "app_files", "original_entry_sha256", "compiler_image",
+    "compiler_policy_sha256", "source_sha256", "parser_sha256", "runtime_sha256", "fonts_sha256",
+    "scanner_binary_sha256", "compiler_runtime_sha256", "execution_configuration_sha256",
+    "non_definition_tree_sha256", "renderer_version", "scanner_version", "inspector_policy_sha256"])
+def test_bridge_changed_current_app_entry_compiler_or_material_stops_before_reader(bridge_toys, field):
+    t = bridge_toys()
+    data = t.evidence.model_dump()
+    value = data["current"]["material"][field]
+    data["current"]["material"][field] = value + 1 if type(value) is int else ("0" * 64 if field.endswith("sha256") else value + "changed")
+    reads = []
+
+    def no_read(ref):
+        reads.append(ref.path)
+        pytest.fail("Changed approved material reached a metadata reader")
+
+    with pytest.raises(ValueError):
+        b.validate_metadata(b.BridgeEvidence.model_validate(data), no_read, now=t.now)
+    assert not reads
+
+
+def test_bridge_aggregate_metadata_limit_and_duplicate_original_ids_are_upfront(bridge_toys):
+    t = bridge_toys()
+    extras = [b.Artifact(path=f"extra/large-{i}.json", size=b.MAX_METADATA, sha256="a" * 64) for i in range(129)]
+    with pytest.raises(ValueError, match="metadata_closure_bound"):
+        b.BridgeEvidence.model_validate(t.evidence.model_dump() | {"files": [*t.evidence.files, *extras]})
+    original = t.evidence.original.model_dump()
+    original["cases"][-1] = original["cases"][0]
+    with pytest.raises(ValueError, match="original40"):
+        b.OriginalEvidence.model_validate(original)
+
+
+def test_bridge_serving_verifier_metadata_cannot_be_relabeled_as_new_candidate(bridge_toys):
+    t = bridge_toys(age=timedelta(hours=1))
+    current = t.evidence.current.model_copy(update={"purpose": "new_candidate_and_promotion"})
+    t.evidence = t.evidence.model_copy(update={"current": current})
+    with pytest.raises(ValueError, match="current_native_references"):
+        b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.mark.parametrize("change", ["anchor_generation", "anchor_archive", "build_override", "missing_material_group",
+    "unsealed_origin", "current_build_generation"])
+def test_bridge_anchor_source_generation_sealed_origin_and_current_build_closure(bridge_toys, change):
+    t = bridge_toys()
+    if change == "anchor_generation":
+        source = t.evidence.original.inspector_source_archive.model_copy(update={"generation": "999"})
+        t.evidence = t.evidence.model_copy(update={"original": t.evidence.original.model_copy(update={"inspector_source_archive": source})})
+    elif change == "anchor_archive":
+        ref = t.evidence.original.inspector_source_archive.artifact
+        bridge_replace(t, ref, t.raw[ref.path] + b"unbound extra bytes")
+    elif change == "build_override":
+        ref = t.evidence.chain[0].raw_build
+        value = json.loads(t.raw[ref.path])
+        value["steps"][0]["entrypoint"] = "sh"
+        bridge_replace(t, ref, value)
+    elif change == "missing_material_group":
+        ref = t.evidence.chain[0].material_inventory
+        value = json.loads(t.raw[ref.path])
+        value["files"].pop("runtime")
+        bridge_replace(t, ref, value)
+    elif change == "unsealed_origin":
+        ref = t.evidence.original.review_evidence
+        value = json.loads(t.raw[ref.path])
+        value.pop("native_renderer_origin_refs")
+        updated = bridge_replace(t, ref, value)
+        lock = t.evidence.original.review_lock
+        value = json.loads(t.raw[lock.path])
+        value["review_evidence"]["sha256"] = updated.sha256
+        bridge_replace(t, lock, value)
+    else:
+        ref = t.evidence.current.native_record
+        bridge_replace(t, ref, json.loads(t.raw[ref.path]) | {"source_generation": "999"})
+    with pytest.raises(ValueError):
+        b.validate_metadata(t.evidence, lambda ref: t.raw[ref.path], now=t.now)
+
+
+@pytest.mark.parametrize("change", ["symlink", "duplicate", "expansion"])
+def test_bridge_source_archives_cannot_escape_alias_or_exceed_decompression_bound(change):
+    import gzip
+    import tarfile
+
+    if change == "expansion":
+        raw = gzip.compress(b"A" * 65537)
+    else:
+        stream = BytesIO()
+        with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0) as zipped, tarfile.open(fileobj=zipped, mode="w") as archive:
+            for _ in range(2 if change == "duplicate" else 1):
+                row = tarfile.TarInfo("Dockerfile")
+                if change == "symlink":
+                    row.type, row.linkname = tarfile.SYMTYPE, "../escape"
+                    archive.addfile(row)
+                else:
+                    row.size = 1
+                    archive.addfile(row, BytesIO(b"x"))
+        raw = stream.getvalue()
+    with pytest.raises(ValueError):
+        b._archive_entries(raw, 65536)
