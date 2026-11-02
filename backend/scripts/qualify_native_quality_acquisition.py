@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "446416289eb7c39992e7c90c085e6f352ca906d9152fe7287c910f58ce9ea5ce"
+APP_SHA256 = "67cee69b08eecc4b8f9935671ea1dd8bae7d7d78a8fb251b21d1bbab766edff2"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -37,10 +37,12 @@ RUNNER_PATHS = (
 PROOF_PATHS = ("backend/tests/conftest.py", "backend/tests/expense_policy_fixtures.py",
                "backend/tests/model_cost_fixtures.py")
 CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
-# Only the reviewed UTC repair and its prospective V3 app inventory may differ
-# from the failed historical runner. Every other execution input remains fixed.
+# Only the explicitly reviewed runtime and prospective V3 controller successors
+# may differ from the failed historical runner. Other execution inputs stay fixed.
 CURRENT_EXECUTION_PATHS = ("backend/app/domains/credits/canary.py",
-                           "backend/scripts/schema25_app_release_contract_v3.py")
+                           "backend/app/domains/recovery/browser_pairing_production.py",
+                           "backend/scripts/schema25_app_release_contract_v3.py",
+                           "infra/gcp/schema26_app_rolling_v3.py")
 ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
                     "infra/__init__.py", "infra/gcp/__init__.py")
 
@@ -120,7 +122,7 @@ def current_execution_hashes(root: Path) -> dict[str, str]:
 
 
 def dependency_hashes(root: Path) -> dict[str, str]:
-    """Historical inventory plus two explicit HEAD-bound reviewed successors."""
+    """Historical inventory plus finite HEAD-bound reviewed successors."""
     ancestor_fence(root)
     objects = {}
     for row in git(root, "ls-tree", "-r", "-z", "--full-tree", HISTORICAL_RELEASE).split(b"\0"):
