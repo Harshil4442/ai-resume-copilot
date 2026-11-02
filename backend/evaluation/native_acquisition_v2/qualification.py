@@ -9,13 +9,18 @@ import argparse
 import ast
 import hashlib
 import importlib
+import importlib.abc
 import json
 import os
+import socket
+import stat
 import subprocess
 import sys
+import sysconfig
 import tempfile
+import types
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 BACKEND = ROOT / "backend"
@@ -47,6 +52,10 @@ LITERAL_INPUTS = {
 ENTRY = PREFIX + "job.py"
 VERSION = "held-out-native-source-v2"
 MAX_SOURCE = 512 * 1024
+PORT_PATH = "backend/scripts/qualify_native_quality_acquisition.py"
+PORT_SHA256 = "0824c1787981d8deabc98df6c9fdfed9f28e11c72a3c8c35d562e3cde23f0d5c"
+_PORTS: types.ModuleType | None = None
+_CHILD_ROOT: Path | None = None
 
 
 def need(value: object, code: str) -> None:
@@ -58,12 +67,146 @@ def digest(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+def _dependency_roots():
+    prefix = Path(sys.prefix).resolve()
+    result = set()
+    for key, value in sysconfig.get_paths().items():
+        path = Path(value)
+        if key in {"purelib", "platlib"} and path.is_absolute() and path.resolve().is_relative_to(prefix):
+            result.add((path, path.resolve()))
+            result.add((path.resolve(), path.resolve()))
+    return tuple(result)
+
+
+_DEPENDENCY_ROOTS = _dependency_roots()
+
+
+def _project_source(path: Path) -> bool:
+    resolved = path.resolve()
+    if not (path.is_relative_to(ROOT) or resolved.is_relative_to(ROOT)):
+        return False
+    return not any(path.is_relative_to(raw) and resolved.is_relative_to(physical)
+                   for raw, physical in _DEPENDENCY_ROOTS)
+
+
+def _bootstrap_entries():
+    """Only Git metadata is read before the fixed helper's source is trusted."""
+    environment = {"PATH": "/usr/bin:/bin", "GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+    result = subprocess.run(["/usr/bin/git", "-c", "core.fsmonitor=false", "-C", str(ROOT),
+        "ls-tree", "-r", "-z", "--full-tree", "HEAD"], env=environment,
+        stdin=subprocess.DEVNULL, capture_output=True, timeout=10, check=True)
+    need(len(result.stdout) <= 16 * 1024**2, "bootstrap_tree_bound")
+    entries = {}
+    for row in result.stdout.split(b"\0"):
+        if row:
+            metadata, name = row.split(b"\t", 1)
+            entries[name.decode()] = tuple(metadata.split())
+    return entries
+
+
+def _bootstrap_source(path: Path, entries) -> bytes:
+    relative = str(path.relative_to(ROOT))
+    approved = relative.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
+                                   "infra/document-processing/", "infra/native-tex/"))
+    approved = approved or relative in {*PACKAGE_PATHS, *CONTROLLER_ONLY_PATHS}
+    mode, kind, expected = entries.get(relative, (None, None, None))
+    need(approved and path.suffix == ".py" and path.resolve() == path and not path.is_symlink()
+         and path.is_file() and path.stat().st_size <= 4 * 1024**2
+         and mode in {b"100644", b"100755"} and kind == b"blob", "bootstrap_import_refused")
+    raw = path.read_bytes()
+    need(hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
+        usedforsecurity=False).hexdigest().encode() == expected, "bootstrap_import_changed")
+    return raw
+
+
+def _bootstrap_child(entries) -> Path:
+    cache = Path(sys.pycache_prefix or "/")
+    need(sys.flags.isolated and sys.dont_write_bytecode and sys.pycache_prefix
+         and cache.is_absolute() and not cache.exists() and not cache.is_symlink()
+         and cache.parent.resolve() == cache.parent and cache.parent.stat().st_uid == os.getuid()
+         and stat.S_IMODE(cache.parent.stat().st_mode) == 0o700, "private_cache_required")
+    target = Path(sys.argv[sys.argv.index("--root") + 1]).resolve()
+
+    def audit(event, args):
+        if event == "exec":
+            filename = getattr(args[0], "co_filename", "")
+            if filename and Path(filename).is_absolute() and _project_source(Path(filename)):
+                _bootstrap_source(Path(filename), entries)
+    sys.addaudithook(audit)
+    finders = tuple(sys.meta_path)
+
+    class ImportOrigins(importlib.abc.MetaPathFinder):
+        def find_spec(self, fullname, path=None, target=None):
+            for finder in finders:
+                spec = finder.find_spec(fullname, path, target)
+                if spec is None:
+                    continue
+                origin = spec.origin
+                if origin and Path(origin).is_absolute() and _project_source(Path(origin)):
+                    _bootstrap_source(Path(origin), entries)
+                for location in spec.submodule_search_locations or ():
+                    directory = Path(location)
+                    need(not _project_source(directory) or directory.resolve() == directory,
+                         "bootstrap_namespace_link")
+                return spec
+            return None
+    sys.meta_path[:] = [ImportOrigins()]
+
+    def deny(*args, **kwargs):
+        raise ValueError("held_out_source_child_IO_denied")
+    for attribute in ("create_connection", "getaddrinfo", "gethostbyname"):
+        setattr(socket, attribute, deny)
+    for attribute in ("connect", "connect_ex", "listen"):
+        setattr(socket.socket, attribute, deny)
+
+    def deny_bind(*args, **kwargs):
+        # Requests' IPv6 capability check catches OSError; allocate no socket.
+        raise OSError("held-out source child binding denied")
+    cast(Any, socket.socket).bind = deny_bind
+    return target
+
+
 def _ports():
-    # These unchanged helpers inspect source/CI/Build; V1 permits, runner
-    # receipts, entry/Bundle and acquisition gates are never invoked for V2.
+    """Load only the pinned committed helper, never its import-loader bytecode.
+
+    The parent source-only path has the same before-execution check as the
+    child. Future old-helper changes require an explicit reviewed pin renewal.
+    """
+    global _PORTS, _CHILD_ROOT
+    need(not any((ROOT / name).exists() or (ROOT / name).is_symlink() for name in (
+        "backend/__init__.py", "backend/scripts/__init__.py", "infra/__init__.py", "infra/gcp/__init__.py")),
+        "undeclared_package_ancestor")
+    entries = _bootstrap_entries()
+    path = ROOT / PORT_PATH
+    raw = _bootstrap_source(path, entries)
+    need(hashlib.sha256(raw).hexdigest() == PORT_SHA256, "bootstrap_helper_changed")
+    if _PORTS is None:
+        child = _bootstrap_child(entries) if "--source-child" in sys.argv else None
+        name = "scripts.qualify_native_quality_acquisition"
+        module = types.ModuleType(name)
+        module.__file__, module.__package__ = str(path), "scripts"
+        sys.modules[name] = module
+        exec(compile(raw, str(path), "exec"), module.__dict__)
+        # No namespace loader may run first, including a flat scripts.pyc.
+        namespace = types.ModuleType("scripts")
+        namespace.__path__ = [str(BACKEND / "scripts")]
+        namespace.__package__ = "scripts"
+        sys.modules["scripts"] = namespace
+        namespace.__dict__["qualify_native_quality_acquisition"] = module
+        _PORTS = module
+        if child is not None:
+            import requests  # noqa: F401 -- initialize only under socket/origin denial
+            module._child_guards(child)
+            _CHILD_ROOT = child
+    # Retain the explicit import edge for the declared controller source graph;
+    # its module was installed only after the source pin passed above.
     from scripts import qualify_native_quality_acquisition as q
 
-    need(Path(q.__file__).resolve() == BACKEND / "scripts/qualify_native_quality_acquisition.py", "foreign_ports")
+    filename = q.__file__
+    need(type(filename) is str, "foreign_ports")
+    assert isinstance(filename, str)
+    need(q is _PORTS and Path(filename) == path and path.resolve() == path, "foreign_ports")
     return q
 
 
@@ -278,7 +421,7 @@ def _runtime_modules(closure: dict[str, str]) -> None:
 
 def _source_child(root: Path) -> dict[str, Any]:
     q = _ports()
-    q._child_guards(root)
+    need(_CHILD_ROOT == root, "source_child_bootstrap_required")
     own = source_identity(ROOT)
     actual = source_identity(root)
     need(all(actual[name] == own[name] for name in ("runtime_dependencies_sha256", "component_sha256", "entry_sha256")),
@@ -291,10 +434,9 @@ def _source_child(root: Path) -> dict[str, Any]:
     def audit(event, args):
         if event == "exec":
             name = getattr(args[0], "co_filename", "")
-            if name and Path(name).is_absolute() and Path(name).resolve().is_relative_to(ROOT):
-                relative = str(Path(name).resolve().relative_to(ROOT))
-                if "/site-packages/" not in relative:
-                    need(relative in allowed, "undeclared_reached_source")
+            if name and Path(name).is_absolute() and _project_source(Path(name)):
+                need(Path(name).resolve() == Path(name), "linked_reached_source")
+                need(str(Path(name).relative_to(ROOT)) in allowed, "undeclared_reached_source")
     sys.addaudithook(audit)
     _runtime_modules(declared)
     # Use the low-level source guard/fingerprint, not V1's broad equality gate
@@ -306,12 +448,11 @@ def _source_child(root: Path) -> dict[str, Any]:
     app = actual["literal_image_inputs"]["backend/scripts/schema25_app_release_contract_v3.py"]
     for module in list(sys.modules.values()):
         name = getattr(module, "__file__", None)
-        if name and Path(name).is_absolute() and Path(name).resolve().is_relative_to(ROOT):
-            relative = str(Path(name).resolve().relative_to(ROOT))
-            if "/site-packages/" not in relative:
-                need(relative in allowed and Path(name).resolve() == ROOT / relative
-                     and hashlib.sha256(Path(name).read_bytes()).hexdigest() == declared[relative],
-                     "module_provenance")
+        if name and Path(name).is_absolute() and _project_source(Path(name)):
+            need(Path(name).resolve() == Path(name), "linked_module_provenance")
+            relative = str(Path(name).relative_to(ROOT))
+            need(relative in allowed and hashlib.sha256(Path(name).read_bytes()).hexdigest() == declared[relative],
+                 "module_provenance")
     need(source_identity(ROOT) == own and source_identity(root) == actual, "source_child_changed")
     return {"release": head, "qualification_sha256": fingerprint,
         "app_sha256": app["CANDIDATE_APP_SHA256"], "app_files": app["CANDIDATE_APP_FILES"],
@@ -322,7 +463,7 @@ def _source_child(root: Path) -> dict[str, Any]:
 def runner_source(root: Path) -> dict[str, Any]:
     """No credentials, source from another checkout is never executed."""
     with tempfile.TemporaryDirectory(prefix="hirewiz-heldout-source-") as directory:
-        private = Path(directory)
+        private = Path(directory).resolve()
         environment = {"PATH": "/usr/bin:/bin", "HOME": str(private), "XDG_CONFIG_HOME": str(private),
             "LANG": "C.UTF-8", "PYTHONDONTWRITEBYTECODE": "1",
             "CLOUDSDK_CORE_DISABLE_FILE_LOGGING": "true", "CLOUDSDK_CORE_LOG_HTTP": "false"}

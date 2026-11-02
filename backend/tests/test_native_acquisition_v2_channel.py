@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import builtins
 import copy
 import json
 import os
@@ -24,6 +25,9 @@ from tests.test_native_acquisition_v2_engine import heldout_toys as heldout_toys
 from tests.test_native_acquisition_v2_engine import private_write
 from tests.test_native_acquisition_v2_engine import reviewed_toys as reviewed_toys  # noqa: F401
 from tests.test_native_acquisition_v2_engine import transport_toys as transport_toys  # noqa: F401
+from tests.test_native_acquisition_v2_source import (
+    isolated_metadata as isolated_metadata,  # noqa: F401
+)
 
 
 class ToyObjects:
@@ -789,3 +793,34 @@ def test_development_native_get_factory_refuses_nonstandard_manager_before_sdk_a
         i._development_reads(tmp_path / "foreign-sdk" if change == "sdk" else sdk,
             "owned-foreign@example.invalid" if change == "account" else account)
     assert not calls
+
+
+def test_standalone_origin_verifier_authenticates_controller_before_lazy_producer_import(
+    transport_toys, isolated_metadata, tmp_path, monkeypatch,
+):
+    from evaluation.native_acquisition_v2 import qualification
+
+    raw = (transport_toys.root / "native-lock.json").read_bytes()
+    plan = isolated_metadata.plan.model_copy(update={"native_development_lock_sha256": e.packet.digest(raw)})
+    calls = []
+    original_import = builtins.__import__
+    marker = tmp_path / "owned-producer-side-effect"
+
+    def trusted_boundary():
+        calls.append("trusted-controller")
+        raise ValueError("owned_trusted_controller_refused")
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "evaluation" and "development40_qualification_v2" in fromlist:
+            marker.write_text("untrusted producer imported")
+            raise AssertionError("Producer import ran before trusted controller")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(qualification, "_ports", trusted_boundary)
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
+    monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "false")
+    with pytest.raises(ValueError, match="owned_trusted_controller_refused"):
+        i.verify_development_transport_origin(plan, raw, transport_toys.root,
+            runner_root=tmp_path, controller_root=tmp_path, sdk_library=tmp_path, account="owned@example.invalid")
+    assert calls == ["trusted-controller"] and not marker.exists()
