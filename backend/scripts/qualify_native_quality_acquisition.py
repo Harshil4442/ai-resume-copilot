@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -51,6 +52,12 @@ CURRENT_EXECUTION_PATHS = (
     "infra/gcp/document_source_release.py",
     "infra/gcp/schema26_app_rolling_v3.py",
 )
+# Maintenance reads the current operator registry. The qualified runner retains
+# the exact registry bytes shipped at this immutable app source; neither source
+# nor provider acceptance is inferred from an operator's appended row.
+OPERATOR_REGISTRY_PATH = "infra/document-processing/reviewed-application-builds.json"
+REGISTRY_RUNNER_RELEASE = "f361ac16aa17a53c640740a75c627421a9e758c9"
+REGISTRY_RUNNER_SHA256 = "f99d4294c232de5e09769e3582abf1cd4ba245bb65fa4faebd027ff16d7f16a5"
 ABSENT_ANCESTORS = ("backend/__init__.py", "backend/tests/__init__.py", "backend/scripts/__init__.py",
                     "infra/__init__.py", "infra/gcp/__init__.py")
 
@@ -167,15 +174,126 @@ def dependency_hashes(root: Path) -> dict[str, str]:
     return entries
 
 
+def _registry_snapshot(root: Path) -> bytes:
+    raw = git(root, "show", REGISTRY_RUNNER_RELEASE + ":" + OPERATOR_REGISTRY_PATH)
+    need(hashlib.sha256(raw).hexdigest() == REGISTRY_RUNNER_SHA256, "registry_runner_snapshot_changed")
+    return raw
+
+
+def _registry_value(raw: bytes) -> dict:
+    def pairs(rows):
+        need(len({name for name, _ in rows}) == len(rows), "operator_registry_duplicate_key")
+        return dict(rows)
+    need(0 < len(raw) <= 16384, "operator_registry_size")
+    value = json.loads(raw, object_pairs_hook=pairs)
+    need(type(value) is dict and set(value) == {"version", "sources"}
+         and type(value["version"]) is int and value["version"] == 1
+         and type(value["sources"]) is list and 1 <= len(value["sources"]) <= 8,
+         "operator_registry_shape")
+    for row in value["sources"]:
+        need(type(row) is dict and set(row) == {"release", "image_digest", "build_id", "ci_run_id"}
+             and type(row["release"]) is str and re.fullmatch(r"[a-f0-9]{40}", row["release"])
+             and type(row["image_digest"]) is str and re.fullmatch(r"sha256:[a-f0-9]{64}", row["image_digest"])
+             and type(row["build_id"]) is str
+             and re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", row["build_id"])
+             and type(row["ci_run_id"]) is int and row["ci_run_id"] > 0, "operator_registry_record")
+    need(len({row["release"] for row in value["sources"]}) == len(value["sources"]),
+         "operator_registry_duplicate_release")
+    return value
+
+
+def operator_data_hashes(root: Path) -> dict[str, str]:
+    """Committed append-only operator data, never native CI/Build authority."""
+    snapshot = _registry_value(_registry_snapshot(root))
+    head = git(root, "rev-parse", "HEAD").decode().strip()
+    need(re.fullmatch(r"[a-f0-9]{40}", head), "operator_registry_head")
+    path = root / OPERATOR_REGISTRY_PATH
+    need(path.is_file() and not path.is_symlink() and path.resolve() == path, "operator_registry_path")
+    raw = path.read_bytes()
+    need(raw == git(root, "show", head + ":" + OPERATOR_REGISTRY_PATH), "uncommitted_operator_registry_changed")
+    value = _registry_value(raw)
+    prior = snapshot["sources"]
+    need(value["sources"][:len(prior)] == prior, "operator_registry_not_append_only")
+    git(root, "merge-base", "--is-ancestor", REGISTRY_RUNNER_RELEASE, head)
+    changed = git(root, "log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65",
+                  REGISTRY_RUNNER_RELEASE + ".." + head, "--", OPERATOR_REGISTRY_PATH).decode().splitlines()
+    need(len(changed) <= 64, "operator_registry_history_bound")
+    for commit in changed:
+        rows = _registry_value(git(root, "show", commit + ":" + OPERATOR_REGISTRY_PATH))["sources"]
+        parents = git(root, "rev-list", "--parents", "-n", "1", commit).decode().split()[1:]
+        need(parents, "operator_registry_parent_required")
+        for parent in parents:
+            previous = _registry_value(git(root, "show", parent + ":" + OPERATOR_REGISTRY_PATH))["sources"]
+            need(rows[:len(previous)] == previous, "operator_registry_history_not_append_only")
+    need(git(root, "rev-parse", "HEAD").decode().strip() == head, "operator_registry_head_changed")
+    return {OPERATOR_REGISTRY_PATH: hashlib.sha256(raw).hexdigest()}
+
+
+def controller_dependency_hashes(root: Path) -> dict[str, str]:
+    """463 actual execution inputs plus one explicit immutable runner snapshot.
+
+    Actual current registry bytes are separately bound by operator_data_hashes.
+    The actual runner always uses unchanged dependency_hashes, which refuses an
+    appended registry. No other dependency receives this data-context split.
+    """
+    operator = operator_data_hashes(root)
+    snapshot = _registry_snapshot(root)
+    ancestor_fence(root)
+    objects = {}
+    for row in git(root, "ls-tree", "-r", "-z", "--full-tree", HISTORICAL_RELEASE).split(b"\0"):
+        if row:
+            metadata, name = row.split(b"\t", 1)
+            mode, kind, object_id = metadata.split()
+            objects[name.decode()] = (mode, kind, object_id)
+    names = set(objects)
+    paths = sorted({*RUNNER_PATHS, *(name for name in names if
+        name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
+                         "infra/document-processing/", "infra/native-tex/"))
+        and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS))
+    need(OPERATOR_REGISTRY_PATH in paths, "operator_registry_not_in_runner_snapshot")
+    successors = current_execution_hashes(root)
+    need(set(successors) <= set(paths) and OPERATOR_REGISTRY_PATH not in successors,
+         "current_execution_not_historical")
+    current = set(git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
+    code_roots = ("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
+                  "infra/document-processing/", "infra/native-tex/")
+    need(not {name for name in current - set(names) - set(COMPONENT_PATHS)
+              if name.startswith(code_roots) and Path(name).suffix in {".py", ".json"}}, "new_execution_dependency")
+    entries = {}
+    for name in paths:
+        path = root / name
+        need(path.is_file() and path.resolve() == path and not path.is_symlink(), "dependency_path")
+        raw = path.read_bytes()
+        mode, kind, expected = objects[name]
+        need(mode in {b"100644", b"100755"} and kind == b"blob", "historical_dependency_type")
+        if name == OPERATOR_REGISTRY_PATH:
+            need(hashlib.sha256(raw).hexdigest() == operator[name], "operator_registry_changed_during_read")
+            raw = snapshot
+        if name in successors:
+            need(hashlib.sha256(raw).hexdigest() == successors[name], "current_execution_changed_during_read")
+        else:
+            need(hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,
+                             usedforsecurity=False).hexdigest().encode() == expected,
+                 "historical_execution_dependency_changed")
+        entries[name] = hashlib.sha256(raw).hexdigest()
+    need(operator_data_hashes(root) == operator, "operator_registry_changed_during_identity")
+    return entries
+
+
 def source_identity(root: Path) -> dict:
     need(root.is_absolute() and root.resolve() == root, "root")
     entries = component_hashes(root)
-    dependencies = dependency_hashes(root)
+    operator = operator_data_hashes(root)
+    dependencies = controller_dependency_hashes(root)
+    need(operator_data_hashes(root) == operator, "operator_registry_changed_during_identity")
     successors = current_execution_hashes(root)
     need(all(dependencies[name] == value for name, value in successors.items()),
          "current_execution_changed_during_identity")
     body = {"schema_version": "native-quality-component-v2", "component_paths": entries,
             "execution_dependencies": dependencies, "proof_inputs": proof_hashes(root),
+            "operator_data_inputs": operator,
+            "runner_snapshot_inputs": {OPERATOR_REGISTRY_PATH: {
+                "release": REGISTRY_RUNNER_RELEASE, "sha256": REGISTRY_RUNNER_SHA256}},
             "current_proof_inputs": current_proof_hashes(root),
             "current_execution_inputs": successors,
             "absent_package_ancestors": list(ABSENT_ANCESTORS), "full_ci_suites": list(SUITES)}
@@ -206,7 +324,7 @@ def _runner_source(root: Path) -> dict:
     """Executed in an isolated I/O-denied child; runner files are data, never imports."""
     need(root.is_absolute() and root.resolve() == root, "runner_root")
     dependencies = dependency_hashes(root)
-    need(dependency_hashes(ROOT) == dependencies, "controller_runner_execution_dependencies")
+    need(controller_dependency_hashes(ROOT) == dependencies, "controller_runner_execution_dependencies")
     native, contract, release = _source_modules()
     head = git(root, "rev-parse", "HEAD").decode().strip()
     native.rolling.release.source_guard.checked_files(root, head)
@@ -216,6 +334,20 @@ def _runner_source(root: Path) -> dict:
         "entry_sha256": hashlib.sha256((root / ENTRY).read_bytes()).hexdigest(),
         "runtime_dependencies_sha256": digest(dependencies),
         "current_proof_sha256": digest(current_proof_hashes(root))}
+
+
+def _registry_git_read(values: list[str]) -> bool:
+    """Only the fixed controller registry's bounded, read-only history queries."""
+    if not all(type(value) is str for value in values):
+        return False
+    if len(values) == 4 and values[:3] == ["merge-base", "--is-ancestor", REGISTRY_RUNNER_RELEASE]:
+        return re.fullmatch(r"[a-f0-9]{40}", values[3]) is not None
+    if len(values) == 5 and values[:4] == ["rev-list", "--parents", "-n", "1"]:
+        return re.fullmatch(r"[a-f0-9]{40}", values[4]) is not None
+    return (len(values) == 8
+        and values[:5] == ["log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65"]
+        and re.fullmatch(re.escape(REGISTRY_RUNNER_RELEASE) + r"\.\.[a-f0-9]{40}", values[5]) is not None
+        and values[6:] == ["--", OPERATOR_REGISTRY_PATH])
 
 
 def _child_guards(runner_root: Path):
@@ -233,6 +365,7 @@ def _child_guards(runner_root: Path):
         values = list(args) if isinstance(args, (list, tuple)) else []
         allowed = {"show", "status", "rev-parse", "ls-tree", "diff", "cat-file", "archive"}
         need(values and values.pop(0) in {"git", "/usr/bin/git"}, "child_process_denied")
+        directory = None
         while values and values[0].startswith("-"):
             flag = values.pop(0)
             if flag == "--no-replace-objects":
@@ -241,7 +374,10 @@ def _child_guards(runner_root: Path):
             parameter = values.pop(0)
             need((flag == "-C" and parameter in {str(ROOT), str(runner_root)})
                  or (flag == "-c" and parameter == "core.fsmonitor=false"), "child_git_option")
-        need(values and values[0] in allowed, "child_process_denied")
+            if flag == "-C":
+                directory = parameter
+        need(values and (values[0] in allowed or directory == str(ROOT) and _registry_git_read(values)),
+             "child_process_denied")
         kw["env"] = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1",
             "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
         return original(args, *a, **kw)

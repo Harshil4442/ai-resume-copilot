@@ -25,8 +25,9 @@ own future commit. The exact current CI proof observer
 HEAD-exact bytes in `current_proof_inputs`. It is not imported by the acquisition
 entry. Its source is also bound by the actual runner V3 qualification fingerprint;
 its fresh child-computed hash must match the controller's current proof context.
-The finite execution inventory still contains exactly464 inputs. Of those,
-454 retain exact historical7be bytes. The ten explicit `CURRENT_EXECUTION_PATHS`
+The runner inventory still contains exactly464 inputs:463 execution inputs and
+one immutable registry snapshot. Of those,454 retain exact historical7be bytes.
+The ten explicit `CURRENT_EXECUTION_PATHS`
 cover the reviewed UTC and pairing corrections, prospective V3 contract and
 controller, five document maintenance helpers and their consumed-history audit.
 Every successor requires exact committed HEAD bytes and enters
@@ -35,12 +36,51 @@ refuse; even a separately committed foreign successor refuses when its closure
 differs from the controller. This is not a wildcard or a replacement historical
 baseline. The historical7be failure remains ineligible, and old CI/Build/receipts
 cannot approve either changed current proof or runtime bytes. Dockerfile, locks,
-CI workflow, the other454 execution inputs and entry8eef remain byte-exact.
+CI workflow, the other453 execution inputs, registry snapshot and entry8eef
+remain byte-exact.
 The current reviewed App289 inventory is
 `9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e`;
 it needs its own genuine all-five CI and immutable Build. Additional executable
 modules in those execution namespaces refuse; original default two-caller
 contracts and all signed/native deadlines are unchanged.
+
+## Maintenance registry and immutable application source
+
+The application is built before its actual native Build ID and image digest
+exist. Later maintenance therefore reads the reviewed operator registry from a
+separate trusted default-main checkout; that data-only registration must not
+relabel or rebuild the application source merely to embed its own future tuple.
+
+The runner's `dependency_hashes` remains strict about every actual file. Its
+registry bytes are the exact committed snapshot at
+`f361ac16aa17a53c640740a75c627421a9e758c9`, SHA256
+`f99d4294c232de5e09769e3582abf1cd4ba245bb65fa4faebd027ff16d7f16a5`.
+The controller explicitly uses that snapshot for this one runner-dependency
+slot and records its source/hash under `runner_snapshot_inputs`. Every other
+dependency retains the existing exact-byte checks. The separate
+`operator_data_inputs` binds the **actual current**
+`infra/document-processing/reviewed-application-builds.json` bytes into the
+controller fingerprint. A changed operator registry changes controller authority,
+while the runner inventory/hash can remain the same. This is not an exemption
+for arbitrary JSON or current HEAD runtime changes.
+
+Current registry bytes must be committed at one stable HEAD, with strict closed
+keys/types, unique releases and at most eight records. The five snapshot records
+retain their exact values and order. Every subsequent registry change in the
+bounded local ancestry is append-only against each parent, so a later commit
+cannot edit, delete, reorder or conceal a rewrite of a previously appended row.
+Duplicate JSON keys, symlinks, dirty bytes and unknown histories refuse. The
+registry must descend from the exact runner snapshot; the history bound is64
+registry-changing commits and refuses instead of truncating older changes.
+
+Registry parsing and a source fingerprint grant no provider authority. Add a
+new row only after reviewing its actual source/CI/Build/image tuple, through the
+ordinary reviewed default-main process and genuine controller CI. The unchanged
+`Applications.provenance` still checks trusted current main, app-source ancestry,
+the original document wire bytes, all five real CI jobs, native Git Build recipe
+and immutable image digest before maintenance can create a Build. No future
+tuple is predicted. The app image/source and quality runner remain immutable;
+the registry commit is an operator release, not a new application deployment.
 
 A `QualifiedRunner` JSON file is **untrusted claim data**, not an approval.
 Its closed model binds actual repository/release, completed CI ID, native Git

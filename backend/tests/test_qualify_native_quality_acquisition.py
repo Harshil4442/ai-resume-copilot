@@ -24,6 +24,9 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["full_ci_suites"] == list(q.SUITES)
     assert value["runner_entry_sha256"] == q.ENTRY_SHA256
     assert value["runtime_dependencies_sha256"] == q.digest(value["execution_dependencies"])
+    assert value["operator_data_inputs"] == q.operator_data_hashes(ROOT)
+    assert value["runner_snapshot_inputs"] == {q.OPERATOR_REGISTRY_PATH: {
+        "release": q.REGISTRY_RUNNER_RELEASE, "sha256": q.REGISTRY_RUNNER_SHA256}}
     assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
@@ -285,7 +288,7 @@ def test_uncommitted_successor_file_is_refused_in_actual_execution_closure(monke
         return raw + b"\n# uncommitted successor drift\n" if path == ROOT / name else raw
     monkeypatch.setattr(Path, "read_bytes", changed)
     with pytest.raises(ValueError, match="uncommitted_current_execution_changed"):
-        q.dependency_hashes(ROOT)
+        q.controller_dependency_hashes(ROOT)
 
 
 @pytest.mark.parametrize("name", ["Dockerfile", "backend/app/domains/analysis/native_input_acquisition.py"])
@@ -296,7 +299,7 @@ def test_unrelated_execution_file_still_requires_exact_failed_baseline_bytes(mon
         return raw + b"\n# unrelated runtime drift\n" if path == ROOT / name else raw
     monkeypatch.setattr(Path, "read_bytes", changed)
     with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
-        q.dependency_hashes(ROOT)
+        q.controller_dependency_hashes(ROOT)
 
 
 @pytest.mark.parametrize("name", q.CURRENT_EXECUTION_PATHS)
@@ -304,11 +307,12 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
     # A real local Git checkout with shared read-only objects avoids pretending
     # a committed foreign byte change is merely an uncommitted working-tree edit.
     # It supplies no CI, Build, native or funding authority.
-    before = q.dependency_hashes(ROOT)
+    before = q.controller_dependency_hashes(ROOT)
     for path in before:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes((ROOT / path).read_bytes())
+        target.write_bytes(q._registry_snapshot(ROOT) if path == q.OPERATOR_REGISTRY_PATH
+                           else (ROOT / path).read_bytes())
     (tmp_path / name).write_bytes((tmp_path / name).read_bytes() + b"\n# committed foreign successor\n")
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
@@ -329,6 +333,176 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
     assert q.digest(before) != q.digest(after)
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
         q._runner_source(tmp_path)
+
+
+def registry_commit(root):
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+    for args in (("add", "--all"), ("commit", "-q", "-m", "Owned synthetic registry control")):
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+            "-c", "user.name=Synthetic registry test", "-c", "user.email=registry@example.invalid",
+            "-C", str(root), *args], env=environment, capture_output=True, check=True, timeout=10)
+
+
+@pytest.fixture
+def registry_tree(tmp_path):
+    paths = {*q.controller_dependency_hashes(ROOT), *q.COMPONENT_PATHS,
+             *q.PROOF_PATHS, *q.CURRENT_PROOF_PATHS}
+    for name in paths:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(q._registry_snapshot(ROOT) if name == q.OPERATOR_REGISTRY_PATH
+                         else (ROOT / name).read_bytes())
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True, capture_output=True, timeout=10)
+    common = Path(q.git(ROOT, "rev-parse", "--git-common-dir").decode().strip())
+    common = common if common.is_absolute() else ROOT / common
+    (tmp_path / ".git/objects/info/alternates").write_text(str((common / "objects").resolve()) + "\n")
+    # The owned checkout descends from the real source snapshot, while all new
+    # registry values below are synthetic metadata, never provider receipts.
+    subprocess.run(["git", "-C", str(tmp_path), "reset", "--soft", q.REGISTRY_RUNNER_RELEASE],
+                   check=True, capture_output=True, timeout=10)
+    subprocess.run(["git", "-C", str(tmp_path), "read-tree", "--empty"],
+                   check=True, capture_output=True, timeout=10)
+    registry_commit(tmp_path)
+    return tmp_path
+
+
+def synthetic_registry_row(index=1):
+    return {"release": f"{index:040x}", "image_digest": "sha256:" + f"{index:064x}",
+            "build_id": f"00000000-0000-0000-0000-{index:012x}", "ci_run_id": index}
+
+
+def write_registry(root, value, *, commit=True):
+    (root / q.OPERATOR_REGISTRY_PATH).write_text(json.dumps(value, indent=2) + "\n")
+    if commit:
+        registry_commit(root)
+
+
+def test_owned_append_changes_only_operator_context_and_not_qualified_runner_snapshot(registry_tree):
+    before = q.source_identity(registry_tree)
+    strict = q.dependency_hashes(registry_tree)
+    value = q._registry_value(q._registry_snapshot(registry_tree))
+    value["sources"].append(synthetic_registry_row())
+    write_registry(registry_tree, value)
+    after = q.source_identity(registry_tree)
+    assert before["execution_dependencies"] == after["execution_dependencies"] == strict
+    assert len(strict) == 464 and before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
+    assert before["component_paths"] == after["component_paths"]
+    assert before["operator_data_inputs"] != after["operator_data_inputs"]
+    assert before["controller_sha256"] != after["controller_sha256"]
+    assert before["runner_snapshot_inputs"] == after["runner_snapshot_inputs"]
+    with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
+        q.dependency_hashes(registry_tree)
+    with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
+        q._runner_source(registry_tree)
+
+
+@pytest.mark.parametrize("case", ["dirty", "reorder", "delete", "baseline_edit", "duplicate_release",
+    "extra_key", "top_key", "overflow", "version_bool", "ci_bool", "bad_build_id"])
+def test_owned_operator_registry_refuses_non_append_only_or_uncommitted_data(registry_tree, case):
+    value = q._registry_value(q._registry_snapshot(registry_tree))
+    row = synthetic_registry_row()
+    value["sources"].append(row)
+    if case == "reorder":
+        value["sources"][0:2] = reversed(value["sources"][0:2])
+    elif case == "delete":
+        value["sources"].pop(0)
+    elif case == "baseline_edit":
+        value["sources"][0]["ci_run_id"] += 1
+    elif case == "duplicate_release":
+        row["release"] = value["sources"][0]["release"]
+    elif case == "extra_key":
+        row["approved"] = True
+    elif case == "top_key":
+        value["approved"] = True
+    elif case == "overflow":
+        value["sources"].extend(synthetic_registry_row(i) for i in range(2, 5))
+    elif case == "version_bool":
+        value["version"] = True
+    elif case == "ci_bool":
+        row["ci_run_id"] = True
+    elif case == "bad_build_id":
+        row["build_id"] = "-" * 36
+    write_registry(registry_tree, value, commit=case != "dirty")
+    with pytest.raises(ValueError, match="operator_registry"):
+        q.source_identity(registry_tree)
+
+
+def test_registry_duplicate_json_keys_and_symlinks_refuse(registry_tree):
+    path = registry_tree / q.OPERATOR_REGISTRY_PATH
+    raw = path.read_text().replace('"version": 1,', '"version": 1, "version": 1,')
+    path.write_text(raw)
+    registry_commit(registry_tree)
+    with pytest.raises(ValueError, match="operator_registry_duplicate_key"):
+        q.operator_data_hashes(registry_tree)
+    path.unlink()
+    path.symlink_to(ROOT / q.OPERATOR_REGISTRY_PATH)
+    with pytest.raises(ValueError, match="operator_registry_path"):
+        q.operator_data_hashes(registry_tree)
+
+
+@pytest.mark.parametrize("case", ["edit", "delete", "reorder", "hidden_edit"])
+def test_previously_appended_record_cannot_be_rewritten_later(registry_tree, case):
+    value = q._registry_value(q._registry_snapshot(registry_tree))
+    value["sources"].extend([synthetic_registry_row(), synthetic_registry_row(2)])
+    write_registry(registry_tree, value)
+    if case in {"edit", "hidden_edit"}:
+        value["sources"][-1]["ci_run_id"] += 10
+    elif case == "delete":
+        value["sources"].pop()
+    else:
+        value["sources"][-2:] = reversed(value["sources"][-2:])
+    write_registry(registry_tree, value)
+    if case == "hidden_edit":
+        (registry_tree / "operator-note.txt").write_text("An unrelated later commit cannot hide a prior rewrite.\n")
+        registry_commit(registry_tree)
+    with pytest.raises(ValueError, match="operator_registry_history_not_append_only"):
+        q.source_identity(registry_tree)
+
+
+def test_other_committed_execution_dependency_is_not_operator_data(registry_tree):
+    path = registry_tree / "backend/app/domains/analysis/native_input_acquisition.py"
+    path.write_bytes(path.read_bytes() + b"\n# unrelated synthetic dependency drift\n")
+    registry_commit(registry_tree)
+    with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
+        q.controller_dependency_hashes(registry_tree)
+
+
+def test_source_child_keeps_actual_f361_qualification_and_runner_bytes(tmp_path):
+    # A local shared-object clone supplies actual committed source, not a mocked
+    # qualification result. The existing isolated child refuses executing or
+    # importing any file in this clone and denies provider/credential I/O.
+    runner = tmp_path / "runner"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
+    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(runner)),
+                 ("-C", str(runner), "checkout", "--quiet", "--detach", q.REGISTRY_RUNNER_RELEASE)):
+        subprocess.run(["git", "-c", "core.hooksPath=/dev/null", *args], env=environment,
+                       check=True, capture_output=True, timeout=30)
+    observed = q.runner_source(runner)
+    assert observed["release"] == q.REGISTRY_RUNNER_RELEASE
+    assert observed["qualification_sha256"] == "0885ff9c9ec9df36556ee1c813e4c187267fbfc8f709d157a63ed56840b23475"
+    assert observed["app_files"] == 289 and observed["app_sha256"] == q.APP_SHA256
+    assert observed["runtime_dependencies_sha256"] == q.digest(q.controller_dependency_hashes(ROOT))
+
+
+def test_child_registry_git_reads_have_exact_finite_argument_shapes():
+    head = "a" * 40
+    commands = [
+        ["merge-base", "--is-ancestor", q.REGISTRY_RUNNER_RELEASE, head],
+        ["rev-list", "--parents", "-n", "1", head],
+        ["log", "--format=%H", "--full-history", "--ancestry-path", "--max-count=65",
+         q.REGISTRY_RUNNER_RELEASE + ".." + head, "--", q.OPERATOR_REGISTRY_PATH],
+    ]
+    for command in commands:
+        assert q._registry_git_read(command)
+        assert not q._registry_git_read(command + ["--all"])
+        assert not q._registry_git_read(command[:-1])
+    for command in (["merge-base", "--is-ancestor", "b" * 40, head],
+                    ["rev-list", "--all"], ["log", "--all"], ["reset", "--hard", head],
+                    commands[2][:-1] + ["backend/app/main.py"], commands[0][:-1] + ["HEAD"],
+                    commands[1][:-1] + ["HEAD"], commands[2][:4] + ["--max-count=9999"] + commands[2][5:]):
+        assert not q._registry_git_read(command)
 
 
 def test_current_observer_context_must_match_both_actual_roots(native_ports):
