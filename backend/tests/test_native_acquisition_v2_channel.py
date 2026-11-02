@@ -2,18 +2,23 @@
 from __future__ import annotations
 
 import base64
+import copy
 import json
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from app.domains.analysis import quality_packet as packet
 from evaluation.native_acquisition_v2 import channel as c
 from evaluation.native_acquisition_v2 import engine as e
+from evaluation.native_acquisition_v2 import job as j
 from tests.test_native_acquisition_v2_engine import heldout_toys as heldout_toys  # noqa: F401
 from tests.test_native_acquisition_v2_engine import private_write
 from tests.test_native_acquisition_v2_engine import reviewed_toys as reviewed_toys  # noqa: F401
@@ -367,3 +372,332 @@ def test_sdk_port_uses_generation_match_no_retry_and_no_create_retry():
     assert len(uploads) == 1 and uploads[0]["if_generation_match"] == 0 and uploads[0]["retry"] is None
     with pytest.raises(ValueError, match="held_out_prefix"):
         c.GcsObjects(Client(), "gs://owned-toy-private-bucket/quality-development/owned-toy-exp/")
+
+
+# Job entry controls share the explicit owned channel fixtures above.
+@pytest.fixture
+def job_task(capture, tmp_path):  # noqa: F811
+    t = capture
+    workspace = tmp_path / "job-work"
+    t.auth = e.Authorization.model_validate(t.auth.model_dump() | {"journal_path": str(workspace / "journal")})
+    t.events.clear()
+    report = e.plan(t.packet, t.native, t.auth, t.root)
+    t.store.data.clear()  # Explicit disposable fake, not provider object deletion.
+    configuration = c.binding(report, t.store.namespace)
+    t.store.create("acquisition-plan.json", e.packet.canonical(report))
+    binding_ref = t.store.create("channel-binding.json", e.packet.canonical(configuration.model_dump(mode="json")))
+    review = e.Artifact(path="dispatch-review.json", sha256=e.packet.file_digest(t.root / "dispatch-review.json"))
+    placeholder = c.ObjectRef(name="dispatch.00.json", generation="1", size=1, sha256="0" * 64)
+    dispatch = c.Dispatch(schema_version="reviewed-held-out-native-dispatch-v2",
+        purpose="unreviewed_held_out_capture_external_authority_required", reviewed_by="toy-not-authority",
+        external_authority_review=review, channel_binding=binding_ref, acknowledgment=placeholder,
+        batch_index=0, before_checkpoint_sha256=e.packet.digest(e.packet.canonical({})), parent_terminal=None,
+        maximum_requests=1)
+    ack = t.store.create(placeholder.name, c.dispatch_bytes(dispatch))
+    dispatch = dispatch.model_copy(update={"acknowledgment": ack})
+    runner = e.Artifact.model_validate(private_write(t.root, "heldout-runner-funding.json", {
+        "synthetic_only": "not a funding grant"}))
+
+    def inputs(root, rows, prefix, *, authority=False):
+        result = []
+        for index, (name, kind) in enumerate(sorted(rows.items())):
+            ref = t.store.create(f"input.{prefix}-{index}", (root / name).read_bytes())
+            row = {"path": name, "object": ref}
+            if authority:
+                row["kind"] = kind
+            result.append(row)
+        return result
+
+    authority = {row["path"]: row["kind"] for row in t.lock["files"]}
+    for artifact in (t.auth.native_development_lock, t.auth.funding_evidence, runner, review):
+        authority[artifact.path] = "control"
+    native = {"materialization-manifest.json": "source", **{row["source"]["path"]: "source" for row in report["selected_cases"]}}
+    bundle = j.Bundle(schema_version=j.VERSION, purpose="unreviewed_held_out_capture_no_model_no_retail",
+        entry_sha256=e.packet.file_digest(Path(j.__file__)), job_name=t.context.job, configuration=configuration,
+        authorization=t.auth, dispatch=dispatch, runner_funding_evidence=runner,
+        native_files=inputs(t.native, native, "native"), authority_files=inputs(t.root, authority, "authority", authority=True))
+    environment = {"CLOUD_RUN_JOB": bundle.job_name, "CLOUD_RUN_EXECUTION": bundle.job_name + "-exec1",
+        "CLOUD_RUN_TASK_INDEX": "0", "CLOUD_RUN_TASK_ATTEMPT": "0", "CLOUD_RUN_TASK_COUNT": "1",
+        j.NO_BUCKET_METADATA: "true"}
+    return SimpleNamespace(**vars(t), workspace=workspace, bundle=bundle, environment=environment)
+
+
+def run_job(t, *, bundle=None):
+    t.events.clear()
+    return j.run(bundle or t.bundle, t.store, t.packet, t.workspace, environment=t.environment, transport=t.transport)
+
+
+def test_runtime_entry_validates_native40_before_fetching_any_heldout_source(job_task, monkeypatch):
+    t = job_task
+    original_verify, original_fetch, gate = e.verify_native_development_lock, t.store.fetch, []
+    native_names = {row.object.name for row in t.bundle.native_files}
+
+    def verify(*args, **kwargs):
+        result = original_verify(*args, **kwargs)
+        gate.append("complete-native40")
+        return result
+
+    def fetch(name, **kwargs):
+        if name in native_names:
+            assert gate
+        return original_fetch(name, **kwargs)
+
+    monkeypatch.setattr(e, "verify_native_development_lock", verify)
+    t.store.fetch = fetch
+    result = run_job(t)
+    assert gate and result["requests_sent"] == len(t.transport.calls) == 1
+    assert result["state"] == "completed_unreviewed" and not result["native_approval"]
+    assert not result["processing_authorized"] and not result["reserved_expense_released"]
+    assert len(e.packet.canonical(result)) < 16 * 1024
+    assert len(list((t.workspace / "native").rglob("*.*"))) == 161
+    with pytest.raises(FileExistsError):
+        run_job(t)
+    assert len(t.transport.calls) == 1
+
+
+@pytest.mark.parametrize("change", ["missing_lock", "tampered_lock", "extra_authority", "wrong_kind"])
+def test_invalid_review_closure_never_fetches_heldout_sources_or_reaches_transport(job_task, change):
+    t = job_task
+    data = t.bundle.model_dump()
+    if change == "missing_lock":
+        data["authority_files"] = [row for row in data["authority_files"] if row["path"] != t.auth.native_development_lock.path]
+    elif change == "tampered_lock":
+        row = next(row for row in t.bundle.authority_files if row.path == t.auth.native_development_lock.path)
+        t.store.data.pop(row.object.name)
+    elif change == "wrong_kind":
+        data["authority_files"][0]["kind"] = "page"
+    else:
+        ref = t.store.create("input.extra-authority", b"{}")
+        data["authority_files"].append({"path": "unrelated.json", "object": ref.model_dump(), "kind": "control"})
+    native_names = {row.object.name for row in t.bundle.native_files}
+    before = len(t.store.calls)
+    with pytest.raises((ValueError, OSError)):
+        run_job(t, bundle=data)
+    assert not [row for row in t.store.calls[before:] if row[0] == "get" and row[1] in native_names]
+    assert not t.transport.calls
+
+
+@pytest.mark.parametrize("key,value", [("CLOUD_RUN_TASK_ATTEMPT", "1"), ("CLOUD_RUN_TASK_INDEX", "1"),
+    ("CLOUD_RUN_TASK_COUNT", "2"), ("CLOUD_RUN_JOB", "unrelated-job"), ("CLOUD_RUN_EXECUTION", "unrelated-execution"),
+    ("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/never-read"), ("DATABASE_URL", "not-a-url"), ("GEMINI_API_KEY", "toy"),
+    ("GOOGLE_CLOUD_PROJECT", "other-project"), ("HTTPS_PROXY", "https://unrelated.invalid"),
+    ("GCE_METADATA_HOST", "unrelated.invalid"), ("STORAGE_EMULATOR_HOST", "http://unrelated.invalid"),
+    ("API_ENDPOINT_OVERRIDE", "https://unrelated.invalid"), (j.NO_BUCKET_METADATA, "false"),
+    ("OTEL_EXPORTER_OTLP_ENDPOINT", "https://unrelated.invalid"), ("ENABLE_GCS_PYTHON_CLIENT_OTEL_TRACES", "true"),
+    ("SSLKEYLOGFILE", "/tmp/never-write"), ("PYTHONPATH", "/tmp/never-import"), ("LD_PRELOAD", "/tmp/never-load")])
+def test_wrong_task_credentials_or_redirects_stop_before_any_fetch(job_task, key, value):
+    t = job_task
+    t.environment[key] = value
+    before = list(t.store.calls)
+    with pytest.raises(ValueError):
+        run_job(t)
+    assert t.store.calls == before and not t.workspace.exists() and not t.transport.calls
+
+
+@pytest.mark.parametrize("path", ["../escape", "nested/../escape", "/absolute", "./alias"])
+def test_escaped_input_paths_are_not_created(job_task, path):
+    data = job_task.bundle.model_dump()
+    data["authority_files"][0]["path"] = path
+    with pytest.raises(ValueError):
+        run_job(job_task, bundle=data)
+    assert not job_task.workspace.exists()
+
+
+@pytest.mark.parametrize("change", ["missing_native", "duplicate_native", "native_oversize", "wrong_entry", "combined_size"])
+def test_exact_native_count_source_and_byte_bounds(job_task, change):
+    t = job_task
+    data = t.bundle.model_dump()
+    if change == "missing_native":
+        data["native_files"].pop()
+    elif change == "duplicate_native":
+        data["native_files"][-1] = copy.deepcopy(data["native_files"][0])
+    elif change == "native_oversize":
+        row = next(row for row in data["native_files"] if row["path"] != "materialization-manifest.json")
+        row["object"]["size"] = e.inspection.MAX_SOURCE_BYTES + 1
+    elif change == "wrong_entry":
+        data["entry_sha256"] = "0" * 64
+    else:
+        # Each row remains independently bounded; their declared aggregate is
+        # not allowed to silently fit by omitting a required source or review.
+        for row in data["authority_files"]:
+            row["object"]["size"] = e.KINDS[row["kind"]][1]
+        for row in data["native_files"]:
+            row["object"]["size"] = e.MAX_METADATA if row["path"] == "materialization-manifest.json" else e.inspection.MAX_SOURCE_BYTES
+    before = list(t.store.calls)
+    with pytest.raises(ValueError):
+        run_job(t, bundle=data)
+    assert t.store.calls == before and not t.workspace.exists() and not t.transport.calls
+
+
+@pytest.mark.parametrize("change", ["path", "sha256"])
+def test_job_matches_selected_manifest_references_before_fetching_original_sources(job_task, change):
+    t = job_task
+    data = t.bundle.model_dump()
+    row = next(row for row in data["native_files"] if row["path"] != "materialization-manifest.json")
+    if change == "path":
+        row["path"] = "unrelated-source.pdf"
+    else:
+        row["object"]["sha256"] = "0" * 64
+    originals = {row.object.name for row in t.bundle.native_files if row.path != "materialization-manifest.json"}
+    before = len(t.store.calls)
+    with pytest.raises(ValueError, match="exact_held_out_sources"):
+        run_job(t, bundle=data)
+    assert not [call for call in t.store.calls[before:] if call[0] == "get" and call[1] in originals]
+    assert not t.transport.calls
+
+
+@pytest.mark.parametrize("lost", ["run.00.intent.json", "synth-040.source.intent.json"])
+def test_job_lost_ack_cannot_replay_from_fresh_workspace(job_task, lost):
+    t = job_task
+    t.store.lose_ack = lost
+    with pytest.raises(ValueError, match="no_replay"):
+        run_job(t)
+    assert not t.transport.calls
+    t.workspace.rename(t.workspace.with_name("retained-unknown-job-work"))
+    with pytest.raises(ValueError, match="no_replay"):
+        run_job(t)
+    assert not t.transport.calls and "run.00.terminal.json" not in t.store.data
+
+
+def test_job_later_batch_restores_parent_without_replaying_completed_phase(job_task):
+    t = job_task
+    first = run_job(t)
+    parent = c.ObjectRef.model_validate(first["terminal"])
+    terminal = e._json(t.store.data[parent.name].raw)
+    dispatch = t.bundle.dispatch.model_copy(update={"batch_index": 1, "maximum_requests": 10,
+        "parent_terminal": parent, "before_checkpoint_sha256": terminal["after_checkpoint_sha256"],
+        "acknowledgment": c.ObjectRef(name="dispatch.01.json", generation="1", size=1, sha256="0" * 64)})
+    ack = t.store.create("dispatch.01.json", c.dispatch_bytes(dispatch))
+    dispatch = c.Dispatch.model_validate(dispatch.model_copy(update={"acknowledgment": ack}))
+    t.bundle = t.bundle.model_copy(update={"dispatch": dispatch})
+    t.environment["CLOUD_RUN_EXECUTION"] = t.bundle.job_name + "-exec2"
+    before = {name: value for name, value in t.store.data.items() if name.endswith(".raw.json")}
+    t.workspace.rename(t.workspace.with_name("retained-completed-first-job"))
+    second = run_job(t)
+    assert second["requests_sent"] == 10 and len(t.transport.calls) == 11
+    assert all(t.store.data[name] == value for name, value in before.items())
+    assert {"run.00.intent.json", "job.00.context.json", "run.01.intent.json", "job.01.context.json"} <= set(t.store.data)
+    assert not second["reserved_expense_released"] and second["actual_native_cost_minor"] is None
+
+
+def test_keyless_factory_disables_auth_refresh_http_retry_proxy_and_redirects(monkeypatch):
+    import requests
+    from google.auth import compute_engine
+    from google.auth.transport import requests as auth_requests
+    from google.cloud import storage
+
+    calls: list[tuple[str, Any]] = []
+
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            calls.append(("session", kwargs))
+            self.mounts = []
+
+        def mount(self, prefix, adapter):
+            self.mounts.append((prefix, adapter.max_retries.total))
+
+        def close(self):
+            calls.append(("closed", self))
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            calls.append(("client", kwargs))
+            self.http = kwargs["_http"]
+
+        def bucket(self, name):
+            return SimpleNamespace(name=name)
+
+        def close(self):
+            calls.append(("client_closed", self))
+
+    def metadata_credentials(**kwargs):
+        calls.append(("credentials", kwargs))
+        return "toy-metadata-identity-not-a-key"
+
+    monkeypatch.setattr(compute_engine, "Credentials", metadata_credentials)
+    monkeypatch.setattr(requests, "Session", FakeSession)
+    monkeypatch.setattr(auth_requests, "AuthorizedSession", FakeSession)
+    monkeypatch.setattr(storage, "Client", FakeClient)
+    monkeypatch.setenv(j.NO_BUCKET_METADATA, "true")
+    with j.keyless_store("gs://owned-toy-private-bucket/quality-held-out/owned-toy-exp/") as store:
+        assert store.namespace.endswith("/quality-held-out/owned-toy-exp/")
+        session_args = next(value for kind, value in calls if kind == "session" and "max_refresh_attempts" in value)
+        assert session_args["max_refresh_attempts"] == 0
+        assert next(value for kind, value in calls if kind == "credentials") == {"universe_domain": "googleapis.com"}
+        http = next(value for kind, value in calls if kind == "client")["_http"]
+        assert http.trust_env is False and http.max_redirects == 0
+        assert http.mounts == [("https://", 0), ("http://", 0)]
+        assert next(value for kind, value in calls if kind == "client")["client_options"] == {
+            "api_endpoint": "https://storage.googleapis.com", "universe_domain": "googleapis.com"}
+    assert len([row for row in calls if row[0] == "closed"]) == 2
+    assert len([row for row in calls if row[0] == "client_closed"]) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 503, 307, 308])
+def test_real_storage_sdk_error_or_redirect_does_not_replay_create(monkeypatch, status):
+    from google.auth import compute_engine, credentials
+    from requests import Response, adapters
+
+    wire = []
+
+    class OwnedAdapter(adapters.HTTPAdapter):
+        def send(self, request, **kwargs):
+            wire.append((request.method, request.url, kwargs["timeout"]))
+            response = Response()
+            response.status_code, response.request, response.url = status, request, request.url
+            response.headers["Content-Type"] = "application/json"
+            response.headers["Location"] = "https://unrelated.invalid/never-follow"
+            response._content = b'{"error":{"message":"TOY-PRIVATE-SDK-ERROR","code":500}}'
+            return response
+
+    monkeypatch.setattr(compute_engine, "Credentials", lambda **kwargs: credentials.AnonymousCredentials())
+    monkeypatch.setattr(adapters, "HTTPAdapter", OwnedAdapter)
+    monkeypatch.setenv(j.NO_BUCKET_METADATA, "true")
+    with j.keyless_store("gs://owned-toy-private-bucket/quality-held-out/owned-toy-exp/") as store:
+        with pytest.raises(ValueError, match="held_out_channel_object_create_unknown") as error:
+            store.create("synth-040.source.intent.json", b"{}")
+    assert "TOY-PRIVATE" not in str(error.value)
+    assert len(wire) == 1 and wire[0][0] == "POST" and wire[0][2] == 15
+    assert "ifGenerationMatch=0" in wire[0][1]
+
+
+def test_real_metadata_credentials_and_sdk_constructor_do_not_make_implicit_requests(monkeypatch):
+    from google.auth.transport.requests import Request
+
+    def no_metadata(*args, **kwargs):
+        pytest.fail("The constructor attempted an implicit metadata request")
+
+    monkeypatch.setenv(j.NO_BUCKET_METADATA, "true")
+    monkeypatch.setattr(Request, "__call__", no_metadata)
+    with j.keyless_store("gs://owned-toy-private-bucket/quality-held-out/owned-toy-exp/") as store:
+        assert store.namespace.endswith("/quality-held-out/owned-toy-exp/")
+
+
+def test_main_denies_wrong_context_before_constructing_a_store(monkeypatch, capsys):
+    def no_store(*args):
+        pytest.fail("Store construction was reached")
+
+    monkeypatch.setattr(j, "keyless_store", no_store)
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "environ", {})
+        code = j.main(["--namespace", "gs://owned/quality-held-out/owned-toy-exp/", "--bundle-name", "input.bundle.json",
+                       "--bundle-generation", "1", "--bundle-sha256", "0" * 64])
+    assert code == 2 and "refused_or_unknown_no_replay" in capsys.readouterr().err
+
+
+def test_main_never_prints_a_raw_provider_error(monkeypatch, capsys):
+    @contextmanager
+    def lost(*args):
+        raise TimeoutError("TOY-PRIVATE-DO-NOT-LOG")
+        yield
+
+    environment = {"CLOUD_RUN_JOB": "hirewiz-quality-held-out-toy-00000000",
+        "CLOUD_RUN_EXECUTION": "hirewiz-quality-held-out-toy-00000000-exec1",
+        "CLOUD_RUN_TASK_INDEX": "0", "CLOUD_RUN_TASK_ATTEMPT": "0", "CLOUD_RUN_TASK_COUNT": "1",
+        j.NO_BUCKET_METADATA: "true"}
+    monkeypatch.setattr(j, "keyless_store", lost)
+    monkeypatch.setattr(os, "environ", environment)
+    code = j.main(["--namespace", "gs://owned/quality-held-out/owned-toy-exp/", "--bundle-name", "input.bundle.json",
+                   "--bundle-generation", "1", "--bundle-sha256", "0" * 64])
+    output = capsys.readouterr()
+    assert code == 2 and "TOY-PRIVATE" not in output.err + output.out
