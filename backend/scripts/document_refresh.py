@@ -1412,7 +1412,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
                 history=history, recover_failed_native_job=recover_failed_native_job,
                 application_context=boundary.applications, consumed_history=disposition,
                 full_source=full_source, source_revision=source_revision,
-                **({"recover_expired_source": True} if recover_expired_source else {}))
+                recover_expired_source=recover_expired_source)
         finally:
             clients.close()
             if delegate is not None:

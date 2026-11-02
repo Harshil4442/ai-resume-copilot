@@ -30,9 +30,11 @@
     "runtime_files": 20,
     "policy_sha256": "22a012f2fb7b6d3b696d8772563e9363566b9f03fb83385cfeffbc84a26459eb",
     "helper_files": 14,
-    "new_helper_aggregate_sha256": "11100f92b9e4d9903f52aa07723f6fc98bc8554b4cccad3f283645d2c929177a",
+    "new_helper_aggregate_sha256": "53d71f0e6869ef6659c36830fab47782248201035576cde484271a6632d42008",
     "historical_helper_aggregate_preserved": "61b313bcb98d1d9931efd49ac8e9f8a3d307de0785e97e3c1705760a4c10ae50",
-    "native_renewal": "pending"
+    "native_renewal": "pending",
+    "author_helper_aggregate_sha256": "11100f92b9e4d9903f52aa07723f6fc98bc8554b4cccad3f283645d2c929177a",
+    "root_typecheck_correction": "Pass recover_expired_source explicitly in recursive refresh call; avoids unsafe generic kwargs typing while preserving its Boolean value"
   },
   "source_binding": {
     "app_files": 289,
@@ -42,7 +44,8 @@
     "historically_unchanged_execution_inputs": 454,
     "current_document_helpers": 5,
     "historically_unchanged_document_helpers": 9,
-    "all_five_source_CI": "pending; prior de6run41475832833 cancelled when replaced by actual source corrections"
+    "all_five_source_CI": "pending; prior de6run41475832833 cancelled when replaced by actual source corrections",
+    "changed_path_mypy": "5runtime/script paths passed after explicit Boolean argument correction"
   },
   "provider_mutations": false,
   "production_changed": false,
