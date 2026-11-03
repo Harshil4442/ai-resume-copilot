@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from uuid import uuid4
+import json
+from uuid import UUID, uuid4
 
 import pytest
+import test_gcp_password_lifetime_emulator as lifetime_fixtures
+import test_gcp_scoped_authority_emulator as scoped_fixtures
 from infra.gcp import schema26_lifecycle_join as core
 from pydantic import ValidationError
+from test_gcp_pairing_emulator import case as case
+from test_gcp_scoped_authority_emulator import enroll, session
 
+from app.domains.candidate_accounts.contracts import CandidateCredentialRevision
 from app.domains.recovery.contracts import Revocation, canonical, fingerprint
-from app.domains.recovery.gcp_contracts import JournalReceipt, OperationStatus, RegistryPin
+from app.domains.recovery.gcp_candidate_logout import GcpCandidateCookieLogout
+from app.domains.recovery.gcp_contracts import (
+    AmbiguousCommit,
+    JournalReceipt,
+    OperationStatus,
+    RegistryPin,
+)
 from app.domains.recovery.gcp_partitioned_contracts import (
     GenerationHistory,
     PartitionedRecord,
@@ -33,10 +45,21 @@ from app.domains.recovery.gcp_password_lifetime_contracts import (
     RegisteredSubject,
 )
 from app.domains.recovery.gcp_password_reset import ResetProjectionEvidence
+from app.domains.recovery.gcp_publication_scan import NativeAuthorityScanner
 from app.domains.recovery.password_reauth import PasswordAccountBinding
-from app.domains.recovery.store import GuardUnavailable
+from app.domains.recovery.store import GuardDenied, GuardUnavailable
 
 NOW = 1_800_000_000_000
+
+
+@pytest.fixture
+def owned_lifetime(case, monkeypatch):
+    return lifetime_fixtures.lifetime._get_wrapped_function()(case, monkeypatch)
+
+
+@pytest.fixture
+def owned_scoped(owned_lifetime):
+    return scoped_fixtures.scoped._get_wrapped_function()(owned_lifetime)
 
 
 def raw(value):
@@ -546,16 +569,115 @@ def test_subject_denial_requires_exact_two_tombstones_and_complete_zero_counts(f
         join(c)
 
 
-def test_generic_generation_denial_and_incomplete_session_denial_refuse():
+def test_generic_generation_denial_still_refuses():
     c = fixture()
     denial(c, "generation")
     with pytest.raises((GuardUnavailable, ValidationError), match="generic_generation"):
         join(c)
+
+
+def test_pending_and_observed_session_tombstone_have_distinct_retained_hashes(monkeypatch):
     c = fixture()
-    denial(c, "session")
+    intent = denial(c, "session")
+    observed = join(c)
     c["values"].pop(("v3_session_tombstones", str(c["session"].session_id)))
-    with pytest.raises((GuardUnavailable, ValidationError), match="session_denial_incomplete"):
+    before = copy.deepcopy(c)
+    captured = []
+    original = core.fingerprint
+
+    def fingerprint_state(value):
+        if value.get("purpose") == "schema26_lifecycle_data_join_only":
+            captured.append(value)
+        return original(value)
+
+    monkeypatch.setattr(core, "fingerprint", fingerprint_state)
+    pending = join(c)
+    assert pending != observed and c == before
+    assert captured[-1]["version"] == 2
+    assert captured[-1]["session_denials"] == {str(intent.operation_id): {
+        "session_id": str(c["session"].session_id), "state": "retained_pending"}}
+    assert all(row["classification"] == "live_exact_latest_revision" for row in captured[-1]["classifications"])
+    c["values"]["v3_session_tombstones", str(c["session"].session_id)] = raw(ScopedTombstone(
+        subject_uuid=c["subject"].subject_uuid, account_binding_id=c["subject"].account_binding_id,
+        session_id=c["session"].session_id, operation_id=intent.operation_id))
+    assert join(c) == observed
+    assert captured[-1]["session_denials"][str(intent.operation_id)]["state"] == "tombstone_observed"
+
+
+@pytest.mark.parametrize("fault", ["missing_pending", "pending_operation", "pending_hash", "pending_session",
+    "tombstone_operation", "tombstone_session", "orphan_pending", "orphan_record"])
+def test_pending_session_still_requires_exact_complete_owned_census(fault):
+    c = fixture()
+    intent = denial(c, "session")
+    key = "v3_pending_session_denials", str(c["session"].session_id)
+    tombstone = "v3_session_tombstones", key[1]
+    if fault == "missing_pending":
+        c["values"].pop(key)
+    elif fault == "pending_operation":
+        c["values"][key]["operation_id"] = str(uuid4())
+    elif fault == "pending_hash":
+        c["values"][key]["intent_sha256"] = "0" * 64
+    elif fault == "pending_session":
+        c["values"]["v3_pending_session_denials", str(uuid4())] = c["values"].pop(key)
+    elif fault == "tombstone_operation":
+        c["values"][tombstone]["operation_id"] = str(uuid4())
+    elif fault == "tombstone_session":
+        c["values"][tombstone]["session_id"] = str(uuid4())
+    elif fault == "orphan_pending":
+        c["values"]["v3_pending_session_denials", str(uuid4())] = copy.deepcopy(c["values"][key])
+    else:
+        extra = intent.model_copy(update={"operation_id": uuid4()})
+        retain(c, extra)
+    before = copy.deepcopy(c)
+    with pytest.raises((GuardUnavailable, ValidationError)):
         join(c)
+    assert c == before
+
+
+@pytest.mark.parametrize("producer", ["cookie", "unknown_effect", "tombstone"])
+def test_genuine_logout_producer_pending_and_unknown_stay_denied_without_fabricated_completion(owned_scoped, monkeypatch, producer):
+    c = owned_scoped
+    account, _ = enroll(c, candidate=17)
+    first, other = session(c, account), session(c, account)
+    subject, _ = c.scoped.resolve(first)
+    request = uuid4()
+    if producer == "cookie":
+        revision = CandidateCredentialRevision.model_validate(subject.model_dump(exclude={"enrollment_operation"}))
+        assert GcpCandidateCookieLogout(c.scoped).deny_cookie_session(first, revision, request) is True
+    else:
+        commit = c.v3.registry.rpc.commit
+
+        def lose_effect(tx, writes):
+            if any(json.loads(write.raw)["namespace"] == "v3_session_tombstones" for write in writes):
+                c.v3.registry.rpc.rollback(tx)
+                raise AmbiguousCommit("Owned effect ACK unavailable")
+            return commit(tx, writes)
+
+        if producer == "unknown_effect":
+            monkeypatch.setattr(c.v3.registry.rpc, "commit", lose_effect)
+        ack = c.scoped.deny(first, scope="session")
+        assert (ack is None) is (producer == "unknown_effect")
+        monkeypatch.setattr(c.v3.registry.rpc, "commit", commit)
+        pending = c.v3.registry.read("v3_pending_session_denials", str(first.session_id))
+        request = UUID(pending["operation_id"])
+    with pytest.raises(GuardDenied):
+        c.scoped.resolve(first)
+    assert c.scoped.resolve(other)[1].session_id == other.session_id
+    values = {(row.envelope["namespace"], row.envelope["key"]): row.envelope["value"]
+        for row in NativeAuthorityScanner(c.v3.registry.rpc).scan()}
+    record = PartitionedRecord.model_validate(values["v3_records", str(request)])
+    assert values["v3_pending_session_denials", str(first.session_id)] == {
+        "operation_id": str(request), "intent_sha256": record.reference.sha256}
+    assert (("v3_session_tombstones", str(first.session_id)) in values) is (producer == "tombstone")
+    sample = {"pin": c.pin, "subject": subject, "values": values, "statuses": {}, "absent": {},
+        "enrollment": LifetimeGrantEvidence.model_validate(values["v3_activations", str(subject.enrollment_operation)]).intent}
+    projections(sample)  # Synthetic SQL contract only; no SQL/native billing claim.
+    sample["execution"] = {key: c.registry.read(*key) for key in sample["execution"]}
+    before, commits = copy.deepcopy(sample), len(c.commits)
+    assert len(join(sample)) == 64 and sample == before and len(c.commits) == commits
+    with pytest.raises(GuardDenied):
+        c.scoped.resolve(first)
+    assert c.scoped.resolve(other)[1].session_id == other.session_id
 
 
 def test_original_validator_runs_before_interpreting_sql_and_bounds_stay_finite():

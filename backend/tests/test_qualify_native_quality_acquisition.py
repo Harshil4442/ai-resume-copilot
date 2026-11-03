@@ -40,6 +40,7 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
         "infra/gcp/document_source_release.py", "infra/gcp/schema26_app_rolling_v3.py",
+        "infra/gcp/schema26_lifecycle_join.py",
         "infra/gcp/schema26_maintenance_guard.py",
         "infra/gcp/v3_readonly_adapter.py",
     )
@@ -517,12 +518,19 @@ def _owned_source_clone(target, release):
     target.chmod(0o700)
 
 
-def test_registered_c6_old_metadata_reader_cannot_qualify_current_runtime(tmp_path):
-    # Registration attests the genuine old event, not current runtime equality.
-    # Select that preserved tuple explicitly; a later row7 is not this fixture.
-    application_release = "c6a03af0636c7e9815159f807c9b126336d03233"
-    rows = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
-    assert len([row for row in rows if row["release"] == application_release]) == 1
+@pytest.mark.parametrize(("application_release", "different"), [
+    ("c6a03af0636c7e9815159f807c9b126336d03233", {
+        "infra/gcp/schema26_lifecycle_join.py", "infra/gcp/schema26_maintenance_guard.py",
+        "infra/gcp/v3_readonly_adapter.py",
+    }),
+    ("c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97", {"infra/gcp/schema26_lifecycle_join.py"}),
+], ids=("registered-c6", "synthetic-c75-code-frozen-registry"))
+def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, application_release, different):
+    # C6 registration attests its genuine old event, not current byte equality.
+    # The c75 case compares source only; it supplies no CI, Build or image proof.
+    if application_release == "c6a03af0636c7e9815159f807c9b126336d03233":
+        rows = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
+        assert len([row for row in rows if row["release"] == application_release]) == 1
     expected = q.controller_dependency_hashes(ROOT)
     runner = tmp_path / "historical-runner"
     _owned_source_clone(runner, application_release)
@@ -542,11 +550,17 @@ def test_registered_c6_old_metadata_reader_cannot_qualify_current_runtime(tmp_pa
             target.write_bytes(stream.read())
             materialized.add(member.name)
     assert materialized == set(expected) and not (runner / "backend/evals").exists()
+    if application_release == "c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97":
+        # Preserve c75 execution code with the declared frozen registry DATA
+        # reference in an owned synthetic commit. This is neither the actual
+        # c75 image/receipt nor a claim about that release's source identity.
+        registry = q._registry_snapshot(ROOT)
+        assert hashlib.sha256(registry).hexdigest() == q.REGISTRY_RUNNER_SHA256
+        (runner / q.OPERATOR_REGISTRY_PATH).write_bytes(registry)
+        registry_commit(runner)
     actual = q.dependency_hashes(runner)
     assert len(expected) == len(actual) == 464
-    assert {name for name in expected if expected[name] != actual[name]} == {
-        "infra/gcp/schema26_maintenance_guard.py", "infra/gcp/v3_readonly_adapter.py",
-    }
+    assert {name for name in expected if expected[name] != actual[name]} == different
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
         q._runner_source(runner)
     with pytest.raises(ValueError, match="runner_source_child_refused"):
