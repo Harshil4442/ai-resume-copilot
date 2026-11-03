@@ -693,7 +693,7 @@ def sparse_snapshot(destination):
     subprocess.run(["git", "add", "--sparse", *recovery.PATHS], cwd=root,
         check=True, capture_output=True, timeout=10)
     subprocess.run(["git", "-c", "user.name=Owned", "-c", "user.email=owned@example.invalid",
-        "commit", "-m", "Owned timing-host code fixture; no image or native authority"], cwd=root,
+        "commit", "--allow-empty", "-m", "Owned timing-host code fixture; no image or native authority"], cwd=root,
         check=True, capture_output=True, timeout=20)
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
         check=True, capture_output=True, timeout=10).stdout.decode().strip()
