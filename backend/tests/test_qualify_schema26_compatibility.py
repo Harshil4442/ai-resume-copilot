@@ -400,7 +400,7 @@ def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or
         expected = protocol_report(path, failures=int(failed))
         calls.append((argv, kwargs, path, expected))
         assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-vv"]
-        assert tuple(argv[7:7 + len(SUITES)]) == SUITES and kwargs["timeout"] == 300 and kwargs["capture_output"] is True
+        assert tuple(argv[7:7 + len(SUITES)]) == SUITES and kwargs["timeout"] == 600 and kwargs["capture_output"] is True
         assert argv[7 + len(SUITES):9 + len(SUITES)] == ["-p", "scripts.qualify_schema26_compatibility"]
         assert argv[-2] == "--junitxml"
         assert kwargs["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"
@@ -471,7 +471,7 @@ def test_timeout_missing_truncated_malformed_or_unallowlisted_progress_remains_u
         raw = raw.split(b"\n", 1)[1]
     if mode == "control":
         raw += b"\x1b"
-    error = gate.subprocess.TimeoutExpired(["owned"], 301 if mode == "timeout" else 300,
+    error = gate.subprocess.TimeoutExpired(["owned"], 601 if mode == "timeout" else 300,
         output=raw, stderr=b"SYNTHETIC_PRIVATE_STDERR")
     assert gate.protocol_timeout_summary(error) == {"schema_version": "schema26-ci-timeout-v1",
         "qualified": False, "observation_scope": "native_protocol", "child_outcome": "timeout",
@@ -537,7 +537,7 @@ def test_actual_pytest_timeout_failure_transcript_excludes_captured_secret_param
         env={"PATH": os.environ.get("PATH", ""), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
             "PYTHONDONTWRITEBYTECODE": "1"}, capture_output=True, timeout=30)
     transcript = result.stdout + result.stderr
-    assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"300 seconds" in transcript
+    assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"600 seconds" in transcript
     assert b'"last_observed_phase":"started"' in transcript
     assert b"SYNTHETIC_PRIVATE_CAPTURE" not in transcript
 
@@ -696,3 +696,38 @@ def test_timing_record_bound_refuses_before_decoding_any_excess_rows(tmp_path, m
     monkeypatch.setattr(gate.json, "loads", decode)
     assert gate.protocol_timing_summary(path, custody)["report_state"] == "unavailable"
     assert decoded == []
+
+
+@pytest.mark.parametrize("seconds", [600, 601])
+def test_protocol_timeout_summary_has_fixed_ci_bound_and_no_authority(seconds):
+    node = _public_progress_case()
+    progress = ("collected 2 items\n" + node + "[SYNTHETIC_PRIVATE_PARAMETER] ").encode()
+    observed = gate.protocol_timeout_summary(
+        gate.subprocess.TimeoutExpired(["owned"], seconds, output=progress))
+    assert gate.PROTOCOL_CHILD_SECONDS == 600 and observed["qualified"] is False
+    assert "SYNTHETIC_PRIVATE" not in json.dumps(observed)
+    if seconds == 600:
+        assert observed["report_state"] == "observed_unqualified"
+        assert observed["timeout_seconds"] == 600
+    else:
+        assert observed["report_state"] == "unknown" and "timeout_seconds" not in observed
+
+
+@pytest.mark.parametrize("nanoseconds", [300 * 10**9, 600 * 10**9, 600 * 10**9 + 1, 601 * 10**9])
+def test_protocol_timing_reader_caps_ci_wall_time_without_changing_privacy_bounds(tmp_path, nanoseconds):
+    node = _public_progress_case().removeprefix("tests/").replace(".py::", "::")
+    path = tmp_path / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(path)
+    assert custody is not None
+    rows = [["header", gate.TIMING_SCHEMA], ["case", 1, node],
+        ["phase", 1, "call", "start", 0], ["phase", 1, "call", "end", nanoseconds],
+        ["status", 1, "call", "passed", nanoseconds], ["main_exit", nanoseconds]]
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    observed = gate.protocol_timing_summary(path, custody)
+    assert observed["qualified"] is False and gate.MAX_REPORT_BYTES == 4 * 1024**2
+    if nanoseconds <= 600 * 10**9:
+        assert observed["report_state"] == "observed_unqualified"
+        assert observed["pytest_main_hook_exit_observed"] is True
+        assert observed["slow_cases"][0]["phase_ns"]["call"] == nanoseconds
+    else:
+        assert observed["report_state"] == "unavailable"

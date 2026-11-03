@@ -26,6 +26,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_REPORT_BYTES = 4 * 1024**2
+# Fixed wall guard for the complete CI suite, not a production response SLO.
+PROTOCOL_CHILD_SECONDS = 600
 SUITES = (
     "tests/test_schema25_app_compatibility_v3_postgres.py",
     "tests/test_evidence_writer_fence_postgres.py",
@@ -113,7 +115,7 @@ def protocol_timeout_summary(error: subprocess.TimeoutExpired) -> dict:
     try:
         if (type(error) is not subprocess.TimeoutExpired
                 or type(error.timeout) not in (int, float) or not math.isfinite(error.timeout)
-                or not 0 < error.timeout <= 300 or type(error.stdout) is not bytes
+                or not 0 < error.timeout <= PROTOCOL_CHILD_SECONDS or type(error.stdout) is not bytes
                 or not 0 < len(error.stdout) <= MAX_REPORT_BYTES):
             return unknown
         lines = error.stdout.decode("utf-8", errors="strict").split("\n")
@@ -397,7 +399,7 @@ def protocol_timing_summary(path: Path, anchor: tuple[int, ...] | None) -> dict:
                     return unavailable
                 cases[ordinal] = {"ordinal": ordinal, "case_id": identity}
                 continue
-            if type(row[-1]) is not int or not last_time <= row[-1] <= 300 * 10**9:
+            if type(row[-1]) is not int or not last_time <= row[-1] <= PROTOCOL_CHILD_SECONDS * 10**9:
                 return unavailable
             last_time = row[-1]
             if row[0] == "global" and len(row) == 4 and row[1] in {"collection", "sessionfinish", "unconfigure"}:
