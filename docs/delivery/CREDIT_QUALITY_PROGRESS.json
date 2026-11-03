@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-02T17:05:55.293319+00:00",
+  "updated_at": "2026-11-03T13:56:56.781777+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -19,10 +19,11 @@
         "docs/delivery/evidence/2026-10-28-reviewer-kit-and-capacity.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The e23 schema25 API and workers and compatible frontend now serve the pilot. Signed-in companion setup was observed after promotion. Fresh complete owner journeys, representative workload measurements and final invoice allocation remain pending.",
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
+      "local_result": "The e23/schema25 pilot remains serving; public health returned HTTP 200 after maintenance and coordinator restoration. Complete owner journeys, representative workload measurements and final invoice allocation remain pending.",
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
     },
     {
       "number": 2,
@@ -39,10 +40,11 @@
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "Cost and billing protections in the e23 app are deployed behind the existing closed activation gates. Existing customer obligations were retained through the rollout. Unified-wallet activation, legacy mapping, invoice and tax reconciliation remain pending; there is no new sales activation. The combined source candidate adds explicit three-credit browser-submission quotes and central reservations; previously accepted twenty-credit obligations remain separate. This candidate is not deployed or commercially qualified.",
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00"
+      "local_result": "Existing balances and customer obligations remain retained on schema25. Schema26 was not applied; unified-wallet conversion, new payment activation, invoice and tax reconciliation remain pending.",
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
     },
     {
       "number": 3,
@@ -57,10 +59,11 @@
         "docs/delivery/evidence/2026-10-28-unified-credit-release-preparation.json",
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
-        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json"
+        "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-10-30T22:57:54.051386+00:00",
-      "local_result": "Bootstrap/reuse and bounded polling changes are deployed in e23. The next source-only batch adds explicit transcription/evidence review and the owned Dashboard snapshot; PR83 qualification and its schema26 rollout remain pending."
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
+      "local_result": "Bootstrap/reuse and bounded polling remain deployed in e23. The c75 candidate includes transcription/evidence review and Dashboard changes, but its application was not promoted."
     },
     {
       "number": 4,
@@ -85,10 +88,11 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
-        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
-      "local_result": "The expired scanner source has a reviewed repair for updater build permissions and explicit recovery; original failed Build5080a7ac was genuinely reconciled before any successor. Fresh native worker renewal, full200 native/model evidence and human adjudication remain pending; optimized AI stays closed."
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
+      "local_result": "The scanner renewal is deployed and passed 17 native cases; definitions expire at 2026-11-05T06:24:10+00:00. The 200-case native/model qualification and independent human adjudication remain pending; optimized AI stays closed."
     },
     {
       "number": 5,
@@ -107,10 +111,11 @@
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
-        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
-      "local_result": "The actual owner browser verified identity and inspected Razorpay, then hit a server Firestore quota error. Source now batches pairing identities without removing barriers and supports explicit40/minute API admission. Root integration checks passed; actual repaired deployment and original-file review/cancel/revoke remain pending. This pilot policy does not qualify10,000-user capacity."
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
+      "local_result": "The metadata and 40/minute browser-quota repair is in the candidate and has not been promoted. Original-file review/cancel/revoke, responsive workload measurements and capacity qualification remain pending."
     },
     {
       "number": 6,
@@ -130,10 +135,11 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
-        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-02T17:05:55.293319+00:00",
-      "local_result": "Schema25 and original balances remain deployed. Canary UTC accounting is corrected and owned-PG-tested. New source explicitly binds the five reviewed scanner maintenance helpers and retains historical helper/custody proofs. Schema26 rollout, genuine shadow operations and funded seven-day observation remain pending."
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
+      "local_result": "Schema26 capture refused before a migration plan or DDL; the original coordinator, services and schedules were restored. The pending-session-denial validator correction passes local producer tests and an explicitly unqualified read-only check against current records. Migration acceptance and the funded seven-day shadow remain pending."
     },
     {
       "number": 7,
@@ -156,10 +162,11 @@
         "docs/delivery/evidence/2026-10-31-full-regression-remedy.json",
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
-        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json"
+        "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "UTC, metadata and expired-scanner source repairs are integrated locally. The old failed refresh produced no image or deployment; its original custody and expense are preserved. Current combined source still requires genuine final-source CI, immutable Git Build, native scanner renewal, fresh maintenance/migration/application plans and actual live verification. Production and payment gates are unchanged.",
-      "status_observed_at": "2026-11-02T17:05:55.293319+00:00"
+      "local_result": "The prior c75 source passed all five required CI jobs and seven backend qualification steps, and its immutable Build/image were verified. Its migration preparation refused before plan creation. The corrected successor still needs its own source qualification, CI, Build and live rollout. e23 remains serving; schema26, optimized AI, wallet conversion, new payments and final submission remain inactive.",
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
     },
     {
       "number": 8,
@@ -169,7 +176,11 @@
       "completed_at": null,
       "estimated_effort": null,
       "actual_effort": null,
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+      ],
+      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
+      "local_result": "Ongoing quality and economics remain pending. The native 200-case benchmark, two-reviewer human acceptance, capacity qualification, funded seven-day shadow and finance reconciliation are not yet qualified."
     }
   ],
   "requirements": [

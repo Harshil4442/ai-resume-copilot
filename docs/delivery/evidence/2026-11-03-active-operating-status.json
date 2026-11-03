@@ -1,0 +1,64 @@
+{
+  "observed_at": "2026-11-03T13:56:56.781777+00:00",
+  "scope": "Partial evidence for the original eight stages; no new completion, authorization, activation or estimate.",
+  "scanner": {
+    "native_cases_passed": 17,
+    "workflow_run": 41519968528,
+    "actually_deployed": true,
+    "image_digest": "sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36",
+    "definitions_expire_at": "2026-11-05T06:24:10+00:00"
+  },
+  "prior_built_candidate": {
+    "source": "c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97",
+    "CI_run": 41555284580,
+    "required_jobs_passed": 5,
+    "required_backend_steps_passed": 7,
+    "Build": "b5fd35e5-437d-41e4-abf9-34076565a443",
+    "image_digest": "sha256:18ba187b0c168b9514f23c449e679b2d4cd0304f7e78ee78c21cf46f794d79aa",
+    "source_image_provenance_verified": true,
+    "application_promoted": false
+  },
+  "operating_state": {
+    "serving_release": "e23c940e6133323c3c1ff11e646a4ca9b2b0b165",
+    "database_schema": "20261028_0025",
+    "public_health_HTTP": 200,
+    "coordinator_services_schedules": "restored using their original journals",
+    "migration_plan_created": false,
+    "schema26_upgrade_invoked": false
+  },
+  "source_correction": {
+    "runtime_source": "4585efa25bdc04ca132380763a1ab4d131ef5152",
+    "owned_lifecycle_cases_passed": 61,
+    "genuine_owned_emulator_producer_cases": 3,
+    "scope": "Retains exact pending session denials and checks any final tombstone; does not infer completion or replay authority.",
+    "unqualified_current_readonly_components": [
+      "native snapshot",
+      "observer SQL and lifecycle join",
+      "original database-role, financial, liability and ACL observation"
+    ],
+    "pending": "Successor source qualification, CI, Build and complete native release acceptance."
+  },
+  "activation": {
+    "optimized_AI": "closed",
+    "wallet_conversion": "not activated",
+    "new_payments": "not activated",
+    "final_submission": "not activated"
+  },
+  "pending_acceptance": [
+    "200-case native/model qualification",
+    "Two independent blinded human reviewers and adjudication",
+    "Capacity and responsive workload qualification",
+    "Funded seven-day shadow accounting",
+    "Invoice allocation and finance reconciliation",
+    "Genuine migration/application acceptance and recovery rehearsal"
+  ],
+  "unresolved_owned_CI_performance": {
+    "PR": 91,
+    "run": 41640317744,
+    "result": "Native-protocol child reached its existing 300-second deadline; no source-specific cause proved.",
+    "state": "Held for future base/profile renewal; no timeout waiver or green rerun claimed."
+  },
+  "stage_completion_changed": false,
+  "CI_tests_are_program_checkpoints": false,
+  "effort_estimates_added": false
+}
