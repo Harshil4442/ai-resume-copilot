@@ -27,19 +27,19 @@ ROOT = Path(__file__).resolve().parents[2]
 BASE = "db8a25adefaf3bc2e00a61f7543f8a1862597adf"
 BASE_FP = "23b1447987e1b3686646ce709c9898cc326e6a88d7d2379ccc085e0286c28b87"
 # BASE remains the ORIGINAL application's immutable source/receipt domain.
-# The new host qualifies the timing proof separately; it is never an app image.
-HOST_BASE = "97f86f4bc62ec6ae77d70e3e380142f52417d060"
-HOST_FP = "1bef1a0197e5b6a47f0b8d8aec2958eabd09936aa1ea22e8e0303daaf3fe2283"
+# The new host qualifies CI timing and its fixed suite budget separately; it is never an app image.
+HOST_BASE = "0df4bd7b90381e99e57c76c2299c4b55ddaed278"
+HOST_FP = "31bfbcc8ade073790eded50814b16e39e7210500c25471e211958fdc37a22616"
 PROOF_DELTA = {
     "backend/scripts/qualify_schema26_compatibility.py": (
         "8886a6e498c36fed1ab6685e36a51381bab84837c861d70101762d5aa7b56ebb",
-        "b8002696251071af5f8aa3a0651c8ae624e75c890c8be12d67b19ecd3a54e7bc"),
+        "ea5452a2bd92e772fa2b872c4f12be8750b382d863080dd1f10a07d6cbbb90cd"),
     "backend/tests/test_schema25_app_protocol_v3.py": (
         "913b2053ab5b23be59c1c11bbb5797f587220076c10308b097796dee35ed2499",
-        "ee60292bf8578b515c7179fdde95585a373b4aa9408cc0cbf172b000626df434"),
+        "500ed1853ddd89b0c96235762b451600d09be3e96e989cbe2995f297f7f7e2d2"),
     "backend/tests/test_qualify_schema26_compatibility.py": (
         "308518dd5e3c89ce9924d0d0e0bf4d0e18285f58ccb4041f6e1fd3b6352cc131",
-        "cdcfaf0957bd70fd702d8d90b4fc780e057a2282720e0c370214f8768e40411a"),
+        "f4808061f7020aa53abcf0bbdc482d7b6654fb5d177928ba0aa8d7a60d38147a"),
 }
 UNCHANGED_EXECUTION = {
     "backend/scripts/schema25_app_release_contract_v3.py":

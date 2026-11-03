@@ -9,10 +9,17 @@ The only image target is genuine application source
 Build `32bc5596-a64b-4cf4-9cc0-311389d46f9d`, image
 `sha256:2ebc717174904f6becc3309aedc5f487a47e31b7a5c60e4fc34b3494f6f8acb1`.
 The current controller is a distinct committed successor of the reviewed timing
-source `97f86f4bc62ec6ae77d70e3e380142f52417d060`, with its own finite source
-fingerprint and genuine five-job CI. Its `HOST_FP` is pinned to the independently
-observed source-only timing fingerprint
-`1bef1a0197e5b6a47f0b8d8aec2958eabd09936aa1ea22e8e0303daaf3fe2283`.
+source `0df4bd7b90381e99e57c76c2299c4b55ddaed278`. It requires its own finite
+source fingerprint and genuine five-job CI. Its `HOST_FP` is pinned to the independently
+observed source-only timing and CI-budget fingerprint
+`31bfbcc8ade073790eded50814b16e39e7210500c25471e211958fdc37a22616`.
+This host is exactly the previously reviewed `97f86f4bc62ec6ae77d70e3e380142f52417d060`
+timing source plus the three proof-leaf CI-budget changes. The complete 41-suite
+child has a fixed 600-second CI wall limit. Selection, JUnit, no-skip, return-code
+and privacy checks remain intact. Production and historical V1/V2 deadlines stay
+unchanged. Prior 300-second failures remain failed; current successful CI is
+required. No SQLite cache or runtime change is included.
+
 That source observation supplies no CI, image, migration or native authority;
 the new operator still needs its own genuine successful current-host CI. A
 disposable owned test fixture may bind its computed code-only fingerprint; that
