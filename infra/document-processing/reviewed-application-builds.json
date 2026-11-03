@@ -36,6 +36,12 @@
       "image_digest": "sha256:2ebc717174904f6becc3309aedc5f487a47e31b7a5c60e4fc34b3494f6f8acb1",
       "build_id": "32bc5596-a64b-4cf4-9cc0-311389d46f9d",
       "ci_run_id": 41500782361
+    },
+    {
+      "release": "db8a25adefaf3bc2e00a61f7543f8a1862597adf",
+      "image_digest": "sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe",
+      "build_id": "05fafcae-934e-448f-9790-26a60b6f3b64",
+      "ci_run_id": 41650961963
     }
   ]
 }
