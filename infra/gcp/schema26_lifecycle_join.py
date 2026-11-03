@@ -151,7 +151,7 @@ def join_lifecycle(
         for (namespace, key), raw in values.items()
         if namespace == "v3_records"
     }
-    denied_subjects, resets = {}, {}
+    denied_subjects, resets, session_denials = {}, {}, {}
     authority = hashlib.sha256(str(expected_pin.authority_id).encode()).hexdigest()
     for operation, record in records.items():
         need(
@@ -206,11 +206,24 @@ def join_lifecycle(
                 operation_id=intent.operation_id,
             ).model_dump(mode="json")
             if command.scope == "session":
+                session_id = str(command.session.session_id)
                 need(
-                    values.get(("v3_session_tombstones", str(command.session.session_id)))
-                    == tombstone,
-                    "session_denial_incomplete",
+                    values.get(("v3_pending_session_denials", session_id))
+                    == {"operation_id": operation, "intent_sha256": record.reference.sha256},
+                    "session_denial_pending_changed",
                 )
+                retained = values.get(("v3_session_tombstones", session_id))
+                need(
+                    retained is None or retained == tombstone,
+                    "session_denial_tombstone_changed",
+                )
+                # Cookie logout intentionally retains only the pending denial.
+                # Both states deny the session; neither reconstructs an ACK or
+                # proves a completed projection, SQL mutation or replay right.
+                session_denials[operation] = {
+                    "session_id": session_id,
+                    "state": "retained_pending" if retained is None else "tombstone_observed",
+                }
             else:
                 key = str(command.subject.subject_uuid)
                 need(
@@ -377,12 +390,13 @@ def join_lifecycle(
     )
     return fingerprint(
         {
-            "version": 1,
+            "version": 2,
             "purpose": "schema26_lifecycle_data_join_only",
             "pin": expected_pin.model_dump(mode="json"),
             "protected": protected,
             "execution": execution,
             "reset_statuses": resets,
+            "session_denials": session_denials,
             "sql": [sql[key] for key in sorted(sql)],
             "absent": [
                 {"candidate_id": key, "counts": absent_counts[key]} for key in sorted(absent)
