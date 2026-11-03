@@ -15,10 +15,11 @@ original proof helpers and the reused finite source dependencies are hash-bound.
 The six public Courier Prime font/license/provenance source assets are bound
 individually. This does not allow reading arbitrary evaluation cases or oracles.
 
-The unchanged V1 dependency inventory remains a separate reference/compatibility
-check, with no V2 runtime authority. It is not the V2 reached-import closure. Its
+The V1 464-file dependency inventory remains a separate reference/compatibility
+check, with the reviewed host census guard added only to its finite source
+successor bindings. It has no V2 runtime authority and is not the V2 reached-import closure. Its
 receipt, entry, Bundle, development prefix, permits and 80-request limit do not
-qualify or authorize V2. No V1 gate is widened. New local imports must resolve
+qualify or authorize V2. No V1 runtime or receipt gate is widened. New local imports must resolve
 inside the declared closure; source-child imports must have the expected file
 provenance. Additional package members or executable initializers refuse.
 
@@ -50,13 +51,15 @@ the lock-installed Ruff/Mypy on the complete new namespace and all three groups;
 missing tools, errors or timeouts fail rather than skip.
 
 The new controller checks `qualify_native_quality_acquisition.py` against its
-exact reviewed raw source pin (`0824…0d5c`)
+exact reviewed raw source pin
+(`a9824190f928877530db66c3d21dd38065d32d20453125f9d21654c64d0f688a`)
 and committed Git blob before compiling it; import-loader bytecode cannot
 replace that source. Parent source checks, fresh children and the standalone
 development-origin verifier share this boundary. The child additionally uses a
 private empty cache and source-origin/exec fences before its first helper import.
-The old helper and its I/O guards remain unchanged. These checks authenticate
-code; they grant no native, funding or processing permission.
+The helper's I/O guards and V1 runtime/receipt semantics remain unchanged; its
+source inventory now includes the explicit host census-guard successor binding.
+These checks authenticate code; they grant no native, funding or processing permission.
 
 Retained runner proof metadata is checked against that runner's actual source
 and original CI/Build; it is never rewritten to current controller hashes.
@@ -67,6 +70,9 @@ by itself demand a new application image. Existing V1 guards remain unchanged.
 Do not transplant an older App/release/CI/image tuple into this component. Finish
 and commit integration, then qualify that actual source. Neither qualification
 nor offline isolation output permits native processing by itself.
+PR88/PR89 source proofs remain historical. The combined candidate needs new
+measured source profiles and its own genuine CI and exact Build/image; those
+and all native, memory, quality, funding and activation gates remain pending.
 
 ## Native input gate and custody
 

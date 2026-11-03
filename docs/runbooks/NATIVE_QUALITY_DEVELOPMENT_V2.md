@@ -4,18 +4,25 @@ This is a separately versioned GCS entry and source/isolation adapter. It is not
 a dispatcher, funding grant, native acceptance, retail qualification or evidence
 that a new image exists. The existing pilot deployment remains separate. The
 retained C6 image does not contain this new entry and must never be relabeled as
-doing so. This source integration starts from `d0646218058ac1b8ce7cb5ca0d85d5ff3bbc912b`;
-it still requires its own genuine CI, Build and immutable image before native use.
+doing so. This combined source integration starts from
+`d0646218058ac1b8ce7cb5ca0d85d5ff3bbc912b` and includes the separately reviewed
+held-out consumer. It still requires its own genuine CI, Build and immutable
+image before native use. PR88/PR89 and their source proofs belong to their
+original heads; they do not qualify this combined candidate.
 
 `backend/evaluation/development40_transport_v2.py` supplies a store to the unchanged
 V1 `run` seam. The original V1 main, Bundle, channel, semantic entry hash and all
 old receipts remain unchanged. No held-out V2 entry, namespace, authorization,
 permit, development lock or engine is imported by this runtime.
 
-Both new executable modules live in the separate `backend/evaluation` namespace.
-They add no package initializer and do not enter the historical V1 code roots.
-The unchanged V1 source checker must still pass its original 464-file inventory;
-no new entry or dependency exception is added to that checker.
+Both producer executable modules live in `backend/evaluation`. The four producer
+files add no initializer; the combined held-out package adds two public,
+docstring-only initializers without executable imports. The producer runtime
+still imports no held-out component and does not enter the historical V1 code
+roots. The V1 source checker retains its 464-file inventory, with only the
+explicitly reviewed host census guard added to its finite successor bindings.
+No new entry or broad dependency exception is added to that checker; V1 runtime,
+receipt and I/O-guard semantics remain unchanged.
 
 ## Transport and limits
 
@@ -77,15 +84,17 @@ in the declared source inventory. Dirty, foreign, linked or shadowed source
 refuses. No historical receipt/fingerprint or broad source exemption is adopted.
 
 Before local child imports, a bounded Git metadata read verifies and loads only
-the trusted-root controller helper from the reviewed `d0646218…` source at raw
-SHA256 `0824c1787981d8deabc98df6c9fdfed9f28e11c72a3c8c35d562e3cde23f0d5c`, then
+the trusted-root controller helper at raw SHA256
+`a9824190f928877530db66c3d21dd38065d32d20453125f9d21654c64d0f688a`, then
 installs its existing I/O-denial controls. An exec-origin/source-byte fence
 already protects that loading interval. The child requires isolated Python,
 disabled bytecode writes and an empty private `-X pycache_prefix` so valid ignored
 bytecode cannot replace the checked source. Ignored namespace shadows cannot
 execute before refusal. A later legitimate change to that bootstrap helper
 requires an explicit reviewed successor pin in this new component; there is no
-silent fallback or reuse of an old receipt for changed helper bytes.
+silent fallback or reuse of an old receipt for changed helper bytes. This pin
+renews the original d064 helper binding for the explicit host census-guard
+successor inventory; it is not evidence of a new CI run, image or native pass.
 
 Future `verify_qualified_runner` requires actual source-child identity, the
 schema26 application compatibility fingerprint, genuine exact-source five-job
