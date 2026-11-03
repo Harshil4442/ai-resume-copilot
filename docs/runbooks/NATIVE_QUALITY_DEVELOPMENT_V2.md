@@ -20,7 +20,8 @@ files add no initializer; the combined held-out package adds two public,
 docstring-only initializers without executable imports. The producer runtime
 still imports no held-out component and does not enter the historical V1 code
 roots. The V1 source checker retains its 464-file inventory, with only the
-explicitly reviewed host census guard added to its finite successor bindings.
+explicitly reviewed host census guard and session-denial lifecycle join added
+to its finite successor bindings.
 No new entry or broad dependency exception is added to that checker; V1 runtime,
 receipt and I/O-guard semantics remain unchanged.
 
@@ -85,7 +86,7 @@ refuses. No historical receipt/fingerprint or broad source exemption is adopted.
 
 Before local child imports, a bounded Git metadata read verifies and loads only
 the trusted-root controller helper at raw SHA256
-`a9824190f928877530db66c3d21dd38065d32d20453125f9d21654c64d0f688a`, then
+`a5f8a817beec1a92af8820667a0be1b10175f07e3ec0c016014d62d9568557b3`, then
 installs its existing I/O-denial controls. An exec-origin/source-byte fence
 already protects that loading interval. The child requires isolated Python,
 disabled bytecode writes and an empty private `-X pycache_prefix` so valid ignored
@@ -93,8 +94,9 @@ bytecode cannot replace the checked source. Ignored namespace shadows cannot
 execute before refusal. A later legitimate change to that bootstrap helper
 requires an explicit reviewed successor pin in this new component; there is no
 silent fallback or reuse of an old receipt for changed helper bytes. This pin
-renews the original d064 helper binding for the explicit host census-guard
-successor inventory; it is not evidence of a new CI run, image or native pass.
+renews the helper binding for the exact host census guard and session-denial
+lifecycle-join successor inventory. It is not evidence of a new CI run, image or
+native pass; pending denials are retained without inventing completion.
 
 Future `verify_qualified_runner` requires actual source-child identity, the
 schema26 application compatibility fingerprint, genuine exact-source five-job

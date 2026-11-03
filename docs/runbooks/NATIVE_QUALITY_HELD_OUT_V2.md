@@ -16,8 +16,8 @@ The six public Courier Prime font/license/provenance source assets are bound
 individually. This does not allow reading arbitrary evaluation cases or oracles.
 
 The V1 464-file dependency inventory remains a separate reference/compatibility
-check, with the reviewed host census guard added only to its finite source
-successor bindings. It has no V2 runtime authority and is not the V2 reached-import closure. Its
+check, with the reviewed host census guard and session-denial lifecycle join
+added only to its finite source successor bindings. It has no V2 runtime authority and is not the V2 reached-import closure. Its
 receipt, entry, Bundle, development prefix, permits and 80-request limit do not
 qualify or authorize V2. No V1 runtime or receipt gate is widened. New local imports must resolve
 inside the declared closure; source-child imports must have the expected file
@@ -52,13 +52,15 @@ missing tools, errors or timeouts fail rather than skip.
 
 The new controller checks `qualify_native_quality_acquisition.py` against its
 exact reviewed raw source pin
-(`a9824190f928877530db66c3d21dd38065d32d20453125f9d21654c64d0f688a`)
+(`a5f8a817beec1a92af8820667a0be1b10175f07e3ec0c016014d62d9568557b3`)
 and committed Git blob before compiling it; import-loader bytecode cannot
 replace that source. Parent source checks, fresh children and the standalone
 development-origin verifier share this boundary. The child additionally uses a
 private empty cache and source-origin/exec fences before its first helper import.
 The helper's I/O guards and V1 runtime/receipt semantics remain unchanged; its
-source inventory now includes the explicit host census-guard successor binding.
+source inventory includes the exact host census-guard and session-denial join
+successor bindings. Pending denials remain retained without a fabricated final
+acknowledgement; this source renewal requires genuine new CI/image proof.
 These checks authenticate code; they grant no native, funding or processing permission.
 
 Retained runner proof metadata is checked against that runner's actual source
