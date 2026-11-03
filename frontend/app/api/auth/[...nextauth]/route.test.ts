@@ -1,11 +1,13 @@
 // @vitest-environment node
 import { NextRequest, NextResponse } from "next/server";
+import type { NextAuthOptions } from "next-auth";
+import { SignInRateLimitedError } from "../../../../lib/signInRateLimit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ handler: vi.fn(), guard: vi.fn() }));
-vi.mock("next-auth", () => ({ default: () => mocked.handler }));
-vi.mock("../../../../lib/authOptions", () => ({ authOptions: {} }));
-vi.mock("../../../../lib/candidateAuthServer", () => ({ guardAuthRequest: mocked.guard }));
+const mocked = vi.hoisted(() => ({ handler: vi.fn(), guard: vi.fn(), jwt: vi.fn(), options: [] as NextAuthOptions[] }));
+vi.mock("next-auth", () => ({ default: (options: NextAuthOptions) => { mocked.options.push(options); return mocked.handler; } }));
+vi.mock("../../../../lib/authOptions", () => ({ authOptions: { callbacks: { jwt: mocked.jwt } } }));
+vi.mock("../../../../lib/candidateAuthServer", () => ({ guardAuthRequest: mocked.guard, websiteOrigin: () => "https://www.hirewizhq.com" }));
 import { GET, POST } from "./route";
 
 const privateValue = "PRIVATE_OAUTH_QUERY_COOKIE_BODY_ERROR";
@@ -19,10 +21,34 @@ const context = (nextauth: string[]) => ({ params: Promise.resolve({ nextauth })
 
 beforeEach(() => {
   vi.restoreAllMocks(); vi.clearAllMocks();
+  mocked.options.length = 0;
   mocked.guard.mockImplementation(async (value) => ({ request: value }));
 });
 
 describe("bounded Google OAuth route timing", () => {
+  it("preserves a request-local Google capacity failure through NextAuth's generic callback mapping", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    mocked.jwt.mockRejectedValueOnce(new SignInRateLimitedError());
+    mocked.handler.mockImplementationOnce(async () => {
+      await expect(mocked.options.at(-1)!.callbacks!.jwt!({ token: {} } as never)).rejects.toThrow("RATE_LIMITED");
+      return new NextResponse(null, { status: 302, headers: {
+        location: "/api/auth/error?error=Callback", "set-cookie": "oauth-state=; Max-Age=0; HttpOnly",
+      } });
+    });
+    const response = await GET(request("GET", "callback"), context(["callback", "google"]));
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://www.hirewizhq.com/login?error=RATE_LIMITED");
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("set-cookie")).toContain("oauth-state=; Max-Age=0; HttpOnly");
+    expect(mocked.handler).toHaveBeenCalledTimes(1);
+
+    // A later independent callback must retain its own response unchanged.
+    const next = new NextResponse(null, { status: 302, headers: { location: "/dashboard" } });
+    mocked.handler.mockResolvedValueOnce(next);
+    expect(await GET(request("GET", "callback"), context(["callback", "google"]))).toBe(next);
+    expect(next.headers.get("retry-after")).toBeNull();
+  });
   it.each([["POST", "signin", 200], ["GET", "callback", 302]] as const)(
     "times %s %s without exposing the response URL or any private input", async (method, action, status) => {
       const info = vi.spyOn(console, "info").mockImplementation(() => {});

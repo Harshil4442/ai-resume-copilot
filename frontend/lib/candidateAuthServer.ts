@@ -30,6 +30,12 @@ export async function backendAuth(path: string, init: RequestInit = {}) {
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await candidateIngressFetch(base, `/api/auth/${path}`, { ...init, signal: controller.signal });
+    if (response.status === 429) {
+      // Capacity classification uses only the HTTP status. Never forward a
+      // backend error body, account detail or arbitrary Retry-After value.
+      await response.body?.cancel();
+      return { status: 429, ok: false, data: {} as Record<string, unknown> };
+    }
     const bytes = await boundedPairingBytes(response.body, AUTH_RESPONSE_LIMIT);
     const value: unknown = JSON.parse(bytes.toString("utf8"));
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("AUTH_UNAVAILABLE");

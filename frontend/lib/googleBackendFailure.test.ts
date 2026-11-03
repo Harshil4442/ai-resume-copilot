@@ -51,6 +51,22 @@ async function passwordAuthorization() {
 }
 
 describe("Google backend failure diagnostics", () => {
+  it.each(["password", "google"])("preserves only the finite 429 capacity signal for %s without retry or token issuance", async (method) => {
+    mocked.backendAuth.mockResolvedValue({ ok: false, status: 429, data: { detail: "private-account-response" } });
+    if (method === "password") await expect(passwordAuthorization()).rejects.toThrow(/^RATE_LIMITED$/);
+    else {
+      const { token, promise } = await exchange();
+      await expect(promise).rejects.toThrow(/^RATE_LIMITED$/);
+      expect(token).toEqual({});
+    }
+    expect(mocked.backendAuth).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("does not promote arbitrary dependency exception text to a capacity signal", async () => {
+    mocked.backendAuth.mockRejectedValue(new Error("RATE_LIMITED"));
+    await expect(passwordAuthorization()).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  });
   it("directs an explicitly unlinked Google account to its enrolled sign-in method without minting a token", async () => {
     mocked.backendAuth.mockResolvedValue({ ok: false, status: 403, data: {
       detail: "Google account is not explicitly linked; use your enrolled sign-in method",

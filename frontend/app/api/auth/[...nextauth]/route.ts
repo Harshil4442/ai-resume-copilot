@@ -1,7 +1,8 @@
 import NextAuth from "next-auth";
 import { authOptions } from "../../../../lib/authOptions";
-import { NextRequest } from "next/server";
-import { guardAuthRequest } from "../../../../lib/candidateAuthServer";
+import { NextRequest, NextResponse } from "next/server";
+import { guardAuthRequest, websiteOrigin } from "../../../../lib/candidateAuthServer";
+import { SIGN_IN_RETRY_AFTER_SECONDS, SignInRateLimitedError } from "../../../../lib/signInRateLimit";
 
 const handler = NextAuth(authOptions);
 
@@ -15,7 +16,29 @@ async function guarded(request: NextRequest, context: Context) {
   let status = 500;
   try {
     const checked = await guardAuthRequest(request, path[0], path[1]);
-    const response = checked.response ?? await handler(checked.request!, context);
+    let rateLimited = false;
+    const jwt = authOptions.callbacks?.jwt;
+    // NextAuth maps OAuth JWT failures to the generic Callback code. Keep only
+    // our finite capacity signal in this invocation; never share it across requests.
+    const requestHandler = path.length === 2 && path[0] === "callback" && path[1] === "google"
+      && request.method === "GET" && jwt ? NextAuth({ ...authOptions, callbacks: {
+        ...authOptions.callbacks,
+        async jwt(args) {
+          try { return await jwt(args); }
+          catch (error) {
+            if (error instanceof SignInRateLimitedError) rateLimited = true;
+            throw error;
+          }
+        },
+      } }) : handler;
+    let response = checked.response ?? await requestHandler(checked.request!, context);
+    if (rateLimited) {
+      // Retain NextAuth's OAuth cookie cleanup, with a fixed same-origin target.
+      response = new NextResponse(null, { status: 302, headers: response.headers });
+      response.headers.set("Location", `${websiteOrigin(request)}/login?error=RATE_LIMITED`);
+      response.headers.set("Retry-After", String(SIGN_IN_RETRY_AFTER_SECONDS));
+      response.headers.set("Cache-Control", "private, no-store");
+    }
     status = response.status;
     return response;
   } finally {

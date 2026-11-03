@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { retainedBrowserSession } from "./browserPairingGateway";
 import { randomUUID } from "node:crypto";
 import { backendAuth } from "./candidateAuthServer";
+import { SignInRateLimitedError } from "./signInRateLimit";
 
 const POLICY_VERSION = "2026-10-08";
 const GOOGLE_CONSENT_COOKIE = "hirewiz_google_registration_consent";
@@ -64,6 +65,7 @@ export const authOptions: NextAuthOptions = {
           
           if (!res.ok) {
             if (res.status === 401) return null;
+            if (res.status === 429) throw new SignInRateLimitedError();
             throw new Error("AUTH_UNAVAILABLE");
           }
           const user = res.data as BackendAuthToken;
@@ -79,7 +81,8 @@ export const authOptions: NextAuthOptions = {
             };
           }
           return null;
-        } catch {
+        } catch (error) {
+          if (error instanceof SignInRateLimitedError) throw error;
           console.error("Credential sign-in is unavailable.");
           throw new Error("AUTH_UNAVAILABLE");
         }
@@ -113,6 +116,7 @@ export const authOptions: NextAuthOptions = {
           backendStatus = res.status;
           failureCategory = "backend_response";
           if (!res.ok) {
+            if (res.status === 429) throw new SignInRateLimitedError();
             if (res.status === 403 && Object.keys(res.data).join(",") === "detail"
                 && res.data.detail === "Google account is not explicitly linked; use your enrolled sign-in method") {
               throw new EnrolledSignInRequiredError();
@@ -137,7 +141,7 @@ export const authOptions: NextAuthOptions = {
           }
           token.candidateSignInMethod = "google";
         } catch (error) {
-          if (error instanceof EnrolledSignInRequiredError) throw error;
+          if (error instanceof EnrolledSignInRequiredError || error instanceof SignInRateLimitedError) throw error;
           console.error("Google backend sign-in is unavailable.", {
             category: failureCategory,
             ...(backendStatus === undefined ? {} : { status: backendStatus }),
@@ -169,6 +173,7 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/login",
     signOut: "/logout",
+    error: "/login",
   },
   session: {
     strategy: "jwt",
