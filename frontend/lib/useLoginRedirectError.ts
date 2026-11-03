@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { SIGN_IN_CAPACITY_MESSAGE } from "./signInRateLimit";
 
 const subscribe = (onChange: () => void) => {
   window.addEventListener("popstate", onChange);
@@ -19,6 +20,8 @@ export function loginRedirectError(search: string): string | null {
   }
 
   switch (code) {
+    case "RATE_LIMITED":
+      return SIGN_IN_CAPACITY_MESSAGE;
     case "Callback":
     case "OAuthCreateAccount":
     case "AUTH_UNAVAILABLE":

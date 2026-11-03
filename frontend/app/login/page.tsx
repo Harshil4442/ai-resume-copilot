@@ -4,7 +4,7 @@ import { ArrowRight, CheckCircle2, LogIn, ShieldCheck } from "lucide-react";
 import { getProviders, signIn, useSession } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { trackEvent } from "../../lib/analytics";
@@ -12,6 +12,7 @@ import { useLoginRedirectError } from "../../lib/useLoginRedirectError";
 import { prepareGoogleRegistrationConsent } from "../../lib/auth";
 import { candidateRegistration, postLoginPath } from "../../lib/candidateAuthClient";
 import { useHydrated } from "../../lib/useHydrated";
+import { SIGN_IN_CAPACITY_MESSAGE, SIGN_IN_RETRY_AFTER_SECONDS } from "../../lib/signInRateLimit";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,6 +27,27 @@ export default function LoginPage() {
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const redirectError = useLoginRedirectError();
   const visibleError = error === undefined ? redirectError : error;
+  const redirectedCapacity = redirectError === SIGN_IN_CAPACITY_MESSAGE;
+  const [capacityAttempt, setCapacityAttempt] = useState(0);
+  const [retrySeconds, setRetrySeconds] = useState<number>();
+  const retryDeadline = useRef<number | null>(null);
+  const cooldown = retrySeconds ?? (redirectedCapacity ? SIGN_IN_RETRY_AFTER_SECONDS : 0);
+
+  useEffect(() => {
+    if (retryDeadline.current === null) {
+      if (!redirectedCapacity) return;
+      retryDeadline.current = Date.now() + SIGN_IN_RETRY_AFTER_SECONDS * 1000;
+    }
+    const deadline = retryDeadline.current;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setRetrySeconds(remaining);
+      if (remaining === 0) { retryDeadline.current = null; window.clearInterval(timer); }
+    };
+    const initial = window.setTimeout(tick, 0);
+    const timer = window.setInterval(tick, 1000);
+    return () => { window.clearTimeout(initial); window.clearInterval(timer); };
+  }, [redirectedCapacity, capacityAttempt]);
 
   useEffect(() => {
     getProviders()
@@ -35,12 +57,19 @@ export default function LoginPage() {
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (loading || cooldown > 0) return;
     setError(null);
     setLoading(true);
     try {
       const result = await signIn("credentials", { email, password, redirect: false });
       if (!result?.ok || result.error) {
+        if (result?.error === "RATE_LIMITED") {
+          retryDeadline.current = Date.now() + SIGN_IN_RETRY_AFTER_SECONDS * 1000;
+          setRetrySeconds(SIGN_IN_RETRY_AFTER_SECONDS);
+          setCapacityAttempt((attempt) => attempt + 1);
+        }
         setError(result?.error === "SESSION_LOGOUT_REQUIRED" ? "Sign out of the current account before switching accounts."
+          : result?.error === "RATE_LIMITED" ? SIGN_IN_CAPACITY_MESSAGE
           : result?.error === "AUTH_UNAVAILABLE" ? "Secure sign-in is unavailable. Retry later; your saved workspace is unchanged."
           : "Could not sign in. Check your credentials, or check a pending secure registration below.");
         trackEvent("login_failed", { method: "credentials" });
@@ -57,7 +86,7 @@ export default function LoginPage() {
   }
 
   async function checkRegistration() {
-    if (!email || !password || loading) return;
+    if (!email || !password || loading || cooldown > 0) return;
     setLoading(true); setError(null);
     try {
       const status = await candidateRegistration("registration-status", email, password);
@@ -71,7 +100,7 @@ export default function LoginPage() {
   }
 
   async function startGoogleLogin() {
-    if (!googleAgreed) return;
+    if (!googleAgreed || loading || cooldown > 0) return;
     setError(null);
     setLoading(true);
     try {
@@ -112,10 +141,10 @@ export default function LoginPage() {
               Password
               <input disabled={!ready || loading} className="field-control" type="password" value={password} onChange={(event) => setPassword(event.target.value)} maxLength={128} required autoComplete="current-password" />
             </label>
-            <Button type="submit" className="w-full" disabled={!ready || loading}>
+            <Button type="submit" className="w-full" disabled={!ready || loading || cooldown > 0}>
               {loading ? "Signing in..." : "Sign in"} <ArrowRight size={16} />
             </Button>
-            <Button type="button" variant="secondary" disabled={!ready || loading || !email || !password} onClick={() => void checkRegistration()}>Check secure registration status</Button>
+            <Button type="button" variant="secondary" disabled={!ready || loading || cooldown > 0 || !email || !password} onClick={() => void checkRegistration()}>Check secure registration status</Button>
           </form>
 
           <p className="mt-4 text-sm"><Link href="/forgot-password" className="font-semibold text-primary underline">Forgot your HireWiz password?</Link></p>
@@ -126,13 +155,14 @@ export default function LoginPage() {
                 <input disabled={!ready || loading} type="checkbox" checked={googleAgreed} onChange={(event) => setGoogleAgreed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
                 <span>If Google creates a new account, I confirm I am at least 18 and agree to the <Link href="/terms" className="text-foreground underline">Terms</Link> and <Link href="/privacy" className="text-foreground underline">Privacy Policy</Link>.</span>
               </label>
-              <Button type="button" variant="secondary" className="mt-4 w-full" onClick={startGoogleLogin} disabled={!ready || !googleAgreed || loading}>
+              <Button type="button" variant="secondary" className="mt-4 w-full" onClick={startGoogleLogin} disabled={!ready || !googleAgreed || loading || cooldown > 0}>
                 <span className="font-semibold" aria-hidden="true">G</span> Continue with Google
               </Button>
             </div>
           ) : null}
 
           {visibleError ? <div className="mt-5 flex gap-2 border border-coral/30 bg-coral/5 p-3 text-sm text-coral" role="alert"><ShieldCheck size={17} className="shrink-0" /> {visibleError}</div> : null}
+          {cooldown > 0 ? <p className="mt-3 text-sm text-muted-foreground" role="status">Try again in {cooldown} seconds.</p> : null}
           <p className="mt-5 text-xs text-muted-foreground">Switching accounts? <Link href="/logout" className="text-primary underline">Sign out securely first</Link>.</p>
           <p className="mt-7 text-center text-sm text-muted-foreground">New to HireWiz? <Link href="/register" className="font-bold text-primary hover:underline">Create an account</Link></p>
         </section>

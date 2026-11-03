@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AnchorHTMLAttributes } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,9 +38,66 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/login");
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Google sign-in redirect failures", () => {
+  it("holds a password capacity failure for 60 seconds and requires a new explicit submit", async () => {
+    mocked.signIn.mockResolvedValue({ ok: false, error: "RATE_LIMITED", status: 401, url: null });
+    render(<LoginPage />);
+    const google = await screen.findByRole("button", { name: "Continue with Google" });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "person@example.invalid" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "synthetic-password" } });
+    vi.useFakeTimers();
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    await act(async () => { fireEvent.click(submit); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Sign-in capacity is temporarily busy. Please wait 60 seconds, then try again.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/password|credentials/i);
+    expect(submit).toBeDisabled();
+    expect(google).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check secure registration status" })).toBeDisabled();
+    fireEvent.submit(submit.closest("form")!);
+    expect(mocked.signIn).toHaveBeenCalledTimes(1);
+    await act(async () => { vi.advanceTimersByTime(59_000); });
+    expect(submit).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Try again in 1 seconds.");
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    expect(submit).toBeEnabled();
+    expect(mocked.signIn).toHaveBeenCalledTimes(1);
+    expect(mocked.prepareConsent).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(submit); });
+    expect(mocked.signIn).toHaveBeenCalledTimes(2);
+  });
+
+  it("applies the same bounded cooldown to the allowlisted Google redirect signal without starting sign-in", async () => {
+    window.history.replaceState({}, "", "/login?error=RATE_LIMITED&retryAfter=999999&detail=PRIVATE_ACCOUNT_DETAIL");
+    vi.useFakeTimers();
+    render(<LoginPage />);
+    await act(async () => { vi.advanceTimersByTime(0); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Please wait 60 seconds");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("PRIVATE");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(mocked.signIn).not.toHaveBeenCalled();
+  });
+
+  it("finishes an existing cooldown when the redirect query changes without remounting", async () => {
+    window.history.replaceState({}, "", "/login?error=RATE_LIMITED");
+    vi.useFakeTimers();
+    render(<LoginPage />);
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    act(() => {
+      window.history.replaceState({}, "", "/login?error=Callback");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(mocked.signIn).not.toHaveBeenCalled();
+  });
   it("explains an unlinked Google account and offers password recovery without starting another sign-in", async () => {
     window.history.replaceState({}, "", "/login?error=OAuthAccountNotLinked");
     render(<LoginPage />);

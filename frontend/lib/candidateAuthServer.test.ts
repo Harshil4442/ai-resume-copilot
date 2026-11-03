@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encode } from "next-auth/jwt";
 import { NextRequest } from "next/server";
-import { guardAuthRequest, revokeRetainedToken } from "./candidateAuthServer";
+import { backendAuth, guardAuthRequest, revokeRetainedToken } from "./candidateAuthServer";
 
 const origin = "https://candidate.example.com";
 const secret = "synthetic-web-auth-secret-that-is-only-a-test";
@@ -31,6 +31,16 @@ async function request(path = "signout", options: { legacy?: boolean; origin?: s
 }
 
 describe("actual encrypted cookie pre-handler signout guard", () => {
+  it("keeps a finite capacity result without reading a refusal body or retrying a credential POST", async () => {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => url.endsWith("/api/health")
+      ? new Response(null, { headers: { date: new Date().toUTCString(), "x-correlation-id": new Headers(init?.headers).get("x-correlation-id")! } })
+      : new Response("PRIVATE_ACCOUNT_PROVIDER_DETAIL", { status: 429, headers: { "Retry-After": "PRIVATE_HEADER" } }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await backendAuth("login", { method: "POST", body: JSON.stringify({ email: "synthetic@example.invalid", password: "synthetic-password" }) });
+    expect(result).toEqual({ status: 429, ok: false, data: {} });
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith("/api/auth/login"))).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
+  });
   it("uses the same trimmed configured secret as the real NextAuth issuer", async () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);
     const fetch = vi.fn(async (url: string) => Response.json(url.endsWith("/availability")
