@@ -40,6 +40,7 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
         "infra/gcp/document_source_release.py", "infra/gcp/schema26_app_rolling_v3.py",
+        "infra/gcp/schema26_maintenance_guard.py",
         "infra/gcp/v3_readonly_adapter.py",
     )
     assert set(value["current_execution_inputs"]) == set(q.CURRENT_EXECUTION_PATHS)
@@ -543,7 +544,9 @@ def test_registered_c6_old_metadata_reader_cannot_qualify_current_runtime(tmp_pa
     assert materialized == set(expected) and not (runner / "backend/evals").exists()
     actual = q.dependency_hashes(runner)
     assert len(expected) == len(actual) == 464
-    assert {name for name in expected if expected[name] != actual[name]} == {"infra/gcp/v3_readonly_adapter.py"}
+    assert {name for name in expected if expected[name] != actual[name]} == {
+        "infra/gcp/schema26_maintenance_guard.py", "infra/gcp/v3_readonly_adapter.py",
+    }
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
         q._runner_source(runner)
     with pytest.raises(ValueError, match="runner_source_child_refused"):
