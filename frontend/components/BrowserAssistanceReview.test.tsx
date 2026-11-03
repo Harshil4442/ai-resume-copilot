@@ -217,7 +217,7 @@ it("pauses an unsettled approval at forty seconds without replay or private erro
 it("offers the distinct recovery package and preserves an existing install without any request", () => {
   render(<BrowserAssistanceReview deviceId={null} reviewId={null} applicationId={null} />);
   expect(screen.getByRole("link", { name: "Download HireWiz companion 0.8.9" })).toHaveAttribute("href", "/downloads/hirewiz-browser-companion-0.8.9.zip");
-  expect(screen.getByText(/replace its files and reload that same extension; keep its browser storage/)).toBeInTheDocument();
+  expect(screen.getByText(/replace its files, open the companion and choose Reload installed companion; keep its browser storage/)).toBeInTheDocument();
   expect(request).not.toHaveBeenCalled();
 });
 

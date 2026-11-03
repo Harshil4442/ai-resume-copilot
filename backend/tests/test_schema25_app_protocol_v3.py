@@ -139,18 +139,19 @@ def test_pairing_source_package_and_actual_wire_proof_dependencies_are_bound():
         "browser-companion/tests/request-deadlines.js", "browser-companion/tests/native-https-fixture.js"} <= observed
     source = ROOT / "browser-companion/extension"
     assert set(contract.COMPANION_EXTENSION_PATHS) == {str(path.relative_to(ROOT)) for path in source.iterdir()}
-    archive = ROOT / "frontend/public/downloads/hirewiz-browser-companion-0.8.8.zip"
+    archive = ROOT / "frontend/public/downloads/hirewiz-browser-companion-0.8.9.zip"
+    assert str(archive.relative_to(ROOT)) in declared
     with ZipFile(archive) as package:
         assert package.namelist() == ["hirewiz-browser-companion/" + Path(name).name
             for name in contract.COMPANION_EXTENSION_PATHS]
         for name in contract.COMPANION_EXTENSION_PATHS:
             assert package.read("hirewiz-browser-companion/" + Path(name).name) == (ROOT / name).read_bytes()
-    assert json.loads((source / "manifest.json").read_text())["version"] == "0.8.8"
-    assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.8"
-    # Preserve all fourteen previously delivered archives at their original
+    assert json.loads((source / "manifest.json").read_text())["version"] == "0.8.9"
+    assert json.loads((ROOT / "browser-companion/package.json").read_text())["version"] == "0.8.9"
+    # Preserve all fifteen previously delivered archives at their original
     # frozen bytes; qualification of this source never rewrites past clients.
     import hashlib
-    assert len(contract.HISTORICAL_COMPANION_PACKAGES) == 14
+    assert len(contract.HISTORICAL_COMPANION_PACKAGES) == 15
     assert all(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == expected
         for name, expected in contract.HISTORICAL_COMPANION_PACKAGES)
 
