@@ -275,9 +275,18 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
         path.chmod(0o700)
         owned = path.stat()
         report = path / "junit.xml"
+        from scripts.qualify_schema26_compatibility import (
+            prepare_protocol_timing,
+            protocol_timing_summary,
+        )
+        timing = path / "timings.jsonl"
+        timing_anchor = prepare_protocol_timing(timing)
+        timing_args = ([] if timing_anchor is None else [
+            "-p", "scripts.qualify_schema26_compatibility", "--hirewiz-protocol-timing", str(timing),
+            "--hirewiz-protocol-timing-anchor", ":".join(map(str, timing_anchor))])
         try:
             result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-vv", *SUITES,
-                "--junitxml", str(report)], cwd=ROOT / "backend",
+                *timing_args, "--junitxml", str(report)], cwd=ROOT / "backend",
                 env={**os.environ, "APP_ENV": "test", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
                      "HIREWIZ_METADATA_PACING_REQUIRED": "true", "HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true",
                      "HIREWIZ_EXPENSE_POLICY_JSON": json.dumps(synthetic_expense_policy()),
@@ -285,7 +294,9 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
                 capture_output=True, timeout=300)
         except subprocess.TimeoutExpired as error:
             from scripts.qualify_schema26_compatibility import protocol_timeout_summary
-            print(json.dumps(protocol_timeout_summary(error), sort_keys=True, separators=(",", ":")))
+            summary = protocol_timeout_summary(error)
+            summary["timing"] = protocol_timing_summary(timing, timing_anchor)
+            print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
             # Preserve the original timeout command/deadline/type, without the
             # subprocess argument-frame traceback exposing verbose parameters.
             raise subprocess.TimeoutExpired(error.cmd, error.timeout) from None
@@ -294,8 +305,9 @@ def test_installed_gapic_redis_and_data_emulator_protocol_selection_has_no_skipp
         status = result.returncode
         if status != 0:
             from scripts.qualify_schema26_compatibility import protocol_failure_summary
-            print(json.dumps(protocol_failure_summary(report, (owned.st_dev, owned.st_ino, owned.st_uid), status),
-                sort_keys=True, separators=(",", ":")))
+            summary = protocol_failure_summary(report, (owned.st_dev, owned.st_ino, owned.st_uid), status)
+            summary["timing"] = protocol_timing_summary(timing, timing_anchor)
+            print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
         assert status == 0, "Native protocol subprocess failed; inspect privately"
         assert report.is_file() and report.stat().st_size <= 4 * 1024**2
         cases = ElementTree.parse(report).findall(".//testcase")
@@ -355,7 +367,9 @@ def test_selected_protocol_requires_every_case_without_optional_child_prerequisi
 
     def child(command, **kwargs):
         assert command[1:6] == ["-I", "-B", "-m", "pytest", "--noconftest"]
-        assert tuple(command[7:-2]) == SUITES
+        assert tuple(command[7:7 + len(SUITES)]) == SUITES
+        assert command[7 + len(SUITES):9 + len(SUITES)] == ["-p", "scripts.qualify_schema26_compatibility"]
+        assert command[-2] == "--junitxml"
         env = kwargs["env"]
         assert env["HIREWIZ_APP_COMPATIBILITY_REQUIRED"] == env["HIREWIZ_METADATA_PACING_REQUIRED"] == "true"
         assert env["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"

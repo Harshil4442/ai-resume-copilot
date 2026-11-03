@@ -16,10 +16,13 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_REPORT_BYTES = 4 * 1024**2
@@ -149,6 +152,308 @@ def protocol_timeout_summary(error: subprocess.TimeoutExpired) -> dict:
             "timeout_seconds": error.timeout, **last} if last else unknown)
     except Exception:
         return unknown
+
+
+TIMING_SCHEMA = "schema26-ci-timing-v1"
+TIMING_PHASES = ("setup", "call", "teardown")
+
+
+def prepare_protocol_timing(path: Path) -> tuple[int, ...] | None:
+    """Create observational custody only; failure never changes native acceptance."""
+    descriptor = None
+    try:
+        directory = path.parent.stat()
+        if (path.name != "timings.jsonl" or path.parent.resolve() != path.parent
+                or path.parent.is_symlink() or directory.st_uid != os.getuid()
+                or stat.S_IMODE(directory.st_mode) != 0o700):
+            return None
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        file = os.fstat(descriptor)
+        return (directory.st_dev, directory.st_ino, directory.st_uid,
+                file.st_dev, file.st_ino, file.st_uid)
+    except Exception:
+        return None
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except Exception:
+                pass
+
+
+class _ProtocolTiming:
+    """One main-thread pytest observer. Never stores parameter IDs or test values."""
+
+    def __init__(self, path: Path, anchor: tuple[int, ...], public):
+        self.path, self.anchor, self.public = path, anchor, public
+        self.descriptor: int | None = None
+        self.started = time.monotonic_ns()
+        # Nested selected controls patch module globals. Keep this invocation's
+        # original cap so their own small writer cannot disable its observer.
+        self.maximum_bytes = MAX_REPORT_BYTES
+        self.items: dict[int, int] = {}
+        self.nodes: dict[str, int] = {}  # In memory only; never serialized.
+        try:
+            self.descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)
+            self._identity()
+            if os.fstat(self.descriptor).st_size:
+                raise ValueError("timing_not_empty")
+            self.write(["header", TIMING_SCHEMA])
+        except Exception:
+            self.close()
+
+    def _identity(self):
+        if self.descriptor is None:
+            raise ValueError("timing_closed")
+        directory, file = self.path.parent.stat(), os.fstat(self.descriptor)
+        observed = self.path.lstat()
+        if (self.path.name != "timings.jsonl" or self.path.parent.resolve() != self.path.parent
+                or (directory.st_dev, directory.st_ino, directory.st_uid,
+                    file.st_dev, file.st_ino, file.st_uid) != self.anchor
+                or directory.st_uid != os.getuid() or stat.S_IMODE(directory.st_mode) != 0o700
+                or not stat.S_ISREG(file.st_mode) or stat.S_IMODE(file.st_mode) != 0o600
+                or file.st_nlink != 1 or (observed.st_dev, observed.st_ino) != (file.st_dev, file.st_ino)):
+            raise ValueError("timing_custody")
+
+    def close(self):
+        descriptor, self.descriptor = self.descriptor, None
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except Exception:
+                pass
+
+    def write(self, row):
+        if self.descriptor is None:
+            return
+        try:
+            self._identity()
+            raw = (json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n").encode()
+            if len(raw) > 1024 or os.fstat(self.descriptor).st_size + len(raw) > self.maximum_bytes - 128:
+                os.write(self.descriptor, b'["incomplete"]\n')
+                self.close()
+                return
+            if os.write(self.descriptor, raw) != len(raw):
+                self.close()
+        except Exception:
+            self.close()
+
+    def event(self, *row):
+        self.write([*row, max(0, time.monotonic_ns() - self.started)])
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_collection(self):
+        self.event("global", "collection", "start")
+        try:
+            return (yield)
+        finally:
+            self.event("global", "collection", "end")
+
+    def pytest_collection_modifyitems(self, items):
+        if len(items) > 4096:
+            self.write(["incomplete"])
+            self.close()
+            return
+        for ordinal, item in enumerate(items, 1):
+            match = re.fullmatch(r"tests/(test[A-Za-z0-9_]{0,199})\.py::"
+                r"(?:[A-Za-z_][A-Za-z0-9_]{0,127}::){0,4}(test[A-Za-z0-9_]{0,199})", item.nodeid.split("[", 1)[0])
+            if match is None or match[1] not in self.public or match[2] not in self.public[match[1]]:
+                self.write(["incomplete"])
+                self.close()
+                return
+            self.items[id(item)] = ordinal
+            self.nodes[item.nodeid] = ordinal
+            self.write(["case", ordinal, match[1] + "::" + match[2]])
+
+    def phase(self, item, phase, edge):
+        ordinal = self.items.get(id(item))
+        if ordinal is not None:
+            self.event("phase", ordinal, phase, edge)
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_runtest_setup(self, item):
+        self.phase(item, "setup", "start")
+        try:
+            return (yield)
+        finally:
+            self.phase(item, "setup", "end")
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_runtest_call(self, item):
+        self.phase(item, "call", "start")
+        try:
+            return (yield)
+        finally:
+            self.phase(item, "call", "end")
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_runtest_teardown(self, item):
+        self.phase(item, "teardown", "start")
+        try:
+            return (yield)
+        finally:
+            self.phase(item, "teardown", "end")
+
+    def pytest_runtest_logreport(self, report):
+        ordinal = self.nodes.get(report.nodeid)
+        if ordinal is not None and report.when in TIMING_PHASES and report.outcome in {"passed", "failed", "skipped"}:
+            self.event("status", ordinal, report.when, report.outcome)
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_sessionfinish(self):
+        self.event("global", "sessionfinish", "start")
+        try:
+            return (yield)
+        finally:
+            self.event("global", "sessionfinish", "end")
+
+    @pytest.hookimpl(wrapper=True, tryfirst=True)
+    def pytest_unconfigure(self):
+        self.event("global", "unconfigure", "start")
+        try:
+            return (yield)
+        finally:
+            self.event("global", "unconfigure", "end")
+
+
+def pytest_addoption(parser):
+    parser.addoption("--hirewiz-protocol-timing")
+    parser.addoption("--hirewiz-protocol-timing-anchor")
+
+
+def pytest_configure(config):
+    path, anchor = config.getoption("--hirewiz-protocol-timing"), config.getoption("--hirewiz-protocol-timing-anchor")
+    if path is None or anchor is None:
+        return
+    try:
+        if not re.fullmatch(r"[0-9]+(?::[0-9]+){5}", anchor):
+            return
+        plugin = _ProtocolTiming(Path(path), tuple(map(int, anchor.split(":"))), _protocol_public_cases())
+        config._hirewiz_protocol_timing = plugin
+        config.pluginmanager.register(plugin, "hirewiz-protocol-phase-observer")
+    except Exception:
+        return  # Diagnostics never replace the actual test outcome.
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_cmdline_main(config):
+    try:
+        return (yield)
+    finally:
+        plugin = getattr(config, "_hirewiz_protocol_timing", None)
+        if plugin is not None:
+            plugin.event("main_exit")
+            plugin.close()
+
+
+def protocol_timing_summary(path: Path, anchor: tuple[int, ...] | None) -> dict:
+    """Read only finite public timing metadata; never an acceptance or cause."""
+    unavailable = {"schema_version": TIMING_SCHEMA, "qualified": False, "report_state": "unavailable"}
+    directory_fd = descriptor = None
+    try:
+        if anchor is None or len(anchor) != 6 or path.name != "timings.jsonl":
+            return unavailable
+        directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        directory = os.fstat(directory_fd)
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+        before = os.fstat(descriptor)
+        if ((directory.st_dev, directory.st_ino, directory.st_uid, before.st_dev, before.st_ino, before.st_uid) != anchor
+                or directory.st_uid != os.getuid() or stat.S_IMODE(directory.st_mode) != 0o700
+                or not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1 or not 0 < before.st_size <= MAX_REPORT_BYTES):
+            return unavailable
+        raw = os.read(descriptor, MAX_REPORT_BYTES + 1)
+        after = os.fstat(descriptor)
+        fields = ("st_dev", "st_ino", "st_uid", "st_size", "st_mtime_ns", "st_ctime_ns", "st_nlink")
+        if len(raw) != before.st_size or not raw.endswith(b"\n") or any(getattr(before, k) != getattr(after, k) for k in fields):
+            return unavailable
+        lines = raw.splitlines()
+        if len(lines) > 65536 or any(len(line) > 1024 for line in lines):
+            return unavailable
+        rows = [json.loads(line) for line in lines]
+        if not rows or rows[0] != ["header", TIMING_SCHEMA] or len(rows) > 65536:
+            return unavailable
+        public = _protocol_public_cases()
+        cases: dict[int, dict] = {}
+        starts: dict[tuple, int] = {}
+        durations: dict[tuple, int] = {}
+        statuses: dict[tuple, str] = {}
+        last_time, last_event, incomplete, main_exit = 0, None, False, False
+        key: tuple[int | str, str]
+        for row in rows[1:]:
+            if type(row) is not list or not row:
+                return unavailable
+            if incomplete or main_exit:
+                return unavailable
+            if row == ["incomplete"]:
+                incomplete = True
+                continue
+            if row[0] == "case" and len(row) == 3:
+                ordinal, identity = row[1:]
+                if type(ordinal) is not int or ordinal != len(cases) + 1 or ordinal > 4096 or type(identity) is not str:
+                    return unavailable
+                parts = identity.split("::")
+                if len(parts) != 2 or parts[0] not in public or parts[1] not in public[parts[0]]:
+                    return unavailable
+                cases[ordinal] = {"ordinal": ordinal, "case_id": identity}
+                continue
+            if type(row[-1]) is not int or not last_time <= row[-1] <= 300 * 10**9:
+                return unavailable
+            last_time = row[-1]
+            if row[0] == "global" and len(row) == 4 and row[1] in {"collection", "sessionfinish", "unconfigure"}:
+                key, edge = ("global", row[1]), row[2]
+            elif row[0] == "phase" and len(row) == 5 and type(row[1]) is int and row[1] in cases and row[2] in TIMING_PHASES:
+                key, edge = (row[1], row[2]), row[3]
+            elif row[0] == "status" and len(row) == 5 and type(row[1]) is int and row[1] in cases and row[2] in TIMING_PHASES:
+                key = (row[1], row[2])
+                if key not in durations or key in statuses or row[3] not in {"passed", "failed", "skipped"}:
+                    return unavailable
+                statuses[key] = row[3]
+                continue
+            elif row[0] == "main_exit" and len(row) == 2 and not main_exit:
+                main_exit = True
+                last_event = {"phase": "pytest_main_hook_exit"}
+                continue
+            else:
+                return unavailable
+            if edge == "start" and key not in starts:
+                starts[key] = last_time
+            elif edge == "end" and key in starts and key not in durations:
+                durations[key] = last_time - starts[key]
+            else:
+                return unavailable
+            last_event = {"phase": key[1], "edge": edge}
+            if type(key[0]) is int:
+                last_event.update(cases[key[0]])
+        slow = [{**case, "phase_ns": {p: durations.get((i, p)) for p in TIMING_PHASES},
+                 "status": {p: statuses.get((i, p)) for p in TIMING_PHASES}} for i, case in cases.items()]
+        slow.sort(key=lambda c: sum(v or 0 for v in c["phase_ns"].values()), reverse=True)
+        suites: dict[str, dict] = {}
+        for case in slow:
+            module = case["case_id"].split("::", 1)[0]
+            suite = suites.setdefault(module, {"cases": 0, **dict.fromkeys(TIMING_PHASES, 0)})
+            suite["cases"] += 1
+            for phase, duration in case["phase_ns"].items():
+                suite[phase] += duration or 0
+        result = {"schema_version": TIMING_SCHEMA, "qualified": False, "report_state": "observed_unqualified",
+            "incomplete": incomplete or not main_exit, "collected": len(cases), "last_event": last_event,
+            "pytest_main_hook_exit_observed": main_exit,
+            "global_phase_ns": {p: durations.get(("global", p)) for p in ("collection", "sessionfinish", "unconfigure")},
+            "phase_completed": {p: sum((i, p) in durations for i in cases) for p in TIMING_PHASES},
+            "phase_status_counts": {p: {s: sum(statuses.get((i, p)) == s for i in cases)
+                for s in ("passed", "failed", "skipped")} for p in TIMING_PHASES},
+            "suite_phase_ns": suites,
+            "slow_cases": slow[:16]}
+        return result if len(json.dumps(result).encode()) <= 65536 else unavailable
+    except Exception:
+        return unavailable
+    finally:
+        for fd in (descriptor, directory_fd):
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
 
 
 def _failure_summary(report: Path, anchor: tuple[int, int, int], returncode: int) -> dict:
