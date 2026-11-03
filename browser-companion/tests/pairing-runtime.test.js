@@ -415,3 +415,265 @@ test("expired recovery does not discard full history or accept a changed retaine
   await g.store.write(tampered);
   await assert.rejects(new PairingRuntime({ transport: g.transport, store: g.store, checkPermission: async () => undefined, now: g.now }).initialise(), /Stored connection state/);
 });
+
+async function completedUncertainty(operation = "complete") {
+  const f = await fixture(); await f.runtime.start();
+  if (operation === "refresh") await f.runtime.complete();
+  const identify = f.transport.identify;
+  f.transport.identify = async () => { throw Object.assign(new Error("Lost original identity ACK"), { operationId: uuid() }); };
+  await assert.rejects(operation === "complete" ? f.runtime.complete() : f.runtime.refresh(), /needs inspection/);
+  f.transport.identify = identify;
+  f.calls.length = 0;
+  f.transport.lookup = async (kind, identity) => {
+    assert.equal(kind, "status"); assert.equal(identity, f.review.pairing_id);
+    f.calls.push("status");
+    return { pairing_id: f.review.pairing_id, device_id: f.review.device_id, status: "COMPLETED" };
+  };
+  return f;
+}
+
+for (const operation of ["complete", "refresh"]) {
+  test(`completed unknown ${operation} explicitly refreshes the same device after one atomic archival checkpoint`, async () => {
+    const f = await completedUncertainty(operation);
+    f.advance(120001); // An expired original connection request does not expire the completed device.
+    const before = f.checkpoint(), { history, ...oldRecord } = before;
+    const writes = [], write = f.store.write;
+    f.store.write = async (value) => { writes.push(structuredClone(value)); await write(value); };
+    assert.equal(f.runtime.status().can_recover_completed, false);
+    const inspected = await f.runtime.inspectUnknown();
+    assert.equal(inspected.can_recover_completed, true);
+    assert.equal(inspected.can_resume_existing, false); assert.equal(inspected.can_archive_restart, false);
+    assert.deepEqual(f.checkpoint(), before); assert.deepEqual(writes, []);
+    f.transport.lookup = async (kind, identity) => {
+      assert.equal(kind, "status"); assert.equal(identity, oldRecord.pairing_id);
+      assert.equal(f.checkpoint().phase, "refreshing");
+      assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+      f.calls.push("status");
+      return { pairing_id: oldRecord.pairing_id, device_id: oldRecord.device_id, status: "COMPLETED" };
+    };
+    f.transport.identify = async (refresh) => {
+      assert.equal(refresh, true);
+      const pending = f.checkpoint();
+      assert.equal(pending.phase, "refreshing"); assert.equal(pending.send_kind, "refresh");
+      assert.notEqual(pending.local_operation_id, oldRecord.local_operation_id);
+      assert.equal(pending.native_operation_id, null);
+      assert.deepEqual(pending.history, [...history, oldRecord]);
+      for (const key of ["pairing_id", "device_id", "key_sha256", "request_sha256", "binding"])
+        assert.equal(pending[key], oldRecord[key]);
+      assert.equal(f.transport.pairingId, oldRecord.pairing_id); assert.equal(f.transport.deviceId, oldRecord.device_id);
+      f.calls.push("refresh");
+      f.transport.claim = { payload: { expires_at_ms: f.now() + 300000 } };
+      return { device_id: oldRecord.device_id, paired: true, allowed_actions: [] };
+    };
+    const recovered = await f.runtime.recoverCompleted();
+    assert.equal(recovered.phase, "paired"); assert.equal(recovered.connected, true);
+    assert.deepEqual(recovered.allowed_actions, []); assert.equal(recovered.can_recover_completed, false);
+    assert.deepEqual(f.calls, ["status", "status", "refresh"]);
+    assert.deepEqual(writes.map(value => value.phase), ["refreshing", "paired"]);
+    assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+    await assert.rejects(f.runtime.recoverCompleted());
+    await assert.rejects(f.runtime.start(), /blocked/);
+  });
+}
+
+for (const status of ["UNPROVEN", "REQUESTED", "CANDIDATE_CONFIRMED", "EXPIRED", "REVOKED", "UNKNOWN"]) {
+  test(`unknown completion status ${status} cannot authorize completed-device recovery`, async () => {
+    const f = await completedUncertainty(), before = f.checkpoint();
+    f.transport.lookup = async () => { f.calls.push("status"); return { pairing_id: before.pairing_id, device_id: before.device_id, status }; };
+    assert.equal((await f.runtime.inspectUnknown()).can_recover_completed, false);
+    await assert.rejects(f.runtime.recoverCompleted());
+    assert.deepEqual(f.checkpoint(), before); assert.deepEqual(f.calls, ["status"]);
+    assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const operation of ["prepare", "create", "legacy"]) {
+  test(`${operation} uncertainty never gains completed-device recovery`, async () => {
+    const f = operation === "legacy" ? await fixture(await legacyCheckpoint(), { executorRevision: "companion_0_8_1" }) : await fixture();
+    if (operation === "prepare") await f.runtime.save({ phase: "unknown", send_kind: "prepare", local_operation_id: uuid() });
+    if (operation === "create") { await f.runtime.start(); await f.runtime.save({ phase: "unknown" }); }
+    f.transport.lookup = async () => ({ pairing_id: f.review.pairing_id, device_id: f.review.device_id, status: "COMPLETED" });
+    const before = f.checkpoint();
+    assert.equal((await f.runtime.inspectUnknown()).can_recover_completed, false);
+    await assert.rejects(f.runtime.recoverCompleted());
+    assert.deepEqual(f.checkpoint(), before); assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const change of ["pairing", "device", "key", "binding"]) {
+  test(`completed inspection rejects ${change} drift without changing the uncertain intent`, async () => {
+    const f = await completedUncertainty(), before = f.checkpoint();
+    if (change === "pairing" || change === "device") f.transport.lookup = async () => ({ pairing_id: change === "pairing" ? uuid() : before.pairing_id,
+      device_id: change === "device" ? uuid() : before.device_id, status: "COMPLETED" });
+    if (change === "key") f.transport.keyDigest = async () => "c".repeat(64);
+    if (change === "binding") f.transport.configuration.authorityKey = { public: "changed" };
+    await assert.rejects(f.runtime.inspectUnknown());
+    assert.equal(f.runtime.status().can_recover_completed, false);
+    await assert.rejects(f.runtime.recoverCompleted());
+    assert.deepEqual(f.checkpoint(), before); assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const change of ["permission", "key", "binding"]) {
+  test(`completed recovery ${change} failure before checkpoint preserves the original operation`, async () => {
+    const f = await completedUncertainty(); await f.runtime.inspectUnknown(); const before = f.checkpoint();
+    if (change === "permission") f.revoke();
+    if (change === "key") f.transport.keyDigest = async () => "c".repeat(64);
+    if (change === "binding") f.transport.configuration.executorRevision = "different_revision";
+    await assert.rejects(f.runtime.recoverCompleted());
+    assert.deepEqual(f.checkpoint(), before); assert.deepEqual(f.calls, ["status"]);
+    assert.equal(f.runtime.status().can_recover_completed, false); assert.equal(f.transport.claim, null);
+  });
+}
+
+for (const change of ["REVOKED", "EXPIRED", "CANDIDATE_CONFIRMED", "pairing", "device", "unavailable"]) {
+  test(`fresh completed-recovery ${change} refusal retains a new refresh uncertainty and old evidence`, async () => {
+    const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+    const before = f.checkpoint(), { history, ...oldRecord } = before;
+    f.transport.lookup = async () => {
+      assert.equal(f.checkpoint().phase, "refreshing"); f.calls.push("status");
+      if (change === "unavailable") throw new Error("Fresh device status unavailable");
+      return { pairing_id: change === "pairing" ? uuid() : before.pairing_id,
+        device_id: change === "device" ? uuid() : before.device_id,
+        status: ["pairing", "device"].includes(change) ? "COMPLETED" : change };
+    };
+    await assert.rejects(f.runtime.recoverCompleted());
+    const after = f.checkpoint();
+    assert.equal(after.phase, "unknown"); assert.equal(after.send_kind, "refresh");
+    assert.notEqual(after.local_operation_id, before.local_operation_id);
+    assert.deepEqual(after.history, [...history, oldRecord]);
+    assert.equal(after.pairing_id, before.pairing_id); assert.equal(after.device_id, before.device_id);
+    assert.equal(f.transport.claim, null); assert.equal(f.runtime.status().can_recover_completed, false);
+    assert.deepEqual(f.calls, ["status", "status"]);
+  });
+}
+
+for (const change of ["key", "binding", "pause"]) {
+  test(`completed recovery ${change} change during fresh status prevents identity refresh`, async () => {
+    const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+    const before = f.checkpoint(), { history, ...oldRecord } = before;
+    f.transport.lookup = async () => {
+      assert.equal(f.checkpoint().phase, "refreshing"); f.calls.push("status");
+      if (change === "key") f.transport.keyDigest = async () => "c".repeat(64);
+      if (change === "binding") f.transport.configuration.authorityKey = { public: "changed-after-status" };
+      if (change === "pause") await f.runtime.cancel();
+      return { pairing_id: before.pairing_id, device_id: before.device_id, status: "COMPLETED" };
+    };
+    await assert.rejects(f.runtime.recoverCompleted());
+    assert.equal(f.checkpoint().phase, "unknown"); assert.equal(f.checkpoint().send_kind, "refresh");
+    assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+    assert.deepEqual(f.calls, ["status", "status"]); assert.equal(f.transport.claim, null);
+    assert.equal(f.runtime.status().can_recover_completed, false);
+  });
+}
+
+test("completed recovery refuses full history without truncating evidence or sending another request", async () => {
+  const f = await completedUncertainty(), { history, ...oldRecord } = f.checkpoint(); assert.deepEqual(history, []);
+  await f.runtime.save({ history: Array.from({ length: 64 }, () => structuredClone(oldRecord)) });
+  await f.runtime.inspectUnknown(); const before = f.checkpoint();
+  await assert.rejects(f.runtime.recoverCompleted(), /history is full/);
+  assert.deepEqual(f.checkpoint(), before); assert.deepEqual(f.calls, ["status"]);
+  assert.equal(f.transport.claim, null);
+});
+
+test("failed recovery checkpoint writes cannot send status or refresh and retain the prior uncertain operation", async () => {
+  const f = await completedUncertainty(); await f.runtime.inspectUnknown(); const before = f.checkpoint();
+  const write = f.store.write;
+  f.store.write = async (value) => { if (value.phase === "refreshing") throw new Error("Checkpoint unavailable"); await write(value); };
+  await assert.rejects(f.runtime.recoverCompleted());
+  assert.deepEqual(f.checkpoint(), before); assert.deepEqual(f.calls, ["status"]);
+  assert.equal(f.runtime.status().can_recover_completed, false); assert.equal(f.transport.claim, null);
+});
+
+test("lost recovery checkpoint acknowledgement stays unsent and restarts as refresh uncertainty with archived evidence", async () => {
+  const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+  const before = f.checkpoint(), { history, ...oldRecord } = before, write = f.store.write;
+  f.store.write = async (value) => {
+    await write(value);
+    if (value.phase === "refreshing") throw new Error("Checkpoint ACK lost after persistence");
+  };
+  await assert.rejects(f.runtime.recoverCompleted());
+  assert.deepEqual(f.calls, ["status"]); assert.equal(f.transport.claim, null);
+  assert.equal(f.checkpoint().phase, "refreshing"); assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+  f.store.write = write;
+  const fresh = await new PairingRuntime({ transport: f.transport, store: f.store, checkPermission: async () => undefined, now: f.now }).initialise();
+  assert.equal(fresh.status().phase, "unknown"); assert.equal(fresh.status().can_recover_completed, false);
+  assert.deepEqual(f.checkpoint().history, [...history, oldRecord]); assert.deepEqual(f.calls, ["status"]);
+});
+
+for (const lostAck of [false, true]) {
+  test(`Pause during first recovery checkpoint ${lostAck ? "lost" : "delayed"} ACK preserves the original unsent recovery evidence`, async () => {
+    const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+    const original = f.checkpoint(), { history, ...record } = original;
+    // Existing older evidence must survive too, rather than only the current intent.
+    await f.runtime.save({ history: [...history, structuredClone(record)] });
+    await f.runtime.inspectUnknown(); const before = f.checkpoint();
+    const calls = [...f.calls], write = f.store.write;
+    let entered, release;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    f.store.write = async (value) => {
+      if (value.phase === "refreshing") {
+        assert.deepEqual(value.history.slice(0, -1), before.history);
+        assert.equal(value.history.at(-1).native_operation_id, before.native_operation_id);
+        entered(); await gate; await write(value);
+        if (lostAck) throw new Error("First recovery checkpoint ACK lost after Pause");
+        return;
+      }
+      await write(value);
+    };
+    const recovery = f.runtime.recoverCompleted();
+    const rejected = assert.rejects(recovery, /needs inspection/);
+    await waiting;
+    const signal = f.transport.signal;
+    const paused = f.runtime.cancel();
+    assert.equal(signal.aborted, true);
+    assert.equal(f.runtime.status().phase, "unknown");
+    release(); await paused; await rejected;
+    assert.deepEqual(f.calls, calls); // Neither the fresh status nor identify(true) ran.
+    assert.deepEqual(f.checkpoint(), before);
+    assert.equal(f.checkpoint().local_operation_id, before.local_operation_id);
+    assert.equal(f.checkpoint().native_operation_id, before.native_operation_id);
+    assert.deepEqual(f.checkpoint().history, before.history);
+    assert.equal(f.transport.claim, null); assert.equal(f.runtime.status().connected, false);
+    assert.equal(f.runtime.status().can_recover_completed, false);
+    await assert.rejects(f.runtime.start(), /blocked/);
+    await assert.rejects(f.runtime.recoverCompleted(), /Inspect/);
+    assert.deepEqual(f.calls, calls);
+  });
+}
+
+test("lost completed-recovery refresh ACK retains both operations and never retries after restart", async () => {
+  const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+  const before = f.checkpoint(), { history, ...oldRecord } = before, operationId = uuid();
+  f.transport.identify = async (refresh) => { assert.equal(refresh, true); f.calls.push("refresh"); throw Object.assign(new Error("Refresh ACK lost"), { operationId }); };
+  await assert.rejects(f.runtime.recoverCompleted());
+  assert.equal(f.checkpoint().phase, "unknown"); assert.equal(f.checkpoint().send_kind, "refresh");
+  assert.equal(f.checkpoint().native_operation_id, operationId); assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+  const calls = [...f.calls];
+  const fresh = await new PairingRuntime({ transport: f.transport, store: f.store, checkPermission: async () => undefined, now: f.now }).initialise();
+  assert.equal(fresh.status().connected, false); assert.equal(fresh.status().can_recover_completed, false);
+  assert.deepEqual(f.calls, calls); assert.equal(f.transport.claim, null);
+  await assert.rejects(fresh.start(), /blocked/); await assert.rejects(fresh.recoverCompleted());
+  assert.deepEqual(f.calls, calls);
+});
+
+test("pause during a completed recovery cannot accept a late claim or repeat the refresh", async () => {
+  const f = await completedUncertainty(); await f.runtime.inspectUnknown();
+  const before = f.checkpoint(), { history, ...oldRecord } = before;
+  let entered, release; const waiting = new Promise(resolve => { entered = resolve; });
+  f.transport.identify = async (refresh) => {
+    assert.equal(refresh, true); f.calls.push("refresh"); entered();
+    await new Promise(resolve => { release = resolve; });
+    f.transport.claim = { payload: { expires_at_ms: f.now() + 300000 } };
+    return { paired: true, allowed_actions: [] };
+  };
+  const recovery = f.runtime.recoverCompleted(); await waiting;
+  await assert.rejects(f.runtime.recoverCompleted());
+  const signal = f.transport.signal; await f.runtime.cancel(); assert.equal(signal.aborted, true);
+  release(); await assert.rejects(recovery);
+  assert.equal(f.checkpoint().phase, "unknown"); assert.equal(f.checkpoint().send_kind, "refresh");
+  assert.deepEqual(f.checkpoint().history, [...history, oldRecord]);
+  assert.equal(f.transport.claim, null); assert.equal(f.runtime.status().connected, false);
+  assert.deepEqual(f.calls, ["status", "status", "refresh"]);
+});

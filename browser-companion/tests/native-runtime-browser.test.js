@@ -6,14 +6,14 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:https";
-import { createHash, X509Certificate, generateKeyPairSync } from "node:crypto";
+import { createHash, X509Certificate, generateKeyPairSync, randomUUID } from "node:crypto";
 import { chromium, expect } from "@playwright/test";
 import { nativeFixtureBuild } from "../scripts/native-fixture-build.js";
 import { canonical } from "../extension/protocol.js";
 import { readinessFixture } from "./pairing-readiness-fixture.js";
 
 async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey = false, inspectedKeyStatus = null,
-  executorRevision = "owned-runtime-socket-probe-v1" } = {}) {
+  completedPairing = null, executorRevision = "owned-runtime-socket-probe-v1" } = {}) {
   const directory = await mkdtemp(`${tmpdir()}/hirewiz-mv3-runtime-browser-`);
   execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", `${directory}/tls.key`, "-out", `${directory}/tls.crt`, "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1"], { stdio: "ignore" });
   const certificate = await readFile(`${directory}/tls.crt`);
@@ -26,6 +26,10 @@ async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey =
     if (ready) { readinessRequests.push(req.url); req.resume(); res.writeHead(ready.status, ready.headers); res.end(); return; }
     // Record endpoint names only: no bodies, headers, candidate or key material.
     requests.push(req.url);
+    if (req.url === "/api/browser-pairing/device/status" && completedPairing) {
+      req.resume(); res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ...completedPairing, status: "COMPLETED" })); return;
+    }
     if (req.url === "/api/browser-pairing/device/inspect-key" && inspectedKeyStatus) {
       const chunks = [];
       req.on("data", (chunk) => chunks.push(chunk));
@@ -69,6 +73,97 @@ async function runtimeFixture({ hold = false, grantTestOrigin = false, coldKey =
 
 const checkpoint = (worker) => worker.evaluate(async () => (await chrome.storage.local.get("pairing_checkpoint")).pairing_checkpoint);
 
+test("actual MV3: completed uncertainty exposes exact device/status and refresh failure preserves the original operation", async () => {
+  const completedPairing = { pairing_id: randomUUID(), device_id: randomUUID() };
+  const f = await runtimeFixture({ grantTestOrigin: true, completedPairing }); try {
+    const old = await f.popup.evaluate(async (ids) => {
+      const { CONFIG } = await import(chrome.runtime.getURL("config.js"));
+      const { canonical, digest } = await import(chrome.runtime.getURL("protocol.js"));
+      const identity = await (await import(chrome.runtime.getURL("device.js"))).deviceIdentity();
+      const { PairingTransport } = await import(chrome.runtime.getURL("pairing-transport.js"));
+      const key_sha256 = await new PairingTransport({ configuration: CONFIG, identity }).keyDigest();
+      const value = { version: 2, phase: "unknown", send_kind: "complete", ...ids,
+        binding: await digest(canonical({ website_origin: CONFIG.websiteOrigin, extension_id: CONFIG.extensionId,
+          executor_revision: CONFIG.executorRevision, authority_key: CONFIG.authorityKey })),
+        key_sha256, request_sha256: "b".repeat(64), expires_at_ms: Date.now() - 60000,
+        review_url: `${CONFIG.websiteOrigin}/browser-companion?pairing=${ids.pairing_id}`,
+        local_operation_id: crypto.randomUUID(), native_operation_id: crypto.randomUUID(),
+        updated_at_ms: Date.now(), resume_phase: null, history: [] };
+      await chrome.storage.local.set({ pairing_checkpoint: value }); return value;
+    }, completedPairing);
+    const next = await f.restart();
+    await expect(next.popup.locator("#native-recover-completed")).toBeDisabled();
+    await expect(next.popup.locator("#native-fingerprints")).toContainText(completedPairing.device_id);
+    await next.popup.locator("#native-inspect").click();
+    await expect(next.popup.locator("#native-fingerprints")).toContainText("Last inspected connection status");
+    await expect(next.popup.locator("#native-fingerprints")).toContainText("COMPLETED");
+    await expect(next.popup.locator("#native-recover-completed")).toBeEnabled();
+    await expect(next.popup.locator("#native-start")).toBeDisabled();
+    await expect(next.popup.locator("#native-resume-existing")).toBeDisabled();
+    await expect(next.popup.locator("#native-archive")).toBeDisabled();
+    await next.popup.locator("#native-recover-completed").click();
+    await expect(next.popup.getByRole("alert")).toContainText("needs inspection");
+    const saved = await checkpoint(next.worker);
+    const { history, ...record } = old;
+    assert.deepEqual(saved.history, [record]); assert.deepEqual(history, []);
+    assert.equal(saved.phase, "unknown"); assert.equal(saved.send_kind, "refresh");
+    assert.equal(saved.key_sha256, old.key_sha256); assert.equal(saved.device_id, old.device_id);
+    assert.notEqual(saved.local_operation_id, old.local_operation_id);
+    assert.deepEqual(f.requests, ["/api/browser-pairing/device/status", "/api/browser-pairing/device/status", "/api/browser-pairing/device/refresh-challenge"]);
+    await expect(next.popup.locator("#native-recover-completed")).toBeDisabled();
+  } finally { await f.close(); }
+});
+
+test("actual MV3: visible idle reload calls the installed runtime and preserves its uncertain checkpoint and key on restart", async () => {
+  const f = await runtimeFixture({ grantTestOrigin: true }); try {
+    await f.popup.locator("#native-start").click();
+    await expect(f.popup.getByRole("alert")).toContainText("needs inspection");
+    const before = await checkpoint(f.worker);
+    const key = await f.popup.evaluate(async () => {
+      const identity = await (await import(chrome.runtime.getURL("device.js"))).deviceIdentity();
+      window.ownedReloadCalls = 0; chrome.runtime.reload = () => { window.ownedReloadCalls++; };
+      return { device_id: identity.device_id, key_sha256: identity.key_sha256 };
+    });
+    const reload = f.popup.getByRole("button", { name: "Reload installed companion" });
+    await expect(reload).toBeEnabled(); await reload.click();
+    await expect.poll(() => f.popup.evaluate(() => window.ownedReloadCalls)).toBe(1);
+    assert.deepEqual(f.requests, ["/api/browser-pairing/device/prepare"]);
+    const next = await f.restart();
+    assert.deepEqual(await checkpoint(next.worker), before);
+    const after = await next.popup.evaluate(async () => {
+      const identity = await (await import(chrome.runtime.getURL("device.js"))).deviceIdentity();
+      return { device_id: identity.device_id, key_sha256: identity.key_sha256 };
+    });
+    assert.deepEqual(after, key);
+    await expect(next.popup.getByRole("button", { name: "Reload installed companion" })).toBeEnabled();
+    await expect(next.popup.locator("#native-start")).toBeDisabled();
+  } finally { await f.close(); }
+});
+
+test("actual MV3: an action that finishes during the reload status read prevents reload", async () => {
+  const f = await runtimeFixture({ grantTestOrigin: true }); try {
+    await f.popup.locator("#native-start").click();
+    await expect(f.popup.getByRole("alert")).toContainText("needs inspection");
+    await f.popup.evaluate(() => {
+      const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+      window.ownedReloadCalls = 0; chrome.runtime.reload = () => { window.ownedReloadCalls++; };
+      chrome.runtime.sendMessage = async (message) => {
+        const response = await send(message);
+        if (message.type !== "status") return response;
+        return new Promise((resolve) => { window.ownedReleaseStatus = () => resolve(response); });
+      };
+    });
+    await f.popup.getByRole("button", { name: "Reload installed companion" }).click();
+    await expect.poll(() => f.popup.evaluate(() => typeof window.ownedReleaseStatus)).toBe("function");
+    await f.popup.locator("#native-inspect").click();
+    await expect(f.popup.getByRole("alert")).toBeVisible();
+    assert.deepEqual(f.requests, ["/api/browser-pairing/device/prepare", "/api/browser-pairing/device/inspect-key"]);
+    await f.popup.evaluate(() => window.ownedReleaseStatus());
+    await expect(f.popup.getByRole("alert")).toContainText("Reload is unavailable");
+    assert.equal(await f.popup.evaluate(() => window.ownedReloadCalls), 0);
+  } finally { await f.close(); }
+});
+
 test("actual MV3: concurrent cold device reads preserve one nonextractable signing owner, across browser restart", async () => {
   const f = await runtimeFixture({ coldKey: true }); try {
     const first = await f.popup.evaluate(async () => {
@@ -91,7 +186,8 @@ test("actual MV3: concurrent cold device reads preserve one nonextractable signi
 
 test("actual MV3: only exact popup messages are admitted, application operations and client context are denied", async () => {
   const f = await runtimeFixture(); try {
-    for (const message of [{ type: "fill" }, { type: "prepare" }, { type: "enroll" }, { type: "pairing_start", session: "forbidden" }, { type: "pairing_start", password: "forbidden" }]) {
+    for (const message of [{ type: "fill" }, { type: "prepare" }, { type: "enroll" }, { type: "pairing_start", session: "forbidden" }, { type: "pairing_start", password: "forbidden" },
+      { type: "pairing_recover_completed", device_id: "forbidden" }, { type: "pairing_recover_completed", application_id: "forbidden" }]) {
       const reply = await f.popup.evaluate((value) => chrome.runtime.sendMessage(value), message);
       assert.equal(reply.ok, false);
     }
@@ -130,7 +226,9 @@ test("actual MV3: Pause during a held HTTPS response aborts further work and ret
   const f = await runtimeFixture({ hold: true, grantTestOrigin: true }); try {
     await expect(f.popup.locator("#native-start")).toBeEnabled(); await f.popup.getByRole("button", { name: "Start browser connection" }).click();
     await expect.poll(() => f.requests.length).toBe(1);
-    await expect(f.popup.locator("#native-pause")).toBeEnabled(); await f.popup.locator("#native-pause").click();
+    await expect(f.popup.locator("#native-pause")).toBeEnabled();
+    await expect(f.popup.getByRole("button", { name: "Reload installed companion" })).toBeDisabled();
+    await f.popup.locator("#native-pause").click();
     await expect.poll(async () => (await checkpoint(f.worker)).phase).toBe("unknown");
     await expect(f.popup.locator("#native-start")).toBeDisabled(); assert.equal(f.requests.length, 1);
   } finally { await f.close(); }

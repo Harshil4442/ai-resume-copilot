@@ -8,6 +8,11 @@ const element = (id) => document.getElementById(id);
 let review = null; let artifactUrl = null;
 let connection = null;
 let assistance = null;
+let normalStatusLoaded = false, popupActions = 0, popupActionGeneration = 0, assistanceUnavailable = false;
+function updateReload() {
+  element("reload-companion").disabled = !normalStatusLoaded || connection === null || connection.busy !== false
+    || popupActions > 0 || assistanceUnavailable || Boolean(assistance && (assistance.busy !== false || assistance.phase !== "idle"));
+}
 // RAM-only rendering ownership; never persisted or used as worker authority.
 let assistanceViewRevision = 0;
 let recoveryReview = null;
@@ -36,7 +41,11 @@ function showReview(value) {
   command.form.fields.forEach((field) => pair(answers, field.label, typeof values[field.id] === "boolean" ? values[field.id] ? "Yes — explicitly approved" : "No" : values[field.id]));
   element("review").hidden = false; element("cancel").disabled = false;
 }
-function action(id, operation) { element(id).addEventListener("click", async () => { element("error").hidden = true; try { await operation(); } catch (failure) { error(failure.message); } }); }
+function action(id, operation) { element(id).addEventListener("click", async () => {
+  popupActions++; popupActionGeneration++; updateReload(); element("error").hidden = true;
+  try { await operation(); } catch (failure) { error(failure.message); }
+  finally { popupActions--; updateReload(); }
+}); }
 action("permission", async () => {
   const granted = await chrome.permissions.request({ origins: [`${CONFIG.authorityOrigin}/*`, `${CONFIG.portalOrigin}/*`] });
   if (!granted) throw new Error("Exact local fixture permission was not granted.");
@@ -75,11 +84,14 @@ async function showConnection(value) {
   element("native-inspect").textContent = ["awaiting_candidate", "paused"].includes(value.phase)
     ? "Check connection status" : "Inspect uncertain connection";
   element("native-resume-existing").disabled = !permission || !idle || !value.can_resume_existing;
+  element("native-recover-completed").disabled = !permission || !idle || value.can_recover_completed !== true;
   element("native-archive").disabled = !permission || !idle || !value.can_archive_restart;
   element("native-archive").textContent = value.observed_status === "EXPIRED" ? "Archive expired connection" : "Archive unclaimed attempt";
   const list = element("native-fingerprints"); list.replaceChildren();
   if (value.key_sha256) pair(list, "Browser key SHA-256", value.key_sha256);
   if (value.request_sha256) pair(list, "Connection request SHA-256", value.request_sha256);
+  if (typeof value.device_id === "string" && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value.device_id)) pair(list, "Device ID", value.device_id);
+  if (["UNCLAIMED", "CLAIMED", "UNPROVEN", "REQUESTED", "CANDIDATE_CONFIRMED", "COMPLETED", "REVOKED", "EXPIRED"].includes(value.observed_status)) pair(list, "Last inspected connection status", value.observed_status);
   const labels = { idle: "Ready to start. Review will happen on HireWiz.", preparing: "Preparing this browser connection…",
     awaiting_candidate: "Compare both fingerprints on HireWiz and approve the matching browser.", completing: "Proving this browser's key…",
     paired: value.connected ? "Current browser identity verified. No application action is enabled." : "Connection remembered. Check it again before relying on current identity.",
@@ -92,11 +104,12 @@ async function showConnection(value) {
   const timing = pairingReadTimingSupport(value.transport_timing);
   element("native-read-timing").hidden = timing === null;
   element("native-read-timing").textContent = timing ?? "";
+  updateReload();
 }
 function connectionAction(id, type) {
   action(id, async () => {
     element("native-confirmed").checked = false;
-    const pending = { pairing_start: "preparing", pairing_complete: "completing", pairing_refresh: "refreshing" }[type];
+    const pending = { pairing_start: "preparing", pairing_complete: "completing", pairing_refresh: "refreshing", pairing_recover_completed: "refreshing" }[type];
     // This is presentation only; the worker persists intent before any request.
     // Keep Pause usable while a socket response is pending.
     if (pending && connection) await showConnection({ ...connection, phase: pending, busy: true, connected: false, message: "" });
@@ -131,6 +144,7 @@ connectionAction("native-pause", "pairing_cancel");
 connectionAction("native-resume", "pairing_resume");
 connectionAction("native-inspect", "pairing_inspect");
 connectionAction("native-resume-existing", "pairing_resume_existing");
+connectionAction("native-recover-completed", "pairing_recover_completed");
 connectionAction("native-archive", "pairing_archive");
 action("native-disconnect", async () => {
   if (!connection?.device_id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(connection.device_id)
@@ -150,7 +164,7 @@ async function showAssistance(value, revision = ++assistanceViewRevision) {
   const storageOrigin = nativeStorageOrigin(value.storage_origin);
   const storageAllowed = storageOrigin && await chrome.permissions.contains({ origins: [`${storageOrigin}/*`] });
   if (revision !== assistanceViewRevision) return;
-  assistance = value; element("assistance").hidden = false;
+  assistance = value; assistanceUnavailable = false; element("assistance").hidden = false;
   element("assistance-application").disabled = false;
   element("assistance-permission").disabled = permitted;
   element("assistance-connect").disabled = !permitted || value.busy || value.review_id || !["idle", "pending", "active"].includes(value.phase);
@@ -174,13 +188,14 @@ async function showAssistance(value, revision = ++assistanceViewRevision) {
   element("assistance-state").textContent = value.message || (isSubmissionVersion(value.review_protocol_version) ? `Submission state: ${value.phase}. A possible-send attempt cannot be replayed. Employer receipt is unverified; ${submissionUnits(value.review_protocol_version)} stay held after an uncertain send.` : value.review_protocol_version === 3
     ? `Attachment state: ${value.phase}. Local selection does not confirm employer upload. Check the portal before final submission.`
     : `Current state: ${value.phase}. ${value.filled_count} approved text answers filled. Check the portal yourself before submission.`);
+  updateReload();
 }
 function showAssistanceUnavailable(revision) {
   if (revision !== assistanceViewRevision) return;
   assistanceViewRevision++;
   // A failed read is not proof that an earlier worker action stopped or failed.
   // Discard only the stale popup view; retained worker state is untouched.
-  assistance = null;
+  assistance = null; assistanceUnavailable = true; updateReload();
   element("assistance").hidden = false;
   for (const control of element("assistance").querySelectorAll("button, input")) control.disabled = true;
   element("assistance-state").textContent = "Application status is unavailable. Check current connection before continuing. Application actions stay locked until fresh status is available. An earlier action may still be active; inspect the employer portal before taking another action.";
@@ -299,6 +314,20 @@ assistanceAction("assistance-prepare-submit", "assistance_prepare_submit");
 assistanceAction("assistance-reconcile", "assistance_reconcile");
 assistanceAction("assistance-fill", "assistance_fill");
 assistanceAction("assistance-cancel", "assistance_cancel");
+element("reload-companion").addEventListener("click", async () => {
+  updateReload(); if (element("reload-companion").disabled) return;
+  normalStatusLoaded = false; updateReload();
+  const actionGeneration = popupActionGeneration;
+  try {
+    const status = await startupStatus((message) => chrome.runtime.sendMessage(message));
+    const current = status.native_pairing === true ? status.connection
+      : ["pairing_only", "local_native_fixture"].includes(status.mode) ? status : null;
+    const application = status.assistance ?? null;
+    if (!current || current.busy !== false || popupActions > 0 || actionGeneration !== popupActionGeneration || assistanceUnavailable
+        || application && (application.busy !== false || application.phase !== "idle")) throw new Error("Reload waits until connection requests and application actions are idle.");
+    chrome.runtime.reload();
+  } catch { error("Reload is unavailable until current connection and application activity can be verified idle."); }
+});
 try {
   const status = await startupStatus((message) => chrome.runtime.sendMessage(message));
   element("mode").textContent = status.mode === "disabled" ? "Disabled: production authorization, real tenant permits and device enrollment are not available."
@@ -316,6 +345,7 @@ try {
     if (status.assistance) await showAssistance(status.assistance);
   } else if (status.mode === "reviewed_assistance") await showAssistance(status);
   if (status.checkpoint && ["action_in_progress", "unknown"].includes(status.checkpoint.status)) error("Previous fill may be incomplete. Inspect the portal; automatic recovery is disabled.");
+  normalStatusLoaded = true; updateReload();
 } catch (failure) {
   let version;
   try { version = chrome.runtime.getManifest().version; } catch { /* Keep unavailable metadata out of the diagnostic. */ }

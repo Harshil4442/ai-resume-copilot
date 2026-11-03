@@ -271,6 +271,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
     if (CONFIG.mode === "reviewed_assistance" && (!message || typeof message !== "object" || Array.isArray(message) || typeof message.type !== "string"
         || Object.keys(message).some((key) => !["type", "application_id"].includes(key)))) throw new Error("Unsupported assistance operation");
+    if (message?.type === "pairing_recover_completed" && Object.keys(message).sort().join(",") !== "type") throw new Error("Unsupported connection recovery operation");
     if (nativeAssistance()) localRecoveryContext = await recovery.context();
     if (CONFIG.mode === "reviewed_assistance") {
       if (nativeAssistance()) {
@@ -279,7 +280,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           connection: connection.status(), assistance: connection.status().connected ? (await assistanceEngine()).status() : null };
         const operations = { pairing_start: "start", pairing_complete: "complete", pairing_refresh: "refresh",
           pairing_cancel: "cancel", pairing_resume: "resume", pairing_inspect: "inspectUnknown",
-          pairing_resume_existing: "resumeExisting", pairing_archive: "archiveUnknown" };
+          pairing_resume_existing: "resumeExisting", pairing_archive: "archiveUnknown", pairing_recover_completed: "recoverCompleted" };
         if (message.type === "pairing_status") return { mode: CONFIG.mode, ...connection.status() };
         if (Object.hasOwn(operations, message.type)) {
           if (message.type === "pairing_cancel" && assistancePromise) await (await assistancePromise).cancel();
@@ -314,6 +315,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.type === "pairing_resume") return current.resume();
       if (message.type === "pairing_inspect") return current.inspectUnknown();
       if (message.type === "pairing_resume_existing") return current.resumeExisting();
+      if (message.type === "pairing_recover_completed") return current.recoverCompleted();
       if (message.type === "pairing_archive") return current.archiveUnknown();
       // Identity connection never enables the fixture application protocol.
       throw new Error("Application actions require separately reviewed authority");
