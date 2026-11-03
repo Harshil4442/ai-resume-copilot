@@ -680,12 +680,14 @@ class _CensusQueries:
         need(type(rpc) is FirestoreRpc, "census_original_clients_required")
         client: Any = rpc.client
         need(rpc.rpc_timeout == 2.0
-             and type(client) is FirestoreClient and type(rpc.admin) is FirestoreAdminClient
-             and getattr(client.run_query, "__self__", None) is client
-             and getattr(client.run_query, "__func__", None) is FirestoreClient.run_query,
+             and type(client) is FirestoreClient and type(rpc.admin) is FirestoreAdminClient,
+             "census_original_clients_required")
+        query = getattr(client, "run_query", None)
+        need(getattr(query, "__self__", None) is client
+             and getattr(query, "__func__", None) is FirestoreClient.run_query,
              "census_original_clients_required")
         self.client: Any = client
-        self.query = self.client.run_query
+        self.query: Any = query
         self.deadline, self.active, self.cleanup_failed = deadline, None, False
 
     def remaining(self):

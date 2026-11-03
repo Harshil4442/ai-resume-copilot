@@ -1043,7 +1043,7 @@ def test_census_budget_prefetch_failure_has_no_public_handle_and_remains_bounded
     assert c.raw.closed == 2
 
 
-@pytest.mark.parametrize("fault", ["foreign_timer", "thread", "handler_none", "replaced_method"])
+@pytest.mark.parametrize("fault", ["foreign_timer", "thread", "handler_none", "foreign_client", "replaced_method"])
 def test_census_budget_refuses_foreign_owner_or_noncanonical_client_before_query(_census_budget_context, monkeypatch, fault):
     c = _census_budget_context
     if fault == "foreign_timer":
@@ -1052,6 +1052,13 @@ def test_census_budget_refuses_foreign_owner_or_noncanonical_client_before_query
         monkeypatch.setattr(m.threading, "current_thread", lambda: object())
     elif fault == "handler_none":
         monkeypatch.setattr(signal, "getsignal", lambda _kind: None)
+    elif fault == "foreign_client":
+        class ForeignClient:
+            @property
+            def run_query(self):
+                pytest.fail("foreign getter must never run")
+
+        monkeypatch.setattr(c.rpc, "client", ForeignClient())
     else:
         c.client.run_query = lambda **_kwargs: pytest.fail("replacement must never run")
     with pytest.raises(m.MaintenanceDenied):
