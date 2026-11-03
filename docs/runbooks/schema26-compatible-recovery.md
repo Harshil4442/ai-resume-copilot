@@ -1,7 +1,7 @@
 # Post-restoration schema26 recovery to C6
 
-This separately typed operator is source-only until it receives independent review,
-actual current-host CI and a funded native rehearsal. It does not complete R03,
+The C6 recovery path is source-only until it receives independent review,
+actual current-host CI and its required funded native rehearsal. It does not complete R03,
 qualify an RTO, enable generation/sales, or replace the original V3 operator.
 
 The only image target is genuine application source
@@ -54,6 +54,62 @@ projection, not execution of an older helper or a relabelled CI/Build receipt. T
 stock V3 compatibility method remains strict and unchanged. The new local validator
 retains its exact original backend compatibility/native-protocol/retained checks;
 current-host CI and genuine db8/C6 image provenance are checked independently.
+
+## Separate original-schedule restoration
+
+The same finite host also provides a separately typed schedule-only boundary. It
+does not capture or execute an application recovery plan. It addresses the stock
+S scope check comparing two valid, differently ordered lists: application resource
+pins are captured in `(kind, name)` order, while original maintenance schedule
+pins retain maintenance order. The new validator requires exactly three unique
+schedule names equal to the fixed scope; every paused fingerprint, configuration
+and whole actual resource tuple remains strict in original A order. Neither the
+original plans nor the frozen stock S implementation is changed.
+
+This schedule-only deployment repair needs its own reviewed source, genuine
+current-head CI and the fresh native checks below. It does not run or fund the
+separate native40 document/Job quality experiment, and does not treat that experiment
+as completed. No model call or document processing is part of schedule restoration.
+
+Use this mode only after all three original db8 promotions have retained ACKs,
+terminal operations, checked metadata and fresh health, while C remains in the
+original paused resource epoch. The new host's current successful CI, original db8
+and prior e23 genuine image provenance, historical db8 fingerprint and three CI
+proof steps are independently checked. Maintenance lineage, policies, runtime
+identity and reachable prior revisions remain mandatory. The unchanged stock
+financial/schema26/fence/liability/IAM/template/V3/secret checks still run. The
+full post-restoration C6 recovery preconditions are not reused as partial recovery
+authority and are not relaxed.
+
+With the exact existing custody file and its hash, no new plan or nonce is used:
+
+```sh
+"$PYTHON" -I -B -X "pycache_prefix=$EMPTY_PRIVATE_CACHE" \
+  "$ROOT/backend/operations/schema26_compatible_recovery.py" resume-schedules \
+  --root "$ROOT" --custody "$CUSTODY" --custody-sha256 "$CUSTODY_FILE_SHA" \
+  --host-ci-run-id "$ACTUAL_CONTROLLER_CI"
+```
+
+The original M and A journals are locked. Before the first schedule POST, the new
+marker `schema26.schedules.restore.host.v1.binding` records the actual host release,
+source fingerprint, CI, entry SHA and original M/A hashes and schedule-pin digest.
+The old `schema26.schedules.restore.binding` is never written or impersonated.
+An existing old owner, unowned restore marker or changed new binding refuses.
+The same original M pause/restore markers and unchanged maintenance action enforce
+one physical state-only POST per schedule; no API, worker, queue, IAM or credential
+change is available through these modes.
+
+Use `reconcile-schedules` with the same custody and host CI after an uncertain
+outcome. It never sends a POST or begins an unsent schedule; an unobserved effect
+stays unresolved. Use `observe-schedules` for a read-only final observation; an
+unchecked action is explicitly incomplete. Never reset a binding or substitute a
+new host/directory to escape the retained original intent.
+
+Once all three original restores are genuinely checked ENABLED and C is genuinely
+restored, R03 can validate either the exact old stock S binding or this exact new
+host binding, exclusively. It still requires the complete original M/N/A/S/C
+terminal state, fresh native checks and its own separate recovery plan. Schedule
+completion alone does not qualify R03 or authorize an application traffic change.
 
 ## Accepted state and original custody
 

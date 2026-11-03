@@ -68,8 +68,7 @@ def resource(reader, iam):
         "revisions": revisions, "iam": r.sha(iam)}))
 
 
-@pytest.fixture
-def context(tmp_path):
+def _owned_context(tmp_path, *, restored=True):
     tmp_path.chmod(0o700)
     case = ClosedV3Fixture(tmp_path / "maintenance")
     controls, coordinator = Controls(), Coordinator()
@@ -78,7 +77,8 @@ def context(tmp_path):
     m.c.action(cplan, coordinator, cj, "pause")
     ciam = {"bindings": [{"role": "roles/run.invoker", "members": ["serviceAccount:owned"]}]}
     paused = resource(coordinator, ciam)
-    m.c.action(cplan, coordinator, cj, "restore")
+    if restored:
+        m.c.action(cplan, coordinator, cj, "restore")
     for pin in m.s.schedules(case.maintenance_plan):
         m.a.maintenance.resource_action(pin, controls, case.maintenance_journal, "pause")
     resources = []
@@ -111,13 +111,14 @@ def context(tmp_path):
     nj.record(m.n.MARKER + ".checked", {"schema": m.a.schema26.SCHEMA,
         "transaction_ready_sha256": r.sha(nj.read(m.n.MARKER + ".transaction-ready")), "replay_authorized": False})
     mj = case.maintenance_journal
-    mj.record(m.s.BINDING, {"application_plan_sha256": aj.plan_hash, "release": a.release,
-        "image_digest": a.image_digest, "compatibility_sha256": a.compatibility_sha256,
-        "operator_sha256": recovery.hashlib.sha256(Path(m.s.__file__).read_bytes()).hexdigest(),
-        "schedule_pins_sha256": r.sha([asdict(p) for p in m.s.schedules(case.maintenance_plan)]),
-        "replay_authorized": False})
-    for pin in m.s.schedules(case.maintenance_plan):
-        m.a.maintenance.resource_action(pin, controls, mj, "restore")
+    if restored:
+        mj.record(m.s.BINDING, {"application_plan_sha256": aj.plan_hash, "release": a.release,
+            "image_digest": a.image_digest, "compatibility_sha256": a.compatibility_sha256,
+            "operator_sha256": recovery.hashlib.sha256(Path(m.s.__file__).read_bytes()).hexdigest(),
+            "schedule_pins_sha256": r.sha([asdict(p) for p in m.s.schedules(case.maintenance_plan)]),
+            "replay_authorized": False})
+        for pin in m.s.schedules(case.maintenance_plan):
+            m.a.maintenance.resource_action(pin, controls, mj, "restore")
     originals = {"maintenance": case.maintenance_plan, "migration": n, "application": a, "coordinator": cplan}
     journals = {"maintenance": mj, "migration": nj, "application": aj, "coordinator": cj}
     refs = {}
@@ -167,12 +168,33 @@ def context(tmp_path):
     boundary.recovery_journal = None
     boundary._source = lambda: gate("source")
     boundary._original_compatibility = lambda _a: gate("compatibility")
-    plan = boundary.capture("a" * 32)
-    journal = r.Journal(private(tmp_path / "recovery"), plan)
+    plan = boundary.capture("a" * 32) if restored else None
+    journal = r.Journal(private(tmp_path / "recovery"), plan) if restored else None
     case.health_checks.clear()
     initial_writes = len(case.writes)
     return SimpleNamespace(boundary=boundary, plan=plan, journal=journal, case=case,
-        events=events, failures=failures, initial_writes=initial_writes, ciam=ciam, tmp=tmp_path)
+        events=events, failures=failures, initial_writes=initial_writes, ciam=ciam, tmp=tmp_path,
+        controls=controls, coordinator=coordinator)
+
+
+@pytest.fixture
+def context(tmp_path):
+    return _owned_context(tmp_path)
+
+
+@pytest.fixture
+def schedule_context(tmp_path):
+    case = _owned_context(tmp_path, restored=False)
+    owner = case.boundary
+    owner._host_source = owner._source  # Explicit owned current-source/CI port.
+    owner.app._reachable = lambda _services: owner.original["application"].reachable_revisions
+    provenance = []
+    owner.app.observer._verify_source_image_provenance = lambda **kwargs: provenance.append(kwargs)
+    boundary = object.__new__(recovery.NativeScheduleRestoration)
+    boundary.owner = owner
+    case.schedule, case.provenance = boundary, provenance
+    case.controls.writes.clear()
+    return case
 
 
 def test_complete_recovery_moves_all_aliases_in_stock_order_and_preserves_original_records(context):
@@ -591,6 +613,209 @@ def test_stock_compatibility_still_refuses_current_host_as_original_app(context,
     with pytest.raises(r.RollingDenied, match="compatibility_source_changed"):
         m.a.NativeApp26Boundary._compatibility(c.boundary.app, c.boundary.original["application"])
     assert len(c.case.writes) == c.initial_writes
+
+
+def test_new_schedule_mode_accepts_actual_canonical_A_order_without_claiming_stock_S(schedule_context):
+    c, owner = schedule_context, schedule_context.boundary
+    a, maintenance = owner.original["application"], owner.original["maintenance"]
+    names = tuple(pin.name for pin in a.resources if pin.kind == "schedule")
+    assert names == tuple(sorted(m.a.maintenance.SCHEDULES)) != m.a.maintenance.SCHEDULES
+    actual = owner.app._resources(a.workers_release)
+    with pytest.raises(r.RollingDenied, match="resource_or_document_state_changed"):
+        m.s.verify_resources(maintenance, a, owner.journals["maintenance"], c.controls, actual)
+    before_a = {p.name: p.read_bytes() for p in owner.journals["application"].directory.glob("*.json")}
+    before_m = {p.name: p.read_bytes() for p in owner.journals["maintenance"].directory.glob("*.json")}
+    result = recovery.execute_schedules("resume-schedules", c.schedule)
+    assert result["status"] == "schema26_original_schedules_restored_by_qualified_host"
+    assert result["application_recovery"] is result["paid_activation"] is False
+    assert result["api_traffic_changes"] == result["queue_changes"] == result["credential_changes"] == 0
+    assert c.controls.writes == [("schedule", name, "ENABLED") for name in m.a.maintenance.SCHEDULES]
+    assert len(c.case.writes) == c.initial_writes
+    mj, aj = owner.journals["maintenance"], owner.journals["application"]
+    assert mj.read(m.s.BINDING) is None and mj.read(recovery.SCHEDULE_BINDING) == recovery.schedule_binding(owner)
+    binding = mj.read(recovery.SCHEDULE_BINDING)
+    assert binding["operator_sha256"] == recovery.hashlib.sha256((ROOT / recovery.PATHS[0]).read_bytes()).hexdigest()
+    assert (binding["host_release"], binding["host_source_sha256"], binding["host_ci_run_id"]) == (
+        owner.host["release"], owner.host["source_sha256"], owner.host_ci_run_id)
+    assert {p.name: p.read_bytes() for p in aj.directory.glob("*.json")} == before_a
+    assert all((mj.directory / name).read_bytes() == raw for name, raw in before_m.items())
+    assert [row["release"] for row in c.provenance] == [recovery.BASE, m.a.PRIOR.release] * 5
+    assert "schema26-role-fence-liability" in c.events
+    assert {row[0] for row in c.case.health_checks} == set(m.a.SERVICES)
+    assert recovery.execute_schedules("observe-schedules", c.schedule)["status"].endswith("qualified_host")
+    assert recovery.execute_schedules("reconcile-schedules", c.schedule)["status"].endswith("qualified_host")
+    assert len(c.controls.writes) == 3
+
+
+@pytest.mark.parametrize("fault", ["duplicate", "missing", "extra", "paused-fingerprint", "whole-resource", "actual-order"])
+def test_schedule_scope_fix_never_weakens_unique_full_resource_or_paused_configuration_pins(schedule_context, fault):
+    c, owner = schedule_context, schedule_context.boundary
+    a = owner.original["application"]
+    actual = owner.app._resources(a.workers_release)
+    resources = list(a.resources)
+    indices = [i for i, pin in enumerate(resources) if pin.kind == "schedule"]
+    if fault == "duplicate":
+        resources[indices[1]] = resources[indices[0]]
+    elif fault == "missing":
+        resources.pop(indices[0])
+    elif fault == "extra":
+        resources.append(replace(resources[indices[0]], name="foreign-schedule"))
+    elif fault == "paused-fingerprint":
+        resources[indices[0]] = replace(resources[indices[0]], fingerprint="f" * 64)
+    elif fault == "whole-resource":
+        actual = (replace(actual[0], fingerprint="f" * 64), *actual[1:])
+    else:
+        actual = tuple(reversed(actual))
+    owner.original["application"] = replace(a, resources=tuple(resources))
+    with pytest.raises(recovery.RecoveryDenied):
+        recovery.verify_schedule_resources(owner, actual)
+    assert not c.controls.writes and len(c.case.writes) == c.initial_writes
+
+
+@pytest.mark.parametrize("fault", ["source", "compatibility", "role-identity", "schema26-role-fence-liability",
+    "policy", "reachable", "health", "pending-promotion", "promotion-ack", "pause", "configuration", "state"])
+def test_schedule_only_mode_retains_current_source_health_financial_and_original_pause_guards(schedule_context, fault):
+    c, owner = schedule_context, schedule_context.boundary
+    if fault in {"source", "compatibility", "role-identity", "schema26-role-fence-liability", "policy"}:
+        c.failures.add(fault)
+    elif fault == "reachable":
+        owner.app._reachable = lambda *_: ("foreign",)
+    elif fault == "health":
+        owner.app.health = lambda *_: (_ for _ in ()).throw(r.RollingDenied("owned health unavailable"))
+    elif fault == "pending-promotion":
+        owner.app.operation = lambda name: {"name": name, "done": False}
+    elif fault == "promotion-ack":
+        (owner.journals["application"].directory / ("promote." + m.a.SERVICES[0] + ".ack.json")).unlink()
+    elif fault == "pause":
+        (owner.journals["maintenance"].directory / ("schedule." + m.a.maintenance.SCHEDULES[0] + ".pause.checked.json")).unlink()
+    elif fault == "configuration":
+        c.controls.rows["schedule", m.a.maintenance.SCHEDULES[0]]["config"] = {"foreign": True}
+    else:
+        c.controls.rows["schedule", m.a.maintenance.SCHEDULES[0]]["state"] = "ENABLED"
+    with pytest.raises((r.RollingDenied, recovery.RecoveryDenied)):
+        recovery.execute_schedules("resume-schedules", c.schedule)
+    assert not c.controls.writes and len(c.case.writes) == c.initial_writes
+    assert owner.journals["maintenance"].read(recovery.SCHEDULE_BINDING) is None
+
+
+@pytest.mark.parametrize("fault", ["old-owner", "unowned-start", "unowned-checked", "new-owner-drift", "recovery-started"])
+def test_new_schedule_binding_cannot_adopt_old_unknown_or_other_host_ownership(schedule_context, fault):
+    c, owner = schedule_context, schedule_context.boundary
+    mj, aj = owner.journals["maintenance"], owner.journals["application"]
+    if fault == "old-owner":
+        mj.record(m.s.BINDING, {"owned": "not new host"})
+    elif fault.startswith("unowned-"):
+        marker = "schedule." + m.a.maintenance.SCHEDULES[0] + ".restore."
+        mj.record(marker + ("started" if fault.endswith("start") else "checked"),
+            {"target": "ENABLED", "replay_authorized": False} if fault.endswith("start") else {"state": "ENABLED"})
+    elif fault == "new-owner-drift":
+        body = recovery.schedule_binding(owner)
+        body["host_source_sha256"] = "f" * 64
+        mj.record(recovery.SCHEDULE_BINDING, {k: v for k, v in body.items() if k != "plan_sha256"})
+    else:
+        aj.record(recovery.BINDING, {"owned": "application recovery already owns it"})
+    with pytest.raises(recovery.RecoveryDenied):
+        recovery.execute_schedules("resume-schedules", c.schedule)
+    assert not c.controls.writes and len(c.case.writes) == c.initial_writes
+
+
+@pytest.mark.parametrize("effect", [False, True])
+def test_schedule_unknown_keeps_same_started_owner_and_never_resends(schedule_context, effect):
+    c, owner = schedule_context, schedule_context.boundary
+    set_state = c.controls.set_state
+
+    def unknown(kind, name, state):
+        if effect:
+            set_state(kind, name, state)
+        else:
+            c.controls.writes.append((kind, name, state))
+        raise OSError("owned unknown schedule POST outcome")
+
+    c.controls.set_state = unknown
+    with pytest.raises(OSError):
+        recovery.execute_schedules("resume-schedules", c.schedule)
+    with pytest.raises(recovery.RecoveryDenied, match="started_reconcile_only"):
+        recovery.execute_schedules("resume-schedules", c.schedule)
+    observed = recovery.execute_schedules("observe-schedules", c.schedule)
+    assert observed["remaining_unsent"] is False and observed["retained_unchecked_action"] is True
+    if effect:
+        result = recovery.execute_schedules("reconcile-schedules", c.schedule)
+        assert result["remaining_unsent"] is True
+        assert len(c.controls.writes) == 1
+        c.controls.set_state = set_state
+        recovery.execute_schedules("resume-schedules", c.schedule)
+        assert len(c.controls.writes) == 3
+    else:
+        with pytest.raises(r.RollingDenied, match="outcome_unverified"):
+            recovery.execute_schedules("reconcile-schedules", c.schedule)
+        assert len(c.controls.writes) == 1
+    assert owner.journals["maintenance"].read(m.s.BINDING) is None
+    assert len(c.case.writes) == c.initial_writes
+
+
+def test_schedule_binding_local_ack_loss_preserves_same_once_owner(schedule_context):
+    c, owner = schedule_context, schedule_context.boundary
+    journal = owner.journals["maintenance"]
+    record = journal.record
+
+    def lost(name, value):
+        record(name, value)
+        if name == recovery.SCHEDULE_BINDING:
+            raise OSError("owned local binding ACK loss")
+
+    journal.record = lost
+    with pytest.raises(OSError):
+        recovery.execute_schedules("resume-schedules", c.schedule)
+    assert not c.controls.writes and journal.read(recovery.SCHEDULE_BINDING) == recovery.schedule_binding(owner)
+    journal.record = record
+    assert recovery.execute_schedules("resume-schedules", c.schedule)["status"].endswith("qualified_host")
+    assert len(c.controls.writes) == 3
+
+
+def test_new_schedule_completion_is_not_partial_application_recovery_or_C_restoration(schedule_context):
+    c, owner = schedule_context, schedule_context.boundary
+    recovery.execute_schedules("resume-schedules", c.schedule)
+    with pytest.raises(recovery.RecoveryDenied):
+        owner.capture("b" * 32)  # C is still genuinely paused; R03 must refuse.
+    assert owner.journals["application"].read(recovery.BINDING) is None
+    m.c.action(owner.original["coordinator"], c.coordinator, owner.journals["coordinator"], "restore")
+    plan = owner.capture("b" * 32)
+    assert plan.custody == owner.custody and plan.resources == owner._custody()
+    assert len(c.case.writes) == c.initial_writes
+    assert len(c.controls.writes) == 3
+
+
+def test_R03_refuses_mixed_old_and_new_schedule_binding_even_after_full_restoration(context):
+    owner = context.boundary
+    body = recovery.schedule_binding(owner)
+    owner.journals["maintenance"].record(recovery.SCHEDULE_BINDING,
+        {k: v for k, v in body.items() if k != "plan_sha256"})
+    with pytest.raises(recovery.RecoveryDenied, match="original_schedule_binding"):
+        owner.capture("b" * 32)
+    assert len(context.case.writes) == context.initial_writes
+
+
+@pytest.mark.parametrize("mode", ["reconcile-schedules", "observe-schedules"])
+def test_read_only_schedule_modes_never_create_a_first_binding_or_start_an_action(schedule_context, mode):
+    c = schedule_context
+    with pytest.raises(recovery.RecoveryDenied, match="schedule_restore_binding_required"):
+        recovery.execute_schedules(mode, c.schedule)
+    assert c.boundary.journals["maintenance"].read(recovery.SCHEDULE_BINDING) is None
+    assert not c.controls.writes and len(c.case.writes) == c.initial_writes
+
+
+@pytest.mark.parametrize("flag", ["--plan", "--nonce", "--journal"])
+def test_schedule_cli_has_no_application_plan_or_recovery_journal_authority(monkeypatch, flag):
+    monkeypatch.setattr(recovery, "source_identity", lambda *_: {"owned": "source-only-port"})
+    monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
+    monkeypatch.setenv("CLOUDSDK_CORE_LOG_HTTP", "false")
+    monkeypatch.setattr(recovery, "NativeScheduleRestoration",
+        lambda *_: pytest.fail("out-of-scope CLI constructed native schedule ports"))
+    monkeypatch.setattr(sys, "argv", ["owned", "resume-schedules", "--custody", "/owned/unused.json",
+        "--custody-sha256", "a" * 64, "--host-ci-run-id", "1", flag, "/owned/forbidden"])
+    with pytest.raises(SystemExit) as stopped:
+        recovery.main()
+    assert stopped.value.code == 1
 
 
 def _child(root, program, tmp, *, cache=None, extra_env=None):

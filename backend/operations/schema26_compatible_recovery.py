@@ -1,8 +1,8 @@
-"""One post-restoration schema26 recovery to genuine C6; no migration authority.
+"""Post-restoration C6 recovery and separate original-schedule restoration.
 
 Source inspection is inert. Native use requires a separately qualified current
 host, immutable original M/N/A/S/C custody, and fresh native checks. This is not
-a model fallback, a pre-restoration recovery, or full R03 qualification.
+a model fallback, a pre-restoration application recovery, or full R03 qualification.
 """
 from __future__ import annotations
 
@@ -61,6 +61,8 @@ PATHS = ("backend/operations/schema26_compatible_recovery.py",
          "docs/runbooks/schema26-compatible-recovery.md")
 KIND = "hirewiz_schema26_post_restoration_c6_recovery_v1"
 BINDING = "schema26.compatible-recovery.v1.binding"
+SCHEDULE_KIND = "hirewiz_schema26_original_schedule_restoration_host_v1"
+SCHEDULE_BINDING = "schema26.schedules.restore.host.v1.binding"
 ROLES = ("maintenance", "migration", "application", "coordinator")
 PUBLIC_ASSETS = frozenset("backend/evals/assets/courier_prime/" + name for name in (
     "CourierPrime-Regular.ttf", "CourierPrime-Bold.ttf", "CourierPrime-Italic.ttf",
@@ -488,7 +490,7 @@ class NativeRecoveryBoundary:
         need(release_id == TARGET[0], "only_c6_health")
         self.app.health(plan, service, revision, release_id, tag)
 
-    def _source(self):
+    def _host_source(self):
         m, observer = self.m, self.app.observer
         need(source_identity(self.root) == self.host, "host_source_changed")
         ci = m.r.release._json(observer._command("gh", "run", "view", str(self.host_ci_run_id),
@@ -512,8 +514,11 @@ class NativeRecoveryBoundary:
         need(len(steps) == len(required) and {step.get("name") for step in steps} == required
              and all(step.get("status") == "completed" and step.get("conclusion") == "success" for step in steps),
              "current_host_native_tests_required")
+    @_git_environment()
+    def _source(self):
+        self._host_source()
         for release, image_digest, build_id, ci_run_id in (TARGET, self._application_tuple()):
-            observer._verify_source_image_provenance(release=release, image_digest=image_digest,
+            self.app.observer._verify_source_image_provenance(release=release, image_digest=image_digest,
                 build_id=build_id, ci_run_id=ci_run_id)
 
     def _application_tuple(self):
@@ -610,7 +615,10 @@ class NativeRecoveryBoundary:
             "operator_sha256": hashlib.sha256(Path(m.s.__file__).read_bytes()).hexdigest(),
             "schedule_pins_sha256": m.r.sha([asdict(p) for p in m.s.schedules(maintenance)]),
             "replay_authorized": False, "plan_sha256": mj.plan_hash}
-        need(mj.read(m.s.BINDING) == expected_binding, "original_schedule_binding")
+        stock_binding, host_binding = mj.read(m.s.BINDING), mj.read(SCHEDULE_BINDING)
+        need((stock_binding == expected_binding and host_binding is None)
+             or (stock_binding is None and host_binding == schedule_binding(self)),
+             "original_schedule_binding")
         states = m.s.restore_states(maintenance, mj, self.controls)
         need(all(states[p.name] == "ENABLED" and mj.read("schedule." + p.name + ".restore.checked") is not None
                  for p in m.s.schedules(maintenance)), "fully_restored_schedules_required")
@@ -725,6 +733,150 @@ class NativeRecoveryBoundary:
         need(not failed, "owned_transport_cleanup")
 
 
+def schedule_binding(owner):
+    """Actual new host custody, never a claim that unchanged stock S ran."""
+    m, application = owner.m, owner.original["application"]
+    return {"kind": SCHEDULE_KIND,
+        "application_plan_sha256": owner.journals["application"].plan_hash,
+        "maintenance_plan_sha256": owner.journals["maintenance"].plan_hash,
+        "release": application.release, "image_digest": application.image_digest,
+        "compatibility_sha256": application.compatibility_sha256,
+        "host_release": owner.host["release"], "host_source_sha256": owner.host["source_sha256"],
+        "host_ci_run_id": owner.host_ci_run_id,
+        "operator_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "schedule_pins_sha256": m.r.sha([asdict(pin) for pin in m.s.schedules(owner.original["maintenance"])]),
+        "replay_authorized": False, "plan_sha256": owner.journals["maintenance"].plan_hash}
+
+
+def verify_schedule_resources(owner, actual):
+    """Change only named original schedule states; retain full A tuple order."""
+    m, application, maintenance = owner.m, owner.original["application"], owner.original["maintenance"]
+    pins = m.s.schedules(maintenance)
+    states = m.s.restore_states(maintenance, owner.journals["maintenance"], owner.controls)
+    by_name = {pin.name: pin for pin in pins}
+    names = tuple(pin.name for pin in application.resources if pin.kind == "schedule")
+    need(len(names) == len(set(names)) == 3 and set(names) == set(m.a.maintenance.SCHEDULES),
+         "schedule_scope_changed")
+    expected = []
+    for pin in application.resources:
+        if pin.kind == "schedule":
+            original = by_name[pin.name]
+            need(pin.fingerprint == m.r.sha({"state": "PAUSED", "configuration": original.configuration_sha256}),
+                 "paused_application_schedule_changed")
+            pin = replace(pin, fingerprint=m.r.sha({"state": states[pin.name],
+                "configuration": original.configuration_sha256}))
+        expected.append(pin)
+    need(actual == tuple(expected), "schedule_resource_or_document_state_changed")
+
+
+class NativeScheduleRestoration:
+    """Separate state-only authority; no application recovery plan or write path."""
+    def __init__(self, root, custody, host_ci_run_id):
+        self.owner = NativeRecoveryBoundary(root, custody, host_ci_run_id)
+
+    @_git_environment()
+    def verify(self):
+        owner = self.owner
+        need(type(owner) is NativeRecoveryBoundary, "schedule_fixed_owner_required")
+        m, app = owner.m, owner.app
+        plan, maintenance = owner.original["application"], owner.original["maintenance"]
+        aj, mj = owner.journals["application"], owner.journals["maintenance"]
+        need(type(app) is m.a.NativeApp26Boundary and type(plan) is m.a.App26V3Plan
+             and type(aj) is m.r.Journal and type(mj) is m.r.Journal,
+             "schedule_exact_custody_required")
+        plan.validate()
+        m.s.schedules(maintenance)
+        need(aj.plan_hash == m.r.sha(asdict(plan)) and mj.plan_hash == m.r.sha(asdict(maintenance))
+             and type(plan.maintenance_baseline) is m.a.ClosedApiBaseline
+             and plan.maintenance_baseline.maintenance_plan_sha256 == mj.plan_hash,
+             "schedule_original_maintenance_application_join")
+        need(aj.read(m.a.historical.ROLLBACK_INTENT) is None
+             and aj.read(BINDING) is None
+             and not any(aj.read("rollback." + name + ".started") for name in m.a.SERVICES),
+             "schedule_rollback_or_recovery_started")
+        # The frozen stock prefix insists root==original db8. This explicit
+        # prefix instead proves the genuine HOST/current CI and historical app
+        # hash domain; every other source/policy/identity gate is retained.
+        owner._host_source()
+        owner._application_tuple()
+        app._verify_maintenance_baseline(plan.maintenance_baseline)
+        for source in (m.a.PriorSource(*owner._application_tuple()), m.a.PRIOR):
+            app.observer._verify_source_image_provenance(release=source.release,
+                image_digest=source.image_digest, build_id=source.build_id, ci_run_id=source.ci_run_id)
+        owner._original_compatibility(plan)
+        app.observer.verify_policy_configuration(plan.policies)
+        app._identity(plan.runtime_uid)
+        need(app._reachable(plan.services) == plan.reachable_revisions, "schedule_reachable_prior_revision_changed")
+        verify_schedule_resources(owner, app._resources(plan.workers_release))
+        # Unchanged native schema26/financial/fence/liability/IAM/template/
+        # V3-policy/secret checks, not an owned substitute or caller boolean.
+        app._verify_global_after_resources(plan)
+        for pin in plan.services:
+            marker = "promote." + pin.service
+            started, ack, checked = (aj.read(marker + suffix) for suffix in (".started", ".ack", ".checked"))
+            need(started is not None and ack is not None and checked is not None
+                 and started.get("phase") == "promote"
+                 and ack.get("request_sha256") == started.get("request_sha256")
+                 and m.r.OPERATION.fullmatch(ack.get("operation", ""))
+                 and checked.get("operation_ack_retained") is True and checked.get("replay_authorized") is False,
+                 "schedule_completed_promotion_required")
+            operation = app.operation(ack["operation"])
+            need(operation.get("name") == ack["operation"] and operation.get("done") is True
+                 and "error" not in operation, "schedule_promotion_operation_unresolved")
+            observed = m.r._readback(plan, app, pin, started)
+            need(all(checked.get(key) == value for key, value in observed.items()),
+                 "schedule_promotion_checked_changed")
+
+    def close(self):
+        self.owner.close()
+
+
+def execute_schedules(mode, boundary):
+    """At most three original state-only POSTs, read-only remote reconciliation."""
+    need(type(boundary) is NativeScheduleRestoration
+         and mode in {"resume-schedules", "reconcile-schedules", "observe-schedules"},
+         "schedule_fixed_controller_required")
+    owner, m = boundary.owner, boundary.owner.m
+    plan = owner.original["maintenance"]
+    journal, application = owner.journals["maintenance"], owner.journals["application"]
+    pins = m.s.schedules(plan)
+    with journal.locked(), application.locked():
+        need(journal.read(m.s.BINDING) is None, "schedule_stock_owner_already_bound")
+        existing = journal.read(SCHEDULE_BINDING)
+        if existing is None:
+            need(mode == "resume-schedules"
+                 and not any(journal.read("schedule." + pin.name + ".restore." + suffix)
+                             for pin in pins for suffix in ("started", "checked")),
+                 "schedule_restore_binding_required")
+            boundary.verify()
+            journal.record(SCHEDULE_BINDING,
+                {key: value for key, value in schedule_binding(owner).items() if key != "plan_sha256"})
+            existing = journal.read(SCHEDULE_BINDING)
+        need(existing == schedule_binding(owner), "schedule_restore_binding_changed")
+        for pin in pins:
+            marker = "schedule." + pin.name + ".restore"
+            started, checked = (journal.read(marker + suffix) for suffix in (".started", ".checked"))
+            boundary.verify()
+            if checked is not None:
+                continue
+            if mode == "observe-schedules":
+                return {"status": "schema26_original_schedule_observation_incomplete",
+                    "remaining_unsent": started is None, "retained_unchecked_action": started is not None,
+                    "replay_authorized": False}
+            if mode == "reconcile-schedules" and started is None:
+                return {"status": "schema26_original_schedule_actions_reconciled_only",
+                    "remaining_unsent": True, "replay_authorized": False}
+            need(mode == "reconcile-schedules" or started is None, "schedule_started_reconcile_only")
+            m.a.maintenance.resource_action(pin, owner.controls, journal, "restore",
+                reconcile=mode == "reconcile-schedules")
+        boundary.verify()
+        return {"status": "schema26_original_schedules_restored_by_qualified_host",
+            "kind": SCHEDULE_KIND, "schema": m.a.schema26.SCHEMA,
+            "schedules": list(m.a.maintenance.SCHEDULES), "replay_authorized": False,
+            "api_traffic_changes": 0, "queue_changes": 0, "credential_changes": 0,
+            "application_recovery": False, "paid_activation": False}
+
+
 def execute(mode, plan, boundary, journal):
     m = _helpers()
     need(type(boundary) is NativeRecoveryBoundary and type(journal) is m.r.Journal
@@ -799,7 +951,8 @@ def load(raw):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("source", "capture", "stage", "advance", "reconcile", "observe"))
+    parser.add_argument("mode", choices=("source", "capture", "stage", "advance", "reconcile", "observe",
+        "resume-schedules", "reconcile-schedules", "observe-schedules"))
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--custody", type=Path)
     parser.add_argument("--custody-sha256")
@@ -809,7 +962,7 @@ def main():
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
     args = parser.parse_args()
-    boundary = None
+    boundary: NativeRecoveryBoundary | NativeScheduleRestoration | None = None
     try:
         identity = source_identity(args.root)
         if args.mode == "source":
@@ -818,6 +971,15 @@ def main():
         need(os.getenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING") == "true"
              and os.getenv("CLOUDSDK_CORE_LOG_HTTP") == "false", "private_logging")
         m = _helpers()
+        if args.mode.endswith("-schedules"):
+            need(args.custody is not None and args.custody_sha256 is not None
+                 and args.plan is None and args.plan_sha256 is None and args.nonce is None
+                 and args.journal is None, "schedule_existing_custody_only")
+            raw = m.a.initial._read_pinned(args.custody, args.custody_sha256)
+            custody = Custody(**{key: tuple(value) for key, value in m.r.release._json(raw).items()})
+            boundary = NativeScheduleRestoration(args.root, custody, args.host_ci_run_id)
+            print(json.dumps(execute_schedules(args.mode, boundary), sort_keys=True))
+            return
         need(args.plan is not None, "plan_required")
         if args.mode == "capture":
             need(args.custody is not None and args.custody_sha256 is not None, "custody_required")
