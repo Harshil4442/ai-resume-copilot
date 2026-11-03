@@ -12,9 +12,12 @@ import hashlib
 import json
 import os
 import re
+import signal
+import threading
 import time
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import v3_readonly_adapter as metadata
@@ -665,6 +668,123 @@ def _native_graph(config, clients):
     return publication, lifetime, GcpPasswordCredentialProjection(lifetime, scoped)
 
 
+class _CensusQueries:
+    """RunQuery only, through the original gated GAPIC; no shared-client mutation."""
+
+    def __init__(self, rpc, deadline):
+        from google.cloud.firestore_admin_v1.services.firestore_admin import FirestoreAdminClient
+        from google.cloud.firestore_v1.services.firestore import FirestoreClient
+
+        from app.domains.recovery.gcp_rpc import FirestoreRpc
+
+        need(type(rpc) is FirestoreRpc, "census_original_clients_required")
+        client: Any = rpc.client
+        need(rpc.rpc_timeout == 2.0
+             and type(client) is FirestoreClient and type(rpc.admin) is FirestoreAdminClient
+             and getattr(client.run_query, "__self__", None) is client
+             and getattr(client.run_query, "__func__", None) is FirestoreClient.run_query,
+             "census_original_clients_required")
+        self.client: Any = client
+        self.query = self.client.run_query
+        self.deadline, self.active, self.cleanup_failed = deadline, None, False
+
+    def remaining(self):
+        from app.domains.recovery.store import GuardUnavailable
+
+        remaining = self.deadline - time.monotonic()
+        if not 0 < remaining <= 30.0:
+            raise GuardUnavailable("Complete native census deadline exhausted")
+        return remaining
+
+    def close(self):
+        from app.domains.recovery.store import GuardUnavailable
+
+        stream, self.active = self.active, None
+        if stream is not None:
+            try:
+                # The installed public GAPIC stream forwards cancel to its
+                # owned gRPC call. Never close/unwrap the shared client/channel.
+                stream.cancel()
+            except Exception:
+                self.cleanup_failed = True
+        if self.cleanup_failed:
+            raise GuardUnavailable("Complete native census stream cleanup is unavailable")
+
+    def run_query(self, *, request, retry, timeout):
+        need(retry is None and type(timeout) in (int, float) and timeout == 10.0
+             and self.active is None and self.client.run_query == self.query,
+             "census_fixed_query_required")
+        # GAPIC may prefetch a first result before returning its stream; its
+        # native deadline is therefore clamped before the only delegated call.
+        # A pre-return exception exposes no public cancel handle. That read is
+        # bounded by this native deadline and the owning graph's final cleanup;
+        # explicit cancellation below applies once the SDK has returned a handle.
+        stream = self.query(request=request, retry=None, timeout=min(10.0, self.remaining()))
+        self.active = stream
+
+        def responses():
+            try:
+                iterator = iter(stream)
+                while True:
+                    self.remaining()
+                    try:
+                        response = next(iterator)
+                    except StopIteration:
+                        self.remaining()  # Late terminal/empty pages cannot become success.
+                        return
+                    self.remaining()
+                    yield response  # Original scanner still validates every full body.
+            finally:
+                if self.active is stream:
+                    self.close()
+
+        return responses()
+
+
+def _protected_census(rpc):
+    """One hard30s census, up to10s/page; normal graph RPCs remain2s.
+
+    This host-only path preserves the original exhaustive scanner and native
+    route gate. A timeout, partial stream or cleanup failure never returns an
+    inventory and never retries a query. It runs before SQL target collection.
+    """
+    from app.domains.recovery.gcp_publication_scan import NativeAuthorityScanner
+    from app.domains.recovery.gcp_rpc import FirestoreRpc
+    from app.domains.recovery.store import GuardUnavailable
+
+    need(threading.current_thread() is threading.main_thread()
+         and signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0), "census_timer_owner_required")
+    previous = signal.getsignal(signal.SIGALRM)
+    need(previous is not None, "census_signal_handler_unrestorable")
+    started = time.monotonic()
+    queries = _CensusQueries(rpc, started + 30.0)
+    scoped = FirestoreRpc(queries, rpc.admin, database_resource=rpc.database_resource, rpc_timeout=10.0)
+    installed = False
+
+    def expired(_signum, _frame):
+        raise GuardUnavailable("Complete native census deadline exhausted")
+
+    try:
+        signal.signal(signal.SIGALRM, expired)
+        installed = True
+        signal.setitimer(signal.ITIMER_REAL, queries.remaining())
+        rows = NativeAuthorityScanner(scoped, monotonic=time.monotonic).scan(
+            page_size=32, max_documents=MAX_DOCUMENTS, max_pages=256, deadline_seconds=30.0)
+        queries.remaining()
+        return rows
+    finally:
+        # A consumer can reject a row while our generator is suspended at
+        # yield. Explicit owner cleanup is required; do not rely on generator GC.
+        try:
+            queries.close()
+        finally:
+            try:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+            finally:
+                if installed:
+                    signal.signal(signal.SIGALRM, previous)
+
+
 def _configuration(boundary):
     plan, _ = boundary._maintenance_custody()
     pin = plan.services[0]
@@ -810,7 +930,6 @@ def _native_snapshot(graph):
 def _snapshot_reads(graph, phase):
     from app.domains.recovery.contracts import Revocation
     from app.domains.recovery.gcp_password_lifetime import _Snapshot
-    from app.domains.recovery.gcp_publication_scan import NativeAuthorityScanner
 
     publication, lifetime, projector = graph
     phase["value"] = "publication_open"
@@ -829,7 +948,7 @@ def _snapshot_reads(graph, phase):
     lifetime.registry.run(check_control, before_attempt=before_control)
 
     def scan():
-        rows = NativeAuthorityScanner(publication.registry.rpc).scan(max_documents=MAX_DOCUMENTS)
+        rows = _protected_census(publication.registry.rpc)
         values = {}
         for row in rows:
             envelope = row.envelope

@@ -850,3 +850,222 @@ def test_metadata_census_route_projection_and_page_envelope_remain_exact(metadat
     finally:
         reader.close()
     assert state.closed
+
+
+@pytest.fixture
+def _census_budget_context(monkeypatch):
+    """Real installed GAPIC and original intercepted route over an owned stream."""
+    import grpc
+    from google.api_core.exceptions import DeadlineExceeded
+    from google.cloud.firestore_admin_v1.services.firestore_admin import FirestoreAdminClient
+    from google.cloud.firestore_admin_v1.services.firestore_admin.transports.grpc import (
+        FirestoreAdminGrpcTransport,
+    )
+    from google.cloud.firestore_v1.services.firestore import FirestoreClient
+    from google.cloud.firestore_v1.services.firestore.transports.grpc import FirestoreGrpcTransport
+
+    from app.domains.recovery.gcp_contracts import WitnessPin
+    from app.domains.recovery.gcp_rpc import FirestoreRpc
+
+    now = [0.0]
+    monkeypatch.setattr(m.time, "monotonic", lambda: now[0])
+    bound = resource()
+    cfg = SimpleNamespace(publication_resource=bound, execution_witness_pin=WitnessPin(
+        registry=bound.pin.authority.target, bucket=bound.bucket, path="owned/witness",
+        generation="1", sha256="a" * 64))
+
+    class Stream:
+        def __init__(self, steps, timeout, fail_close):
+            self.steps, self.deadline = iter(steps), now[0] + timeout
+            self.cancelled, self.native_expired, self.fail_close = 0, False, fail_close
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            value, delay = next(self.steps)
+            if now[0] + delay > self.deadline:
+                now[0] = self.deadline
+                self.native_expired = True
+                raise DeadlineExceeded("owned native RPC deadline")
+            now[0] += delay
+            if value == "alarm":
+                signal.raise_signal(signal.SIGALRM)
+            if isinstance(value, BaseException):
+                raise value
+            if value is None:
+                raise StopIteration
+            return value
+
+        def cancel(self):
+            self.cancelled += 1
+            if self.fail_close:
+                raise RuntimeError("owned cancel failure")
+            return True
+
+    class Channel(grpc.Channel):
+        def __init__(self):
+            self.pages, self.streams, self.queries, self.other = [], [], [], []
+            self.closed, self.fail_close = 0, False
+
+        def close(self):
+            self.closed += 1
+
+        def subscribe(self, *_a, **_k):
+            pass
+
+        def unsubscribe(self, *_a, **_k):
+            pass
+
+        def unary_stream(self, method, *_a, **_k):
+            def call(request, **kwargs):
+                assert method.endswith("/RunQuery")
+                self.queries.append((request, kwargs["timeout"]))
+                stream = Stream(self.pages.pop(0) if self.pages else [], kwargs["timeout"], self.fail_close)
+                self.streams.append(stream)
+                return stream
+            return call
+
+        def unary_unary(self, method, *_a, **_k):
+            owner = self
+
+            class Call:
+                def __call__(self, request, **kwargs):
+                    owner.other.append((method, kwargs["timeout"]))
+                    raise RuntimeError("owned unary response unavailable")
+
+                with_call = __call__
+
+            return Call()
+
+        stream_unary = unary_unary
+        stream_stream = unary_unary
+
+    raw, counters = Channel(), {"denied_mutations": 0}
+    client = FirestoreClient(transport=FirestoreGrpcTransport(channel=m._read_channel(raw, cfg, counters)))
+    admin = FirestoreAdminClient(transport=FirestoreAdminGrpcTransport(channel=m._read_channel(raw, cfg, counters)))
+    rpc = FirestoreRpc(client, admin, database_resource=bound.pin.authority.registry.database)
+    original_handler = signal.getsignal(signal.SIGALRM)
+    case = SimpleNamespace(raw=raw, counters=counters, now=now, rpc=rpc, client=client,
+        admin=admin, original_handler=original_handler)
+    try:
+        yield case
+    finally:
+        assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+        assert signal.getsignal(signal.SIGALRM) == original_handler
+        client.transport.close()
+        admin.transport.close()
+
+
+def _census_budget_documents(context, count):
+    from google.cloud.firestore_v1.types import RunQueryResponse
+
+    from app.domains.recovery.contracts import canonical, fingerprint
+
+    values = [{"namespace": "owned_budget", "key": str(i), "value": {"n": i}} for i in range(count)]
+    return sorted((RunQueryResponse(document={
+        "name": context.rpc.database_resource + "/documents/authority_records/" + fingerprint(
+            {"namespace": value["namespace"], "key": value["key"]}),
+        "fields": {"body": {"bytes_value": canonical(value).encode()}},
+        "update_time": "2026-10-31T00:00:00Z"}) for value in values), key=lambda response: response.document.name)
+
+
+def test_census_budget_actual_gapic_allows_slow_page_without_changing_regular_rpc(_census_budget_context):
+    c = _census_budget_context
+    documents = _census_budget_documents(c, 2)
+    c.raw.pages = [[(documents[0], 3.0), (documents[1], 0.0)]]
+    rows = m._protected_census(c.rpc)
+    assert len(rows) == 2 and c.now[0] == 3.0
+    assert [timeout for _, timeout in c.raw.queries] == [10.0]
+    assert c.raw.queries[0][0].structured_query.limit == 32
+    assert c.counters == {"denied_mutations": 0, "RunQuery": 1}
+    assert c.rpc.client is c.client and c.rpc.admin is c.admin and c.rpc.rpc_timeout == 2.0
+    with pytest.raises(GuardUnavailable):
+        c.rpc.begin()
+    assert c.raw.other[-1][1] == 2.0 and c.raw.closed == 0
+    assert c.raw.streams[0].cancelled == 1
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_census_budget_later_page_is_clamped_to_same_whole_deadline(_census_budget_context, late):
+    c = _census_budget_context
+    documents = _census_budget_documents(c, 97)
+    c.raw.pages = [[(row, 9.0 if index == 0 else 0.0) for index, row in enumerate(documents[start:start + 32])]
+        for start in (0, 32, 64)]
+    c.raw.pages.append([(documents[96], 4.0 if late else 2.0)])
+    if late:
+        with pytest.raises(GuardUnavailable):
+            m._protected_census(c.rpc)
+        assert c.now[0] == 30.0 and c.raw.streams[-1].native_expired
+    else:
+        assert len(m._protected_census(c.rpc)) == 97 and c.now[0] == 29.0
+    assert [timeout for _, timeout in c.raw.queries] == [10.0, 10.0, 10.0, 3.0]
+    assert len(c.raw.queries) == 4 and c.raw.closed == 0
+
+
+@pytest.mark.parametrize("fault", ["partial", "malformed", "body", "alarm", "cancel", "late_terminal"])
+def test_census_budget_partial_validation_alarm_or_cleanup_never_returns_inventory(_census_budget_context, fault):
+    from google.cloud.firestore_v1.types import RunQueryResponse
+
+    c = _census_budget_context
+    document = _census_budget_documents(c, 1)[0]
+    if fault == "malformed":
+        document.document.fields["extra"] = {"string_value": "no mask"}
+    elif fault == "body":
+        document.document.fields["body"] = {"bytes_value": b"x" * (128 * 1024 + 1)}
+    c.raw.pages = [[(document, 0.0)]]
+    if fault == "partial":
+        c.raw.pages[0].append((RuntimeError("owned partial stream"), 0.0))
+    elif fault == "alarm":
+        c.raw.pages[0].append(("alarm", 0.0))
+    elif fault == "cancel":
+        c.raw.fail_close = True
+    elif fault == "late_terminal":
+        c.raw.pages[0].append((RunQueryResponse(), 11.0))
+    with pytest.raises(GuardUnavailable):
+        m._protected_census(c.rpc)
+    assert len(c.raw.queries) == 1 and c.raw.streams[0].cancelled == 1
+    assert c.raw.closed == 0 and signal.getsignal(signal.SIGALRM) == c.original_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+def test_census_budget_prefetch_failure_has_no_public_handle_and_remains_bounded_unknown(_census_budget_context):
+    c = _census_budget_context
+    c.raw.pages = [[(RuntimeError("owned pre-return failure"), 0.0)]]
+    with pytest.raises(GuardUnavailable):
+        m._protected_census(c.rpc)
+    assert len(c.raw.queries) == 1 and c.raw.queries[0][1] == 10.0
+    # Installed grpc_helpers prefetches before returning the public iterator;
+    # no explicit-cancel claim is made for an unavailable handle. The original
+    # graph owner still closes its clients on failure, before any SQL collection.
+    assert c.raw.streams[0].cancelled == 0 and c.raw.closed == 0
+    m._close_clients((c.admin, c.client))
+    assert c.raw.closed == 2
+
+
+@pytest.mark.parametrize("fault", ["foreign_timer", "thread", "handler_none", "replaced_method"])
+def test_census_budget_refuses_foreign_owner_or_noncanonical_client_before_query(_census_budget_context, monkeypatch, fault):
+    c = _census_budget_context
+    if fault == "foreign_timer":
+        monkeypatch.setattr(signal, "getitimer", lambda _kind: (1.0, 0.0))
+    elif fault == "thread":
+        monkeypatch.setattr(m.threading, "current_thread", lambda: object())
+    elif fault == "handler_none":
+        monkeypatch.setattr(signal, "getsignal", lambda _kind: None)
+    else:
+        c.client.run_query = lambda **_kwargs: pytest.fail("replacement must never run")
+    with pytest.raises(m.MaintenanceDenied):
+        m._protected_census(c.rpc)
+    assert not c.raw.queries and c.raw.closed == 0
+    monkeypatch.undo()
+
+
+def test_census_budget_integration_keeps_full_original_scanner_and_no_sql_before_failure(monkeypatch):
+    import inspect
+
+    source = inspect.getsource(m._protected_census)
+    assert "page_size=32, max_documents=MAX_DOCUMENTS, max_pages=256, deadline_seconds=30.0" in source
+    assert m.MAX_DOCUMENTS == 4096
+    assert "rows = _protected_census(publication.registry.rpc)" in inspect.getsource(m._snapshot_reads)
+    assert "statement_timeout='10s'" in inspect.getsource(m.NativeMaintenanceDdlGuard.verify_pre_ddl)
+    assert "idle_in_transaction_session_timeout" not in source
