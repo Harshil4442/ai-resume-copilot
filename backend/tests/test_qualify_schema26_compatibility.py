@@ -400,7 +400,9 @@ def test_original_protocol_child_summary_precedes_same_refusal_without_replay_or
         expected = protocol_report(path, failures=int(failed))
         calls.append((argv, kwargs, path, expected))
         assert argv[1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-vv"]
-        assert tuple(argv[7:-2]) == SUITES and kwargs["timeout"] == 300 and kwargs["capture_output"] is True
+        assert tuple(argv[7:7 + len(SUITES)]) == SUITES and kwargs["timeout"] == 300 and kwargs["capture_output"] is True
+        assert argv[7 + len(SUITES):9 + len(SUITES)] == ["-p", "scripts.qualify_schema26_compatibility"]
+        assert argv[-2] == "--junitxml"
         assert kwargs["env"]["HIREWIZ_AUTHORITY_EMULATOR_REQUIRED"] == "true"
         return SimpleNamespace(returncode=int(failed), stdout=b"SYNTHETIC_PRIVATE_STDOUT", stderr=b"SYNTHETIC_PRIVATE_STDERR")
     monkeypatch.setattr(gate.subprocess, "run", child)
@@ -538,3 +540,159 @@ def test_actual_pytest_timeout_failure_transcript_excludes_captured_secret_param
     assert result.returncode == 1 and b"TimeoutExpired" in transcript and b"300 seconds" in transcript
     assert b'"last_observed_phase":"started"' in transcript
     assert b"SYNTHETIC_PRIVATE_CAPTURE" not in transcript
+
+
+def _owned_timing_child(tmp_path, *, delay=None, fail=False, cap_probe=False):
+    """Only this two-case synthetic pytest invocation; never the real selection."""
+    import os
+    import sys
+
+    backend = tmp_path / "backend"
+    backend.mkdir(mode=0o700)
+    tests = backend / "tests"
+    tests.mkdir()
+    (backend / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath=["."]\n')
+    (tests / "test_owned_timing.py").write_text(
+        "import pytest,time\n"
+        "@pytest.fixture\ndef owned(monkeypatch):\n"
+        + (" from scripts import qualify_schema26_compatibility as gate\n monkeypatch.setattr(gate,'MAX_REPORT_BYTES',256)\n" if cap_probe else "")
+        + " yield\n time.sleep(" + ("30" if delay == "teardown" else "0.02") + ")\n"
+        "@pytest.mark.parametrize('value',['SYNTHETIC_PRIVATE_PARAMETER'])\n"
+        "def test_first(value,owned):\n time.sleep(" + ("30" if delay == "call" else "0.01") + ")\n"
+        + (" assert False, 'SYNTHETIC_PRIVATE_FAILURE'\n" if fail else " assert value\n")
+        + "def test_second(): pass\n")
+    (backend / "owned_timing_bootstrap.py").write_text(
+        "import sys,time\nsys.path.insert(0," + repr(str(gate.ROOT / "backend")) + ")\n"
+        "from scripts import qualify_schema26_compatibility as gate\n"
+        "gate._protocol_public_cases=lambda:{'test_owned_timing':{'test_first','test_second'}}\n"
+        "pytest_addoption=gate.pytest_addoption\npytest_configure=gate.pytest_configure\n"
+        "pytest_cmdline_main=gate.pytest_cmdline_main\n"
+        + "def pytest_sessionfinish(): time.sleep(" + ("30" if delay == "sessionfinish" else "0.02") + ")\n"
+        + "def pytest_unconfigure(): time.sleep(" + ("30" if delay == "unconfigure" else "0.02") + ")\n")
+    timing = backend / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(timing)
+    assert custody is not None
+    argv = [sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-vv", "-p", "no:cacheprovider",
+        "-p", "owned_timing_bootstrap", "--hirewiz-protocol-timing", str(timing),
+        "--hirewiz-protocol-timing-anchor", ":".join(map(str, custody)), "tests/test_owned_timing.py"]
+    env = {"PATH": os.environ.get("PATH", ""), "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+    return argv, backend, env, timing, custody
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_real_owned_phase_observer_preserves_outcome_and_never_exports_parameters(tmp_path, monkeypatch, fail):
+    import subprocess
+
+    argv, cwd, env, timing, custody = _owned_timing_child(tmp_path, fail=fail)
+    result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, timeout=15)
+    assert result.returncode == int(fail)  # The observer never converts a failure.
+    monkeypatch.setattr(gate, "_protocol_public_cases", lambda: {"test_owned_timing": {"test_first", "test_second"}})
+    observed = gate.protocol_timing_summary(timing, custody)
+    assert observed["report_state"] == "observed_unqualified" and observed["qualified"] is False
+    assert observed["collected"] == 2 and observed["pytest_main_hook_exit_observed"] is True
+    assert observed["phase_completed"] == dict.fromkeys(gate.TIMING_PHASES, 2)
+    assert all(observed["global_phase_ns"][p] >= 10_000_000 for p in ["sessionfinish", "unconfigure"])
+    first = next(c for c in observed["slow_cases"] if c["ordinal"] == 1)
+    assert first["phase_ns"]["teardown"] >= 10_000_000
+    assert first["status"]["call"] == ("failed" if fail else "passed")
+    assert "SYNTHETIC_PRIVATE" not in timing.read_text() + json.dumps(observed)
+
+
+@pytest.mark.parametrize("delay", ["call", "teardown", "sessionfinish", "unconfigure"])
+def test_real_owned_timeout_identifies_unfinished_phase_without_claiming_a_cause(tmp_path, monkeypatch, delay):
+    import subprocess
+
+    argv, cwd, env, timing, custody = _owned_timing_child(tmp_path, delay=delay)
+    with pytest.raises(subprocess.TimeoutExpired):
+        subprocess.run(argv, cwd=cwd, env=env, capture_output=True, timeout=2)
+    monkeypatch.setattr(gate, "_protocol_public_cases", lambda: {"test_owned_timing": {"test_first", "test_second"}})
+    observed = gate.protocol_timing_summary(timing, custody)
+    assert observed["qualified"] is False and observed["pytest_main_hook_exit_observed"] is False
+    assert observed["last_event"]["phase"] == delay and observed["last_event"]["edge"] == "start"
+    assert "cause" not in observed and "SYNTHETIC_PRIVATE" not in json.dumps(observed)
+
+
+@pytest.mark.parametrize("tamper", ["replacement", "symlink", "mode", "partial", "nan", "foreign", "duplicate", "out_of_order"])
+def test_timing_reader_refuses_untrusted_custody_or_records_without_raw_fallback(tmp_path, monkeypatch, tamper):
+    import os
+
+    path = tmp_path / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(path)
+    assert custody is not None
+    rows = [["header", gate.TIMING_SCHEMA], ["case", 1, "test_owned_timing::test_first"],
+        ["phase", 1, "call", "start", 1], ["phase", 1, "call", "end", 2]]
+    if tamper == "nan":
+        rows[-1][-1] = float("nan")
+    if tamper == "foreign":
+        rows[1][-1] = "test_untrusted::SYNTHETIC_PRIVATE"
+    if tamper == "duplicate":
+        rows.append(rows[-1])
+    if tamper == "out_of_order":
+        rows[-1][-1] = 0
+    path.write_text("\n".join(map(json.dumps, rows)) + ("" if tamper == "partial" else "\n"))
+    if tamper == "replacement":
+        replacement = tmp_path / "other"
+        replacement.write_bytes(path.read_bytes())
+        os.replace(replacement, path)
+    if tamper == "symlink":
+        path.rename(tmp_path / "other")
+        path.symlink_to(tmp_path / "other")
+    if tamper == "mode":
+        path.chmod(0o644)
+    monkeypatch.setattr(gate, "_protocol_public_cases", lambda: {"test_owned_timing": {"test_first"}})
+    assert gate.protocol_timing_summary(path, custody) == {
+        "schema_version": gate.TIMING_SCHEMA, "qualified": False, "report_state": "unavailable"}
+
+
+def test_timing_writer_caps_bytes_and_reports_incomplete_without_expanding_limits(tmp_path, monkeypatch):
+    path = tmp_path / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(path)
+    monkeypatch.setattr(gate, "MAX_REPORT_BYTES", 256)
+    writer = gate._ProtocolTiming(path, custody, {})
+    for _ in range(20):
+        writer.event("global", "collection", "start")
+    assert writer.descriptor is None and path.stat().st_size <= 256
+    assert path.read_text().endswith('["incomplete"]\n')
+
+
+def test_timing_unavailable_io_never_changes_hook_exception_or_result(tmp_path):
+    path = tmp_path / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(path)
+    writer = gate._ProtocolTiming(path, custody, {})
+    writer.close()
+    hook = writer.pytest_sessionfinish()
+    next(hook)
+    with pytest.raises(StopIteration) as done:
+        hook.send("original-result")
+    assert done.value.value == "original-result"
+    hook = writer.pytest_unconfigure()
+    next(hook)
+    original = ValueError("SYNTHETIC_PRIVATE_ORIGINAL")
+    with pytest.raises(ValueError) as caught:
+        hook.throw(original)
+    assert caught.value is original
+
+
+def test_outer_observer_keeps_immutable_cap_when_selected_case_patches_module_budget(tmp_path, monkeypatch):
+    import subprocess
+
+    argv, cwd, env, timing, custody = _owned_timing_child(tmp_path, cap_probe=True)
+    result = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, timeout=15)
+    assert result.returncode == 0
+    monkeypatch.setattr(gate, "_protocol_public_cases", lambda: {"test_owned_timing": {"test_first", "test_second"}})
+    observed = gate.protocol_timing_summary(timing, custody)
+    assert observed["pytest_main_hook_exit_observed"] is True and observed["incomplete"] is False
+    assert observed["phase_completed"] == dict.fromkeys(gate.TIMING_PHASES, 2)
+
+
+def test_timing_record_bound_refuses_before_decoding_any_excess_rows(tmp_path, monkeypatch):
+    path = tmp_path / "timings.jsonl"
+    custody = gate.prepare_protocol_timing(path)
+    path.write_bytes((json.dumps(["header", gate.TIMING_SCHEMA]) + "\n").encode() + b"[]\n" * 65536)
+    decoded = []
+    def decode(*args, **kwargs):
+        decoded.append(True)
+        raise AssertionError("Excess records must be refused before JSON decoding")
+    monkeypatch.setattr(gate.json, "loads", decode)
+    assert gate.protocol_timing_summary(path, custody)["report_state"] == "unavailable"
+    assert decoded == []
