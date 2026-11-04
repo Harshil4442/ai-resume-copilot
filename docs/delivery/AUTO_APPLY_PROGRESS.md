@@ -28,7 +28,7 @@ commercial/finance gates and full R03/RTO qualification remain pending.
 | Frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Exact-source CI `41750684597` and normal PR99 merge; retained production alias/readback and public companion 0.8.9 archive SHA-256 `b17b7a75f3d6a81ca91d2a90c88bd5d79409b965977ecb5f7340f69025964362`. Frontend/root build inputs are unchanged through 9b9, so the existing verified deployment is retained without another frontend build or alias mutation. |
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Retained definition proof expires `2026-11-05T06:24:10Z`. A metadata-only configuration check passed; it performed no document processing or new native acceptance. Both the 17-case maintenance and paid 80-document QA runs remain held, with no expiry waiver. |
 | Companion | Public/source package **0.8.9** | The existing browser identity's current-connection check passed with no action enabled and zero fields filled. Fresh original-file review/cancel/revoke remains pending; historical acceptance below is not relabeled as current. |
-| Application successor — built only | Source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4`; image `sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3` | Build `3447322a-4f1b-41b8-afe5-43307ada80cd` succeeded and official Source26 verification passed against exact-source CI `41853042750`. **Not deployed.** The independent alias-capture controller fix `a206f5408c0cbd7abece0cd43add143bcb1883bc` is in PR103 / CI `41898489779`, pending qualification. Registry PR102 is normally merged at `deaed009fd9b1a6b6db2e893859c8dc19433ac17`; its CI `41893799752` is still running and is not runtime provenance authority. |
+| Application successor — built only | Source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4`; image `sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3` | Build `3447322a-4f1b-41b8-afe5-43307ada80cd` succeeded and official Source26 verification passed against exact-source CI `41853042750`. **Not deployed.** The independent alias-capture controller fix `a206f5408c0cbd7abece0cd43add143bcb1883bc` is in PR103 / CI `41898489779`, pending qualification. Registry PR102 is normally merged at `deaed009fd9b1a6b6db2e893859c8dc19433ac17`; its CI `41893799752` completed successfully, while runtime provenance remains bound to the separate 9b9 source and Build. |
 
 The original S/C restoration and joined final proof used their retained custody;
 temporary health IAM access was removed and ordinary post-restoration coordinator
@@ -79,6 +79,14 @@ SDK-intercepted observations reduced confirmation 54→8, device completion 36�
 and revocation 71→20 metadata calls. These are synthetic production-path counts,
 not measured whole-HTTP production budgets. The shared **60/minute** project
 quota still limits concurrent capacity; no quota increase is claimed.
+
+A separate password-login improvement is prepared and source-reviewed. It combines
+three protected post-activation finalization steps into one transaction, preserving
+fresh identity, credential, mailbox and activation checks. Focused SDK-intercepted
+controls measured account-path metadata calls falling from 29 to 25. This is not
+a whole-HTTP or live speed measurement, does not change Google OAuth, and does not
+establish the 10,000-user capacity target. Its own release qualification and
+deployment remain pending.
 
 Earlier connection attempts encountered genuine metadata-quota failures and
 unresolved rejection/expiry outcomes. A later actual confirmation returned backend

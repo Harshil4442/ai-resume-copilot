@@ -72,7 +72,7 @@
       "registry_rows": 8,
       "registry_sha256": "c222ac8f9f6d706d31f61fc1b81f71acc80c7bcfcd8e7c3feb6cfe3e998a7eeb",
       "ci_run_id": 41893799752,
-      "own_CI_status": "RUNNING_IN_OBSERVED_SNAPSHOT",
+      "own_CI_status": "SUCCESS_ALL_FIVE_JOBS_AND_MANDATORY_STEPS",
       "own_CI_is_runtime_provenance_authority": false,
       "runtime_provenance_source": "9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4"
     },
@@ -181,6 +181,19 @@
     "private_selected_projection_sha256": "975078d520a9944c0f23c605e96d0cd6eb30e14c1c01f64c409fff458393fe59",
     "authority": "Observed metadata only; the original path is mutable and this hash grants no runtime or release authority."
   },
-  "observed_through_utc": "2026-11-04T19:50:39.376364+00:00",
-  "observation_time_boundary": "Dated snapshot of linked completed observations; not a claim that later CI or serving state is automatically refreshed."
+  "observed_through_utc": "2026-11-04T20:54:52.573481+00:00",
+  "observation_time_boundary": "Dated snapshot of linked completed observations, plus source-reviewed pending login development. Serving observations retain their original proof timestamps; later CI or runtime changes are not automatically inferred.",
+  "password_login_development": {
+    "state": "SOURCE_REVIEWED_RELEASE_QUALIFICATION_AND_DEPLOYMENT_PENDING",
+    "scope": "Password login only; Google OAuth unchanged.",
+    "focused_feature_controls": 53,
+    "focused_qualification_controls": 137,
+    "synthetic_account_path_metadata_calls_before": 29,
+    "synthetic_account_path_metadata_calls_after": 25,
+    "whole_HTTP_or_live_speed_measurement": false,
+    "capacity_10000_qualified": false,
+    "application_files": 290,
+    "application_sha256": "1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984",
+    "actual_Build_or_deployment": false
+  }
 }

@@ -6,7 +6,8 @@ are restored and the joined read-only proof passed. Frontend 751/Hohsg serves
 companion 0.8.9. Qualified application image 9b9 is built and source-verified,
 **not deployed**. Its independent alias-capture controller PR103/CI41898489779
 remains pending. Registry PR102 is normally merged at `deaed009`; its own
-CI41893799752 is still running and is not runtime provenance authority.
+CI41893799752 completed successfully; runtime provenance remains the separate
+9b9 source and Build.
 
 Current companion original-file review/cancel/revoke, human Reviewer 2, shadow
 accounting, 10,000-user capacity, finance/commercial gates and full R03/RTO
