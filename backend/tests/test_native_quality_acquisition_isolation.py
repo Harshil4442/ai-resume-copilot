@@ -22,7 +22,7 @@ def runner_bytes(**changes):
         ci_run_id=1, build_id="11111111-1111-1111-1111-111111111111",
         image=isolation.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
         qualification_contract="hirewiz_schema26_app_rolling_v3", qualification_sha256="a" * 64,
-        app_files=290, app_sha256="1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984",
+        app_files=290, app_sha256="f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670",
         entry_path="backend/scripts/native_acquisition_job.py",
         entry_sha256="8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740",
         runtime_dependencies_sha256="b" * 64, observed_at="2026-10-31T00:00:00Z",
@@ -297,6 +297,7 @@ def test_plain_or_model_constructed_wrong_identity_plan_cannot_pass_source_bound
 @pytest.mark.parametrize("changes", [dict(repository="https://example.test/foreign.git"), dict(app_files=288),
     dict(app_files=289, app_sha256="9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"),
     dict(app_files=290, app_sha256="13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"),
+    dict(app_files=290, app_sha256="1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984"),
     dict(app_sha256="0" * 64), dict(entry_sha256="0" * 64), dict(ci_run_id=True), dict(approved=True),
     dict(qualification_contract="old-v2"), dict(image="foreign@sha256:" + "e" * 64)])
 def test_rehashed_external_runner_claim_still_requires_exact_closed_shape(changes):
@@ -309,7 +310,7 @@ def test_rehashed_external_runner_claim_still_requires_exact_closed_shape(change
 def test_current_application_receipt_keeps_exact_reviewed_inventory():
     receipt = isolation.bound_runner(plan(), runner_bytes())
     assert receipt.app_files == 290
-    assert receipt.app_sha256 == "1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984"
+    assert receipt.app_sha256 == "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 
 
 def test_raw_receipt_binding_has_no_approved_or_native_authority_shortcut():

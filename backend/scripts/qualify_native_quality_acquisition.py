@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984"
+APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -50,6 +50,8 @@ CURRENT_EXECUTION_PATHS = (
     "backend/app/domains/employer/tasks.py",
     "backend/app/domains/recovery/browser_pairing_production.py",
     "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+    "backend/app/routers/resume.py",
+    "backend/app/schemas.py",
     "backend/scripts/document_refresh.py",
     "backend/scripts/schema25_app_release_contract_v3.py",
     "infra/gcp/document_application_context.py",

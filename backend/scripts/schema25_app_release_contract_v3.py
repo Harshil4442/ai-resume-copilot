@@ -19,7 +19,7 @@ CONTRACT = "hirewiz_schema26_app_rolling_v3"
 PRIOR_RELEASE = "e23c940e6133323c3c1ff11e646a4ca9b2b0b165"
 PRIOR_APP_SHA256 = "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40800a"
 # Exact reviewed-source inventory; this pin is not native qualification.
-CANDIDATE_APP_SHA256 = '1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984'
+CANDIDATE_APP_SHA256 = 'f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670'
 CANDIDATE_APP_FILES = 290
 # Current maintenance fixes change only these six of the fourteen document
 # helpers. Their exact committed bytes enter this release fingerprint; retained

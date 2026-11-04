@@ -44,6 +44,7 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
         "backend/app/domains/credits/canary.py", "backend/app/domains/employer/connectors.py",
         "backend/app/domains/employer/tasks.py", "backend/app/domains/recovery/browser_pairing_production.py",
         "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+        "backend/app/routers/resume.py", "backend/app/schemas.py",
         "backend/scripts/document_refresh.py", "backend/scripts/schema25_app_release_contract_v3.py",
         "infra/gcp/document_application_context.py",
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
@@ -433,7 +434,12 @@ def test_owned_operator_registry_refuses_non_append_only_or_uncommitted_data(reg
     elif case == "top_key":
         value["approved"] = True
     elif case == "overflow":
-        value["sources"].extend(synthetic_registry_row(i) for i in range(2, 5))
+        prefix = list(value["sources"])
+        value["sources"].extend(synthetic_registry_row(i) for i in range(2, 2 + 33 - len(prefix)))
+        assert len(value["sources"]) == 33
+        assert value["sources"][:len(prefix)] == prefix
+        assert len({item["release"] for item in value["sources"]}) == 33
+        assert len((json.dumps(value, indent=2) + "\n").encode()) <= 16 * 1024
     elif case == "version_bool":
         value["version"] = True
     elif case == "ci_bool":
@@ -582,6 +588,7 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
         "backend/app/domains/candidate_accounts/retention.py",
         "backend/app/domains/candidate_accounts/service.py",
         "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+        "backend/app/routers/resume.py", "backend/app/schemas.py",
         "backend/app/domains/employer/connectors.py", "backend/app/domains/employer/tasks.py",
         "infra/gcp/document_application_context.py",
         "infra/gcp/rolling_release.py", ".github/workflows/ci.yml",
@@ -1081,13 +1088,16 @@ def test_current_added_owned_two_exact_additions_are_runtime_bytes(current_added
 
 
 @pytest.mark.parametrize("reader", ["dependency_hashes", "controller_dependency_hashes"])
-def test_current_login_owned_historical_paths_are_committed_runtime_bytes(tmp_path, monkeypatch, reader):
-    paths = (
+@pytest.mark.parametrize("paths", [
+    (
         "backend/app/domains/candidate_accounts/production.py",
         "backend/app/domains/candidate_accounts/retention.py",
         "backend/app/domains/candidate_accounts/service.py",
         "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
-    )
+    ),
+    ("backend/app/routers/resume.py", "backend/app/schemas.py"),
+], ids=["password-login", "resume-pagination"])
+def test_current_reviewed_owned_historical_paths_are_committed_runtime_bytes(tmp_path, monkeypatch, reader, paths):
     assert set(paths) <= set(q.CURRENT_EXECUTION_PATHS)
     root = tmp_path.resolve()
     q.git(root, "init", "-q")
@@ -1247,3 +1257,39 @@ def test_current_catalog_owned_consumer_helper_is_committed_and_fingerprinted(tm
     registry_commit(root)
     after = contract.current_document_helpers(root)
     assert {name for name in before if before[name] != after[name]} == {consumer}
+
+
+def test_current_development_receipt_owned_exact_app_pin():
+    """Compile only the closed receipt class; never import a native qualifier."""
+    import ast
+    import re
+    from datetime import datetime
+    from typing import Literal
+
+    from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+    path = ROOT / "backend/evaluation/development40_qualification_v2.py"
+    node = next(node for node in ast.parse(path.read_text()).body
+        if isinstance(node, ast.ClassDef) and node.name == "QualifiedRunner")
+    repository = "us-central1-docker.pkg.dev/owned-invalid/cloud-run-source-deploy/hirewiz"
+    namespace = {"__name__": __name__, "BaseModel": BaseModel, "ConfigDict": ConfigDict,
+        "Field": Field, "Literal": Literal, "datetime": datetime, "re": re,
+        "original": SimpleNamespace(RUNNER_REPOSITORY=repository), "HASH": r"[a-f0-9]{64}"}
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+    receipt = namespace["QualifiedRunner"]
+    body = dict(schema_version="development40-transport-qualified-runner-v2",
+        repository="https://github.com/Harshil4442/ai-resume-copilot.git", release="c" * 40,
+        git_tree="d" * 40, ci_run_id=1, build_id="11111111-1111-1111-1111-111111111111",
+        image=repository + "@sha256:" + "e" * 64, qualification_sha256="a" * 64,
+        app_compatibility_sha256="b" * 64, app_sha256=q.APP_SHA256, app_files=290,
+        entry_path="backend/evaluation/development40_transport_v2.py", entry_sha256="f" * 64,
+        semantic_entry_path=q.ENTRY, semantic_entry_sha256=q.ENTRY_SHA256,
+        channel_sha256="89b65c3c3fb874368f28702f0048c19a3bbeccc7ab910dd12bc35a593225864e",
+        runtime_dependencies_sha256="a" * 64, component_sha256="b" * 64,
+        observed_at="2026-11-01T00:00:00Z", ci_metadata_sha256="c" * 64, build_metadata_sha256="d" * 64)
+    value = receipt.model_validate_json(json.dumps(body))
+    assert value.app_sha256 == q.APP_SHA256 and value.app_files == 290
+    for old in ("1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984",
+                "13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"):
+        with pytest.raises(ValidationError):
+            receipt.model_validate_json(json.dumps(body | {"app_sha256": old}))

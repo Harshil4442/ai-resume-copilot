@@ -138,7 +138,7 @@ def _bootstrap_child():
     module.__file__, module.__package__ = str(path), "scripts"
     sys.modules[module_name] = module
     raw = checked(path)
-    if hashlib.sha256(raw).hexdigest() != "30f0a632aeec9f3a9b7b83c656137c68efb8b398b50b386027d786291db46749":
+    if hashlib.sha256(raw).hexdigest() != "5ea766a363fa04aaa85fbdd407e7ea93e58dd969081c6e47656861ce928a0648":
         raise ValueError("development_source_bootstrap_helper_changed")
 
     def deny(*args, **kwargs):
@@ -312,7 +312,7 @@ class QualifiedRunner(BaseModel):
     image: str = Field(pattern="^" + re.escape(original.RUNNER_REPOSITORY) + r"@sha256:" + HASH + "$")
     qualification_sha256: str = Field(pattern="^" + HASH + "$")
     app_compatibility_sha256: str = Field(pattern="^" + HASH + "$")
-    app_sha256: Literal["1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984"]
+    app_sha256: Literal["f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"]
     app_files: Literal[290]
     entry_path: Literal["backend/evaluation/development40_transport_v2.py"]
     entry_sha256: str = Field(pattern="^" + HASH + "$")
