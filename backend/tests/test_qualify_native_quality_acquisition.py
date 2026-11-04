@@ -521,9 +521,11 @@ def _owned_source_clone(target, release):
 @pytest.mark.parametrize(("application_release", "different"), [
     ("c6a03af0636c7e9815159f807c9b126336d03233", {
         "infra/gcp/schema26_lifecycle_join.py", "infra/gcp/schema26_maintenance_guard.py",
-        "infra/gcp/v3_readonly_adapter.py",
+        "infra/gcp/v3_readonly_adapter.py", "backend/scripts/schema25_app_release_contract_v3.py",
     }),
-    ("c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97", {"infra/gcp/schema26_lifecycle_join.py"}),
+    ("c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97", {
+        "infra/gcp/schema26_lifecycle_join.py", "backend/scripts/schema25_app_release_contract_v3.py",
+    }),
 ], ids=("registered-c6", "synthetic-c75-code-frozen-registry"))
 def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, application_release, different):
     # C6 registration attests its genuine old event, not current byte equality.

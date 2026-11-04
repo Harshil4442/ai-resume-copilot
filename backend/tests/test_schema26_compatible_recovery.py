@@ -1,7 +1,6 @@
 """Owned source/rolling/custody ports only; never native recovery or RTO proof."""
 from __future__ import annotations
 
-import ast
 import copy
 import importlib.util
 import io
@@ -13,8 +12,8 @@ import sys
 import tarfile
 from dataclasses import asdict, replace
 from pathlib import Path
+from textwrap import dedent
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from test_schema25_app_rolling_v3 import ClosedV3Fixture
@@ -464,11 +463,6 @@ def test_real_source_gate_separates_current_host_ci_from_original_c6_and_db8_pro
     assert len(reads) == 2 and len(c.case.writes) == c.initial_writes
 
 
-def _owned_host_fingerprint():
-    """Code/proof-only test computation; never populate the real host pin."""
-    return m.a.contract.source_fingerprint(ROOT, m.a.initial.prior_app_files(ROOT, m.a.PRIOR.release))
-
-
 def test_unbound_host_pin_refuses_before_lineage_import_or_native_port(monkeypatch):
     monkeypatch.setattr(recovery, "HOST_FP", "REFUSE_UNBOUND_REVIEWED_TIMING_HOST_FINGERPRINT")
     monkeypatch.setattr(recovery, "_proof_lineage", lambda *_: pytest.fail("unbound pin read lineage"))
@@ -476,12 +470,14 @@ def test_unbound_host_pin_refuses_before_lineage_import_or_native_port(monkeypat
         recovery._proof_fingerprints(ROOT, m)
 
 
-def test_exact_original_to_host_delta_preserves_all_464_runtime_objects_and_app289():
+def test_exact_original_to_host_delta_preserves_all_464_runtime_objects_and_app289(tmp_path):
+    _host_proof_child(tmp_path, '''
+    import ast
     recovery._proof_lineage(ROOT)
     old = recovery.tree_metadata(ROOT, recovery.BASE)
     current = recovery.tree_metadata(ROOT, recovery.HOST_BASE)
     raw = (ROOT / "backend/scripts/qualify_native_quality_acquisition.py").read_bytes()
-    values: dict[str, Any] = {}
+    values = {}
 
     def literal(node):
         if isinstance(node, ast.Name):
@@ -512,13 +508,14 @@ def test_exact_original_to_host_delta_preserves_all_464_runtime_objects_and_app2
         name: value for name, value in current.items() if name.startswith("backend/app/")}
     app = m.a.initial.prior_app_files(ROOT, recovery.BASE)
     assert len(app) == 289 and m.a.initial.prior_app_digest(app) == m.a.contract.CANDIDATE_APP_SHA256
+    ''')
 
 
-def test_hash_projection_changes_only_three_exact_historical_proof_entries(monkeypatch):
-    owned_fp = _owned_host_fingerprint()
-    assert recovery.HOST_FP.startswith("REFUSE_") or recovery.HOST_FP == owned_fp
+def test_hash_projection_changes_only_three_exact_historical_proof_entries(tmp_path):
+    _host_proof_child(tmp_path, '''
+    owned_fp = m.a.contract.source_fingerprint(ROOT, m.a.initial.prior_app_files(ROOT, m.a.PRIOR.release))
+    assert recovery.HOST_FP == owned_fp
     assert owned_fp != recovery.BASE_FP
-    monkeypatch.setattr(recovery, "HOST_FP", owned_fp)
     digest, captured = m.a.contract.digest, []
 
     def observe(value):
@@ -526,7 +523,7 @@ def test_hash_projection_changes_only_three_exact_historical_proof_entries(monke
             captured.append(dict(value))
         return digest(value)
 
-    monkeypatch.setattr(m.a.contract, "digest", observe)
+    m.a.contract.digest = observe
     assert recovery._proof_fingerprints(ROOT, m) == (owned_fp, recovery.BASE_FP)
     ordinary, reconstructed, historical = captured[-3:]
     assert ordinary == reconstructed and digest(ordinary) == owned_fp
@@ -534,12 +531,15 @@ def test_hash_projection_changes_only_three_exact_historical_proof_entries(monke
     for name, (old, new) in recovery.PROOF_DELTA.items():
         assert ordinary[name] == new and historical[name] == old
     assert digest(historical) == "23b1447987e1b3686646ce709c9898cc326e6a88d7d2379ccc085e0286c28b87"
+    ''')
 
 
 @pytest.mark.parametrize("fault", ["host", "reconstruction", "historical"])
-def test_each_fingerprint_domain_is_independently_required(monkeypatch, fault):
-    owned_fp = _owned_host_fingerprint()
-    monkeypatch.setattr(recovery, "HOST_FP", "f" * 64 if fault == "host" else owned_fp)
+def test_each_fingerprint_domain_is_independently_required(tmp_path, fault):
+    _host_proof_child(tmp_path, '''
+    fault = FAULT
+    owned_fp = m.a.contract.source_fingerprint(ROOT, m.a.initial.prior_app_files(ROOT, m.a.PRIOR.release))
+    recovery.HOST_FP = "f" * 64 if fault == "host" else owned_fp
     if fault != "host":
         digest = m.a.contract.digest
         calls = []
@@ -552,22 +552,34 @@ def test_each_fingerprint_domain_is_independently_required(monkeypatch, fault):
                     return "f" * 64
             return digest(value)
 
-        monkeypatch.setattr(m.a.contract, "digest", altered)
+        m.a.contract.digest = altered
     code = {"host": "host_execution_changed", "reconstruction": "host_fingerprint_projection_changed",
             "historical": "original_application_proof_changed"}[fault]
-    with pytest.raises(recovery.RecoveryDenied, match=code):
+    try:
         recovery._proof_fingerprints(ROOT, m)
+    except recovery.RecoveryDenied as error:
+        assert code in str(error)
+    else:
+        raise AssertionError("Changed fingerprint domain was accepted")
+    '''.replace("FAULT", repr(fault)))
 
 
 @pytest.mark.parametrize("which", ["old", "new"])
-def test_neither_original_nor_current_proof_pin_can_be_supplied_arbitrarily(monkeypatch, which):
+def test_neither_original_nor_current_proof_pin_can_be_supplied_arbitrarily(tmp_path, which):
+    _host_proof_child(tmp_path, '''
+    which = WHICH
     replacement = dict(recovery.PROOF_DELTA)
     name = next(iter(replacement))
     old, new = replacement[name]
     replacement[name] = ("0" * 64, new) if which == "old" else (old, "0" * 64)
-    monkeypatch.setattr(recovery, "PROOF_DELTA", replacement)
-    with pytest.raises(recovery.RecoveryDenied, match="host_proof_delta_bytes"):
+    recovery.PROOF_DELTA = replacement
+    try:
         recovery._proof_lineage(ROOT)
+    except recovery.RecoveryDenied as error:
+        assert "host_proof_delta_bytes" in str(error)
+    else:
+        raise AssertionError("Arbitrary proof pin was accepted")
+    '''.replace("WHICH", repr(which)))
 
 
 @pytest.mark.parametrize("fault", [None, "failed", "skipped", "missing", "duplicate", "foreign-owner"])
@@ -884,34 +896,46 @@ except module.RecoveryDenied as error:
 '''.replace("ROOT", repr(str(root)))
 
 
+def _host_proof_child(tmp_path, assertions):
+    root, _ = sparse_snapshot(tmp_path / "qualified-host")
+    program = _source_child_program(root) + '''
+assert 'identity' in globals(), 'Exact historical host source was refused'
+ROOT, recovery = root, module
+m = recovery._helpers()
+assert all(Path(helper.__file__).resolve().is_relative_to(root) for helper in vars(m).values())
+assert Path(m.a.contract.__file__).resolve() == root/'backend/scripts/schema25_app_release_contract_v3.py'
+assert all((root/name).is_file() for name in recovery.proof_names(m))
+'''
+    result = _child(root, program + dedent(assertions) + '''
+print(json.dumps({'historical_proof_assertions':True,'counts':counts}))
+''', tmp_path)
+    assert result.returncode == 0, result.stderr[-2048:]
+    payloads = [json.loads(line) for line in result.stdout.splitlines()]
+    assert "identity" in payloads[0] and payloads[-1]["historical_proof_assertions"] is True
+    assert payloads[-1]["counts"]["external"] == payloads[-1]["counts"]["evaluation_data_open"] == 0
+
+
 def sparse_snapshot(destination):
     # Git object IDs are metadata; the sparse workspace contains only the exact
     # code/proof/config union and six expressly public Courier runtime assets.
     subprocess.run(["git", "clone", "--shared", "--no-checkout", str(ROOT), str(destination)],
         check=True, capture_output=True, timeout=20)
     root = destination.resolve()
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, timeout=10).stdout.decode().strip()
-    metadata = recovery.tree_metadata(ROOT, head)
-    allowed = recovery.execution_names(metadata) | recovery.proof_names(m) | set(recovery.PATHS)
+    metadata = recovery.tree_metadata(ROOT, recovery.HOST_BASE)
+    # Later app proof names only bootstrap sparse selection. The isolated child
+    # imports and verifies the snapshot's own exact historical proof closure.
+    allowed = recovery.execution_names(metadata) | (recovery.proof_names(m) & set(metadata)) | set(recovery.PATHS)
     allowed |= {name for name in metadata if name.startswith("backend/app/") and name.endswith(".json")}
     assert allowed - set(recovery.PATHS) <= set(metadata) and not any(recovery.excluded_data(name) for name in allowed)
     # Escape literal route brackets in Git's no-cone wildmatch input.
     patterns = "\n".join("/" + name.replace("[", "\\[").replace("]", "\\]") for name in sorted(allowed)) + "\n"
     subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "--stdin"], cwd=root,
         input=patterns, text=True, check=True, capture_output=True, timeout=20)
-    subprocess.run(["git", "checkout", "--detach", head], cwd=root, check=True, capture_output=True, timeout=20)
-    # This is an OWNED code fixture, never a qualified image/current host. During
-    # authoring the real source intentionally retains a refusing HOST_FP pin.
-    # Compute the ordinary explicit code/proof-only contract, then bind it only
-    # in the disposable fixture. Original db8 FP and all proof-leaf pins remain.
-    prior = m.a.initial.prior_app_files(ROOT, m.a.PRIOR.release)
-    owned_fp = m.a.contract.source_fingerprint(ROOT, prior)
+    subprocess.run(["git", "checkout", "--detach", recovery.HOST_BASE], cwd=root, check=True, capture_output=True, timeout=20)
+    # This owned successor contains exactly the qualified historical host plus
+    # the three reviewed R03 leaves. No later app bytes or source pins are adopted.
     for name in recovery.PATHS:
         raw = (ROOT / name).read_bytes()
-        if name == recovery.PATHS[0]:
-            literal = ("HOST_FP = " + json.dumps(recovery.HOST_FP)).encode()
-            assert raw.count(literal) == 1
-            raw = raw.replace(literal, ("HOST_FP = " + json.dumps(owned_fp)).encode())
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(raw)
@@ -922,12 +946,13 @@ def sparse_snapshot(destination):
         check=True, capture_output=True, timeout=20)
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root,
         check=True, capture_output=True, timeout=10).stdout.decode().strip()
+    assert set(recovery._git(root, "diff", "--name-only", recovery.HOST_BASE, head).decode().splitlines()) == set(recovery.PATHS)
     assert {str(p.relative_to(root)) for p in (root / "backend/evals").rglob("*") if p.is_file()} == recovery.PUBLIC_ASSETS
     assert not (root / "backend/evals/unified_credit_v2/cases.jsonl").exists()
     return root, head
 
 
-@pytest.mark.parametrize("poison", [None, "bytecode", "ignored-package", "dirty", "foreign-scope", "redirected-git", "replaced-base", "replaced-c6", "replaced-prior", "evaluation-open"])
+@pytest.mark.parametrize("poison", [None, "bytecode", "ignored-package", "dirty", "foreign-scope", "later-app", "later-proof", "redirected-git", "replaced-base", "replaced-c6", "replaced-prior", "evaluation-open"])
 def test_actual_committed_source_child_refuses_cache_shadow_dirty_or_unreviewed_scope(tmp_path, poison, record_property):
     root, head = sparse_snapshot(tmp_path / "root")
     cache = private(tmp_path / "cache")
@@ -949,6 +974,15 @@ def test_actual_committed_source_child_refuses_cache_shadow_dirty_or_unreviewed_
         subprocess.run(["git", "add", "--sparse", "backend/foreign.py"], cwd=root, check=True, capture_output=True, timeout=10)
         subprocess.run(["git", "-c", "user.name=Owned", "-c", "user.email=owned@example.invalid",
             "commit", "-m", "Owned foreign-scope negative"], cwd=root, check=True, capture_output=True, timeout=10)
+    elif poison in {"later-app", "later-proof"}:
+        name = ("browser-companion/extension/popup.js" if poison == "later-app"
+            else "backend/scripts/schema25_app_release_contract_v3.py")
+        raw = (ROOT / name).read_bytes()
+        assert raw != (root / name).read_bytes()
+        (root / name).write_bytes(raw)
+        subprocess.run(["git", "add", "--sparse", name], cwd=root, check=True, capture_output=True, timeout=10)
+        subprocess.run(["git", "-c", "user.name=Owned", "-c", "user.email=owned@example.invalid",
+            "commit", "-m", "Owned later-source refusal"], cwd=root, check=True, capture_output=True, timeout=10)
     elif poison == "redirected-git":
         foreign = tmp_path / "foreign"
         subprocess.run(["git", "clone", "--shared", "--no-checkout", str(ROOT), str(foreign)],
@@ -1009,9 +1043,8 @@ except AssertionError:print(json.dumps({'evaluation_guard_denied':True,'counts':
     if poison in (None, "redirected-git", "replaced-base", "replaced-c6", "replaced-prior", "evaluation-open"):
         assert payload["identity"]["release"] == head
         assert payload["base_tree"] == base_tree
-        owned_fp = m.a.contract.source_fingerprint(ROOT, m.a.initial.prior_app_files(ROOT, m.a.PRIOR.release))
         expected_identity = r.sha({"kind": recovery.KIND, "host_base": recovery.HOST_BASE,
-            "execution_sha256": owned_fp,
+            "execution_sha256": recovery.HOST_FP,
             "original_application": {"release": recovery.BASE, "compatibility_sha256": recovery.BASE_FP},
             "proof_delta": recovery.PROOF_DELTA,
             "files": {name: recovery.hashlib.sha256((root / name).read_bytes()).hexdigest() for name in recovery.PATHS}})
@@ -1021,6 +1054,8 @@ except AssertionError:print(json.dumps({'evaluation_guard_denied':True,'counts':
         assert payload["counts"]["git"] > 0
     else:
         assert "denied" in payload and "identity" not in payload
+        if poison in {"later-app", "later-proof"}:
+            assert payload["denied"] == "schema26_recovery_finite_successor_scope"
 
 
 def test_process_death_after_durable_start_retains_same_once_owner(context, record_property):
