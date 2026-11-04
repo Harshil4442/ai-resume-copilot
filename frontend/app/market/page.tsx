@@ -3,7 +3,7 @@
 import { AlertCircle, ArrowUpRight, BarChart3, BriefcaseBusiness, Globe2, LoaderCircle, MapPin, Search, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { AnalysisRunFeedback } from "../../components/AnalysisRunFeedback";
@@ -18,7 +18,8 @@ import { trackEvent } from "../../lib/analytics";
 import { apiGet, apiPostJson } from "../../lib/api";
 import type { MarketAnalyzeResponse } from "../../lib/types";
 
-type ResumeItem = { id: number; filename: string; created_at: string };
+import { useResumeOptions } from "../../lib/resumeOptions";
+import { ResumeSelector } from "../../components/ResumeSelector";
 
 const MarketDemandChart = dynamic(() => import("../../components/MarketDemandChart"), {
   ssr: false,
@@ -34,13 +35,14 @@ function tone(value: string) {
 }
 
 export default function MarketPage() {
-  const [resumes, setResumes] = useState<ResumeItem[]>([]);
   const [targetRole, setTargetRole] = useState("Software Engineer");
   const [location, setLocation] = useState("India");
   const [countryCode, setCountryCode] = useState("IN");
   const [experienceLevel, setExperienceLevel] = useState("mid");
   const [remote, setRemote] = useState("any");
   const [resumeId, setResumeId] = useState("");
+  const initialResume = useRef(false);
+  const resumes = useResumeOptions({ selectedId: resumeId });
   const [maxResults, setMaxResults] = useState(50);
   const [postedWithinDays, setPostedWithinDays] = useState(30);
   const [legacyData, setData] = useState<MarketAnalyzeResponse | null>(null);
@@ -53,7 +55,7 @@ export default function MarketPage() {
   const input = { target_role: targetRole, location, country_code: countryCode, experience_level: experienceLevel,
     remote: remote === "any" ? null : remote === "remote", resume_id: resumeId ? Number(resumeId) : null,
     max_results: maxResults, posted_within_days: postedWithinDays };
-  const selectedResume = resumes.find((resume) => resume.id === Number(resumeId));
+  const selectedResume = resumes.selected;
   const quotedAction = useQuotedAnalysis({
     request: { operation: "market_analysis", input }, selectionKey: JSON.stringify(input), availability: availability.data,
     context: { resume: selectedResume ? { id: selectedResume.id, filename: selectedResume.filename } : undefined,
@@ -73,14 +75,14 @@ export default function MarketPage() {
     if (run.data && ["succeeded", "failed", "cancelled"].includes(run.data.status)) window.dispatchEvent(new Event("refresh_unified_credits"));
   }, [run.data]);
 
+  const firstResumeId = resumes.data?.resumes[0]?.id;
+  const resumePageLoaded = resumes.data !== undefined;
   useEffect(() => {
-    apiGet<{ resumes: ResumeItem[] }>("/resume/list")
-      .then((response) => {
-        setResumes(response.resumes);
-        setResumeId(response.resumes[0] ? String(response.resumes[0].id) : "");
-      })
-      .catch(() => setResumes([]));
-  }, []);
+    if (!initialResume.current && resumePageLoaded) {
+      initialResume.current = true;
+      setResumeId(firstResumeId ? String(firstResumeId) : "");
+    }
+  }, [firstResumeId, resumePageLoaded]);
 
   const chartData = useMemo(
     () => (data?.top_skills || []).slice(0, 12).map((item) => ({ skill: item.skill, demand: item.percentage })),
@@ -143,7 +145,7 @@ export default function MarketPage() {
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Experience<select className="field-control" value={experienceLevel} onChange={(event) => setExperienceLevel(event.target.value)}><option value="">Any</option><option value="entry">Entry</option><option value="junior">Junior</option><option value="mid">Mid</option><option value="senior">Senior</option><option value="staff">Staff</option></select></label>
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Work mode<select className="field-control" value={remote} onChange={(event) => setRemote(event.target.value)}><option value="any">Any</option><option value="remote">Remote</option><option value="onsite">On-site or hybrid</option></select></label>
               </div>
-              <label className="grid gap-2 text-sm font-semibold text-foreground">Resume comparison<select className="field-control" value={resumeId} onChange={(event) => setResumeId(event.target.value)}><option value="">Market only</option>{resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename || `Resume ${resume.id}`}</option>)}</select></label>
+              <ResumeSelector catalog={resumes} value={resumeId} label="Resume comparison" emptyLabel="Market only" onChange={(value) => { initialResume.current = true; setResumeId(value); }} />
               <div className="grid grid-cols-2 gap-4">
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Sample size<input className="field-control" type="number" min="5" max="100" value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} /></label>
                 <label className="grid gap-2 text-sm font-semibold text-foreground">Days<input className="field-control" type="number" min="1" max="365" value={postedWithinDays} onChange={(event) => setPostedWithinDays(Number(event.target.value))} /></label>

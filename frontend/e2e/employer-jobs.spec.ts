@@ -120,7 +120,7 @@ function fixture() {
       }
       else if (path === "/v1/analysis-runs" && method === "POST") { const run = { id: `run_fixture_${runs.length}`, operation: body.operation, status: "failed", usage_state: "released", estimated_units: 1, committed_units: 0, error_code: "FixtureError" }; runs.push(run); value = run; }
       else if (path.startsWith("/v1/analysis-runs/run_fixture_")) value = runs.find((run) => run.id === path.split("/").at(-1));
-      else if (path === "/resume/list") value = { resumes };
+      else if (path === "/resume/page") value = { resumes };
       else if (path === `${base}/catalog`) value = catalog;
       else if (path === `${base}/credits` && method === "GET") value = { balance: catalog.balance, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null } satisfies ServiceCreditHistoryPage;
       else if (path === `${base}/search-summaries` && method === "GET") {
@@ -283,7 +283,7 @@ test("account switching clears the previous search, resume cache, and reviewed a
       value = ownedBootstrapFixture({ profile: { email: "b@fixture.example", ai_credits: 9 }, features: { career_workspace: false } });
       expect(parseOwnedBootstrap(value)).not.toBeNull();
     }
-    else if (path === "/resume/list") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
+    else if (path === "/resume/page") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
     else if (path === `${base}/catalog`) value = { ...f.catalog, balance: 37, sources: [] };
     else if (path === `${base}/searches` || path === `${base}/applications`) value = { items: [] };
     else if (path === `${base}/search-summaries`) value = { items: [], next_cursor: null };
@@ -318,7 +318,7 @@ test("account switching clears the previous search, resume cache, and reviewed a
   await expect(resume).toHaveValue("");
   await expect(page.getByLabel("Target role")).toHaveValue("");
   await expect(page.getByText("37", { exact: true })).toBeVisible();
-  expect(nextOwnerRequests.some((r) => r.path === "/resume/list")).toBe(true);
+  expect(nextOwnerRequests.some((r) => r.path === "/resume/page")).toBe(true);
   expect(nextOwnerRequests.some((r) => r.path === "/auth/bootstrap" && r.method === "GET")).toBe(true);
   expect(nextOwnerRequests.some((r) => r.path === `${base}/catalog`)).toBe(true);
   expect(nextOwnerRequests.some((r) => r.path.includes("app_fixture") || r.method !== "GET")).toBe(false);

@@ -13,12 +13,13 @@ import { getSourcePreservingContent, type Opportunity, type ResumeVersion } from
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
 import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
 import { useProgressQuery } from "../lib/useProgressQuery";
-import type { ResumeListResponse } from "../lib/types";
+import { useResumeOptions } from "../lib/resumeOptions";
+import { ResumeSelector } from "./ResumeSelector";
 import { Button } from "./ui/Button";
 import { ResumeUploadProgress } from "./ResumeUploadProgress";
 import { LoadingBlock } from "./ui/LoadingBlock";
 
-type Props = { id: string; onClose: () => void; onChange: () => void; resumes: ResumeListResponse["resumes"] };
+type Props = { id: string; onClose: () => void; onChange: () => void };
 
 export function ArtifactPreview({ application, onReady }: { application: EmployerApplication; onReady: (ready: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export function ArtifactPreview({ application, onReady }: { application: Employe
   </div>;
 }
 
-export default function EmployerApplicationPanel({ id, onClose, onChange, resumes }: Props) {
+export default function EmployerApplicationPanel({ id, onClose, onChange }: Props) {
   const application = useProgressQuery({
     queryKey: ["employer-jobs", "application", id],
     queryFn: ({ signal }) => apiGet<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(id)}`, signal),
@@ -68,14 +69,15 @@ export default function EmployerApplicationPanel({ id, onClose, onChange, resume
     <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="font-display text-2xl sm:text-3xl">Review your application</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Choose the exact file and answers before anything is shared with the employer.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" aria-label="Close application review"><X size={20} /></Button></Dialog.Close></header>
     <div className="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-6">
       {application.pollingPaused && !application.isError ? <div role="status" className="mb-5 space-y-3 text-sm"><p>Automatic status checks are paused. The application may still be in progress.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Check application status</Button></div> : null}
-      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><p className="text-sm">Automatic status checks are paused. Checking status does not repeat an employer action.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} resumes={resumes} />}
+      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><p className="text-sm">Automatic status checks are paused. Checking status does not repeat an employer action.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} />}
     </div>
   </Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
 
-function ApplicationEditor({ application, onChange, resumes }: { application: EmployerApplication; onChange: () => void; resumes: ResumeListResponse["resumes"] }) {
+function ApplicationEditor({ application, onChange }: { application: EmployerApplication; onChange: () => void }) {
   const client = useQueryClient();
   const [resumeId, setResumeId] = useState(String(application.resume_id));
+  const resumeOptions = useResumeOptions({ selectedId: resumeId });
   const [choice, setChoice] = useState<ResumeChoice>(application.resume_choice);
   const [versionId, setVersionId] = useState(application.resume_version_id ?? "");
   const [answers, setAnswers] = useState(application.answers);
@@ -107,7 +109,6 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
   const approvedVersions = (versions.data ?? []).filter((version) => version.approval_state === "approved" && Boolean(getSourcePreservingContent(version.structured_content)?.source_edits.length));
   const employerUrl = safeEmployerUrl(application.posting.apply_url || application.posting.canonical_url);
   const razorpayBrowserUrl = employerUrl && /^https:\/\/job-boards\.greenhouse\.io\/razorpaysoftwareprivatelimited\/jobs\/\d+$/.test(employerUrl) ? employerUrl : null;
-  const retainedResumes = resumes.filter((resume) => resume.source_available);
   const busy = application.status === "queued" || application.status === "submitting";
 
   function update(updated: EmployerApplication) {
@@ -203,7 +204,7 @@ function ApplicationEditor({ application, onChange, resumes }: { application: Em
     {application.error ? <p role="alert" className="text-sm text-coral">{application.error.message}</p> : null}
     <section aria-labelledby="application-resume-heading"><h3 id="application-resume-heading" className="font-semibold">Resume for this job</h3><p className="mt-2 text-xs leading-5 text-muted-foreground">Switch to the original or a custom file at any time before submission. Saving a change clears the previous approval.</p><div className="mt-4 grid gap-4 sm:grid-cols-2">
       <label className="grid gap-2 text-sm font-semibold">Resume choice<select className="field-control" value={choice} disabled={immutable || pending} onChange={(event) => { setChoice(event.target.value as ResumeChoice); setVersionId(""); markDirty(); }}><option value="original">Original resume</option><option value="tailored">Approved tailored version</option><option value="custom">Custom upload</option></select></label>
-      <label className="grid gap-2 text-sm font-semibold">Saved original file<select className="field-control min-w-0" value={resumeId} disabled={immutable || pending} onChange={(event) => { setResumeId(event.target.value); setVersionId(""); markDirty(); }}><option value="">Choose retained source</option>{retainedResumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id}</option>)}{resumeId && !retainedResumes.some((resume) => String(resume.id) === resumeId) ? <option value={resumeId}>Selected file · #{resumeId}</option> : null}</select></label>
+      <ResumeSelector catalog={resumeOptions} value={resumeId} label="Saved original file" emptyLabel="Choose retained source" retainedOnly disabled={immutable || pending} onChange={(value) => { setResumeId(value); setVersionId(""); markDirty(); }} />
       {choice === "tailored" ? <label className="grid gap-2 text-sm font-semibold sm:col-span-2">Approved version<select className="field-control" value={versionId} disabled={immutable || pending || versions.isLoading} onChange={(event) => { setVersionId(event.target.value); markDirty(); }}><option value="">Choose a reviewed version</option>{approvedVersions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}</select>{versions.isError ? <span role="alert" className="text-xs text-coral">Could not load versions. <button type="button" className="underline" onClick={() => void versions.refetch()}>Retry</button></span> : !versions.isLoading && !approvedVersions.length ? <span className="text-xs font-normal leading-5 text-muted-foreground">No source-preserving version has been approved for this resume. Prepare tailoring below, approve its exact native file in Workspace, then return here and choose it.</span> : null}</label> : null}
       {choice === "custom" ? <div className="sm:col-span-2"><label className="grid gap-2 text-sm font-semibold">Upload a custom PDF, DOCX or TeX source<input type="file" accept=".pdf,.docx,.tex,.zip,application/pdf,application/x-tex,application/zip" className="field-control text-xs" disabled={immutable || pending} onChange={(event) => { const file = event.target.files?.[0]; if (file && !uploadController.current) { const controller = new AbortController(); uploadController.current = controller; setFileError(null); upload.mutate({ file, controller }); } }} /></label>{upload.isPending && uploadProgress ? <ResumeUploadProgress progress={uploadProgress} onCancel={cancelResumeUpload} /> : null}</div> : null}
     </div>{choice === "tailored" && !immutable ? <div className="mt-4 space-y-2">{preparedTailoring ? <Link href={`/workspace/${encodeURIComponent(preparedTailoring.id)}?tab=resume`} className="inline-flex text-sm font-semibold text-primary underline underline-offset-4">Review tailoring for this job in Workspace</Link> : <Button variant="secondary" size="sm" disabled={!resumeId || pending || tailoringWorkspace.isPending} onClick={() => tailoringWorkspace.mutate(Number(resumeId))}>Prepare tailored resume for this job</Button>}<p className="text-xs leading-5 text-muted-foreground">This saves the employer job and chosen resume in Workspace. Generate and approve the tailored version there; this action does not submit an application.</p>{tailoringMatchesResume && tailoringWorkspace.error ? <p role="alert" className="text-sm text-coral">{tailoringWorkspace.error.message}</p> : null}</div> : null}{fileError ? <p role="alert" className="mt-3 text-sm text-coral">{fileError}</p> : null}</section>

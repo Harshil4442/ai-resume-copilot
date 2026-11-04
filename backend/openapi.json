@@ -6714,6 +6714,43 @@
         "title": "ResumeListResponse",
         "type": "object"
       },
+      "ResumePageResponse": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "resumes": {
+            "items": {
+              "$ref": "#/components/schemas/ResumeListItem"
+            },
+            "title": "Resumes",
+            "type": "array"
+          },
+          "selected_resume": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumeListItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "resumes"
+        ],
+        "title": "ResumePageResponse",
+        "type": "object"
+      },
       "ResumeParseResponse": {
         "properties": {
           "contact_info": {
@@ -13359,7 +13396,7 @@
     },
     "/api/resume/list": {
       "get": {
-        "description": "Return all parsed resumes for the current user (used for dropdown selection).",
+        "description": "Legacy array contract, bounded to 500 entries; new selectors use /page.",
         "operationId": "list_resumes_api_resume_list_get",
         "responses": {
           "200": {
@@ -13379,6 +13416,92 @@
           }
         ],
         "summary": "List Resumes",
+        "tags": [
+          "resume"
+        ]
+      }
+    },
+    "/api/resume/page": {
+      "get": {
+        "description": "One bounded metadata page plus at most one independently owned selection.",
+        "operationId": "page_resumes_api_resume_page_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 256,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "current_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9223372036854775808,
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumePageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Page Resumes",
         "tags": [
           "resume"
         ]

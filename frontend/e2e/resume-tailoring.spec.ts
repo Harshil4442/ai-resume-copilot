@@ -95,7 +95,7 @@ function createFixture() {
       else if (state.unified && path === "/v1/credits/wallet") value = { schema_version: "unified-credits-v1", server_time: now, available_credits: 0, reserved_credits: 0, debt_credits: 0, lots: [] };
       else if (state.unified && path === "/v1/credits/analysis-reuse") value = { reused_run: null };
       else if (state.unified && path === "/v1/credits/service-quotes") value = { schema_version: "unified-service-quote-v1", quote_id: "csq_browser_review", operation: "resume_tailor", input_fingerprint: "b".repeat(64), route_id: "browser-qualified-route", route_version: "1", tariff_version: "credit-services-v1", mode: "enhanced", credits: 8, deliverable: "Tailored source resume with approved evidence and preserved layout.", supported_limits: { max_pages: 2, max_edits: 5 }, created_at: now, server_time: now, expires_at: "2026-10-07T10:15:00Z" };
-      else if (path === "/resume/list") {
+      else if (path === "/resume/page") {
         if (state.pauseList) await state.pauseList;
         status = state.listError ? 503 : 200;
         value = state.listError ? { detail: "Source metadata temporarily unavailable." } : { resumes };
@@ -300,7 +300,7 @@ test("unknown source metadata can be refreshed without claiming the original is 
   await expect(generate).toBeEnabled();
   await expect(snapshot).toBeEnabled();
   const refreshed = fixture.requests.slice(before);
-  expect(refreshed.some((request) => request.path === "/resume/list")).toBe(true);
+  expect(refreshed.some((request) => request.path === "/resume/page")).toBe(true);
   expect(refreshed.some((request) => request.path === `/v1/opportunities/${opportunityId}`)).toBe(true);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);

@@ -24,7 +24,7 @@ function opportunity() {
 function read(url: string) {
   if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture());
   if (url === "/public/billing/catalog") return Promise.resolve(quote);
-  if (url === "/resume/list") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
+  if (url === "/resume/page?limit=20") return Promise.resolve({ resumes: [1, 2].map((id) => ({ id, filename: `synthetic-${id}.pdf`, source_available: true, source_format: "pdf" })) });
   if (url === `/v1/opportunities/${state.id}`) return Promise.resolve(opportunity());
   if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: "Built reliable services.", skills: [], snapshot_fingerprint: "a".repeat(64) }]);
   if (url.startsWith("/v1/evidence-items/transcription-review/")) return Promise.resolve({ resume_id: resumeId, filename: `synthetic-${resumeId}.pdf`, source_format: "pdf", source_sha256: "c".repeat(64), assessment_fingerprint: "d".repeat(64), status: "not_required", sections: [], unmapped_text: null });
@@ -414,4 +414,58 @@ it("refreshes one shared account snapshot once for a completed tailoring run wit
   await act(async () => { pending.forEach((finish) => finish(ownedBootstrapFixture())); });
   expect(state.get.mock.calls.filter(([path]) => path === "/auth/bootstrap")).toHaveLength(2);
   expect(requests()).toHaveLength(1);
+});
+
+
+function historicalVersionRead(url: string) {
+  if (url === `/v1/opportunities/${state.id}`) return Promise.resolve({ ...opportunity(), resume_versions: [{
+    id: "off-page-version", resume_id: 3, version_number: 1, label: "Off-page history", approval_state: "draft",
+    evidence_ids: [], structured_content: { format_preservation: "source", source_format: "pdf", source_edits: [] },
+    created_at: stamp, updated_at: stamp, submitted_at: null,
+  }] });
+  return read(url);
+}
+
+it("distinguishes unrequested, loading and failed history metadata, and enables source controls only after a confirmed retained row", async () => {
+  let reject!: (error: Error) => void;
+  state.get.mockImplementation((url: string) => url === "/resume/page?limit=1&current_id=3"
+    ? new Promise((_resolve, fail) => { reject = fail; }) : historicalVersionRead(url));
+  await page();
+  fireEvent.click(screen.getByText("Review source snapshot"));
+  expect(screen.getByText(/The original file has not been checked yet/)).toBeVisible();
+  expect(screen.queryByText(/The original source for this version is unavailable/)).toBeNull();
+  expect(state.get.mock.calls.some(([url]) => String(url).includes("current_id=3"))).toBe(false);
+  expect(screen.getByRole("button", { name: "Approve version" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Download PDF" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved version source details" }));
+  await waitFor(() => expect(reject).toBeDefined());
+  expect(screen.getByText("Checking the original file before approval and download...")).toBeVisible();
+  await act(async () => reject(new ApiError("Temporary metadata refusal", 503, {})));
+  await screen.findByText(/Source file details could not be verified/);
+  expect(screen.queryByText(/The original source for this version is unavailable/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Approve version" })).toBeDisabled();
+  state.get.mockImplementation((url: string) => url === "/resume/page?limit=1&current_id=3"
+    ? Promise.resolve({ resumes: [], next_cursor: null, selected_resume: { id: 3, filename: "history.pdf", source_available: true, source_format: "pdf", created_at: stamp } })
+    : historicalVersionRead(url));
+  fireEvent.click(screen.getByRole("button", { name: "Load saved version source details" }));
+  expect(await screen.findByRole("button", { name: "Download PDF" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Approve version" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: "I have reviewed this version and its proposed changes." }));
+  expect(screen.getByRole("button", { name: "Approve version" })).toBeEnabled();
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it.each(["missing-row", "missing-source"])("reports confirmed %s after an explicit historical source lookup", async (outcome) => {
+  state.get.mockImplementation((url: string) => {
+    if (url !== "/resume/page?limit=1&current_id=3") return historicalVersionRead(url);
+    if (outcome === "missing-row") return Promise.reject(new ApiError("Selected resume is unavailable", 404, {}));
+    return Promise.resolve({ resumes: [], next_cursor: null, selected_resume: { id: 3, filename: "history.pdf", source_available: false, source_format: null, created_at: stamp } });
+  });
+  await page();
+  fireEvent.click(screen.getByText("Review source snapshot"));
+  expect(screen.queryByText(/The original source for this version is unavailable/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved version source details" }));
+  await waitFor(() => expect(screen.getByText(/The original source for this version is unavailable/)).toBeVisible(), { timeout: 2500 });
+  expect(screen.getByRole("button", { name: "Approve version" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: "Download PDF" })).toBeNull();
 });

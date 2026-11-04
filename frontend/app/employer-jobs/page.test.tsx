@@ -30,7 +30,7 @@ function read(url: string) {
   if (url === "/v1/features") return Promise.resolve({ features: {} });
   if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
   if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
-  if (url === "/resume/list") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
+  if (url === "/resume/page?limit=20") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
   if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
   if (url.includes("/search-summaries?")) return Promise.resolve({ items: [summary(owner)], next_cursor: null });
   if (url.includes("/results?")) return Promise.resolve({ search: summary(owner), items: [item(owner)], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "v1-exact-snapshot" });

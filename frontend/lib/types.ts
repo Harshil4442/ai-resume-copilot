@@ -48,6 +48,11 @@ export type ResumeListResponse = {
   resumes: (ResumeSourceMetadata & { id: number; filename: string; created_at: string })[];
 };
 
+export type ResumePageResponse = ResumeListResponse & {
+  next_cursor: string | null;
+  selected_resume: ResumeListResponse["resumes"][number] | null;
+};
+
 export type ResumeParseResponse = ResumeSourceMetadata & {
   extraction_mode?: "deterministic" | "enriched";
   enrichment_state?: "not_requested" | "completed" | "unchanged" | "insufficient_units" | "unavailable" | "failed";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, Download, FileText, FileUp, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -10,10 +10,11 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { LoadingBlock } from "../../../components/ui/LoadingBlock";
-import { apiBlob, apiDownload, apiGet } from "../../../lib/api";
+import { apiBlob, apiDownload } from "../../../lib/api";
 import { fetchResumeSource, fetchResumeVersionPdf } from "../../../lib/career";
 import { directResumeSourceEnabled, fetchDirectResumeSource, saveVerifiedResumeSource } from "../../../lib/resumeSource";
-import type { ResumeListResponse } from "../../../lib/types";
+import { useResumeOptions } from "../../../lib/resumeOptions";
+import { ResumeSelector } from "../../../components/ResumeSelector";
 
 function ResumePreviewContent() {
   const searchParams = useSearchParams();
@@ -35,11 +36,11 @@ function ResumePreviewDocument({ ownerKey, authenticated, requestedValue, versio
   const [pdfPreview, setPdfPreview] = useState<{ documentKey: string; url: string } | null>(null);
   const [pdfError, setPdfError] = useState<{ documentKey: string; message: string } | null>(null);
   const [previewAttempt, setPreviewAttempt] = useState(0);
-  const resumes = useQuery({ queryKey: ["resumes", ownerKey], queryFn: () => apiGet<ResumeListResponse>("/resume/list"), enabled: authenticated, refetchOnMount: "always" });
   const targetId = selectedId ?? requestedId;
+  const resumes = useResumeOptions({ selectedId: targetId, enabled: authenticated && !versionId, ownerKey, freshOnMount: true });
   // A cached list can predate the upload linked by this URL. Never substitute
   // another file for an explicit request or a deliberate selector choice.
-  const selectedResume = targetId !== null ? resumes.data?.resumes.find((resume) => resume.id === targetId)
+  const selectedResume = targetId !== null ? resumes.selected
     : requestedValue === null ? resumes.data?.resumes[0] : undefined;
   const resumeId = selectedResume?.id;
   const sourceAvailable = selectedResume?.source_available;
@@ -130,12 +131,7 @@ function ResumePreviewDocument({ ownerKey, authenticated, requestedValue, versio
         {selectedResume && !versionId ? (
           <section className="mt-7">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <label className="grid min-w-0 gap-2 text-sm font-semibold sm:max-w-lg sm:flex-1">
-                Source resume
-                <select className="field-control min-w-0 truncate" value={selectedResume.id} onChange={(event) => { downloadController.current?.abort(); resetOriginalDownload(); setPdfPreview(null); setPdfError(null); setSelectedId(Number(event.target.value)); }}>
-                  {resumes.data?.resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
-                </select>
-              </label>
+              <ResumeSelector catalog={resumes} value={selectedResume.id} label="Source resume" onBrowse={() => setSelectedId(selectedResume.id)} onChange={(value) => { downloadController.current?.abort(); resetOriginalDownload(); setPdfPreview(null); setPdfError(null); setSelectedId(value ? Number(value) : null); }} />
               {selectedResume.source_available && selectedResume.source_format ? <Button variant="secondary" onClick={() => downloadOriginal.mutate(selectedResume)} disabled={downloadOriginal.isPending}>{downloadOriginal.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Download size={16} />} Download original {selectedResume.source_format.toUpperCase()}</Button> : null}
             </div>
             {downloadOriginal.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadOriginal.error instanceof Error ? downloadOriginal.error.message : "Could not download the original resume."}</p> : null}

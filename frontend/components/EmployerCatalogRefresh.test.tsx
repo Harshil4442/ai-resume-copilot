@@ -60,7 +60,7 @@ beforeEach(() => {
     if (path === "/api/account/bootstrap") return Promise.resolve(json(ownedBootstrapFixture({ profile: { email: "one@example.invalid" } })));
     if (path === "/api/backend/v1/features") return Promise.resolve(json({ features: {} }));
     if (path === "/api/backend/v1/credits/availability") return Promise.resolve(json({ catalog_enabled: false, execution_enabled: false, supported_operations: [] }));
-    if (path === "/api/backend/resume/list") return Promise.resolve(json({ resumes: [{ id: 10, filename: "synthetic.pdf", source_available: true }] }));
+    if (path === "/api/backend/resume/page?limit=20") return Promise.resolve(json({ resumes: [{ id: 10, filename: "synthetic.pdf", source_available: true }] }));
     if (path === "/api/backend/v1/employer-jobs/applications") return Promise.resolve(json({ items: [] }));
     if (path.includes("/search-summaries?")) return Promise.resolve(json({ items: [], next_cursor: null }));
     if (path === "/api/backend/v1/employer-jobs/searches" && init.method === "POST") return Promise.resolve(json({

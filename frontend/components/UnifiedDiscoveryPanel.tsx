@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiGet, apiPostJson } from "../lib/api";
 import { readSavedSearchQuery, type EmployerSearchSummary, type SearchResult } from "../lib/employerJobs";
 import { emptyPreferenceDraft, preferenceDraft, preferenceInput } from "../lib/searchPreferences";
-import type { ResumeListResponse } from "../lib/types";
+import { useResumeOptions } from "../lib/resumeOptions";
+import { ResumeSelector } from "./ResumeSelector";
 import { parseDiscoveryBatch, parseDiscoveryQuote, type DiscoveryBatch, type DiscoveryCreate, type DiscoveryRequest } from "../lib/unifiedDiscovery";
 import { creditWalletKey } from "../lib/unifiedCreditClient";
 import { useProgressQuery } from "../lib/useProgressQuery";
@@ -32,13 +33,14 @@ function definitelyUnstarted(error: unknown) {
 }
 
 /** Mount by selected saved-search ID; parent locks history while an intent is unresolved. */
-export function UnifiedDiscoveryPanel({ resumes, enabled, initialSearch, preparingApplication, onPrepare, onResume, onLockChange }: {
-  resumes: ResumeListResponse["resumes"]; enabled: boolean; initialSearch?: EmployerSearchSummary | null;
+export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplication, onPrepare, onResume, onLockChange }: {
+  enabled: boolean; initialSearch?: EmployerSearchSummary | null;
   preparingApplication: boolean; onPrepare: (postingId: string, resumeId: number) => void;
   onResume: (resumeId: string) => void; onLockChange: (locked: boolean) => void;
 }) {
   const saved = readSavedSearchQuery(initialSearch?.query);
   const [resumeId, setResumeId] = useState(saved ? String(saved.resume_id) : "");
+  const resumeOptions = useResumeOptions({ selectedId: resumeId });
   const [role, setRole] = useState(saved?.role ?? ""), [location, setLocation] = useState(saved?.location ?? "");
   const [remote, setRemote] = useState(saved?.remote_only ?? false), [days, setDays] = useState(saved?.published_within_days ? String(saved.published_within_days) : "");
   const [preferences, setPreferences] = useState(() => saved ? preferenceDraft(saved.preferences) : { ...emptyPreferenceDraft, employment: [...emptyPreferenceDraft.employment] });
@@ -73,7 +75,7 @@ export function UnifiedDiscoveryPanel({ resumes, enabled, initialSearch, prepari
   const resultStatus = progress.data?.status;
   useEffect(() => { if (resultStatus && resultStatus !== "preparing") refresh(); }, [resultStatus, refresh]);
   const valid = Boolean(resumeId && role.trim().length >= 2 && !choice.error);
-  const selectedResume = resumes.find((resume) => String(resume.id) === resumeId);
+  const selectedResume = resumeOptions.selected;
   const canReview = enabled && valid && !locked;
   function requestQuote() { if (canReview) { setReview(null); create.reset(); quote.mutate(input); } }
   const batch = progress.data;
@@ -82,7 +84,7 @@ export function UnifiedDiscoveryPanel({ resumes, enabled, initialSearch, prepari
     <form className="surface min-w-0 self-start p-5 sm:p-6" onSubmit={(event) => { event.preventDefault(); requestQuote(); }}>
       <h2 className="font-display text-2xl">Your search</h2>
       <div className="mt-5 grid gap-4">
-        <label className="grid gap-2 text-sm font-semibold">Resume<select className="field-control min-w-0" value={resumeId} disabled={locked} required onChange={(event) => { setResumeId(event.target.value); onResume(event.target.value); }}><option value="">Choose a resume</option>{resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id}</option>)}</select></label>
+        <ResumeSelector catalog={resumeOptions} value={resumeId} disabled={locked} required onChange={(value) => { setResumeId(value); onResume(value); }} />
         <Link className="text-xs font-semibold text-primary underline underline-offset-4" href="/resume">Upload another resume</Link>
         <label className="grid gap-2 text-sm font-semibold">Target role<input className="field-control" value={role} minLength={2} maxLength={200} disabled={locked} required onChange={(event) => setRole(event.target.value)} placeholder="e.g. Backend Engineer" /></label>
         <label className="grid gap-2 text-sm font-semibold">Location<input className="field-control" value={location} maxLength={200} disabled={locked} onChange={(event) => setLocation(event.target.value)} placeholder="City or country" /></label>

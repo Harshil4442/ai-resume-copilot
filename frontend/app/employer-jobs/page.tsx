@@ -19,7 +19,8 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
 import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type JobServiceCatalog, type SearchPriceAcceptance } from "../../lib/employerJobs";
-import type { ResumeListResponse } from "../../lib/types";
+import { useResumeOptions } from "../../lib/resumeOptions";
+import { ResumeSelector } from "../../components/ResumeSelector";
 import { progressPollDelay } from "../../lib/readQueryPolicy";
 import { usePageVisible } from "../../lib/useProgressQuery";
 
@@ -62,7 +63,7 @@ export default function EmployerJobsPage() {
   const applicationIntent = useRef<{ fingerprint: string; key: string } | null>(null);
   const intent = useRef<{ fingerprint: string; key: string; acceptedQuote: SearchPriceAcceptance } | null>(null);
   const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
-  const resumes = useQuery({ queryKey: ["resumes"], queryFn: ({ signal }) => apiGet<ResumeListResponse>("/resume/list", signal) });
+  const resumes = useResumeOptions({ selectedId: resumeId });
   const applications = useQuery({ queryKey: ["employer-jobs", "applications"], queryFn: ({ signal }) => apiGet<{ items: EmployerApplication[] }>(`${employerJobsBase}/applications`, signal) });
   const requestedCount = Number(count);
   const validCount = Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= (catalog.data?.max_search_jobs ?? 0);
@@ -190,13 +191,13 @@ export default function EmployerJobsPage() {
       <div><p className="eyebrow">Employer discovery pilot · 20 reviewed origins</p><h1 className="font-display mt-2 text-4xl font-normal sm:text-5xl">Find your next role. Apply with control.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Search available postings within our 20 reviewed employer origins and compare your skills. Candidate-reviewed browser assistance is limited to Razorpay’s Greenhouse portal; other employers use a manual portal handoff.</p></div>
       <div className="surface p-4"><p className="data-label">{unified ? "Credits" : "Legacy service credits"}</p><p className="mt-1 text-2xl font-semibold text-primary">{unified ? wallet.data?.available_credits ?? "—" : catalog.data?.balance ?? "—"}</p><Link href="/billing" className="mt-2 inline-block text-sm font-semibold text-primary underline underline-offset-4">Buy credits</Link></div>
     </header>
-    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} resumes={resumes.data?.resumes ?? []} enabled={isCreditOperationAvailable(availability.data, "job_discovery_batch")} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={(postingId, resumeId) => prepare.mutate({ postingId, resumeId })} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
+    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} enabled={isCreditOperationAvailable(availability.data, "job_discovery_batch")} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={(postingId, resumeId) => prepare.mutate({ postingId, resumeId })} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
     <div className="mt-8 grid min-w-0 gap-8 xl:grid-cols-[340px_minmax(0,1fr)]">
       <aside className="min-w-0 space-y-5">
         {legacyAvailable && !unifiedHistory ? <form className="surface p-5 sm:p-6" onSubmit={(event) => { event.preventDefault(); search.mutate(); }} aria-labelledby="search-heading">
           <h2 id="search-heading" className="font-display text-2xl">Your search</h2>
           <div className="mt-5 grid gap-4">
-            <label className="grid gap-2 text-sm font-semibold">Resume<select className="field-control min-w-0" value={resumeId} onChange={(event) => setResumeId(event.target.value)} required disabled={searchBusy || resumes.isLoading}><option value="">Choose a resume</option>{resumes.data?.resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id}{resume.source_available ? "" : " · original file missing"}</option>)}</select></label>
+            <ResumeSelector catalog={resumes} value={resumeId} onChange={setResumeId} required disabled={searchBusy} format={(resume) => `${resume.filename} · #${resume.id}${resume.source_available ? "" : " · original file missing"}`} />
             {resumes.isError ? <p role="alert" className="text-sm text-coral">Could not load resumes. <button type="button" className="underline" onClick={() => void resumes.refetch()}>Retry</button></p> : null}
             <Link href="/resume" className="text-xs font-semibold text-primary underline underline-offset-4">Upload another resume</Link>
             <label className="grid gap-2 text-sm font-semibold">Target role<input className="field-control" value={role} onChange={(event) => setRole(event.target.value)} required maxLength={160} disabled={searchBusy} placeholder="e.g. Backend Engineer" /></label>
@@ -241,7 +242,7 @@ export default function EmployerJobsPage() {
         </section>
       </div>
     </div>
-    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} resumes={resumes.data?.resumes ?? []} /> : null}
+    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} /> : null}
     {batchReview ? <BatchPanel key={batchReview.id ?? selectedApplications.join(":")} {...batchReview} onClose={() => { setBatchReview(null); setSelectedApplications([]); refreshBalances(); }} onChange={refreshBalances} /> : null}
   </div></main>;
 }

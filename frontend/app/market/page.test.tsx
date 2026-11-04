@@ -13,7 +13,7 @@ const quote = { schema_version: "unified-service-quote-v1", quote_id: "csq_marke
   created_at: "2026-10-27T10:00:00Z", expires_at: "2026-10-27T10:15:00Z", server_time: "2026-10-27T10:00:00Z" };
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  state.get.mockReset().mockImplementation(async (path) => path === "/resume/list" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
+  state.get.mockReset().mockImplementation(async (path) => path === "/resume/page?limit=20" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
     : path === "/auth/bootstrap" ? ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: true, supported_operations: ["market_report"] } })
     : { id: "run-market", operation: "market_analysis", status: "cancelled", billing_currency: "credits", committed_units: 0, usage_state: "released" });
   state.post.mockReset().mockImplementation(async (path) => path === "/v1/credits/analysis-reuse" ? { reused_run: null }
@@ -43,7 +43,7 @@ it("requires a fresh review if the market query changes", async () => {
 });
 
 it("finds unchanged saved reports while new paid reports are unavailable without requesting a quote", async () => {
-  state.get.mockImplementation(async (path) => path === "/resume/list" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
+  state.get.mockImplementation(async (path) => path === "/resume/page?limit=20" ? { resumes: [{ id: 1, filename: "selected.pdf" }] }
     : path === "/auth/bootstrap" ? ownedBootstrapFixture({ availability: { catalog_enabled: true, execution_enabled: false, supported_operations: [] } })
     : { id: "saved-market", operation: "market_analysis", status: "cancelled", billing_currency: "credits", committed_units: 0, usage_state: "released" });
   state.post.mockResolvedValue({ reused_run: { id: "saved-market", operation: "market_analysis", status: "succeeded" } });

@@ -109,6 +109,11 @@ class ResumeListItem(BaseModel):
 class ResumeListResponse(BaseModel):
     resumes: List[ResumeListItem]
 
+
+class ResumePageResponse(ResumeListResponse):
+    next_cursor: str | None = None
+    selected_resume: ResumeListItem | None = None
+
 # -------------------------
 # Job matching
 # -------------------------

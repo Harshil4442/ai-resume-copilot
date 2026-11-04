@@ -40,7 +40,7 @@ it.each(["docx", "pdf"])("does not expose or request a cached %s while the expli
   const cached = { id: 30, filename: `previous.${format}`, source_available: true, source_format: format };
   const requested = { id: 31, filename: "requested.tex", source_available: true, source_format: "tex" };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000 } } });
-  client.setQueryData(["resumes", "authenticated:1"], { resumes: [cached] });
+  client.setQueryData(["resumes", "pages", "authenticated:1", null], { resumes: [cached] });
   let finish!: (value: { resumes: typeof requested[] }) => void;
   vi.mocked(apiGet).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
 
@@ -83,7 +83,7 @@ it.each(["", "invalid", "0", "-1", "1.5", "9007199254740992"])("does not substit
 it("keeps an unavailable explicit resume unselected and lets the owner refresh that exact request", async () => {
   query = "resume=31";
   render(tree());
-  await screen.findByText("Requested resume is unavailable");
+  await screen.findByText("Selected resume is unavailable.");
   expect(screen.queryByRole("button", { name: /Download original/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   vi.mocked(apiGet).mockResolvedValue({ resumes: [{ id: 31, filename: "requested.tex", source_available: true, source_format: "tex" }] });
@@ -186,4 +186,21 @@ it.each(["selection", "owner", "unmount"])("%s change aborts a late download bef
   expect(signal.aborted).toBe(true);
   await act(async () => { finish(source); });
   expect(saveVerifiedResumeSource).not.toHaveBeenCalled();
+});
+
+
+it("keeps the initially previewed file while browsing an older page", async () => {
+  query = "";
+  const newest = { id: 7, filename: "original.docx", source_available: true, source_format: "docx" };
+  const older = { id: 1, filename: "older.docx", source_available: true, source_format: "docx" };
+  vi.mocked(apiGet).mockImplementation(async (path) => path.includes("current_id=7")
+    ? { resumes: [], next_cursor: null, selected_resume: newest }
+    : path.includes("cursor=") ? { resumes: [older], next_cursor: null, selected_resume: null }
+    : { resumes: [newest], next_cursor: "older", selected_resume: null });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load older resumes" }));
+  await screen.findByRole("option", { name: "older.docx · #1" });
+  await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue("7"));
+  fireEvent.click(screen.getByRole("button", { name: "Download original DOCX" }));
+  await waitFor(() => expect(fetchDirectResumeSource).toHaveBeenCalledWith(7, expect.any(AbortSignal), "docx"));
 });

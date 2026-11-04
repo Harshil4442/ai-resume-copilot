@@ -18,16 +18,17 @@ function batch(count = 2) { return { id: "search_one", status: "completed", bill
   maximum_batch_size: 5, scope: {}, items: Array.from({ length: count }, () => resultItem) }; }
 let client: QueryClient;
 beforeEach(() => { client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  api.get.mockReset().mockResolvedValue(batch()); api.post.mockReset().mockImplementation(async (url) => {
+  api.get.mockReset().mockImplementation(async (path) => path.startsWith("/resume/page?") ? { resumes, next_cursor: null, selected_resume: null } : batch()); api.post.mockReset().mockImplementation(async (url) => {
     if (url.endsWith("/discovery-quotes")) return quote;
     if (url.endsWith("/discovery-batches")) return batch();
     throw new Error(`Unexpected ${url}`);
   }); });
 afterEach(() => { cleanup(); client.clear(); });
 function view(extra: Partial<React.ComponentProps<typeof UnifiedDiscoveryPanel>> = {}) {
-  return render(<QueryClientProvider client={client}><UnifiedDiscoveryPanel resumes={resumes} enabled preparingApplication={false} onPrepare={vi.fn()} onResume={vi.fn()} onLockChange={vi.fn()} {...extra} /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><UnifiedDiscoveryPanel enabled preparingApplication={false} onPrepare={vi.fn()} onResume={vi.fn()} onLockChange={vi.fn()} {...extra} /></QueryClientProvider>);
 }
 async function review() {
+  await screen.findByRole("option", { name: /original.pdf/ });
   fireEvent.change(screen.getByRole("combobox", { name: "Resume" }), { target: { value: "1" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Target role" }), { target: { value: "Engineer" } });
   fireEvent.click(screen.getByRole("button", { name: "Review one-credit search" }));
@@ -41,7 +42,7 @@ it("discloses partial results and only creates one bounded batch after approval"
   expect(api.post.mock.calls.filter(([url]) => url.endsWith("/discovery-batches"))).toEqual([["/v1/credits/discovery-batches", expect.objectContaining({ desired_count: 5, resume_id: 1, accepted_service_quote_id: "csq_search", idempotency_key: expect.any(String) })]]);
 });
 it("keeps empty delivery free and never silently requests another batch", async () => {
-  api.get.mockResolvedValue(batch(0)); api.post.mockImplementation(async (url) => url.endsWith("/discovery-quotes") ? quote : batch(0));
+  api.get.mockImplementation(async (path) => path.startsWith("/resume/page?") ? { resumes } : batch(0)); api.post.mockImplementation(async (url) => url.endsWith("/discovery-quotes") ? quote : batch(0));
   view(); fireEvent.click(await review()); await screen.findByText("0 credits charged · 0 held · 1 restored");
   expect(screen.getByText(/No new qualifying jobs were found/)).toBeVisible(); expect(api.post).toHaveBeenCalledTimes(2);
 });
@@ -66,7 +67,7 @@ it("opens saved results through a read even when new execution is unavailable", 
   await screen.findByText("1 credit charged · 0 held · 0 restored"); expect(api.post).not.toHaveBeenCalled(); expect(screen.getByRole("button", { name: "Review one-credit search" })).toBeDisabled();
 });
 it("cancels only the selected preparing batch and shows the restored credit", async () => {
-  const preparing = { ...batch(0), status: "preparing", reserved_credits: 1, refunded_credits: 0 }; api.get.mockResolvedValue(preparing);
+  const preparing = { ...batch(0), status: "preparing", reserved_credits: 1, refunded_credits: 0 }; api.get.mockImplementation(async (path) => path.startsWith("/resume/page?") ? { resumes } : preparing);
   api.post.mockImplementation(async (url) => url.endsWith("/discovery-quotes") ? quote : url.endsWith("/cancel") ? { ...batch(0), status: "cancelled" } : preparing);
   view(); fireEvent.click(await review()); fireEvent.click(await screen.findByRole("button", { name: "Cancel search" })); await screen.findByText("Search cancelled");
   expect(api.post.mock.calls.at(-1)?.[0]).toBe("/v1/credits/discovery-batches/search_one/cancel"); expect(screen.getByText("0 credits charged · 0 held · 1 restored")).toBeVisible();

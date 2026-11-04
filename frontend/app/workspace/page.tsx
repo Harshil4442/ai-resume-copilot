@@ -15,14 +15,14 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { StatusBadge } from "../../components/ui/StatusBadge";
-import { apiGet, apiPostJson } from "../../lib/api";
+import { apiPostJson } from "../../lib/api";
 import {
   type Opportunity,
   stageLabels,
@@ -32,7 +32,8 @@ import {
 import { trackEvent } from "../../lib/analytics";
 import { opportunitiesOptions } from "../../lib/opportunityQueries";
 
-type ResumeList = { resumes: { id: number; filename: string; created_at: string }[] };
+import { useResumeOptions } from "../../lib/resumeOptions";
+import { ResumeSelector } from "../../components/ResumeSelector";
 
 const opportunitySchema = z.object({
   title: z.string().trim().min(2, "Add the role title").max(200),
@@ -82,10 +83,6 @@ export default function WorkspacePage() {
   const [stage, setStage] = useState("all");
   const [search, setSearch] = useState("");
   const opportunities = useQuery(opportunitiesOptions({ limit: 200 }));
-  const resumes = useQuery({
-    queryKey: ["resumes"],
-    queryFn: () => apiGet<ResumeList>("/resume/list"),
-  });
   const form = useForm<OpportunityForm>({
     resolver: zodResolver(opportunitySchema),
     defaultValues: {
@@ -98,6 +95,8 @@ export default function WorkspacePage() {
       job_description: "",
     },
   });
+  const selectedResumeId = useWatch({ control: form.control, name: "resume_id" });
+  const resumes = useResumeOptions({ selectedId: selectedResumeId });
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("new") !== "1") return;
@@ -248,13 +247,7 @@ export default function WorkspacePage() {
                   Source URL
                   <input className="field-control" {...form.register("source_url")} placeholder="https://company.example/careers/role" inputMode="url" />
                 </label>
-                <label className="grid gap-2 text-sm font-semibold text-foreground sm:col-span-2">
-                  Resume
-                  <select className="field-control" {...form.register("resume_id")}>
-                    <option value="">Connect later</option>
-                    {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
-                  </select>
-                </label>
+                <div className="sm:col-span-2"><ResumeSelector catalog={resumes} value={selectedResumeId} emptyLabel="Connect later" onChange={(value) => form.setValue("resume_id", value, { shouldValidate: true })} /></div>
               </div>
               <label className="grid gap-2 text-sm font-semibold text-foreground">
                 Job description
