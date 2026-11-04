@@ -5,10 +5,11 @@ from __future__ import annotations
 import re
 
 from ..candidate_accounts.contracts import CandidateCredentialRevision
+from .gcp_contracts import AmbiguousCommit
 from .gcp_partitioned_contracts import ScopedCredentialRevision
 from .gcp_password_lifetime import GcpPasswordLifetimeCoordinator, PasswordLifetimeOwnedAck
 from .gcp_password_reset import GcpPasswordCredentialProjection
-from .gcp_scoped_authority import ScopedCandidateAuthority, current_subject
+from .gcp_scoped_authority import ScopedCandidateAuthority, current_session, current_subject
 from .password_reauth import CandidateWebSession
 from .store import GuardDenied, GuardUnavailable
 
@@ -50,6 +51,25 @@ class GcpProtectedCandidateLifetimes:
                 raise GuardDenied("Recovery mailbox does not own current protected credentials")
             tx.put("v3_recovery_mailboxes", str(expected.subject_uuid), record, immutable=True)
         self.scoped._run(bind)
+        return True
+
+    def finalize_password_login(self, context: CandidateWebSession,
+                                revision: CandidateCredentialRevision, email_sha256: str) -> bool:
+        """One current session/revision/mailbox transaction, with fresh UID fences."""
+        expected, record = self._mailbox(revision, email_sha256)
+        fixed = CandidateWebSession.model_validate_json(context.model_dump_json())
+
+        def finalize(tx):
+            self.scoped.publication._root(tx, opened=True)
+            subject, _ = current_session(tx, fixed, self.scoped._now())
+            if subject.model_dump(mode="json", exclude={"enrollment_operation"}) != expected.model_dump(mode="json"):
+                raise GuardDenied("Login session does not own current protected credentials")
+            tx.put("v3_recovery_mailboxes", str(expected.subject_uuid), record, immutable=True)
+
+        try:
+            self.scoped._run(finalize)
+        except AmbiguousCommit:
+            raise GuardUnavailable("Protected login finalization Commit unknown; no context") from None
         return True
 
     def check_recovery_mailbox(self, revision: CandidateCredentialRevision, email_sha256: str) -> bool:

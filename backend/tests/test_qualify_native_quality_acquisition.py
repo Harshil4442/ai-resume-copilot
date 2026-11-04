@@ -38,9 +38,14 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert len(value["execution_dependencies"]) == 466 and len(q.CURRENT_PROOF_PATHS) == 1
     assert q.CURRENT_EXECUTION_PATHS == (
         ".github/workflows/ci.yml",
+        "backend/app/domains/candidate_accounts/production.py",
+        "backend/app/domains/candidate_accounts/retention.py",
+        "backend/app/domains/candidate_accounts/service.py",
         "backend/app/domains/credits/canary.py", "backend/app/domains/employer/connectors.py",
         "backend/app/domains/employer/tasks.py", "backend/app/domains/recovery/browser_pairing_production.py",
+        "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
         "backend/scripts/document_refresh.py", "backend/scripts/schema25_app_release_contract_v3.py",
+        "infra/gcp/document_application_context.py",
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
         "infra/gcp/document_source_release.py", "infra/gcp/rolling_release.py", "infra/gcp/schema26_app_rolling_v3.py",
@@ -573,7 +578,12 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
         registry_commit(runner)
     common = {name: hashlib.sha256((runner / name).read_bytes()).hexdigest() for name in materialized}
     assert {name for name in common if common[name] != expected[name]} == different | {
+        "backend/app/domains/candidate_accounts/production.py",
+        "backend/app/domains/candidate_accounts/retention.py",
+        "backend/app/domains/candidate_accounts/service.py",
+        "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
         "backend/app/domains/employer/connectors.py", "backend/app/domains/employer/tasks.py",
+        "infra/gcp/document_application_context.py",
         "infra/gcp/rolling_release.py", ".github/workflows/ci.yml",
     }
     with pytest.raises(ValueError, match="current_execution_not_committed"):
@@ -1068,3 +1078,172 @@ def test_current_added_owned_two_exact_additions_are_runtime_bytes(current_added
         assert set(actual) == {"Dockerfile", owned.base, q.OPERATOR_REGISTRY_PATH, *additions}
         for name in additions:
             assert actual[name] == hashlib.sha256((owned.root / name).read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("reader", ["dependency_hashes", "controller_dependency_hashes"])
+def test_current_login_owned_historical_paths_are_committed_runtime_bytes(tmp_path, monkeypatch, reader):
+    paths = (
+        "backend/app/domains/candidate_accounts/production.py",
+        "backend/app/domains/candidate_accounts/retention.py",
+        "backend/app/domains/candidate_accounts/service.py",
+        "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+    )
+    assert set(paths) <= set(q.CURRENT_EXECUTION_PATHS)
+    root = tmp_path.resolve()
+    q.git(root, "init", "-q")
+
+    def write(name, raw):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+
+    registry = json.dumps({"version": 1, "sources": [synthetic_registry_row()]}).encode()
+    write("Dockerfile", b"FROM owned-invalid.example/no-image\n")
+    write(q.OPERATOR_REGISTRY_PATH, registry)
+    for name in paths:
+        write(name, b"VALUE = 'historical'\n")
+    registry_commit(root)
+    historical = q.git(root, "rev-parse", "HEAD").decode().strip()
+    monkeypatch.setattr(q, "ROOT", root)
+    monkeypatch.setattr(q, "HISTORICAL_RELEASE", historical)
+    monkeypatch.setattr(q, "REGISTRY_RUNNER_RELEASE", historical)
+    monkeypatch.setattr(q, "REGISTRY_RUNNER_SHA256", hashlib.sha256(registry).hexdigest())
+    monkeypatch.setattr(q, "RUNNER_PATHS", ("Dockerfile",))
+    monkeypatch.setattr(q, "CURRENT_EXECUTION_PATHS", paths)
+    monkeypatch.setattr(q, "CURRENT_ADDED_EXECUTION_PATHS", ())
+    current = b"VALUE = 'current'\n"
+    for name in paths:
+        write(name, current)
+    registry_commit(root)
+    read = getattr(q, reader)
+    before = read(root)
+    assert set(before) == {"Dockerfile", q.OPERATOR_REGISTRY_PATH, *paths}
+    for name in paths:
+        assert before[name] == hashlib.sha256(current).hexdigest()
+        write(name, b"VALUE = 'uncommitted'\n")
+        with pytest.raises(ValueError, match="uncommitted_current_execution_changed"):
+            read(root)
+        write(name, current)
+    write(paths[0], b"VALUE = 'new-reviewed-commit'\n")
+    registry_commit(root)
+    after = read(root)
+    assert {name for name in before if before[name] != after[name]} == {paths[0]}
+    assert q.digest(before) != q.digest(after)
+    write("backend/app/unreviewed_new.py", b"UNREVIEWED = True\n")
+    registry_commit(root)
+    with pytest.raises(ValueError, match="new_execution_dependency"):
+        read(root)
+
+
+@pytest.fixture(params=("qualifier", "document-consumer"))
+def owned_current_catalog_reader(request, tmp_path, monkeypatch):
+    """Exercise the exact pure consumer definitions without importing native ports."""
+    if request.param == "qualifier":
+        return lambda raw: q._registry_value(raw)["sources"], ValueError
+    import ast
+    from dataclasses import dataclass
+    from types import ModuleType
+
+    path = ROOT / "infra/gcp/document_application_context.py"
+    tree = ast.parse(path.read_bytes())
+    names = {"ApplicationDenied", "need", "Source", "sources"}
+    nodes = [node for node in tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name in names
+        or isinstance(node, ast.Assign) and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "PROJECT"]
+    assert {node.name for node in nodes if isinstance(node, (ast.ClassDef, ast.FunctionDef))} == names
+    module = ModuleType("owned_current_catalog_consumer")
+    module.__dict__.update(json=json, re=q.re, dataclass=dataclass)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec", dont_inherit=True), module.__dict__)
+    target = tmp_path / q.OPERATOR_REGISTRY_PATH
+    target.parent.mkdir(parents=True)
+
+    def read(raw):
+        target.write_bytes(raw)
+        return [vars(pin) for pin in module.sources(tmp_path).values()]
+
+    return read, module.ApplicationDenied
+
+
+@pytest.mark.parametrize("count", (8, 9, 32))
+def test_current_catalog_owned_bounded_rows_preserve_exact_sources(owned_current_catalog_reader, count):
+    read, _ = owned_current_catalog_reader
+    rows = [synthetic_registry_row(index) for index in range(1, count + 1)]
+    assert read(json.dumps({"version": 1, "sources": rows}).encode()) == rows
+
+
+@pytest.mark.parametrize("fault", (
+    "33-rows", "duplicate-release", "duplicate-json-key", "oversize", "boolean-version",
+    "float-version", "extra-top-field", "non-list-sources", "extra-record-field",
+    "missing-record-field", "non-record-row",
+))
+def test_current_catalog_owned_invalid_bytes_refuse(owned_current_catalog_reader, fault):
+    read, error = owned_current_catalog_reader
+    value = {"version": 1, "sources": [synthetic_registry_row()]}
+    if fault == "33-rows":
+        value["sources"] = [synthetic_registry_row(index) for index in range(1, 34)]
+    elif fault == "duplicate-release":
+        value["sources"].append(copy.deepcopy(value["sources"][0]))
+    elif fault == "boolean-version":
+        value["version"] = True
+    elif fault == "float-version":
+        value["version"] = 1.0
+    elif fault == "extra-top-field":
+        value["approved"] = True
+    elif fault == "non-list-sources":
+        value["sources"] = {"claimed": synthetic_registry_row()}
+    elif fault == "extra-record-field":
+        value["sources"][0]["approved"] = True
+    elif fault == "missing-record-field":
+        del value["sources"][0]["ci_run_id"]
+    elif fault == "non-record-row":
+        value["sources"] = [list(value["sources"][0].values())]
+    raw = json.dumps(value).encode()
+    if fault == "duplicate-json-key":
+        raw = raw.replace(b'"version": 1', b'"version": 1, "version": 1', 1)
+    elif fault == "oversize":
+        raw += b" " * (16385 - len(raw))
+    with pytest.raises(error):
+        read(raw)
+
+
+@pytest.mark.parametrize(("field", "invalid"), (
+    ("release", None), ("release", 3),
+    ("image_digest", {}), ("image_digest", False),
+    ("build_id", []), ("build_id", 7),
+    ("build_id", "-" * 36), ("build_id", "0000000-00000-0000-0000-000000000001"),
+))
+def test_current_catalog_owned_scalar_types_and_uuid_refuse(owned_current_catalog_reader, field, invalid):
+    read, error = owned_current_catalog_reader
+    row = synthetic_registry_row()
+    row[field] = invalid
+    with pytest.raises(error):
+        read(json.dumps({"version": 1, "sources": [row]}).encode())
+
+
+def test_current_catalog_owned_consumer_helper_is_committed_and_fingerprinted(tmp_path):
+    from scripts import schema25_app_release_contract_v3 as contract
+
+    consumer = "infra/gcp/document_application_context.py"
+    assert contract.CURRENT_DOCUMENT_HELPERS == (
+        "backend/scripts/document_refresh.py", consumer, "infra/gcp/document_refresh_recovery.py",
+        "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
+        "infra/gcp/document_source_release.py",
+    )
+    root = tmp_path.resolve()
+    q.git(root, "init", "-q")
+    for name in contract.CURRENT_DOCUMENT_HELPERS:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"OWNED_COMMITTED_OPERATOR = True\n")
+    registry_commit(root)
+    before = contract.current_document_helpers(root)
+    assert set(before) == set(contract.CURRENT_DOCUMENT_HELPERS)
+    assert before[consumer] == hashlib.sha256((root / consumer).read_bytes()).hexdigest()
+    (root / consumer).write_bytes(b"OWNED_COMMITTED_OPERATOR = 'new'\n")
+    with pytest.raises(contract.v1.schema25.Schema25Denied, match="uncommitted_document_helper_changed"):
+        contract.current_document_helpers(root)
+    registry_commit(root)
+    after = contract.current_document_helpers(root)
+    assert {name for name in before if before[name] != after[name]} == {consumer}

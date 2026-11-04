@@ -32,7 +32,7 @@ from ..recovery.password_reauth import CandidateWebSession
 from ..recovery.store import GuardDenied, GuardUnavailable
 from .contracts import CandidateCredentialRevision, CandidateLoginResult
 from .google import GoogleBearerProof, GoogleIdentity
-from .retention import CandidateLifetimeRetention
+from .retention import CandidateLifetimeRetention, PasswordLoginFinalizer
 
 FAILURE = "Candidate password authentication failed"
 UNAVAILABLE = "Candidate account lifetime is unavailable"
@@ -69,13 +69,15 @@ def mapped_account(db: Session, candidate_id: int) -> CandidatePasswordAccount |
 class CandidateAccountService:
     def __init__(self, engine: Engine, retention: CandidateLifetimeRetention, *,
                  now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
-                 cookie_logout: CandidateCookieLogout | None = None):
+                 cookie_logout: CandidateCookieLogout | None = None,
+                 password_login_finalizer: PasswordLoginFinalizer | None = None):
         if not isinstance(engine, Engine) or engine.hide_parameters is not True:
             raise GuardUnavailable(UNAVAILABLE)
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
         self._dummy_hash = hash_password(secrets.token_urlsafe(32))
         self.retention, self.now_ms = retention, now_ms
         self.cookie_logout = cookie_logout
+        self.password_login_finalizer = password_login_finalizer
 
     def google_challenge(self, candidate_id: int, proof: GoogleBearerProof) -> dict:
         from .enrollment import google_challenge
@@ -198,19 +200,32 @@ class CandidateAccountService:
         now = self.now_ms()
         if type(now) is not int or not 0 < now < 2**53 - SESSION_MS:
             raise GuardUnavailable(UNAVAILABLE)
-        context = self.retention.issue(revision, expires_at_ms=now + SESSION_MS)
+        finalizer = self.password_login_finalizer
+        if finalizer is None:
+            context = self.retention.issue(revision, expires_at_ms=now + SESSION_MS)
+        else:
+            pending = finalizer.begin_password_login(
+                revision, email_sha256=credential_digest(email), expires_at_ms=now + SESSION_MS)
+            context = (finalizer.finalize_password_login(pending)
+                       if pending is not None else None)
         if context is None or context.candidate_id != revision.candidate_id or context.account_binding_id != revision.account_binding_id:
             raise GuardUnavailable(UNAVAILABLE)
-        # A concurrent password reset/deletion must be independently denied. No SQL-held external IO.
-        if self.retention.check_session(context, revision) is not True:
-            raise GuardUnavailable(UNAVAILABLE)
-        self._bind_login_mailbox(revision, email)
+        if finalizer is None:
+            # Legacy ports retain their existing independent session/mailbox checks.
+            if self.retention.check_session(context, revision) is not True:
+                raise GuardUnavailable(UNAVAILABLE)
+            self._bind_login_mailbox(revision, email)
+        else:
+            self._check_login_sql(revision, email)
         return CandidateLoginResult(context=context, auth_generation=revision.auth_generation,
                                     expires_at_ms=now + SESSION_MS)
 
     def _bind_login_mailbox(self, revision: CandidateCredentialRevision, email: str) -> None:
         if self.retention.bind_recovery_mailbox(revision, credential_digest(email)) is not True:
             raise GuardUnavailable(UNAVAILABLE)
+        self._check_login_sql(revision, email)
+
+    def _check_login_sql(self, revision: CandidateCredentialRevision, email: str) -> None:
         with self.sessions() as db:
             user, row = db.get(User, revision.candidate_id), mapped_account(db, revision.candidate_id)
             if (user is None or row is None or user.email != email

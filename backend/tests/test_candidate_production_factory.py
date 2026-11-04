@@ -7,7 +7,10 @@ This is not production IAM, provider durability or public device-pairing proof.
 
 from __future__ import annotations
 
+import copy
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -28,13 +31,14 @@ from app import database
 from app.database import Base
 from app.domains.candidate_accounts import production
 from app.domains.candidate_accounts.production import CandidateNativeConfiguration
+from app.domains.candidate_accounts.retention import NativeCandidateLifetimeRetention
 from app.domains.candidate_accounts.service import (
     credential_digest,
     production_candidate_accounts,
     revision_from_row,
 )
 from app.domains.recovery.contracts import canonical, fingerprint
-from app.domains.recovery.gcp_buffer import BufferedRegistry
+from app.domains.recovery.gcp_buffer import BufferedRegistry, BufferedTransaction
 from app.domains.recovery.gcp_closure_contracts import closure_path
 from app.domains.recovery.gcp_contracts import RegistryPin, WitnessBody, WitnessPin
 from app.domains.recovery.gcp_pairing import pairing_control_record
@@ -247,6 +251,312 @@ def register(c):
     return c.accounts.register(
         email="synthetic@example.test", password=PASSWORD, policy_version="2026-10-08"
     )
+
+
+def pending_password_login(c):
+    """Only owned fixture code may inspect the otherwise opaque pending result."""
+    uid = register(c)
+    service = c.accounts._composition().service
+    with service.sessions() as db:
+        revision = revision_from_row(db.get(CandidatePasswordAccount, uid), db.get(User, uid).password_hash)
+    retention = service.password_login_finalizer
+    pending = retention.begin_password_login(revision, email_sha256=credential_digest("synthetic@example.test"),
+        expires_at_ms=NOW + 86_400_000)
+    assert pending is not None
+    context = CandidateWebSession.model_validate(json.loads(pending._raw)["context"])
+    return SimpleNamespace(uid=uid, service=service, retention=retention, pending=pending,
+                           revision=revision, context=context)
+
+
+def remove_owned_mailbox(c, pending):
+    path = BufferedTransaction(c.protected_registry.rpc, b"owned-fixture").path(
+        "v3_recovery_mailboxes", str(pending.revision.subject_uuid))
+    c.native.data.pop(path)
+    return path
+
+
+def test_password_finalization_same_outputs_save_four_synthetic_metadata_calls(configured):
+    """SDK-intercepted synthetic account path only; ingress/provider load is not measured."""
+    c = configured
+    uid = register(c)
+    service = c.accounts._composition().service
+    finalizer = service.password_login_finalizer
+    service.password_login_finalizer = None
+    before = c.native.sdk.admin.transport.get_database.call_count
+    legacy = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    legacy_calls = c.native.sdk.admin.transport.get_database.call_count - before
+    service.password_login_finalizer = finalizer
+    before = c.native.sdk.admin.transport.get_database.call_count
+    result = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    final_calls = c.native.sdk.admin.transport.get_database.call_count - before
+    assert (legacy_calls, final_calls) == (29, 25)
+    assert result.context.candidate_id == legacy.context.candidate_id == uid
+    assert result.context.account_binding_id == legacy.context.account_binding_id
+    assert result.context.authentication_method == legacy.context.authentication_method == "password"
+    assert result.context.session_id != legacy.context.session_id
+    assert result.auth_generation == legacy.auth_generation == 1
+    assert result.expires_at_ms == legacy.expires_at_ms == NOW + 86_400_000
+    c.accounts.validate(result.context, auth_generation=1)
+    c.accounts.validate(legacy.context, auth_generation=1)
+    assert not c.sql_active and not c.native.views
+
+
+@pytest.mark.parametrize("gate", ["session", "mailbox"])
+def test_legacy_login_port_change_cannot_skip_its_original_final_gates(configured, monkeypatch, gate):
+    c = configured
+    register(c)
+    service = c.accounts._composition().service
+    finalizer = service.password_login_finalizer
+    service.password_login_finalizer = None
+    original_issue = service.retention.issue
+    calls = []
+
+    def issue(revision, *, expires_at_ms):
+        context = original_issue(revision, expires_at_ms=expires_at_ms)
+        service.password_login_finalizer = finalizer
+        return context
+
+    def refused(*args):
+        calls.append(gate)
+        return False
+
+    monkeypatch.setattr(service.retention, "issue", issue)
+    monkeypatch.setattr(service.retention,
+                        "check_session" if gate == "session" else "bind_recovery_mailbox", refused)
+    with pytest.raises(GuardUnavailable):
+        c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    assert calls == [gate]
+
+
+@pytest.mark.parametrize("replacement", ["none", "foreign"])
+def test_password_login_uses_the_same_finalizer_port_after_pending_issuance(configured, monkeypatch, replacement):
+    c = configured
+    uid = register(c)
+    service = c.accounts._composition().service
+    finalizer = service.password_login_finalizer
+    original_begin = finalizer.begin_password_login
+    original_sql = service._check_login_sql
+    sql_checks = []
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Pending password login switched port or fell back to legacy checks")
+
+    def sql_check(*args):
+        sql_checks.append(True)
+        original_sql(*args)
+
+    def begin(*args, **kwargs):
+        pending = original_begin(*args, **kwargs)
+        service.password_login_finalizer = (None if replacement == "none" else
+            SimpleNamespace(begin_password_login=forbidden, finalize_password_login=forbidden))
+        return pending
+
+    monkeypatch.setattr(finalizer, "begin_password_login", begin)
+    monkeypatch.setattr(service.retention, "check_session", forbidden)
+    monkeypatch.setattr(service.retention, "bind_recovery_mailbox", forbidden)
+    monkeypatch.setattr(service, "_check_login_sql", sql_check)
+    result = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    assert result.context.candidate_id == uid and not finalizer._pending_logins
+    assert sql_checks == [True]
+
+
+@pytest.mark.parametrize("foreign", ["clone", "issuer"])
+def test_pending_password_login_clone_and_replay_cannot_export_a_context(configured, foreign):
+    c = configured
+    p = pending_password_login(c)
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        if foreign == "clone":
+            p.retention.finalize_password_login(copy.copy(p.pending))
+        else:
+            other = NativeCandidateLifetimeRetention(p.retention.issuer, p.retention.protected,
+                                                     login_finalizer=p.retention.protected)
+            other.finalize_password_login(p.pending)
+    assert c.native.sdk.admin.transport.get_database.call_count == before
+    result = p.retention.finalize_password_login(p.pending)
+    assert result == p.context
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert c.native.sdk.admin.transport.get_database.call_count == before
+
+
+def test_concurrent_finalizers_can_consume_the_original_pending_login_only_once(configured):
+    c = configured
+    p = pending_password_login(c)
+    ready = Barrier(2)
+
+    def finalize():
+        ready.wait(timeout=5)
+        try:
+            return p.retention.finalize_password_login(p.pending)
+        except GuardUnavailable:
+            return None
+
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _: finalize(), range(2)))
+    assert sum(value == p.context for value in outcomes) == 1
+    assert outcomes.count(None) == 1
+    assert c.native.sdk.admin.transport.get_database.call_count == before + 2
+    assert not c.native.views
+
+
+def test_pending_login_cannot_retarget_a_changed_finalizer_port(configured):
+    c = configured
+    p = pending_password_login(c)
+    original = p.retention._login_finalizer
+    p.retention._login_finalizer = None
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    p.retention._login_finalizer = original
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert c.native.sdk.admin.transport.get_database.call_count == before
+
+
+def test_pending_login_cannot_adopt_another_valid_session_context(configured):
+    c = configured
+    p = pending_password_login(c)
+    other = p.service.retention.issue(p.revision, expires_at_ms=NOW + 86_400_000)
+    assert other is not None and other.session_id != p.context.session_id
+    changed = json.loads(p.pending._raw)
+    changed["context"] = other.model_dump(mode="json")
+    object.__setattr__(p.pending, "_raw", canonical(changed).encode())
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert c.native.sdk.admin.transport.get_database.call_count == before
+
+
+@pytest.mark.parametrize("operation", ["logout", "password", "delete"])
+def test_finalization_denies_revocation_or_credential_change_after_pending_issue(configured, operation):
+    c = configured
+    p = pending_password_login(c)
+    if operation == "logout":
+        c.accounts.logout(p.context)
+    elif operation == "password":
+        c.accounts.change_password(p.context, current_password=PASSWORD, new_password=REPLACEMENT)
+    else:
+        c.accounts.prepare_delete(p.context)
+    with pytest.raises((GuardDenied, GuardUnavailable)):
+        p.retention.finalize_password_login(p.pending)
+    before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert c.native.sdk.admin.transport.get_database.call_count == before
+
+
+def test_finalization_refuses_foreign_immutable_recovery_mailbox(configured):
+    c = configured
+    p = pending_password_login(c)
+    record = copy.deepcopy(c.native.values()["v3_recovery_mailboxes", str(p.revision.subject_uuid)])
+    record["email_sha256"] = "f" * 64
+    c.native.seed(c.protected_registry, "v3_recovery_mailboxes", str(p.revision.subject_uuid), record)
+    with pytest.raises(GuardDenied, match="Immutable authority record conflict"):
+        p.retention.finalize_password_login(p.pending)
+
+
+@pytest.mark.parametrize("persisted", [False, True])
+def test_unknown_finalization_commit_consumes_pending_without_retry_or_export(configured, persisted):
+    c = configured
+    p = pending_password_login(c)
+    path = remove_owned_mailbox(c, p)
+    c.native.fault = lambda names: (
+        ("persist_loss" if persisted else "no_persist_loss") if "v3_recovery_mailboxes" in names else None)
+    before = len(c.native.calls)
+    with pytest.raises(GuardUnavailable, match="Commit unknown"):
+        p.retention.finalize_password_login(p.pending)
+    assert len(c.native.calls) == before + 1
+    assert (path in c.native.data) is persisted
+    c.native.fault = None
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert len(c.native.calls) == before + 1
+
+
+@pytest.mark.parametrize("fault", ["protected_uid", "closure"])
+def test_finalization_post_uid_and_gcs_proof_failure_exports_no_context(configured, monkeypatch, fault):
+    c = configured
+    p = pending_password_login(c)
+    publication = p.retention.protected.scoped.publication
+    original = publication._fresh_open
+    calls = []
+
+    def fresh():
+        calls.append(True)
+        if len(calls) == 2:
+            if fault == "protected_uid":
+                c.native.identities[c.protected.database] = str(uuid4())
+            else:
+                c.objects[publication.resource.close_path] = b"closed", "999"
+        original()
+
+    monkeypatch.setattr(publication, "_fresh_open", fresh)
+    with pytest.raises(GuardUnavailable):
+        p.retention.finalize_password_login(p.pending)
+    assert len(calls) == 2
+    with pytest.raises(GuardUnavailable, match="absent or consumed"):
+        p.retention.finalize_password_login(p.pending)
+    assert len(calls) == 2
+
+
+def test_definite_abort_rechecks_fresh_current_session_before_finalization(configured):
+    c = configured
+    p = pending_password_login(c)
+    remove_owned_mailbox(c, p)
+    injected = []
+
+    def mutate(names):
+        if "v3_recovery_mailboxes" in names and not injected:
+            injected.append(True)
+            # Owned concurrent denial after the transaction read its absence.
+            c.native.seed(c.protected_registry, "v3_session_tombstones", str(p.context.session_id),
+                          {"synthetic_concurrent_denial": True})
+
+    c.native.mutate = mutate
+    with pytest.raises(GuardDenied, match="revoked"):
+        p.retention.finalize_password_login(p.pending)
+    assert injected and not c.native.views
+
+
+@pytest.mark.parametrize("stage", ["native", "activation", "own_ack"])
+def test_login_without_original_issuance_or_activation_ack_creates_no_pending_result(configured, monkeypatch, stage):
+    c = configured
+    register(c)
+    retention = c.accounts._composition().service.retention
+    if stage == "own_ack":
+        def unavailable(ack):
+            raise GuardUnavailable("Original owned ACK unavailable")
+        monkeypatch.setattr(retention.issuer, "consume_owned_ack", unavailable)
+    else:
+        namespace = "pairing_web_sessions" if stage == "native" else "v3_sessions"
+        c.native.fault = lambda names: "persist_loss" if namespace in names else None
+    with pytest.raises(GuardUnavailable):
+        c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    assert not retention._pending_logins
+
+
+@pytest.mark.parametrize("field", ["email", "password_hash"])
+def test_final_sql_revision_and_email_comparison_still_denies_login_after_finalization(configured, monkeypatch, field):
+    c = configured
+    uid = register(c)
+    service = c.accounts._composition().service
+    finalizer = service.password_login_finalizer
+    original = finalizer.finalize_password_login
+
+    def finalize(pending):
+        context = original(pending)
+        with service.sessions() as db:
+            user = db.get(User, uid)
+            setattr(user, field, "changed@example.invalid" if field == "email" else user.password_hash + "changed")
+            db.commit()
+        return context
+
+    monkeypatch.setattr(finalizer, "finalize_password_login", finalize)
+    with pytest.raises((GuardDenied, GuardUnavailable)):
+        c.accounts.login(email="synthetic@example.test", password=PASSWORD)
 
 
 def test_actual_factory_fresh_enrollment_and_session_have_original_protected_provenance(configured):

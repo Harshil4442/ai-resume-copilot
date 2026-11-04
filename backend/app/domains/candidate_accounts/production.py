@@ -176,11 +176,11 @@ def _build(config: CandidateNativeConfiguration) -> _Composition:
     )
     scoped = ScopedCandidateAuthority(publication, now_ms=clock)
     reset = GcpPasswordCredentialProjection(lifetime, scoped)
-    retention = NativeCandidateLifetimeRetention(
-        lifetime, GcpProtectedCandidateLifetimes(scoped, reset=reset)
-    )
+    protected = GcpProtectedCandidateLifetimes(scoped, reset=reset)
+    retention = NativeCandidateLifetimeRetention(lifetime, protected, login_finalizer=protected)
     service = CandidateAccountService(
-        sql, retention, now_ms=clock, cookie_logout=GcpCandidateCookieLogout(scoped)
+        sql, retention, now_ms=clock, cookie_logout=GcpCandidateCookieLogout(scoped),
+        password_login_finalizer=retention,
     )
     return _Composition(service, fence, lifetime, scoped)
 

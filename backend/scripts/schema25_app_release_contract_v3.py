@@ -19,13 +19,14 @@ CONTRACT = "hirewiz_schema26_app_rolling_v3"
 PRIOR_RELEASE = "e23c940e6133323c3c1ff11e646a4ca9b2b0b165"
 PRIOR_APP_SHA256 = "fa3b778e5fa1b9fe900dc5625e18682a0f0987b68259bb8eed8ff3ae5f40800a"
 # Exact reviewed-source inventory; this pin is not native qualification.
-CANDIDATE_APP_SHA256 = '13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4'
+CANDIDATE_APP_SHA256 = '1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984'
 CANDIDATE_APP_FILES = 290
-# Current maintenance fixes change only these five of the fourteen document
+# Current maintenance fixes change only these six of the fourteen document
 # helpers. Their exact committed bytes enter this release fingerprint; retained
 # source/Build receipts continue to use their original historical helper bytes.
 CURRENT_DOCUMENT_HELPERS = (
     "backend/scripts/document_refresh.py",
+    "infra/gcp/document_application_context.py",
     "infra/gcp/document_refresh_recovery.py",
     "infra/gcp/document_refresh_transition.py",
     "infra/gcp/document_source_candidate.py",
