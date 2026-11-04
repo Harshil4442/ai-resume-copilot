@@ -459,6 +459,100 @@ def test_pending_lro_observable_while_service_metadata_reconciling(context):
     assert c.journal.read("stage." + API + ".checked") is None
 
 
+def test_full_cache_reference_refused_before_source_or_native_capture(context, monkeypatch):
+    c = context
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Malformed cache reference reached source or native capture")
+
+    monkeypatch.setattr(s, "controller_source", forbidden)
+    for name in ("_verify_sources", "_pin", "_database", "_resources", "service"):
+        setattr(c.boundary, name, forbidden)
+    with pytest.raises(r.RollingDenied, match="rolling_employer_cache_binding_invalid"):
+        c.boundary.capture(
+            s.SourcePin(c.plan.release, c.plan.image_digest, c.plan.build_id, c.plan.ci_run_id),
+            c.plan.prior_source,
+            controller_ci_run_id=c.plan.controller_ci_run_id,
+            nonce=c.plan.nonce,
+            observer_secret=c.plan.observer_secret,
+            retired_migration_secret=c.plan.retired_migration_secret,
+            workers_release=c.plan.workers_release,
+            employer_cache_secret="owned-existing-redis:1",
+        )
+    assert not c.fixture.writes and not c.source_checks
+
+
+def test_repeated_aliases_pin_each_reachable_revision_once_without_changing_traffic(context):
+    c = context
+    for service in (ANALYSIS, EMPLOYER):
+        state = c.fixture.states[service]
+        traffic = copy.deepcopy(state["traffic"])
+        traffic.extend(
+            {
+                "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+                "revision": traffic[0]["revision"],
+                "tag": tag,
+            }
+            for tag in ("rolling-owned-first", "rolling-owned-second", "rolling-owned-third")
+        )
+        state["traffic"], state["trafficStatuses"] = traffic, copy.deepcopy(traffic)
+    pins = tuple(
+        replace(
+            c.boundary._pin(pin.service, c.plan.prior_source),
+            candidate_template_sha256=pin.candidate_template_sha256,
+        )
+        for pin in c.plan.services
+    )
+    original = copy.deepcopy(pins)
+    reachable = c.boundary._reachable(pins, c.plan.prior_source)
+    plan = replace(c.plan, services=pins, reachable_revisions=reachable)
+    plan.validate()
+    assert len(reachable) == 3
+    assert {(row.service, row.revision) for row in reachable} == {
+        (pin.service, pin.prior_revision) for pin in pins
+    }
+    assert pins == original
+    for pin in pins:
+        staged = r.stage_body(plan, pin, c.boundary.service(pin.service))
+        assert all(row in staged["traffic"] for row in pin.traffic)
+    with pytest.raises(r.RollingDenied, match="reachable_prior_pins_invalid"):
+        replace(plan, reachable_revisions=(*reachable, reachable[0])).validate()
+
+
+def test_distinct_reachable_revisions_remain_pinned_and_foreign_source_is_refused(context):
+    c = context
+    service = ANALYSIS
+    pin = c.plan.pin(service)
+    revision = service + "-00000-owned"
+    value = copy.deepcopy(c.fixture.revisions[(service, pin.prior_revision)])
+    value["name"] = r.PARENT + "/services/" + service + "/revisions/" + revision
+    c.fixture.revisions[(service, revision)] = value
+    state = c.fixture.states[service]
+    traffic = copy.deepcopy(state["traffic"])
+    traffic.append(
+        {
+            "type": "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+            "revision": revision,
+            "tag": "retained-distinct",
+        }
+    )
+    state["traffic"], state["trafficStatuses"] = traffic, copy.deepcopy(traffic)
+    pins = tuple(
+        c.boundary._pin(service, c.plan.prior_source) if row.service == service else row
+        for row in c.plan.services
+    )
+    reachable = c.boundary._reachable(pins, c.plan.prior_source)
+    replace(c.plan, services=pins, reachable_revisions=reachable).validate()
+    assert len(reachable) == 4
+    assert {row.revision for row in reachable if row.service == service} == {
+        pin.prior_revision,
+        revision,
+    }
+    r.environment(value)["APP_RELEASE"]["value"] = "f" * 40
+    with pytest.raises(r.RollingDenied, match="reachable_prior_source_or_admission_changed"):
+        c.boundary._reachable(pins, c.plan.prior_source)
+
+
 def test_second_successor_preserves_existing_cache_and_prior_journal(context):
     c = context
     assert s.execute("advance", c.plan, c.boundary, c.journal)["rolling_release_complete"]
