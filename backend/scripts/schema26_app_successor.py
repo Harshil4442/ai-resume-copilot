@@ -550,13 +550,13 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
         return tuple(
             app26.historical.reachable_pin(
                 pin.service,
-                row["revision"],
-                self.revision(pin.service, row["revision"]),
+                revision,
+                self.revision(pin.service, revision),
                 self.revision(pin.service, pin.prior_revision),
                 prior_source=source,
             )
             for pin in pins
-            for row in pin.traffic
+            for revision in sorted({row["revision"] for row in pin.traffic})
         )
 
     def capture(
@@ -573,6 +573,13 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
     ):
         source.validate()
         prior.validate()
+        cache = (
+            rolling.EmployerCacheBinding(employer_cache_secret)
+            if employer_cache_secret is not None
+            else None
+        )
+        if cache is not None:
+            cache.validate()
         host, stamp = controller_source(self.root)
         # Validate independent source roots and provenance BEFORE any retained
         # credential payload, helper module, SQL or service capture is used.
@@ -597,11 +604,6 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
             refs["DATABASE_URL"], observer_secret, retired_migration_secret
         )
         runtime = self.observer._cloud("iam", "service-accounts", "describe", rolling.RUNTIME)
-        cache = (
-            rolling.EmployerCacheBinding(employer_cache_secret)
-            if employer_cache_secret is not None
-            else None
-        )
         plan = SuccessorPlan(
             source.release,
             source.image_digest,
@@ -815,9 +817,12 @@ def main():
         "observer-secret",
         "retired-migration-secret",
         "workers-release",
-        "employer-cache-secret",
     ):
         parser.add_argument("--" + name)
+    parser.add_argument(
+        "--employer-cache-secret",
+        help="Bare existing secret name only; version 1 is fixed (do not append :1).",
+    )
     for name in ("ci-run-id", "prior-ci-run-id", "controller-ci-run-id"):
         parser.add_argument("--" + name, type=int)
     args = parser.parse_args()
