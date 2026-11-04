@@ -1,75 +1,58 @@
 # HireWiz development and deployment progress
 
-Updated **31 October 2026 (IST)**. The e23 schema25 API and application workers
-are deployed; the refreshed document inspector and frontend companion 0.8.7 serve
-alongside them. The active 27 October goal implements the credit/cost/quality
-requirements across the existing eight stages in `UNIFIED_CREDIT_ROLLOUT.md`;
-it is not complete. The six accepted 26 October pilot outcomes below remain
-historical acceptance, not the completion definition for this later goal.
+Updated **5 November 2026 (IST)**. The current API and both application workers
+serve DB8 on schema26. Their original promotions are healthy, the original
+schedules and coordinator are restored, and the joined read-only proof passed.
+Frontend 751/Hohsg serves companion 0.8.9. The active 27 October credit/cost/quality
+goal across the existing eight stages remains incomplete; the six accepted
+26 October outcomes below remain historical acceptance for their named releases.
 
-Current signed-in acceptance remains partial. The repaired 0.8.6 companion paired
-successfully on the existing browser identity, and its current-connection check
-succeeded. The 0.8.7 update fixes stuck progress and stale popup replies; its public
-package and the same-folder local source update are verified. Native reload,
-original-file review, cancellation before Fill and exact-device revocation await
-Mac unlock. No employer form was filled and no application was submitted in this
-current acceptance attempt. Earlier mobile/desktop and SEO observations remain
-scoped to their original releases; they are not fresh field performance proof.
+The current browser identity check passed with no application action enabled and
+zero fields filled. Fresh original-file review, cancellation before Fill and
+exact-device revocation remain pending. The website session expired on a fresh
+base-page GET; no new Fill, upload, submission or revocation was performed.
+The current identity check does not renew the historical application acceptance.
 
 New AI generation/tailoring, unified credits, funded free-core processing,
-checkout and final employer submission remain closed. Worldwide expansion,
-commercial launch and the new credit/quality program retain their separate gates.
+checkout and final employer submission remain closed. Paid native document QA
+(80 documents/nine jobs) and ordinary 17-case scanner maintenance are both on
+**OWNER HOLD**. Broader native/model quality qualification remains pending.
+Human Reviewer 2, representative shadow accounting, 10,000-user capacity,
+commercial/finance gates and full R03/RTO qualification remain pending.
 
-## Latest verified releases
+## Latest verified runtime and pending successor
 
-| Component | Current release | Verification |
+| Component | Current release | Verification and boundary |
 |---|---|---|
-| API and application workers | Source `e23c940e6133323c3c1ff11e646a4ca9b2b0b165`; image `sha256:df4618fa19a05645384a4e0aba92ad691e5f40c55344b34da55c95fc1b44c77f`; schema `20261028_0025` | Immutable build `3a251d77-44e7-4b7a-9987-2c991c8e6d89`, exact-source CI `41095660943`, and accepted app staging/promotion readbacks. All three app services serve that release at 100%. Current owner journey acceptance remains pending. |
-| Frontend | Source `8648118cace6284f5b7e7347607475d6cb4e0f92`; `dpl_9XTqBWiudei8KdkYikG6wV1YoK14` | Exact-source CI `41158935649`; the same staged production artifact was promoted on both public domains. Public readiness returns204; invalid Origin returns403. The 0.8.7 package matches its reviewed hash;0.8.6 remains unchanged. |
-| Document inspector | Image `sha256:e2880102f6149cd62c800fbd33c775ed371c98a2ca74dce4935374685488fbef` | Accepted native continuation `41119586258`, original build `0d685ff9-d002-4e4b-912d-a8b64c6592ea`, and accepted serving proof. Definition proof expires `2026-11-02T06:26:48Z`. This is not the representative 200-case quality gate. |
-| Companion | Public/source files **0.8.7**; native loaded version last observed **0.8.6** | Same browser installation, keys and permissions retained. Repaired pairing succeeded. The 0.8.7 reload and review/cancel/revoke require fresh verification; 26 October acceptance below remains historical. |
+| API and application workers | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Build `05fafcae-934e-448f-9790-26a60b6f3b64`, exact-source CI `41650961963`, committed schema26 and retained promotion/restoration proofs. All three application services are healthy. The 4 November UTC / 5 November IST traffic observations show three aliases per service, all reaching that service's same DB8 revision; aliases were not changed. |
+| Frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Exact-source CI `41750684597` and normal PR99 merge; retained production alias/readback and public companion 0.8.9 archive SHA-256 `b17b7a75f3d6a81ca91d2a90c88bd5d79409b965977ecb5f7340f69025964362`. Frontend/root build inputs are unchanged through 9b9, so the existing verified deployment is retained without another frontend build or alias mutation. |
+| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Retained definition proof expires `2026-11-05T06:24:10Z`. A metadata-only configuration check passed; it performed no document processing or new native acceptance. Both the 17-case maintenance and paid 80-document QA runs remain held, with no expiry waiver. |
+| Companion | Public/source package **0.8.9** | The existing browser identity's current-connection check passed with no action enabled and zero fields filled. Fresh original-file review/cancel/revoke remains pending; historical acceptance below is not relabeled as current. |
+| Application successor — built only | Source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4`; image `sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3` | Build `3447322a-4f1b-41b8-afe5-43307ada80cd` succeeded and official Source26 verification passed against exact-source CI `41853042750`. **Not deployed.** The independent alias-capture controller fix `a206f5408c0cbd7abece0cd43add143bcb1883bc` is in PR103 / CI `41898489779`, pending qualification. Registry PR102 is normally merged at `deaed009fd9b1a6b6db2e893859c8dc19433ac17`; its CI `41893799752` is still running and is not runtime provenance authority. |
 
-Schema26 remains source-only in PR83. Exact-source CI41172074414 retained all61
-PostgreSQL cases and prior v1/v2 checks, then stopped at the unchanged240-second
-native protocol limit. Its safe observer recorded a started malformed-input-path
-test; isolated execution refused the path immediately. Profiling found repeated
-40-document synthetic fixture preparation. The reviewed follow-up reuses only
-fully bound immutable test bytes, retaining every case and fresh per-test records;
-its actual Linux deadline acceptance is still pending.
+The original S/C restoration and joined final proof used their retained custody;
+temporary health IAM access was removed and ordinary post-restoration coordinator
+requests returned HTTP200. These scoped observations do not establish full R03,
+RTO, representative capacity or paid native document quality acceptance.
 
-A read-only production check confirmed that all three maintenance schedules are
-ENABLED. The source follow-up adds a distinct26 continuation to restore those
-same states after their required migration pause. It uses original maintenance
-and completed app journals and never resends unknown writes. No schedules were
-paused or resumed during this source work. Typed account-operation checks,
-retired-revision custody and the reviewed migration remain required. Generic V3
-rollback after schedule restoration remains unqualified and is not presented as
-restored service or RTO evidence.
-
-The combined source candidate adds explicit three-credit browser-submission quotes,
-central wallet/cash holds, current-quote canary admission and matching companion0.8.8
-reviews. Existing accepted20-credit applications retain their original obligations.
-Independent source reviews and owned local wire controls passed; the combined
-PostgreSQL/build/rollout and real-canary gates remain pending. Companion0.8.8 is
-source-only and has not replaced the installed owner client.
-
-The earlier 29 October configuration and responsive measurements remain recorded
-in the linked historical release evidence. The coordinator retains its separate
-captured source `7a00839d`; it is not relabeled as an app/document release. The
-current frontend update changes no backend configuration, database, credentials,
-paid plan or activation gate. Temporary health-check IAM access was removed.
-Manual frontend domain assignment was reapplied after promotion; a fresh native
-settings-screen read remains pending while the Mac is locked.
+The successor capture stopped before creating a plan or journal and before any
+service mutation. Repeated traffic aliases exposed a controller proof-collection
+bug; PR103 preserves every alias and pins each distinct revision once per service.
+The target application bytes are unchanged by that fix, so it needs a qualified
+controller rather than a new application image. Neither a successful Build nor
+pending CI authorizes deployment or new paid work.
 
 The Gemini monthly spend cap remains **INR450**. Provider enforcement can lag;
 application cost reservations and reconciled financial qualification remain
 required. Retail purchases are unavailable.
 
-[Current release evidence](evidence/2026-10-31-pilot-deployment-status.json) and
-[the eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md) distinguish
+[Current runtime metadata and proof boundaries](evidence/2026-11-05-runtime-status.json)
+and [the eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md) distinguish
 completed deployment work from remaining functional and commercial acceptance.
+All eight existing stage rows and all 83 requirement statuses remain unchanged.
 CI checks are evidence, not additional development checkpoints. No original total
-effort estimate is retained; missing estimates remain null.
+effort estimate is retained; missing estimates remain null. Earlier dated reports
+and observations below remain scoped to their original releases.
 
 ## Original six outcomes — historical acceptance on 26 October
 

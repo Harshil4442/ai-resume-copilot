@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "status_date": "2026-11-05",
+  "timezone": "Asia/Kolkata",
+  "scope": "Documentation-only observed metadata; not a release plan, runtime authority, new quality acceptance or delivery checkpoint.",
+  "current_backend": {
+    "source": "db8a25adefaf3bc2e00a61f7543f8a1862597adf",
+    "image_digest": "sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe",
+    "build_id": "05fafcae-934e-448f-9790-26a60b6f3b64",
+    "ci_run_id": 41650961963,
+    "database_schema": "20261031_0026",
+    "schema_commit_acknowledged": true,
+    "application_services": 3,
+    "original_promotions_healthy": true,
+    "original_schedules_and_coordinator_restored": true,
+    "joined_final_read_pass": true,
+    "own_temporary_health_IAM_removed": true,
+    "post_restore_requests": {
+      "observed": 12,
+      "all_HTTP200": true,
+      "paid_document_QA_qualified": false
+    },
+    "traffic_observation": {
+      "period": "2026-11-04 UTC / 2026-11-05 IST",
+      "aliases_per_service": 3,
+      "unique_revisions_per_service": 1,
+      "all_current_source": "db8a25adefaf3bc2e00a61f7543f8a1862597adf",
+      "aliases_modified": false,
+      "basis": "API closed native traffic projection plus Root-recorded projection of two worker metadata reads; not a new raw three-service response."
+    }
+  },
+  "current_frontend": {
+    "source": "751319a19420d5f141697643f68b6853ea2da5c6",
+    "deployment": "dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH",
+    "ci_run_id": 41750684597,
+    "normal_merge": "e35b44ea0e7fe2d09f0d864098ca4dccf9c37372",
+    "companion_version": "0.8.9",
+    "archive_sha256": "b17b7a75f3d6a81ca91d2a90c88bd5d79409b965977ecb5f7340f69025964362",
+    "archive_bytes": 80971,
+    "frontend_and_root_build_inputs_changed_through_9b9": false,
+    "new_frontend_build_or_alias_mutation": false
+  },
+  "document_inspector": {
+    "accepted_image_digest": "sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36",
+    "retained_definition_proof_expires_utc": "2026-11-05T06:24:10Z",
+    "latest_scoped_observation": "Metadata-only configuration verification passed; no document processing or new native acceptance.",
+    "native17_maintenance": "OWNER_HOLD",
+    "native80_document_nine_job_QA": "OWNER_HOLD",
+    "expiry_waiver": false
+  },
+  "built_only_successor": {
+    "source": "9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4",
+    "image_digest": "sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3",
+    "build_id": "3447322a-4f1b-41b8-afe5-43307ada80cd",
+    "ci_run_id": 41853042750,
+    "build_status": "SUCCESS",
+    "official_source26_image_verification": "PASS",
+    "deployed": false,
+    "service_mutations": 0,
+    "controller": {
+      "source": "a206f5408c0cbd7abece0cd43add143bcb1883bc",
+      "pr": 103,
+      "ci_run_id": 41898489779,
+      "qualification": "PENDING_IN_OBSERVED_SNAPSHOT",
+      "target_app_image_rebuild_required": false
+    },
+    "registry": {
+      "pr": 102,
+      "source": "9d6d15b53928ac725f45865484f15d57187c5d29",
+      "merge_commit": "deaed009fd9b1a6b6db2e893859c8dc19433ac17",
+      "normal_two_parent_merge": true,
+      "registry_rows": 8,
+      "registry_sha256": "c222ac8f9f6d706d31f61fc1b81f71acc80c7bcfcd8e7c3feb6cfe3e998a7eeb",
+      "ci_run_id": 41893799752,
+      "own_CI_status": "RUNNING_IN_OBSERVED_SNAPSHOT",
+      "own_CI_is_runtime_provenance_authority": false,
+      "runtime_provenance_source": "9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4"
+    },
+    "failed_capture": "Read-only captures stopped before a plan/journal or service mutation; original failure evidence retained."
+  },
+  "current_companion_acceptance": {
+    "current_identity_check_passed": true,
+    "application_action_enabled": false,
+    "fields_filled": 0,
+    "website_session": "Expired on fresh base-page GET.",
+    "fresh_original_file_review_cancel_before_Fill": "PENDING",
+    "exact_device_revocation": "PENDING",
+    "new_Fill_upload_submission_or_revocation": false,
+    "historical_26_October_acceptance_reclassified": false
+  },
+  "remaining_boundaries": {
+    "human_Reviewer2": "PENDING",
+    "broader_native_model_quality": "PENDING",
+    "representative_shadow_accounting": "PENDING",
+    "ten_thousand_user_capacity": "PENDING",
+    "finance_and_commercial": "PENDING",
+    "full_R03_and_RTO_qualified": false,
+    "new_paid_route_or_checkout_activation": false
+  },
+  "unchanged_delivery_status": {
+    "stage_count": 8,
+    "requirement_count": 83,
+    "stage_statuses": [
+      {
+        "number": 1,
+        "status": "in_progress"
+      },
+      {
+        "number": 2,
+        "status": "in_progress"
+      },
+      {
+        "number": 3,
+        "status": "in_progress"
+      },
+      {
+        "number": 4,
+        "status": "in_progress"
+      },
+      {
+        "number": 5,
+        "status": "in_progress"
+      },
+      {
+        "number": 6,
+        "status": "in_progress"
+      },
+      {
+        "number": 7,
+        "status": "in_progress"
+      },
+      {
+        "number": 8,
+        "status": "pending"
+      }
+    ],
+    "credit_quality_progress_sha256": "d122b83e73f72f2e9e300bc5e6f317653c54f0f193ed0776e47ecf6e9fe242d9",
+    "all_83_requirement_statuses_unchanged": true,
+    "original_six_historical_outcomes_unchanged": true
+  },
+  "proof_metadata": [
+    {
+      "name": "RESTORATION_RECEIPT_INDEX.json",
+      "sha256": "0d27cd9a32499109364bf3441cc4a452e7c4088ebb471373045bda8d8ba5082d",
+      "scope": "Original restoration/joined-read/own-IAM cleanup and12 request receipts; no full R03, RTO, or 10,000-user qualification."
+    },
+    {
+      "name": "source-image-verification.json",
+      "sha256": "b7a07cf35ddc603a911c87512ff524a8bfaf3e351eb88ff74c2c802fbaf90e36",
+      "scope": "Qualified 9b9 Build/source/CI/image metadata; build-only, not deployed."
+    },
+    {
+      "name": "api-traffic-alias-read.json",
+      "sha256": "6a3b474d52cb4b20cae8bbd2c328ee9b85da1a99a4e29b6836de791c38edcd36",
+      "scope": "Closed existing API traffic projection; no write."
+    },
+    {
+      "name": "PRODUCTION_TRAFFIC_ALIAS_OBSERVATION.json",
+      "sha256": "cfecf93396229fcff1118eeb636fd7519f827c81422aa62d21cc1257972a0d2f",
+      "scope": "Root projection of two completed worker metadata reads; not a new raw native response."
+    },
+    {
+      "name": "frontend-unchanged.json",
+      "sha256": "fbf91ae84de31289c688a606ea2ea64268ac4b95bb84f80ac090cc8c82b2d115",
+      "scope": "Named frontend/root build-input comparison; current 751 deployment retained."
+    },
+    {
+      "name": "document-read-diagnostic.json",
+      "sha256": "c55ae22f5d3b9aef9582f85086064283128b6f5a9162e74c16b7607a9fcd671f",
+      "scope": "Metadata configuration verification only; no document processing or new native acceptance."
+    },
+    {
+      "name": "MERGE_READBACK.json",
+      "sha256": "1507e3715376b5c35f22dbae8901a2122539dfd659d16e059a140ce5b8236c5b",
+      "scope": "Official normal registry merge metadata; not runtime CI authority."
+    }
+  ],
+  "observed_handoff": {
+    "name": "CURRENT_HANDOFF.json",
+    "mutable_sha256_observed_only": "e28e3886c03830907b90ecac6447d1f481bbd079aa2353f518ecbf39f5fdf416",
+    "private_selected_projection_sha256": "975078d520a9944c0f23c605e96d0cd6eb30e14c1c01f64c409fff458393fe59",
+    "authority": "Observed metadata only; the original path is mutable and this hash grants no runtime or release authority."
+  },
+  "observed_through_utc": "2026-11-04T19:50:39.376364+00:00",
+  "observation_time_boundary": "Dated snapshot of linked completed observations; not a claim that later CI or serving state is automatically refreshed."
+}
