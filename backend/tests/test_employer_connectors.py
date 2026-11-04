@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 import pytest
 from backend.app.database import Base
-from backend.app.domains.employer import connectors, models, schemas, tasks
+from backend.app.domains.common import payload_fingerprint
+from backend.app.domains.employer import connectors, models, schemas, source_revalidation, tasks
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -355,11 +358,11 @@ def test_partial_detail_outage_keeps_existing_jobs_open_and_records_unavailable(
         changed["name"] = "Changed title that must not partially persist"
         return httpx.Response(200, json=changed)
 
-    original_fetch = connectors.fetch_postings
-    def failed_scan(source):
+    original_fetch = connectors.fetch_source_scan
+    def failed_scan(source, **kwargs):
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            return original_fetch(source, client)
-    monkeypatch.setattr(connectors, "fetch_postings", failed_scan)
+            return original_fetch(source, client, **kwargs)
+    monkeypatch.setattr(connectors, "fetch_source_scan", failed_scan)
     with pytest.raises(connectors.ConnectorError, match="source_http_503"):
         tasks.refresh_source(SOURCE.id)
     with factory() as db:
@@ -370,11 +373,12 @@ def test_partial_detail_outage_keeps_existing_jobs_open_and_records_unavailable(
         assert source.status == "unavailable" and source.last_error_code == "source_http_503"
         assert source.scan_token is None and source.last_success_at is None
     # A later fully completed empty scan can establish that the jobs closed.
-    monkeypatch.setattr(connectors, "fetch_postings", lambda _: [])
+    monkeypatch.setattr(connectors, "fetch_source_scan", lambda _, **kwargs:
+        connectors.CompleteScan([], {"collection": None, "details": {}}))
     assert tasks.refresh_source(SOURCE.id) == "completed"
     with factory() as db:
         assert all(not job.is_open and job.closed_at is not None for job in db.query(models.EmployerPosting).all())
-    monkeypatch.setattr(connectors, "fetch_postings", original_fetch)
+    monkeypatch.setattr(connectors, "fetch_source_scan", original_fetch)
     engine.dispose()
 
 
@@ -386,3 +390,183 @@ def test_content_fingerprint_ignores_release_date_but_tracks_job_changes():
     assert connectors._normalize(SOURCE, republished)["content_sha256"] == original["content_sha256"]
     republished["jobAd"]["sections"]["qualifications"]["text"] = "Java and SQL"
     assert connectors._normalize(SOURCE, republished)["content_sha256"] != original["content_sha256"]
+
+
+def _scan_baseline(source, postings=(), *, collection=None, details=None):
+    model = {**source.__dict__, "last_success_at": datetime(2026, 10, 7, tzinfo=UTC),
+        "employer_key": None, "verification_url": source.careers_url, "verification_note": "Owned public fixture",
+        "verified_by": None, "verified_at": datetime(2026, 10, 1, tzinfo=UTC), "enabled": True,
+        "admission_policy": None}
+    rows = [{**row, "country": row.get("country"), "skills": ["Python"], "opening_key": "a" * 64,
+        "is_open": True, "closed_at": None} for row in postings]
+    snapshot = source_revalidation.capture_snapshot(model, rows, pipeline="b" * 64)
+    assert snapshot is not None
+    return connectors.ScanBaseline(snapshot, {"collection": collection, "details": details or {}})
+
+
+def _detail_entry(baseline, identity="100", *, excluded=False):
+    return {"validator": {"etag": 'W/"detail-old"', "vary": []},
+        "summary_sha256": payload_fingerprint(summary(identity)),
+        **({"excluded": True} if excluded else {"posting_sha256": source_revalidation.posting_fingerprint(
+            baseline.snapshot.postings[identity])})}
+
+
+@pytest.mark.parametrize("platform", ["greenhouse", "ashby"])
+def test_ingestion_collection_304_is_a_distinct_snapshot_not_an_empty_scan(platform):
+    source = connectors.SourceContract(**{**SOURCE.__dict__, "platform": platform, "board_token": "example"})
+    validator = {"etag": 'W/"collection-old"', "vary": ["accept-encoding", "origin"]}
+    baseline = _scan_baseline(source, collection=validator)
+    requests = []
+    def handler(request):
+        requests.append(request)
+        assert request.headers["If-None-Match"] == validator["etag"]
+        assert request.headers["Accept-Encoding"] == "identity"
+        assert request.headers["Cache-Control"] == "no-cache, max-age=0"
+        assert not {"authorization", "cookie", "origin", "x-private", "x-smarttoken"} & set(request.headers)
+        assert "token" not in request.url.params
+        return httpx.Response(304, headers={"ETag": '"collection-old"', "Vary": "Origin, Accept-Encoding"})
+    with httpx.Client(transport=httpx.MockTransport(handler), auth=("owned", "secret"),
+                     headers={"X-Private": "secret", "Origin": "https://private.example"},
+                     cookies={"session": "secret"}, params={"token": "secret"}) as client:
+        result = connectors.fetch_source_scan(source, client, baseline=baseline)
+    assert isinstance(result, connectors.NotModifiedScan) and len(requests) == 1
+    assert not hasattr(result, "postings")
+    assert dict(requests[0].url.params) == ({"content": "true"} if platform == "greenhouse" else {})
+
+
+@pytest.mark.parametrize("platform", ["greenhouse", "ashby"])
+def test_ingestion_unbound_304_cannot_become_empty_success(platform):
+    source = connectors.SourceContract(**{**SOURCE.__dict__, "platform": platform, "board_token": "example"})
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(304))) as client:
+        with pytest.raises(connectors.ConnectorError, match="unexpected_source_not_modified"):
+            connectors.fetch_source_scan(source, client)
+
+
+def test_non_ascii_provider_etag_is_not_replayed_and_next_scan_reads_in_full():
+    source = connectors.SourceContract(**{**SOURCE.__dict__, "platform": "greenhouse", "board_token": "example"})
+    requests = []
+    def handler(request):
+        requests.append(request)
+        assert "If-None-Match" not in request.headers
+        return httpx.Response(200, json={"jobs": [], "meta": {"total": 0}},
+                              headers=[(b"ETag", b'"latin-\xe9"')])
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = connectors.fetch_source_scan(source, client)
+        assert isinstance(first, connectors.CompleteScan)
+        assert first.metadata["collection"] is None
+        baseline = _scan_baseline(source, collection=first.metadata["collection"])
+        second = connectors.fetch_source_scan(source, client, baseline=baseline)
+    assert isinstance(second, connectors.CompleteScan) and len(requests) == 2
+
+
+def test_smartrecruiters_mixes_validated_sql_detail_with_changed_detail_without_extra_gets(monkeypatch):
+    prior = connectors._normalize(SOURCE, {**summary(), **detail()})
+    baseline = _scan_baseline(SOURCE, [prior])
+    baseline.metadata["details"]["100"] = _detail_entry(baseline)
+    requests, normalized = [], []
+    original = connectors._normalize
+    def observe(source, row):
+        normalized.append(row["id"])
+        return original(source, row)
+    monkeypatch.setattr(connectors, "_normalize", observe)
+    def handler(request):
+        requests.append(request)
+        if request.url.path.endswith("/postings"):
+            assert "If-None-Match" not in request.headers
+            return httpx.Response(200, json=page([summary(), summary("101")]))
+        if request.url.path.endswith("/100"):
+            assert request.headers["If-None-Match"] == 'W/"detail-old"'
+            return httpx.Response(304, headers={"ETag": '"detail-old"'})
+        assert "If-None-Match" not in request.headers
+        changed = detail("101")
+        changed["name"] = "Changed engineer"
+        return httpx.Response(200, json=changed, headers={"ETag": '"new"'})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = connectors.fetch_source_scan(SOURCE, client, baseline=baseline)
+    assert isinstance(result, connectors.CompleteScan) and result.reused_snapshot
+    assert len(requests) == 4 and normalized == ["101"]
+    assert result.postings[0] == prior and result.postings[1]["title"] == "Changed engineer"
+    assert set(result.metadata["details"]) == {"100", "101"}
+
+
+def test_changed_summary_forces_fresh_detail_even_when_old_etag_exists():
+    prior = connectors._normalize(SOURCE, {**summary(), **detail()})
+    baseline = _scan_baseline(SOURCE, [prior])
+    baseline.metadata["details"]["100"] = _detail_entry(baseline)
+    current = summary()
+    current["location"]["city"] = "Chennai"
+    def handler(request):
+        assert "If-None-Match" not in request.headers
+        return httpx.Response(200, json=page([current]) if request.url.path.endswith("/postings") else detail())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = connectors.fetch_source_scan(SOURCE, client, baseline=baseline)
+    assert isinstance(result, connectors.CompleteScan) and not result.reused_snapshot
+    assert result.postings[0]["location"].startswith("Chennai")
+
+
+@pytest.mark.parametrize("now_active", [False, True])
+def test_inactive_details_are_still_revalidated_and_can_become_active(now_active):
+    baseline = _scan_baseline(SOURCE)
+    baseline.metadata["details"]["100"] = _detail_entry(baseline, excluded=True)
+    requested = []
+    def handler(request):
+        requested.append(request)
+        if request.url.path.endswith("/postings"):
+            assert "If-None-Match" not in request.headers
+            return httpx.Response(200, json=page([summary()]))
+        assert request.headers["If-None-Match"] == 'W/"detail-old"'
+        return (httpx.Response(200, json=detail(active=True), headers={"ETag": '"new-active"'}) if now_active
+            else httpx.Response(304, headers={"ETag": '"detail-old"'}))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = connectors.fetch_source_scan(SOURCE, client, baseline=baseline)
+    assert isinstance(result, connectors.CompleteScan) and len(requested) == 3
+    assert len(result.postings) == int(now_active)
+    assert (result.metadata["details"]["100"].get("excluded") is True) is (not now_active)
+
+
+def test_conditional_detail_success_cannot_hide_second_manifest_failure():
+    prior = connectors._normalize(SOURCE, {**summary(), **detail()})
+    baseline = _scan_baseline(SOURCE, [prior])
+    baseline.metadata["details"]["100"] = _detail_entry(baseline)
+    pages = []
+    def handler(request):
+        if request.url.path.endswith("/postings"):
+            pages.append(request)
+            assert "If-None-Match" not in request.headers
+            return httpx.Response(200, json=page([summary()])) if len(pages) == 1 else httpx.Response(503)
+        return httpx.Response(304, headers={"ETag": '"detail-old"'})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(connectors.ConnectorError, match="source_http_503"):
+            connectors.fetch_source_scan(SOURCE, client, baseline=baseline)
+    assert len(pages) == 1 + connectors.SMARTRECRUITERS_READ_ATTEMPTS
+
+
+def test_all_twenty_reviewed_sources_have_complete_unconditional_fallbacks():
+    registry = json.loads((Path(__file__).resolve().parents[1] / "resources/employer_sources.reviewed.json").read_text())
+    counts = {}
+    for index, row in enumerate(registry["sources"]):
+        counts[row["platform"]] = counts.get(row["platform"], 0) + 1
+        source = connectors.SourceContract(id=f"reviewed-{index}", **{name: row[name] for name in (
+            "employer", "platform", "board_token", "region", "allowed_hosts", "careers_url")})
+        requests = []
+        def handler(request, requests=requests, platform=source.platform):
+            requests.append(request)
+            assert "If-None-Match" not in request.headers
+            return httpx.Response(200, json=page([]) if platform == "smartrecruiters"
+                else {"jobs": [], "meta": {"total": 0}})
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = connectors.fetch_source_scan(source, client)
+        assert isinstance(result, connectors.CompleteScan) and result.postings == []
+        assert len(requests) == (2 if source.platform == "smartrecruiters" else 1)
+    assert counts == {"greenhouse": 9, "ashby": 10, "smartrecruiters": 1}
+
+
+def test_existing_fetch_and_ashby_form_reads_never_send_conditionals():
+    source = connectors.SourceContract(**{**SOURCE.__dict__, "platform": "ashby", "board_token": "example"})
+    def handler(request):
+        assert "If-None-Match" not in request.headers
+        return httpx.Response(200, json={"jobs": []}, headers={"ETag": '"unused"'})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert connectors.fetch_postings(source, client) == []
+        with pytest.raises(connectors.ConnectorError, match="posting_or_source_closed"):
+            connectors.load_form(source, "missing", client)

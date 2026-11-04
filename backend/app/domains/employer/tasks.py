@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import time
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -13,7 +14,16 @@ from fastapi import HTTPException
 from ...database import SessionLocal
 from ...services.market.skill_extractor import extract_skills_from_text
 from ..common import public_id, utcnow
-from . import admissions, artifacts, config, connectors, credits, models, service
+from . import (
+    admissions,
+    artifacts,
+    config,
+    connectors,
+    credits,
+    models,
+    service,
+    source_revalidation,
+)
 
 if TYPE_CHECKING:
     from ..dispatch.service import EmployerSearchContinuation
@@ -52,6 +62,7 @@ def execute_search(search_id: str) -> str | EmployerSearchContinuation:
 
 
 def refresh_source(source_id: str) -> str:
+    pipeline = source_revalidation.pipeline_revision()
     with SessionLocal() as db:
         from sqlalchemy.exc import DBAPIError
         try:
@@ -73,18 +84,36 @@ def refresh_source(source_id: str) -> str:
         if source.scan_token and source.scan_started_at and service._utc(source.scan_started_at) > utcnow() - timedelta(minutes=5):
             return "running"
         token = public_id("scan")
-        source.scan_token, source.scan_started_at = token, utcnow()
+        scan_started = utcnow()
+        source.scan_token, source.scan_started_at = token, scan_started
         contract = connectors.source_contract(source)
+        source_config = source_revalidation.source_fingerprint(source)
+        checkpoint = service._utc(source.last_success_at) if source.last_success_at is not None else None
+        snapshot = None
+        if source.platform in {"greenhouse", "ashby", "smartrecruiters"}:
+            snapshot_rows = db.query(models.EmployerPosting).filter_by(source_id=source_id).order_by(
+                models.EmployerPosting.external_id).limit(connectors.MAX_POSTINGS + 1).yield_per(100)
+            snapshot = source_revalidation.capture_snapshot(source, snapshot_rows, pipeline=pipeline)
         db.commit()
+    # Optional Redis work consumes the same public-read budget; no database
+    # transaction is held across either cache I/O or employer HTTP.
+    deadline = time.monotonic() + connectors.SMARTRECRUITERS_SCAN_SECONDS
+    cached = source_revalidation.load(snapshot) if snapshot is not None else None
+    baseline = connectors.ScanBaseline(snapshot, cached) if snapshot is not None and cached is not None else None
     try:
-        postings = connectors.fetch_postings(contract)
+        result = connectors.fetch_source_scan(contract, baseline=baseline, deadline=deadline)
     except connectors.ConnectorError as exc:
         with SessionLocal() as db:
             source = db.query(models.EmployerSource).filter_by(id=source_id, scan_token=token).with_for_update().first()
             if source:
-                source.status = "unavailable"
-                source.last_error_code = exc.code
-                source.next_refresh_at = utcnow() + timedelta(minutes=15)
+                if source_config is not None and source_revalidation.source_fingerprint(source) == source_config:
+                    source.status = "unavailable"
+                    source.last_error_code = exc.code
+                    source.next_refresh_at = utcnow() + timedelta(minutes=15)
+                else:
+                    # A failed read of an old configuration says nothing about
+                    # its replacement; release only this scan's own claim.
+                    source.next_refresh_at = utcnow()
                 source.scan_token, source.scan_started_at = None, None
                 db.commit()
         raise
@@ -92,33 +121,73 @@ def refresh_source(source_id: str) -> str:
         source = db.query(models.EmployerSource).filter_by(id=source_id, scan_token=token).with_for_update().first()
         if not source or not source.enabled:
             return "superseded"
+        current_checkpoint = service._utc(source.last_success_at) if source.last_success_at is not None else None
+        if (not config.discovery_enabled() or source_config is None
+                or source_revalidation.source_fingerprint(source) != source_config or current_checkpoint != checkpoint
+                or source.scan_started_at is None
+                or service._utc(source.scan_started_at) != service._utc(scan_started)
+                or service._utc(source.scan_started_at) <= utcnow() - timedelta(minutes=5)):
+            source.scan_token, source.scan_started_at = None, None
+            source.next_refresh_at = utcnow()
+            db.commit()
+            return "superseded"
         checked_at = utcnow()
-        existing = {row.external_id: row for row in db.query(models.EmployerPosting).filter_by(source_id=source_id).all()}
-        seen = set()
-        for data in postings:
-            identity = data["external_id"]
-            seen.add(identity)
-            row = existing.get(identity)
-            if not row:
-                row = models.EmployerPosting(id=public_id("job"), source_id=source_id, **data)
-                db.add(row)
-            else:
-                for key, value in data.items():
-                    # A list endpoint may omit a publication date present in a detail endpoint.
-                    if key == "publication_at" and value is None:
-                        continue
-                    setattr(row, key, value)
-            row.skills = sorted(extract_skills_from_text(data["description"])[0])
-            row.opening_key = admissions.opening_identity(row, source)
-            row.is_open, row.closed_at, row.last_checked_at = True, None, checked_at
-        # Only a fully parsed, bounded, completed provider scan can close jobs.
-        for identity, row in existing.items():
-            if identity not in seen and row.is_open:
-                row.is_open, row.closed_at, row.last_checked_at = False, checked_at, checked_at
+        rows = db.query(models.EmployerPosting).filter_by(source_id=source_id).order_by(
+            models.EmployerPosting.external_id).with_for_update().all()
+        existing = {row.external_id: row for row in rows}
+        if baseline is not None:
+            current = source_revalidation.capture_snapshot(source, rows, pipeline=pipeline)
+            if current is None or current.binding != baseline.snapshot.binding:
+                source.scan_token, source.scan_started_at = None, None
+                source.next_refresh_at = checked_at
+                db.commit()
+                return "superseded"
+        if isinstance(result, connectors.NotModifiedScan):
+            if baseline is None:
+                raise connectors.ConnectorError("unbound_source_not_modified", safe_to_retry=False)
+            # A 304 revalidates the exact already-complete SQL collection. It
+            # cannot be interpreted as an empty list or reopen/close postings.
+            for unchanged_row in rows:
+                if unchanged_row.is_open:
+                    unchanged_row.last_checked_at = checked_at
+        else:
+            seen = set()
+            for data in result.postings:
+                identity = data["external_id"]
+                seen.add(identity)
+                row = existing.get(identity)
+                old_description = row.description if row is not None else None
+                if row is None:
+                    row = models.EmployerPosting(id=public_id("job"), source_id=source_id, **data)
+                    db.add(row)
+                    rows.append(row)
+                else:
+                    for key, value in data.items():
+                        # A list may omit a date retained from a detail endpoint.
+                        if key == "publication_at" and value is None:
+                            continue
+                        setattr(row, key, value)
+                # Cache absence/version drift means there is no proof that old
+                # derived skills used this pipeline, even if source text matches.
+                if baseline is None or old_description != data["description"]:
+                    row.skills = sorted(extract_skills_from_text(data["description"])[0])
+                row.opening_key = admissions.opening_identity(row, source)
+                row.is_open, row.closed_at, row.last_checked_at = True, None, checked_at
+            # Only a complete scan, including every SR detail and both current
+            # list traversals, can establish absence and close missing jobs.
+            for identity, row in existing.items():
+                if identity not in seen and row.is_open:
+                    row.is_open, row.closed_at, row.last_checked_at = False, checked_at, checked_at
         source.status, source.last_error_code = "healthy", None
         source.last_success_at = checked_at
         source.next_refresh_at = checked_at + timedelta(hours=6)
         source.scan_token, source.scan_started_at = None, None
+        db.flush()
+        committed_snapshot = source_revalidation.capture_snapshot(source, rows, pipeline=pipeline)
+        metadata = _committed_source_metadata(result.metadata, committed_snapshot)
+        if service._utc(scan_started) <= utcnow() - timedelta(minutes=5):
+            db.rollback()
+            return "superseded"
         db.commit()
         if config.catalogue_search_enabled():
             from sqlalchemy.exc import DBAPIError
@@ -129,7 +198,26 @@ def refresh_source(source_id: str) -> str:
             except DBAPIError:
                 db.rollback()
                 log.warning("Catalogue retention work deferred")
-        return "completed"
+    # A failed/unknown SQL commit can never publish provider validators. A late
+    # publication for an older successful checkpoint can only cause a cache miss.
+    if committed_snapshot is not None and metadata is not None:
+        source_revalidation.publish(committed_snapshot, metadata)
+    return "completed"
+
+
+def _committed_source_metadata(metadata: dict, snapshot: source_revalidation.Snapshot | None) -> dict | None:
+    if snapshot is None:
+        return None
+    postings, details = snapshot.postings, {}
+    for identity, entry in metadata.get("details", {}).items():
+        posting = postings.get(identity)
+        value = {"validator": entry["validator"], "summary_sha256": entry["summary_sha256"]}
+        if entry.get("excluded") is True:
+            if posting is None or posting.get("is_open") is False:
+                details[identity] = {**value, "excluded": True}
+        elif posting is not None and posting.get("is_open") is True:
+            details[identity] = {**value, "posting_sha256": source_revalidation.posting_fingerprint(posting)}
+    return {"collection": metadata.get("collection"), "details": details}
 
 
 def _settle_failure(db, application, code, message):

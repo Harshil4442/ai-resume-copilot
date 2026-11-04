@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"
+APP_SHA256 = "13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -42,6 +42,8 @@ CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
 # may differ from the failed historical runner. Other execution inputs stay fixed.
 CURRENT_EXECUTION_PATHS = (
     "backend/app/domains/credits/canary.py",
+    "backend/app/domains/employer/connectors.py",
+    "backend/app/domains/employer/tasks.py",
     "backend/app/domains/recovery/browser_pairing_production.py",
     "backend/scripts/document_refresh.py",
     "backend/scripts/schema25_app_release_contract_v3.py",
@@ -55,6 +57,9 @@ CURRENT_EXECUTION_PATHS = (
     "infra/gcp/schema26_maintenance_guard.py",
     "infra/gcp/v3_readonly_adapter.py",
 )
+# This runtime module is new relative to the fixed historical inventory. It is
+# never a component/proof exemption or a backfill into a historical runner.
+CURRENT_ADDED_EXECUTION_PATHS = ("backend/app/domains/employer/source_revalidation.py",)
 # Maintenance reads the current operator registry. The qualified runner retains
 # the exact registry bytes shipped at this immutable app source; neither source
 # nor provider acceptance is inferred from an operator's appended row.
@@ -123,12 +128,34 @@ def current_proof_hashes(root: Path) -> dict[str, str]:
     return entries
 
 
+def _current_execution_paths() -> tuple[str, ...]:
+    paths = (*CURRENT_EXECUTION_PATHS, *CURRENT_ADDED_EXECUTION_PATHS)
+    need(type(CURRENT_EXECUTION_PATHS) is tuple and type(CURRENT_ADDED_EXECUTION_PATHS) is tuple
+         and len(paths) == len(set(paths))
+         and all(type(name) is str and not Path(name).is_absolute()
+                 and ".." not in Path(name).parts and Path(name).as_posix() == name for name in paths),
+         "current_execution_manifest")
+    need(not set(paths) & {*COMPONENT_PATHS, *PROOF_PATHS, *CURRENT_PROOF_PATHS, OPERATOR_REGISTRY_PATH},
+         "current_execution_manifest_overlap")
+    return paths
+
+
 def current_execution_hashes(root: Path) -> dict[str, str]:
     """Finite successor bytes bound to this checkout's exact committed HEAD."""
     head = git(root, "rev-parse", "HEAD").decode().strip()
     need(len(head) == 40 and all(c in "0123456789abcdef" for c in head), "current_execution_head")
+    paths = _current_execution_paths()
+    objects = {}
+    for row in git(root, "ls-tree", "-r", "-z", "--full-tree", head, "--", *paths).split(b"\0"):
+        if row:
+            metadata, name = row.split(b"\t", 1)
+            mode, kind, _ = metadata.split()
+            objects[name.decode()] = (mode, kind)
+    need(set(objects) == set(paths), "current_execution_not_committed")
     entries = {}
-    for name in CURRENT_EXECUTION_PATHS:
+    for name in paths:
+        mode, kind = objects[name]
+        need(mode in {b"100644", b"100755"} and kind == b"blob", "current_execution_type")
         path = root / name
         need(path.is_file() and path.resolve() == path and not path.is_symlink()
              and 0 < path.stat().st_size <= 512 * 1024, "current_execution_path")
@@ -137,6 +164,18 @@ def current_execution_hashes(root: Path) -> dict[str, str]:
         entries[name] = hashlib.sha256(raw).hexdigest()
     need(git(root, "rev-parse", "HEAD").decode().strip() == head, "current_execution_head_changed")
     return entries
+
+
+def _execution_inventory(objects) -> list[str]:
+    names = set(objects)
+    paths = {*RUNNER_PATHS, *(name for name in names if
+        name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
+                         "infra/document-processing/", "infra/native-tex/"))
+        and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS)
+    _current_execution_paths()
+    need(not set(CURRENT_ADDED_EXECUTION_PATHS) & (names | paths), "current_added_execution_historical")
+    need(set(CURRENT_EXECUTION_PATHS) <= paths, "current_execution_not_historical")
+    return sorted(paths | set(CURRENT_ADDED_EXECUTION_PATHS))
 
 
 def dependency_hashes(root: Path) -> dict[str, str]:
@@ -149,22 +188,23 @@ def dependency_hashes(root: Path) -> dict[str, str]:
             mode, kind, object_id = metadata.split()
             objects[name.decode()] = (mode, kind, object_id)
     names = set(objects)
-    paths = sorted({*RUNNER_PATHS, *(name for name in names if
-        name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
-                         "infra/document-processing/", "infra/native-tex/"))
-        and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS))
+    paths = _execution_inventory(objects)
     successors = current_execution_hashes(root)
     need(set(successors) <= set(paths), "current_execution_not_historical")
     current = set(git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
     code_roots = ("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                   "infra/document-processing/", "infra/native-tex/")
-    need(not {name for name in current - set(names) - set(COMPONENT_PATHS)
+    need(not {name for name in current - names - set(COMPONENT_PATHS) - set(CURRENT_ADDED_EXECUTION_PATHS)
               if name.startswith(code_roots) and Path(name).suffix in {".py", ".json"}}, "new_execution_dependency")
     entries = {}
     for name in paths:
         path = root / name
         need(path.is_file() and path.resolve() == path and not path.is_symlink(), "dependency_path")
         raw = path.read_bytes()
+        if name in CURRENT_ADDED_EXECUTION_PATHS:
+            need(hashlib.sha256(raw).hexdigest() == successors[name], "current_execution_changed_during_read")
+            entries[name] = successors[name]
+            continue
         mode, kind, expected = objects[name]
         need(mode in {b"100644", b"100755"} and kind == b"blob", "historical_dependency_type")
         if name in successors:
@@ -233,7 +273,7 @@ def operator_data_hashes(root: Path) -> dict[str, str]:
 
 
 def controller_dependency_hashes(root: Path) -> dict[str, str]:
-    """463 actual execution inputs plus one explicit immutable runner snapshot.
+    """Current execution inputs plus one explicit immutable runner snapshot.
 
     Actual current registry bytes are separately bound by operator_data_hashes.
     The actual runner always uses unchanged dependency_hashes, which refuses an
@@ -249,10 +289,7 @@ def controller_dependency_hashes(root: Path) -> dict[str, str]:
             mode, kind, object_id = metadata.split()
             objects[name.decode()] = (mode, kind, object_id)
     names = set(objects)
-    paths = sorted({*RUNNER_PATHS, *(name for name in names if
-        name.startswith(("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
-                         "infra/document-processing/", "infra/native-tex/"))
-        and Path(name).suffix in {".py", ".json"})} - set(CURRENT_PROOF_PATHS))
+    paths = _execution_inventory(objects)
     need(OPERATOR_REGISTRY_PATH in paths, "operator_registry_not_in_runner_snapshot")
     successors = current_execution_hashes(root)
     need(set(successors) <= set(paths) and OPERATOR_REGISTRY_PATH not in successors,
@@ -260,13 +297,17 @@ def controller_dependency_hashes(root: Path) -> dict[str, str]:
     current = set(git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
     code_roots = ("backend/app/", "backend/scripts/", "backend/alembic/", "infra/gcp/",
                   "infra/document-processing/", "infra/native-tex/")
-    need(not {name for name in current - set(names) - set(COMPONENT_PATHS)
+    need(not {name for name in current - names - set(COMPONENT_PATHS) - set(CURRENT_ADDED_EXECUTION_PATHS)
               if name.startswith(code_roots) and Path(name).suffix in {".py", ".json"}}, "new_execution_dependency")
     entries = {}
     for name in paths:
         path = root / name
         need(path.is_file() and path.resolve() == path and not path.is_symlink(), "dependency_path")
         raw = path.read_bytes()
+        if name in CURRENT_ADDED_EXECUTION_PATHS:
+            need(hashlib.sha256(raw).hexdigest() == successors[name], "current_execution_changed_during_read")
+            entries[name] = successors[name]
+            continue
         mode, kind, expected = objects[name]
         need(mode in {b"100644", b"100755"} and kind == b"blob", "historical_dependency_type")
         if name == OPERATOR_REGISTRY_PATH:

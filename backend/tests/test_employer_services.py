@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import httpx
@@ -8,7 +10,15 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base, get_db
 from backend.app.domains.common import payload_fingerprint, utcnow
-from backend.app.domains.employer import config, connectors, models, schemas, service, tasks
+from backend.app.domains.employer import (
+    config,
+    connectors,
+    models,
+    schemas,
+    service,
+    source_revalidation,
+    tasks,
+)
 from backend.app.routers.v1.employer import router
 from backend.app.security import get_current_user
 from fastapi import FastAPI, HTTPException
@@ -263,7 +273,7 @@ def test_required_questions_choices_and_approval_change(context):
 
 def test_failed_source_scan_does_not_close_jobs(context, monkeypatch):
     factory, _, _ = context
-    monkeypatch.setattr(connectors, "fetch_postings", lambda *args: (_ for _ in ()).throw(connectors.ConnectorError("source_http_429")))
+    monkeypatch.setattr(connectors, "fetch_source_scan", lambda *args, **kwargs: (_ for _ in ()).throw(connectors.ConnectorError("source_http_429")))
     with pytest.raises(connectors.ConnectorError):
         tasks.refresh_source("source_test")
     with factory() as db:
@@ -450,3 +460,207 @@ def test_llm_unavailable_does_not_block_discovery_or_supported_original_submissi
     _execute(client, application)
     monkeypatch.setattr(connectors, "submit_greenhouse", lambda *args, **kwargs: (201, {"application_id": "no-ai-receipt", "completion_verified": True}))
     assert tasks.execute_application(application["id"]) == "confirmed"
+
+
+@pytest.fixture
+def source_ingestion(context, monkeypatch):
+    from backend.app.domains.employer import catalogue_search
+    factory, _, _ = context
+    monkeypatch.setattr(tasks.service, "bounded_search_maintenance", lambda _: None)
+    monkeypatch.setattr(catalogue_search, "maintenance_step", lambda _: None)
+    monkeypatch.setattr(tasks.config, "catalogue_search_enabled", lambda: False)
+    revision = {"value": "a" * 64}
+    monkeypatch.setattr(source_revalidation, "pipeline_revision", lambda: revision["value"])
+    class Cache:
+        def __init__(self):
+            self.values, self.published = {}, []
+            self.fail_read = self.fail_write = False
+        def get(self, key):
+            if self.fail_read:
+                raise OSError("Owned cache unavailable")
+            return self.values.get(key)
+        def setex(self, key, ttl, value):
+            if self.fail_write:
+                raise OSError("Owned cache unavailable")
+            record = json.loads(value)
+            with factory() as db:
+                source = db.get(models.EmployerSource, "source_test")
+                assert source.scan_token is None
+                assert service._utc(source.last_success_at) == datetime.fromisoformat(record["binding"]["last_success_at"])
+            self.values[key] = value
+            self.published.append(record)
+            return True
+        def close(self):
+            pass
+    cache = Cache()
+    monkeypatch.setattr(source_revalidation, "_redis_client", lambda: cache)
+    posting = {"id": 1, "internal_job_id": "REQ-1", "title": "Current Python engineer",
+        "content": "Build Python services.", "location": {"name": "Bengaluru"},
+        "absolute_url": "https://job-boards.greenhouse.io/verified/jobs/1",
+        "first_published": "2026-10-01T00:00:00Z", "updated_at": "2026-10-07T00:00:00Z"}
+    state = {"jobs": [posting], "etag": 'W/"feed-one"', "hook": None, "status": None}
+    requests = []
+    def handler(request):
+        requests.append(request)
+        if state["hook"] is not None:
+            hook, state["hook"] = state["hook"], None
+            hook()
+        if state["status"] is not None:
+            return httpx.Response(state["status"])
+        headers = {"ETag": state["etag"], "Vary": "Origin, Accept-Encoding",
+            "Cache-Control": "max-age=0, private, must-revalidate"}
+        if request.headers.get("If-None-Match") == state["etag"]:
+            return httpx.Response(304, headers=headers)
+        return httpx.Response(200, json={"jobs": state["jobs"], "meta": {"total": len(state["jobs"])}}, headers=headers)
+    original = connectors.fetch_source_scan
+    def fetch(source, **kwargs):
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            return original(source, client, **kwargs)
+    monkeypatch.setattr(connectors, "fetch_source_scan", fetch)
+    return factory, cache, revision, state, requests
+
+
+def test_source_304_refreshes_exact_snapshot_without_closure_or_skill_recomputation(source_ingestion, monkeypatch):
+    factory, cache, _, _, requests = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    with factory() as db:
+        before = db.get(models.EmployerSource, "source_test").last_success_at
+        rows = {r.external_id: (r.is_open, r.content_sha256, list(r.skills)) for r in db.query(models.EmployerPosting)}
+    monkeypatch.setattr(tasks, "extract_skills_from_text", lambda _: pytest.fail("Validated unchanged facts must not be rederived"))
+    assert tasks.refresh_source("source_test") == "completed"
+    with factory() as db:
+        source = db.get(models.EmployerSource, "source_test")
+        assert service._utc(source.last_success_at) > service._utc(before)
+        assert {r.external_id: (r.is_open, r.content_sha256, list(r.skills)) for r in db.query(models.EmployerPosting)} == rows
+        assert db.get(models.EmployerPosting, "job_1").last_checked_at == source.last_success_at
+    assert len(requests) == 2 and "If-None-Match" not in requests[0].headers
+    assert requests[1].headers["If-None-Match"] == 'W/"feed-one"'
+    assert len(cache.published) == 2
+
+
+def test_complete_empty_200_closes_jobs_while_following_304_keeps_that_exact_empty_state(source_ingestion):
+    factory, _, _, state, _ = source_ingestion
+    state["jobs"] = []
+    assert tasks.refresh_source("source_test") == "completed"
+    assert tasks.refresh_source("source_test") == "completed"
+    with factory() as db:
+        rows = db.query(models.EmployerPosting).all()
+        assert len(rows) == 2 and all(not row.is_open and row.closed_at is not None for row in rows)
+
+
+@pytest.mark.parametrize("change", ["source", "posting-date", "new-owner", "expired-lease"])
+def test_inflight_source_snapshot_changes_cannot_publish_stale_revalidation(source_ingestion, change):
+    factory, cache, _, state, _ = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    with factory() as db:
+        before = db.get(models.EmployerSource, "source_test").last_success_at
+    def change_snapshot():
+        with factory() as db:
+            source = db.get(models.EmployerSource, "source_test")
+            if change == "source":
+                source.verification_note = "New reviewed source configuration"
+            elif change == "posting-date":
+                db.get(models.EmployerPosting, "job_1").source_updated_at = datetime(2026, 10, 8, tzinfo=UTC)
+            elif change == "new-owner":
+                source.scan_token = "scan-replacement-owner"
+            else:
+                source.scan_started_at = utcnow() - timedelta(minutes=6)
+            db.commit()
+    state["hook"] = change_snapshot
+    assert tasks.refresh_source("source_test") == "superseded"
+    with factory() as db:
+        source = db.get(models.EmployerSource, "source_test")
+        assert source.last_success_at == before
+        assert db.get(models.EmployerPosting, "job_1").is_open
+        if change == "new-owner":
+            assert source.scan_token == "scan-replacement-owner"
+    assert len(cache.published) == 1
+
+
+def test_pipeline_change_forces_full_read_and_derivation_even_when_description_matches(source_ingestion, monkeypatch):
+    _, cache, revision, _, requests = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    calls = []
+    original = tasks.extract_skills_from_text
+    monkeypatch.setattr(tasks, "extract_skills_from_text", lambda value: (calls.append(value), original(value))[1])
+    revision["value"] = "b" * 64
+    assert tasks.refresh_source("source_test") == "completed"
+    assert "If-None-Match" not in requests[-1].headers and len(calls) == 1 and len(cache.published) == 2
+
+
+def test_changed_dates_preserve_facts_without_repeating_description_derivation(source_ingestion, monkeypatch):
+    factory, _, _, state, requests = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    state["etag"] = '"new-dates"'
+    state["jobs"][0]["updated_at"] = "2026-10-09T00:00:00Z"
+    state["jobs"][0].pop("first_published")
+    monkeypatch.setattr(tasks, "extract_skills_from_text", lambda _: pytest.fail("Only dates changed"))
+    assert tasks.refresh_source("source_test") == "completed"
+    with factory() as db:
+        row = db.get(models.EmployerPosting, "job_1")
+        assert service._utc(row.publication_at) == datetime(2026, 10, 1, tzinfo=UTC)
+        assert service._utc(row.source_updated_at) == datetime(2026, 10, 9, tzinfo=UTC)
+    assert requests[-1].headers["If-None-Match"] == 'W/"feed-one"'
+
+
+def test_unknown_sql_commit_never_advances_cached_validators(source_ingestion):
+    factory, cache, _, state, _ = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    before = cache.published[-1]["binding"]["last_success_at"]
+    state["etag"] = '"changed"'
+    state["jobs"][0]["title"] = "Must roll back"
+    calls = []
+    def refuse_final_commit(session):
+        calls.append(session)
+        if len(calls) == 2:
+            raise RuntimeError("Owned commit outcome refused")
+    event.listen(factory.class_, "before_commit", refuse_final_commit)
+    try:
+        with pytest.raises(RuntimeError, match="Owned commit outcome refused"):
+            tasks.refresh_source("source_test")
+    finally:
+        event.remove(factory.class_, "before_commit", refuse_final_commit)
+    with factory() as db:
+        assert service._utc(db.get(models.EmployerSource, "source_test").last_success_at) == datetime.fromisoformat(before)
+        assert db.get(models.EmployerPosting, "job_1").title == "Current Python engineer"
+    assert len(cache.published) == 1
+
+
+@pytest.mark.parametrize("failure", ["read", "write"])
+def test_optional_redis_failure_uses_full_reads_without_losing_current_jobs(source_ingestion, failure):
+    factory, cache, _, state, requests = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    if failure == "read":
+        cache.fail_read = True
+    else:
+        cache.values.clear()
+        cache.fail_write = True
+    state["jobs"][0]["title"] = "Fresh complete result"
+    state["etag"] = '"changed"'
+    assert tasks.refresh_source("source_test") == "completed"
+    assert "If-None-Match" not in requests[-1].headers
+    with factory() as db:
+        assert db.get(models.EmployerPosting, "job_1").title == "Fresh complete result"
+        assert db.get(models.EmployerSource, "source_test").status == "healthy"
+    assert len(cache.published) == (2 if failure == "read" else 1)
+
+
+def test_cache_time_consumes_original_scan_budget_before_any_public_get(source_ingestion, monkeypatch):
+    from types import SimpleNamespace
+    factory, cache, _, _, requests = source_ingestion
+    assert tasks.refresh_source("source_test") == "completed"
+    now = [0.0]
+    clock = SimpleNamespace(monotonic=lambda: now[0], sleep=lambda delay: now.__setitem__(0, now[0] + delay))
+    monkeypatch.setattr(tasks, "time", clock)
+    monkeypatch.setattr(connectors, "time", clock)
+    original = source_revalidation.load
+    def delayed(snapshot):
+        result = original(snapshot)
+        now[0] = connectors.SMARTRECRUITERS_SCAN_SECONDS
+        return result
+    monkeypatch.setattr(source_revalidation, "load", delayed)
+    with pytest.raises(connectors.ConnectorError, match="scan_time_limit_exceeded"):
+        tasks.refresh_source("source_test")
+    assert len(requests) == 1 and len(cache.published) == 1
+    with factory() as db:
+        assert db.get(models.EmployerPosting, "job_1").is_open

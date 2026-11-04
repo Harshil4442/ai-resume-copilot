@@ -342,7 +342,13 @@
       "id": "E02",
       "requirement": "Shared official job ingestion. Use the verified employer registry, documented feeds or permitted adapters. Fetch once for many users using conditional requests and changes since the last successful scan. Deduplicate by source ID, requisition, canonical URL and content revision. Record freshness and coverage limits.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "Source candidate only: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py implement optional metadata-only revalidation for the current reviewed population of nine Greenhouse, ten Ashby and one SmartRecruiters sources. This is not deployment or all-source conditional acceptance evidence.",
+        "Greenhouse and Ashby use a whole-collection validator only when it is bound to the exact successful SQL checkpoint, canonical posting set, source configuration and versioned normalization/skills pipeline. SmartRecruiters always reads both complete current listing passes and every detail, conditionally reusing only an individually validated unchanged detail; mixed 200/304 results must still form a complete scan. No raw response bodies are cached.",
+        "Redis is optional non-authorizing metadata: one bounded 64 KiB record per source, 24-hour maximum age, bounded I/O and no retries. Missing, expired, unsupported, oversized or mismatched metadata causes ordinary full reads. Anonymous request identity, no-store/Vary restrictions, the original 240-second public-read budget, source lease, publication dates and complete-scan closure remain enforced. Opaque weak ETags are validators, not content digests.",
+        "Validators publish only after a successful SQL commit and owned lease/configuration/checkpoint/posting-snapshot fences. Unchanged descriptions avoid repeated skill extraction only under the same proven pipeline revision. A 304 refreshes the exact retained SQL snapshot and never means an empty board or closes jobs. Cache publication failure loses efficiency without changing a genuinely completed scan.",
+        "Focused offline HTTP, metadata and SQLite lifecycle controls: 224 passed with socket connections/DNS denied and author-root imports verified. Four real PostgreSQL race controls are prepared for the existing mandatory owned CI database; they are not locally qualified when that URL is absent. Fresh backend and employer-worker release verification plus scoped read-only acceptance of all three current platforms remain pending; vendor support and savings are not assumed for every source. Paid native document QA remains on HOLD."
+      ]
     },
     {
       "id": "E03",
