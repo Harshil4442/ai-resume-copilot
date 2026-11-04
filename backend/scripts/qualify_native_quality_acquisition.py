@@ -41,6 +41,7 @@ CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
 # Only the explicitly reviewed runtime and prospective V3 controller successors
 # may differ from the failed historical runner. Other execution inputs stay fixed.
 CURRENT_EXECUTION_PATHS = (
+    ".github/workflows/ci.yml",
     "backend/app/domains/credits/canary.py",
     "backend/app/domains/employer/connectors.py",
     "backend/app/domains/employer/tasks.py",
@@ -52,14 +53,16 @@ CURRENT_EXECUTION_PATHS = (
     "infra/gcp/document_refresh_transition.py",
     "infra/gcp/document_source_candidate.py",
     "infra/gcp/document_source_release.py",
+    "infra/gcp/rolling_release.py",
     "infra/gcp/schema26_app_rolling_v3.py",
     "infra/gcp/schema26_lifecycle_join.py",
     "infra/gcp/schema26_maintenance_guard.py",
     "infra/gcp/v3_readonly_adapter.py",
 )
-# This runtime module is new relative to the fixed historical inventory. It is
-# never a component/proof exemption or a backfill into a historical runner.
-CURRENT_ADDED_EXECUTION_PATHS = ("backend/app/domains/employer/source_revalidation.py",)
+# These exact runtime modules are new relative to the fixed historical inventory.
+# They are not component/proof exemptions or historical runner backfills.
+CURRENT_ADDED_EXECUTION_PATHS = ("backend/app/domains/employer/source_revalidation.py",
+    "backend/scripts/schema26_app_successor.py")
 # Maintenance reads the current operator registry. The qualified runner retains
 # the exact registry bytes shipped at this immutable app source; neither source
 # nor provider acceptance is inferred from an operator's appended row.

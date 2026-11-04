@@ -73,7 +73,8 @@ PROTOCOL_FIXTURES = ('backend/pyproject.toml', 'backend/tests/expense_policy_fix
     # These are source inputs, not additional native protocol suites.
     'backend/tests/test_employer_connectors.py',
     'backend/tests/test_employer_source_revalidation.py',
-    'backend/tests/test_employer_source_revalidation_postgres.py')
+    'backend/tests/test_employer_source_revalidation_postgres.py',
+    'backend/scripts/schema26_app_successor.py', 'backend/tests/test_schema26_app_successor.py')
 HISTORICAL_PATHS = ("backend/scripts/schema25_app_release_contract.py",
     "backend/scripts/schema25_app_release_contract_v2.py", "backend/scripts/qualify_schema25_retained_v1.py",
     "backend/tests/test_schema25_app_compatibility_postgres.py",

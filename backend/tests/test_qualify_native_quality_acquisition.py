@@ -35,19 +35,21 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
-    assert len(value["execution_dependencies"]) == 465 and len(q.CURRENT_PROOF_PATHS) == 1
+    assert len(value["execution_dependencies"]) == 466 and len(q.CURRENT_PROOF_PATHS) == 1
     assert q.CURRENT_EXECUTION_PATHS == (
+        ".github/workflows/ci.yml",
         "backend/app/domains/credits/canary.py", "backend/app/domains/employer/connectors.py",
         "backend/app/domains/employer/tasks.py", "backend/app/domains/recovery/browser_pairing_production.py",
         "backend/scripts/document_refresh.py", "backend/scripts/schema25_app_release_contract_v3.py",
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
-        "infra/gcp/document_source_release.py", "infra/gcp/schema26_app_rolling_v3.py",
+        "infra/gcp/document_source_release.py", "infra/gcp/rolling_release.py", "infra/gcp/schema26_app_rolling_v3.py",
         "infra/gcp/schema26_lifecycle_join.py",
         "infra/gcp/schema26_maintenance_guard.py",
         "infra/gcp/v3_readonly_adapter.py",
     )
-    assert q.CURRENT_ADDED_EXECUTION_PATHS == ("backend/app/domains/employer/source_revalidation.py",)
+    assert q.CURRENT_ADDED_EXECUTION_PATHS == ("backend/app/domains/employer/source_revalidation.py",
+        "backend/scripts/schema26_app_successor.py")
     assert set(value["current_execution_inputs"]) == {*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS}
     assert all(value["execution_dependencies"][name] == digest
         for name, digest in value["current_execution_inputs"].items())
@@ -338,7 +340,7 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
     run("commit", "-q", "-m", "Synthetic foreign source only")
     assert not q.git(tmp_path, "status", "--porcelain")
     after = q.dependency_hashes(tmp_path)
-    assert len(before) == len(after) == 465
+    assert len(before) == len(after) == 466
     assert {key for key in before if before[key] != after[key]} == {name}
     assert q.digest(before) != q.digest(after)
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
@@ -396,7 +398,7 @@ def test_owned_append_changes_only_operator_context_and_not_qualified_runner_sna
     write_registry(registry_tree, value)
     after = q.source_identity(registry_tree)
     assert before["execution_dependencies"] == after["execution_dependencies"] == strict
-    assert len(strict) == 465 and before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
+    assert len(strict) == 466 and before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
     assert before["component_paths"] == after["component_paths"]
     assert before["operator_data_inputs"] != after["operator_data_inputs"]
     assert before["controller_sha256"] != after["controller_sha256"]
@@ -572,6 +574,7 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
     common = {name: hashlib.sha256((runner / name).read_bytes()).hexdigest() for name in materialized}
     assert {name for name in common if common[name] != expected[name]} == different | {
         "backend/app/domains/employer/connectors.py", "backend/app/domains/employer/tasks.py",
+        "infra/gcp/rolling_release.py", ".github/workflows/ci.yml",
     }
     with pytest.raises(ValueError, match="current_execution_not_committed"):
         q.dependency_hashes(runner)
@@ -610,7 +613,7 @@ def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tm
     synthetic_release = q.git(runner, "rev-parse", "HEAD").decode().strip()
     assert not (runner / "backend/evals/unified_credit_v2").exists()
     assert (runner / q.OPERATOR_REGISTRY_PATH).read_bytes() == q._registry_snapshot(ROOT)
-    assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 465
+    assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 466
     observed = q.runner_source(runner)
     fingerprint = contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
     assert observed["release"] == synthetic_release
@@ -915,8 +918,8 @@ def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
     assert q.operator_data_hashes(ROOT)[q.OPERATOR_REGISTRY_PATH] != q.REGISTRY_RUNNER_SHA256
 
 
-@pytest.fixture
-def current_added_owned_tree(tmp_path, monkeypatch):
+@pytest.fixture(params=q.CURRENT_ADDED_EXECUTION_PATHS)
+def current_added_owned_tree(tmp_path, monkeypatch, request):
     """Four tiny owned Git files; no actual checkout, provider or corpus reads."""
     def denied(*args, **kwargs):
         raise AssertionError("Owned execution-manifest tests forbid network I/O")
@@ -927,7 +930,8 @@ def current_added_owned_tree(tmp_path, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect_ex", denied)
     root = tmp_path.resolve()
     base = "backend/app/owned_baseline.py"
-    added, = q.CURRENT_ADDED_EXECUTION_PATHS
+    added = request.param
+    monkeypatch.setattr(q, "CURRENT_ADDED_EXECUTION_PATHS", (added,))
     registry = json.dumps({"version": 1, "sources": [synthetic_registry_row()]}).encode()
     q.git(root, "init", "-q")
 
@@ -1049,3 +1053,18 @@ def test_current_added_owned_old_runner_without_helper_refuses_before_validator_
     for read in (q.dependency_hashes, q.controller_dependency_hashes, q._runner_source):
         with pytest.raises(ValueError, match="current_execution_not_committed"):
             read(owned.root)
+
+
+def test_current_added_owned_two_exact_additions_are_runtime_bytes(current_added_owned_tree, monkeypatch):
+    owned = current_added_owned_tree
+    additions = ("backend/app/domains/employer/source_revalidation.py", "backend/scripts/schema26_app_successor.py")
+    for name in additions:
+        if name != owned.added:
+            owned.write(name, b"SECOND_OWNED_RUNTIME = True\n")
+    owned.commit()
+    monkeypatch.setattr(q, "CURRENT_ADDED_EXECUTION_PATHS", additions)
+    for reader in (q.dependency_hashes, q.controller_dependency_hashes):
+        actual = reader(owned.root)
+        assert set(actual) == {"Dockerfile", owned.base, q.OPERATOR_REGISTRY_PATH, *additions}
+        for name in additions:
+            assert actual[name] == hashlib.sha256((owned.root / name).read_bytes()).hexdigest()

@@ -138,7 +138,7 @@ def _bootstrap_child():
     module.__file__, module.__package__ = str(path), "scripts"
     sys.modules[module_name] = module
     raw = checked(path)
-    if hashlib.sha256(raw).hexdigest() != "7287d51f2c54411dad4307c29f38dfb0fab534365e45cc89fe5b57b34c5865b5":
+    if hashlib.sha256(raw).hexdigest() != "181973aeff17f73640f18291f1ffd13bf89f9bd00c2430ab475afae466e7a4fe":
         raise ValueError("development_source_bootstrap_helper_changed")
 
     def deny(*args, **kwargs):
