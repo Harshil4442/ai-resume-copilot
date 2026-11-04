@@ -7,6 +7,7 @@ identities. Only this new journal owns actions. Reconciliation never starts one.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import importlib
 import json
@@ -15,7 +16,9 @@ import re
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -259,7 +262,6 @@ class SuccessorPlan(rolling.RollingPlan):
             type(self) is SuccessorPlan
             and self.schema_contract == KIND
             and self.database_schema == SCHEMA
-            and self.candidate_policies is None
             and type(self.prior_source) is SourcePin,
             "plan_kind",
         )
@@ -400,7 +402,9 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
     def verify_global(self, plan):
         plan.validate()
         self._sources(plan)
-        self.observer.verify_policy_configuration(plan.policies)
+        if plan.candidate_policies is not None:
+            verify_historical_policy(self, plan.policies)
+        self.observer.verify_policy_configuration(plan.target_policies())
         self._identity(plan.runtime_uid)
         need(
             self._reachable(plan.services, plan.prior_source) == plan.reachable_revisions,
@@ -479,7 +483,8 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
                 )
                 candidate = rolling.template_sha(template, pin.service) != pin.template_sha256
                 expected_pin = rolling.candidate_service_pin(plan, pin) if candidate else pin
-                rolling.verify_policy_bindings(plan.policies, expected_pin, template)
+                policies = plan.target_policies() if candidate else plan.policies
+                rolling.verify_policy_bindings(policies, expected_pin, template)
                 for secret in expected_pin.secrets:
                     need(
                         env.get(secret.environment_name)
@@ -570,9 +575,23 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
         retired_migration_secret,
         workers_release,
         employer_cache_secret=None,
+        candidate_expense_secret=None,
+        candidate_model_policy_secret=None,
     ):
         source.validate()
         prior.validate()
+        need(
+            (candidate_expense_secret is None) == (candidate_model_policy_secret is None),
+            "candidate_policy_pair_required",
+        )
+        if candidate_expense_secret is not None:
+            need(
+                all(
+                    type(ref) is str and rolling.REF.fullmatch(ref)
+                    for ref in (candidate_expense_secret, candidate_model_policy_secret)
+                ),
+                "candidate_policy_numeric_refs_required",
+            )
         cache = (
             rolling.EmployerCacheBinding(employer_cache_secret)
             if employer_cache_secret is not None
@@ -600,6 +619,28 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
             env["LLM_MODEL"]["value"],
             env["LLM_API_BASE"]["value"],
         )
+        candidate_policies = None
+        if candidate_expense_secret is not None:
+            for reference in (candidate_expense_secret, candidate_model_policy_secret):
+                secret, version = reference.split(":")
+                need(
+                    self._reference(secret, version) == version,
+                    "candidate_policy_version_unverified",
+                )
+            candidate_policies = replace(
+                policies,
+                expense_secret=candidate_expense_secret,
+                expense_sha256=hashlib.sha256(
+                    self.observer._secret(candidate_expense_secret).encode()
+                ).hexdigest(),
+                model_policy_secret=candidate_model_policy_secret,
+                model_policy_sha256=hashlib.sha256(
+                    self.observer._secret(candidate_model_policy_secret).encode()
+                ).hexdigest(),
+            )
+            # New work is funded only by the independently reviewed current pair.
+        self.observer.verify_policy_configuration(candidate_policies or policies)
+        verify_rollout_window(self, candidate_policies or policies)
         signature, liabilities = self._database(
             refs["DATABASE_URL"], observer_secret, retired_migration_secret
         )
@@ -618,6 +659,7 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
             signature,
             policies,
             pins,
+            candidate_policies=candidate_policies,
             prior_source=prior,
             controller_release=host,
             controller_source_sha256=stamp,
@@ -628,7 +670,7 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
             candidate_employer_cache=cache,
         )
         # Hash the pure target before validating/persisting a sendable plan.
-        if cache is not None:
+        if cache is not None or candidate_policies is not None:
             pins = tuple(
                 replace(
                     pin,
@@ -637,7 +679,8 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
                         pin.service,
                     ),
                 )
-                if pin.service == cache.service
+                if candidate_policies is not None
+                or (cache is not None and pin.service == cache.service)
                 else pin
                 for pin in pins
             )
@@ -763,7 +806,8 @@ def load(raw):
     value = json.loads(raw, object_pairs_hook=pairs)
     need(type(value) is dict and value.get("schema_contract") == KIND, "plan_kind")
     value["policies"] = rolling.PolicyPins(**value["policies"])
-    need(value.get("candidate_policies") is None, "policy_changes_forbidden")
+    if value.get("candidate_policies") is not None:
+        value["candidate_policies"] = rolling.PolicyPins(**value["candidate_policies"])
     value["prior_source"] = SourcePin(**value["prior_source"])
     value["resources"] = tuple(app26.ResourcePin(**row) for row in value["resources"])
     value["protected_liabilities"] = tuple(tuple(row) for row in value["protected_liabilities"])
@@ -785,6 +829,616 @@ def load(raw):
     return plan
 
 
+def historical_controller_source(root, release):
+    """Old controller code identity from Git only; never import it or read data."""
+    need(
+        type(release) is str and re.fullmatch(r"[a-f0-9]{40}", release),
+        "recovery_original_controller_release",
+    )
+    hashes = {}
+    for row in _git(root, "ls-tree", "-r", "-z", release).split(b"\0"):
+        if not row:
+            continue
+        metadata, encoded = row.split(b"\t", 1)
+        mode, kind, stamp = metadata.split()
+        name = os.fsdecode(encoded)
+        if set(Path(name).parts) & DATA_PARTS:
+            continue
+        code = name.startswith(("backend/app/", "backend/scripts/", "infra/")) and Path(
+            name
+        ).suffix in {".py", ".json"}
+        if not code and name not in {
+            "backend/pyproject.toml",
+            "backend/uv.lock",
+            ".github/workflows/ci.yml",
+        }:
+            continue
+        need(
+            mode in {b"100644", b"100755"} and kind == b"blob", "recovery_original_controller_path"
+        )
+        raw = _git(root, "show", release + ":" + name)
+        need(
+            hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False)
+            .hexdigest()
+            .encode()
+            == stamp,
+            "recovery_original_controller_bytes",
+        )
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+    need(
+        "backend/scripts/schema26_app_successor.py" in hashes,
+        "recovery_original_controller_missing",
+    )
+    return rolling.sha(hashes)
+
+
+def verify_rollout_window(boundary, policies):
+    """Require four hours of reviewed target funding before forward capture."""
+    from app.billing.cost_policy import ExpensePolicy
+    from app.services.model_cost_policy import ModelCostPolicy
+
+    raw = boundary.observer._secret(policies.expense_secret)
+    need(
+        hashlib.sha256(raw.encode()).hexdigest() == policies.expense_sha256, "rollout_expense_hash"
+    )
+    expense = ExpensePolicy.model_validate_json(raw)
+    raw = boundary.observer._secret(policies.model_policy_secret)
+    need(
+        hashlib.sha256(raw.encode()).hexdigest() == policies.model_policy_sha256,
+        "rollout_model_hash",
+    )
+    model = ModelCostPolicy.model_validate_json(raw)
+    now = datetime.now(UTC)
+    deadline = now + timedelta(hours=4)
+    need(
+        expense.valid_from <= now and expense.expires_at >= deadline,
+        "rollout_expense_window_below_four_hours",
+    )
+    models = tuple(
+        dict.fromkeys((policies.model_primary, *rolling.release._gemini_fallbacks(boundary.root)))
+    )
+    for name in models:
+        quotes = [
+            quote
+            for quote in model.pricing_quotes
+            if (quote.provider, quote.model, quote.api_base)
+            == ("google", name, policies.model_api_base)
+        ]
+        need(
+            len(quotes) == 1 and quotes[0].valid_from <= now and quotes[0].expires_at >= deadline,
+            "rollout_model_window_below_four_hours",
+        )
+
+
+def verify_historical_policy(boundary, policies):
+    """Audit immutable rollback funding; never authorize current paid work."""
+    from app.billing.cost_policy import ExpensePolicy, audit
+    from app.services.model_cost_policy import ModelCostPolicy
+
+    raw = boundary.observer._secret(policies.expense_secret)
+    need(
+        hashlib.sha256(raw.encode()).hexdigest() == policies.expense_sha256,
+        "historical_expense_hash",
+    )
+    expense = ExpensePolicy.model_validate_json(raw)
+    need(
+        expense.review_status == "approved"
+        and expense.reviewed_by != "operator-review-required"
+        and expense.provenance != "synthetic_test",
+        "historical_expense_approval",
+    )
+    audit(expense)
+    raw = boundary.observer._secret(policies.model_policy_secret)
+    need(
+        hashlib.sha256(raw.encode()).hexdigest() == policies.model_policy_sha256,
+        "historical_model_hash",
+    )
+    model = ModelCostPolicy.model_validate_json(raw)
+    need(
+        model.expense_funding is None
+        and model.expense_policy_version is None
+        and model.expense_paid_units is None
+        and all(
+            limit <= expense.operation_model_ceilings_micros.get(operation, 0)
+            for operation, limit in model.operation_limits_micros.items()
+        ),
+        "historical_model_funding",
+    )
+    models = tuple(
+        dict.fromkeys((policies.model_primary, *rolling.release._gemini_fallbacks(boundary.root)))
+    )
+    need(
+        all(
+            len(
+                [
+                    quote
+                    for quote in model.pricing_quotes
+                    if (quote.provider, quote.model, quote.api_base)
+                    == ("google", name, policies.model_api_base)
+                ]
+            )
+            == 1
+            for name in models
+        ),
+        "historical_model_coverage",
+    )
+    boundary.observer._verify_secret_version(policies.model_key_secret)
+
+
+@dataclass(frozen=True)
+class StageReceipt:
+    service: str
+    started_sha256: str
+    acknowledged_sha256: str
+    checked_sha256: str | None
+
+
+@dataclass(frozen=True)
+class RecoveryPlan:
+    """Only restore the proven pre-staging state; no forward-release authority."""
+
+    original: SuccessorPlan
+    original_plan_sha256: str
+    original_plan_file_sha256: str
+    controller_release: str
+    controller_source_sha256: str
+    controller_ci_run_id: int
+    nonce: str
+    stages: tuple[StageReceipt, ...]
+    schema_contract: str = "hirewiz_schema26_zero_stage_recovery_v1"
+
+    def validate(self):
+        need(
+            type(self) is RecoveryPlan
+            and type(self.original) is SuccessorPlan
+            and self.schema_contract == "hirewiz_schema26_zero_stage_recovery_v1",
+            "recovery_plan_kind",
+        )
+        self.original.validate()
+        need(
+            self.original.candidate_policies is None
+            and self.original_plan_sha256 == rolling.sha(asdict(self.original))
+            and rolling.HASH.fullmatch(self.original_plan_file_sha256)
+            and re.fullmatch(r"[a-f0-9]{40}", self.controller_release)
+            and rolling.HASH.fullmatch(self.controller_source_sha256)
+            and type(self.controller_ci_run_id) is int
+            and self.controller_ci_run_id > 0
+            and re.fullmatch(r"[a-f0-9]{32}", self.nonce)
+            and self.nonce != self.original.nonce,
+            "recovery_identity",
+        )
+        need(
+            tuple(row.service for row in self.stages) == rolling.release.SERVICES
+            and all(
+                type(row) is StageReceipt
+                and rolling.HASH.fullmatch(row.started_sha256)
+                and rolling.HASH.fullmatch(row.acknowledged_sha256)
+                and (row.checked_sha256 is None or rolling.HASH.fullmatch(row.checked_sha256))
+                for row in self.stages
+            ),
+            "recovery_stage_receipts",
+        )
+
+
+def _stage_receipts(plan, original_journal):
+    need(
+        type(original_journal) is rolling.Journal
+        and original_journal.plan_hash == rolling.sha(asdict(plan)),
+        "recovery_original_journal",
+    )
+    need(
+        original_journal.read(app26.historical.ROLLBACK_INTENT) is None
+        and not any(
+            original_journal.read(phase + "." + pin.service + ".started")
+            for pin in plan.services
+            for phase in ("promote", "rollback")
+        ),
+        "recovery_staging_only",
+    )
+    receipts = []
+    for pin in plan.services:
+        key = "stage." + pin.service
+        started, ack, checked = (
+            original_journal.read(key + suffix) for suffix in (".started", ".ack", ".checked")
+        )
+        need(
+            started is not None
+            and ack is not None
+            and started.get("phase") == "stage"
+            and started.get("mask") == "template,traffic"
+            and started.get("service_uid") == pin.uid
+            and started.get("expected_generation") == pin.generation + 1
+            and started.get("replay_authorized") is False
+            and ack.get("request_sha256") == started.get("request_sha256")
+            and rolling.OPERATION.fullmatch(ack.get("operation", "")),
+            "recovery_original_stage_unresolved",
+        )
+        receipts.append(
+            StageReceipt(
+                pin.service,
+                rolling.sha(started),
+                rolling.sha(ack),
+                rolling.sha(checked) if checked is not None else None,
+            )
+        )
+    return tuple(receipts)
+
+
+def capture_recovery(original_plan_raw, boundary, original_journal, *, controller_ci_run_id, nonce):
+    plan = load(original_plan_raw)
+    need(
+        type(plan) is SuccessorPlan and type(boundary) is NativeSuccessorBoundary,
+        "recovery_exact_native_owner",
+    )
+    host, stamp = controller_source(boundary.root)
+    recovery = RecoveryPlan(
+        plan,
+        rolling.sha(asdict(plan)),
+        hashlib.sha256(original_plan_raw).hexdigest(),
+        host,
+        stamp,
+        controller_ci_run_id,
+        nonce,
+        _stage_receipts(plan, original_journal),
+    )
+    recovery.validate()
+    with _original_journal_lock(original_journal):
+        verify_recovery_global(recovery, boundary, original_journal, original_plan_raw)
+    return recovery
+
+
+@contextmanager
+def _original_journal_lock(journal):
+    """Read-only lock on an already-existing owner's lock; never create a file."""
+    descriptor = os.open(journal.directory / "owner.lock", os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        status = os.fstat(descriptor)
+        need(
+            stat.S_ISREG(status.st_mode)
+            and status.st_uid == os.getuid()
+            and stat.S_IMODE(status.st_mode) == 0o600,
+            "recovery_original_lock",
+        )
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def _verify_restore_started(plan, pin, prior, started):
+    body = {
+        "name": rolling.PARENT + "/services/" + pin.service,
+        "etag": started.get("previous_etag"),
+        "template": prior,
+        "traffic": list(pin.traffic),
+    }
+    need(
+        started.get("phase") == "restore"
+        and started.get("mask") == "template,traffic"
+        and started.get("service_uid") == pin.uid
+        and started.get("replay_authorized") is False
+        and started.get("expected_generation") == pin.generation + 2
+        and started.get("template_sha256") == pin.template_sha256
+        and started.get("traffic") == list(pin.traffic)
+        and type(body["etag"]) is str
+        and bool(body["etag"])
+        and started.get("request_sha256") == rolling.sha(body),
+        "recovery_restore_intent_changed",
+    )
+
+
+def _prior_template(boundary, pin):
+    rolling._old_revision(boundary, pin)
+    prior = boundary.revision(pin.service, pin.prior_revision)
+    need(prior is not None, "recovery_prior_missing")
+    template = {key: prior.get(key) for key in pin.revision_keys}
+    if rolling.template_sha(template, pin.service) != pin.template_sha256:
+        template["revision"] = pin.prior_revision
+    need(
+        rolling.template_sha(template, pin.service) == pin.template_sha256,
+        "recovery_prior_template",
+    )
+    return template
+
+
+def _recovery_source_custody(recovery, boundary, original_journal, original_plan_raw):
+    recovery.validate()
+    plan = recovery.original
+    need(
+        type(original_plan_raw) is bytes
+        and hashlib.sha256(original_plan_raw).hexdigest() == recovery.original_plan_file_sha256
+        and load(original_plan_raw) == plan,
+        "recovery_original_plan_file_changed",
+    )
+    need(
+        _stage_receipts(plan, original_journal) == recovery.stages,
+        "recovery_original_journal_changed",
+    )
+    boundary._sources(
+        replace(
+            plan,
+            controller_release=recovery.controller_release,
+            controller_source_sha256=recovery.controller_source_sha256,
+            controller_ci_run_id=recovery.controller_ci_run_id,
+        )
+    )
+    return plan
+
+
+def verify_recovery_global(recovery, boundary, original_journal, original_plan_raw, journal=None):
+    """Full read-only source/SQL/identity proof around each restore-only PATCH."""
+    plan = _recovery_source_custody(recovery, boundary, original_journal, original_plan_raw)
+    need(
+        historical_controller_source(boundary.root, plan.controller_release)
+        == plan.controller_source_sha256,
+        "recovery_original_controller_changed",
+    )
+    _native_ci(boundary.observer, plan.controller_release, plan.controller_ci_run_id)
+    verify_historical_policy(boundary, plan.policies)
+    boundary._identity(plan.runtime_uid)
+    need(
+        boundary._reachable(plan.services, plan.prior_source) == plan.reachable_revisions,
+        "recovery_reachable_prior_changed",
+    )
+    need(boundary._resources(plan.workers_release) == plan.resources, "recovery_resources_changed")
+    signature, _ = boundary._database(
+        plan.runtime_secret,
+        plan.observer_secret,
+        plan.retired_migration_secret,
+        expected=plan.protected_liabilities,
+    )
+    need(signature == plan.financial_sha256, "recovery_financial_state_changed")
+    for pin in plan.services:
+        key = "stage." + pin.service
+        stage, ack = (original_journal.read(key + suffix) for suffix in (".started", ".ack"))
+        operation = boundary.operation(ack["operation"])
+        need(
+            operation.get("name") == ack["operation"]
+            and operation.get("done") is True
+            and "error" not in operation,
+            "recovery_original_operation_pending",
+        )
+        current = boundary.service(pin.service)
+        rolling._ready(current, pin)
+        rolling.worker_iam(pin.service, boundary.iam(pin.service))
+        need(
+            rolling.static_sha(current) == pin.static_sha256
+            and rolling.sha(boundary.iam(pin.service)) == pin.iam_sha256,
+            "recovery_static_or_iam_changed",
+        )
+        prior = _prior_template(boundary, pin)
+        need(
+            prior["containers"][0]["image"].endswith("@" + plan.prior_source.image_digest),
+            "recovery_prior_image",
+        )
+        staged = boundary._target_template(plan, pin, current, prior)
+        need(
+            stage["template_sha256"] == rolling.template_sha(staged, pin.service)
+            and stage["traffic"] == rolling._traffic_for(plan, pin, False)
+            and stage["request_sha256"]
+            == rolling.sha(
+                {
+                    "name": current["name"],
+                    "etag": stage["previous_etag"],
+                    "template": staged,
+                    "traffic": stage["traffic"],
+                }
+            ),
+            "recovery_original_request_changed",
+        )
+        started = journal.read("restore." + pin.service + ".started") if journal else None
+        if started is not None:
+            _verify_restore_started(plan, pin, prior, started)
+        expected_template, expected_traffic = (
+            (prior, list(pin.traffic)) if started else (staged, stage["traffic"])
+        )
+        expected_generation = (
+            started["expected_generation"] if started else stage["expected_generation"]
+        )
+        expected_revision = pin.prior_revision if started else plan.revision(pin.service)
+        need(
+            int(current["generation"]) == expected_generation
+            and rolling.template_sha(current["template"], pin.service)
+            == rolling.template_sha(expected_template, pin.service)
+            and rolling.pinned_traffic(pin.service, current) == expected_traffic
+            and all(
+                rolling.short_revision(current[key], pin.service) == expected_revision
+                for key in ("latestReadyRevision", "latestCreatedRevision")
+            ),
+            "recovery_unowned_or_drifted_phase",
+        )
+        for template, expected_pin, policies in (
+            (prior, pin, plan.policies),
+            (staged, rolling.candidate_service_pin(plan, pin), plan.target_policies()),
+        ):
+            env = rolling.environment(template)
+            need(
+                all(
+                    env.get(name, {"value": "false"}).get("value") == "false"
+                    for name in plan.disabled_flags()
+                ),
+                "recovery_paid_admission_changed",
+            )
+            rolling.verify_policy_bindings(policies, expected_pin, template)
+            for secret in expected_pin.secrets:
+                need(
+                    boundary._reference(secret.secret, secret.version) == secret.version,
+                    "recovery_secret_changed",
+                )
+
+
+def _recovery_readback(
+    recovery, boundary, original_journal, original_plan_raw, journal, pin, started, ack
+):
+    if ack is not None:
+        need(
+            ack.get("request_sha256") == started["request_sha256"]
+            and rolling.OPERATION.fullmatch(ack.get("operation", "")),
+            "recovery_ack_invalid",
+        )
+        operation = boundary.operation(ack["operation"])
+        need(
+            operation.get("name") == ack["operation"] and "error" not in operation,
+            "recovery_operation_failed_reconcile_only",
+        )
+        if operation.get("done") is not True:
+            return None
+    verify_recovery_global(recovery, boundary, original_journal, original_plan_raw, journal)
+    tags = [
+        row["tag"]
+        for row in pin.traffic
+        if row.get("tag") and row["revision"] == pin.prior_revision
+    ]
+    need(bool(tags), "recovery_prior_health_alias_required")
+    boundary.health(
+        recovery.original, pin.service, pin.prior_revision, pin.prior_release, sorted(tags)[0]
+    )
+    return {
+        "service_uid": pin.uid,
+        "generation": started["expected_generation"],
+        "revision": pin.prior_revision,
+        "prior_http_health_observed": True,
+        "operation_ack_retained": ack is not None,
+        "replay_authorized": False,
+    }
+
+
+def execute_recovery(mode, recovery, boundary, original_journal, journal, *, original_plan_raw):
+    need(
+        mode in {"restore", "reconcile"}
+        and type(recovery) is RecoveryPlan
+        and type(boundary) is NativeSuccessorBoundary
+        and type(journal) is rolling.Journal
+        and journal.plan_hash == rolling.sha(asdict(recovery))
+        and not journal.directory.is_relative_to(original_journal.directory)
+        and not original_journal.directory.is_relative_to(journal.directory),
+        "recovery_exact_native_owner",
+    )
+    recovery.validate()
+    mutations = 0
+    with _original_journal_lock(original_journal), journal.locked():
+        unresolved = []
+        for pin in recovery.original.services:
+            key = "restore." + pin.service
+            started, ack, checked = (
+                journal.read(key + suffix) for suffix in (".started", ".ack", ".checked")
+            )
+            if started is not None and ack is not None and checked is None:
+                unresolved.append((pin, started, ack))
+        if unresolved:
+            # A later acknowledged Service may still be reconciling. Observe its
+            # exact LRO before any checked earlier action asks for joined shape.
+            _recovery_source_custody(recovery, boundary, original_journal, original_plan_raw)
+            for pin, started, ack in unresolved:
+                _verify_restore_started(
+                    recovery.original, pin, _prior_template(boundary, pin), started
+                )
+                need(
+                    ack.get("request_sha256") == started["request_sha256"]
+                    and rolling.OPERATION.fullmatch(ack.get("operation", "")),
+                    "recovery_ack_invalid",
+                )
+                operation = boundary.operation(ack["operation"])
+                need(
+                    operation.get("name") == ack["operation"] and "error" not in operation,
+                    "recovery_operation_failed_reconcile_only",
+                )
+                if operation.get("done") is not True:
+                    return {
+                        "status": "same_native_operation_pending",
+                        "service": pin.service,
+                        "native_mutations": 0,
+                        "replay_authorized": False,
+                    }
+        for pin in recovery.original.services:
+            key = "restore." + pin.service
+            started, ack, checked = (
+                journal.read(key + suffix) for suffix in (".started", ".ack", ".checked")
+            )
+            if started is None:
+                verify_recovery_global(
+                    recovery, boundary, original_journal, original_plan_raw, journal
+                )
+                if mode == "reconcile":
+                    continue
+                current = boundary.service(pin.service)
+                body = {
+                    "name": current["name"],
+                    "etag": current["etag"],
+                    "template": _prior_template(boundary, pin),
+                    "traffic": list(pin.traffic),
+                }
+                started = {
+                    "phase": "restore",
+                    "request_sha256": rolling.sha(body),
+                    "mask": "template,traffic",
+                    "service_uid": pin.uid,
+                    "previous_etag": current["etag"],
+                    "replay_authorized": False,
+                    "expected_generation": int(current["generation"]) + 1,
+                    "template_sha256": pin.template_sha256,
+                    "traffic": list(pin.traffic),
+                }
+                need(boundary.service(pin.service) == current, "recovery_native_preimage_changed")
+                journal.record(key + ".started", started)
+                mutations += 1
+                operation = boundary.patch(pin.service, body, "template,traffic")
+                need(
+                    type(operation.get("name")) is str
+                    and rolling.OPERATION.fullmatch(operation["name"]),
+                    "recovery_operation_ack_unmapped",
+                )
+                ack = {"operation": operation["name"], "request_sha256": started["request_sha256"]}
+                journal.record(key + ".ack", ack)
+            else:
+                need(
+                    ack is not None or checked is not None or mode == "reconcile",
+                    "recovery_unknown_mutation_reconcile_only",
+                )
+            result = _recovery_readback(
+                recovery, boundary, original_journal, original_plan_raw, journal, pin, started, ack
+            )
+            if result is None:
+                return {
+                    "status": "same_native_operation_pending",
+                    "service": pin.service,
+                    "native_mutations": mutations,
+                    "replay_authorized": False,
+                }
+            if checked is None:
+                journal.record(key + ".checked", result)
+        verify_recovery_global(recovery, boundary, original_journal, original_plan_raw, journal)
+    return {
+        "status": "schema26_prior_template_recovery_" + mode,
+        "all_original_templates_restored": all(
+            journal.read("restore." + pin.service + ".checked")
+            for pin in recovery.original.services
+        ),
+        "native_mutations": mutations,
+        "forward_continuation_authorized": False,
+        "migrations": 0,
+        "data_transfers": 0,
+        "credential_changes": 0,
+        "iam_changes": 0,
+        "replay_authorized": False,
+    }
+
+
+def load_recovery(raw):
+    def pairs(rows):
+        need(len({name for name, _ in rows}) == len(rows), "duplicate_recovery_key")
+        return dict(rows)
+
+    need(type(raw) is bytes and 0 < len(raw) <= 262144, "recovery_plan_size")
+    value = json.loads(raw, object_pairs_hook=pairs)
+    need(type(value) is dict, "recovery_plan_kind")
+    value["original"] = load(rolling.canonical(value["original"]))
+    value["stages"] = tuple(StageReceipt(**row) for row in value["stages"])
+    plan = RecoveryPlan(**value)
+    plan.validate()
+    return plan
+
+
 def failure_projection(error):
     result = {"status": "schema26_successor_stopped_reconcile_only", "replay_authorized": False}
     if type(error) is rolling.RollingDenied and re.fullmatch(
@@ -798,7 +1452,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "mode",
-        choices=("source", "capture", "stage", "advance", "observe", "reconcile", "rollback"),
+        choices=(
+            "source",
+            "capture",
+            "stage",
+            "advance",
+            "observe",
+            "reconcile",
+            "rollback",
+            "recovery-capture",
+            "recovery-restore",
+            "recovery-reconcile",
+        ),
     )
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--target-root", type=Path)
@@ -806,6 +1471,9 @@ def main():
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
+    parser.add_argument("--original-plan", type=Path)
+    parser.add_argument("--original-plan-sha256")
+    parser.add_argument("--original-journal", type=Path)
     for name in (
         "release",
         "image-digest",
@@ -817,6 +1485,8 @@ def main():
         "observer-secret",
         "retired-migration-secret",
         "workers-release",
+        "candidate-expense-secret",
+        "candidate-model-policy-secret",
     ):
         parser.add_argument("--" + name)
     parser.add_argument(
@@ -846,22 +1516,43 @@ def main():
     )
     boundary = NativeSuccessorBoundary(args.root, args.target_root, args.prior_root)
     try:
-        if args.mode == "capture":
-            plan = boundary.capture(
-                SourcePin(args.release, args.image_digest, args.build_id, args.ci_run_id),
-                SourcePin(
-                    args.prior_release,
-                    args.prior_image_digest,
-                    args.prior_build_id,
-                    args.prior_ci_run_id,
-                ),
-                controller_ci_run_id=args.controller_ci_run_id,
-                nonce=args.nonce,
-                observer_secret=args.observer_secret,
-                retired_migration_secret=args.retired_migration_secret,
-                workers_release=args.workers_release,
-                employer_cache_secret=args.employer_cache_secret,
+        original_raw, original_journal = None, None
+        if args.mode.startswith("recovery-"):
+            need(
+                args.original_plan is not None
+                and args.original_journal is not None
+                and type(args.original_plan_sha256) is str,
+                "recovery_original_paths",
             )
+            original_raw = app26.initial._read_pinned(args.original_plan, args.original_plan_sha256)
+            original_journal = rolling.Journal(args.original_journal, load(original_raw))
+        if args.mode in {"capture", "recovery-capture"}:
+            if args.mode == "recovery-capture":
+                plan = capture_recovery(
+                    original_raw,
+                    boundary,
+                    original_journal,
+                    controller_ci_run_id=args.controller_ci_run_id,
+                    nonce=args.nonce,
+                )
+            else:
+                plan = boundary.capture(
+                    SourcePin(args.release, args.image_digest, args.build_id, args.ci_run_id),
+                    SourcePin(
+                        args.prior_release,
+                        args.prior_image_digest,
+                        args.prior_build_id,
+                        args.prior_ci_run_id,
+                    ),
+                    controller_ci_run_id=args.controller_ci_run_id,
+                    nonce=args.nonce,
+                    observer_secret=args.observer_secret,
+                    retired_migration_secret=args.retired_migration_secret,
+                    workers_release=args.workers_release,
+                    employer_cache_secret=args.employer_cache_secret,
+                    candidate_expense_secret=args.candidate_expense_secret,
+                    candidate_model_policy_secret=args.candidate_model_policy_secret,
+                )
             need(
                 args.plan.is_absolute()
                 and args.plan.parent.resolve() == args.plan.parent
@@ -876,13 +1567,28 @@ def main():
                 stream.write(rolling.canonical(asdict(plan)) + b"\n")
                 stream.flush()
                 os.fsync(stream.fileno())
-            print(json.dumps({"status": "schema26_successor_plan_captured", "native_mutations": 0}))
+            print(
+                json.dumps(
+                    {"status": "schema26_" + args.mode + "_plan_captured", "native_mutations": 0}
+                )
+            )
         else:
             need(args.journal is not None and type(args.plan_sha256) is str, "plan_custody")
-            plan = load(app26.initial._read_pinned(args.plan, args.plan_sha256))
-            print(
-                json.dumps(execute(args.mode, plan, boundary, rolling.Journal(args.journal, plan)))
-            )
+            raw = app26.initial._read_pinned(args.plan, args.plan_sha256)
+            if args.mode.startswith("recovery-"):
+                plan = load_recovery(raw)
+                result = execute_recovery(
+                    args.mode.removeprefix("recovery-"),
+                    plan,
+                    boundary,
+                    original_journal,
+                    rolling.Journal(args.journal, plan),
+                    original_plan_raw=original_raw,
+                )
+            else:
+                plan = load(raw)
+                result = execute(args.mode, plan, boundary, rolling.Journal(args.journal, plan))
+            print(json.dumps(result))
     finally:
         boundary.close()
 
