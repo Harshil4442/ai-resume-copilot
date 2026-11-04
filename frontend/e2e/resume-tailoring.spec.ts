@@ -50,7 +50,7 @@ function createFixture() {
   };
   const requests: RequestRecord[] = [];
   const unexpected: RequestRecord[] = [];
-  const state = { unified: false, listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived", failureGuidance: undefined as FailureGuidance | null | undefined };
+  const state = { unified: false, listError: false, connectionError: false, parseCount: 0, connected: false, heldOpportunityReads: 0, pauseList: null as Promise<void> | null, pauseSelection: null as Promise<void> | null, pauseConnectedOpportunity: null as Promise<void> | null, failureCode: null as string | null, failureUsageState: "released" as "released" | "waived", failureGuidance: undefined as FailureGuidance | null | undefined };
   const patchResponses: Record<string, unknown>[] = [];
 
   function failedTailoringRun() {
@@ -96,9 +96,24 @@ function createFixture() {
       else if (state.unified && path === "/v1/credits/analysis-reuse") value = { reused_run: null };
       else if (state.unified && path === "/v1/credits/service-quotes") value = { schema_version: "unified-service-quote-v1", quote_id: "csq_browser_review", operation: "resume_tailor", input_fingerprint: "b".repeat(64), route_id: "browser-qualified-route", route_version: "1", tariff_version: "credit-services-v1", mode: "enhanced", credits: 8, deliverable: "Tailored source resume with approved evidence and preserved layout.", supported_limits: { max_pages: 2, max_edits: 5 }, created_at: now, server_time: now, expires_at: "2026-10-07T10:15:00Z" };
       else if (path === "/resume/page") {
+        expect(method).toBe("GET");
+        const currentId = url.searchParams.get("current_id");
+        const limit = Number(url.searchParams.get("limit") || 20);
+        expect(Number.isInteger(limit) && limit >= 1 && limit <= 50).toBe(true);
+        const cursor = url.searchParams.get("cursor");
+        expect(cursor === null || /^fixture-resume-page-\d+$/.test(cursor)).toBe(true);
+        const offset = cursor ? Number(cursor.replace("fixture-resume-page-", "")) : 0;
         if (state.pauseList) await state.pauseList;
-        status = state.listError ? 503 : 200;
-        value = state.listError ? { detail: "Source metadata temporarily unavailable." } : { resumes };
+        if (currentId && state.pauseSelection) await state.pauseSelection;
+        const selected = currentId ? resumes.find((resume) => resume.id === Number(currentId)) : undefined;
+        if (state.listError) { status = 503; value = { detail: "Source metadata temporarily unavailable." }; }
+        else if (currentId && !selected) { status = 404; value = { detail: "Resume not found." }; }
+        else {
+          const ordered = [...resumes].sort((left, right) => right.created_at.localeCompare(left.created_at) || right.id - left.id);
+          // Unknown-metadata cases intentionally omit source fields to exercise safe compatibility handling.
+          value = { resumes: ordered.slice(offset, offset + limit), next_cursor: offset + limit < ordered.length ? `fixture-resume-page-${offset + limit}` : null,
+            selected_resume: selected || null };
+        }
       } else if (path === `/v1/opportunities/${opportunityId}`) {
         if (method === "PATCH" && state.connectionError) { status = 503; value = { detail: "Could not connect this resume." }; }
         else if (method === "PATCH") {
@@ -444,18 +459,59 @@ test("an ordinary upload keeps the existing add-target-role flow", async ({ page
   await audit(page);
 });
 
-test("a missing resume row offers refresh and selection without calling it a legacy source", async ({ page, context, baseURL }) => {
+test("an unavailable connected resume lookup offers refresh without claiming its original is missing", async ({ page, context, baseURL }) => {
   const fixture = createFixture();
-  fixture.resumes.splice(0, 1);
+  const [connectedResume] = fixture.resumes.splice(0, 1);
   await fixture.install(context, baseURL!);
   await openWorkspace(page);
-  await expect(actions(page).status).toContainText("connected resume is missing from the loaded resume list");
+  await expect(actions(page).status).toContainText("Could not load the selected resume's source details. Refresh details");
   await expect(actions(page).resume).toHaveValue("1");
   await expect(page.getByRole("button", { name: "Refresh details", exact: true })).toBeEnabled();
   await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
   await expect(actions(page).generate).toBeDisabled();
   await expect(actions(page).snapshot).toBeDisabled();
+  expect(fixture.requests.some((request) => request.path === "/resume/page" && request.query === "?limit=1&current_id=1")).toBe(true);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
+
+  // A manual refresh resolves the same owner-bound selection, without another upload.
+  fixture.resumes.push({ ...connectedResume, source_available: true, source_format: "pdf" });
+  await page.getByRole("button", { name: "Refresh details", exact: true }).click();
+  await expect(actions(page).resume).toHaveValue("1");
+  await expect(actions(page).generate).toBeEnabled();
+  await expect(actions(page).snapshot).toBeEnabled();
+  expect(fixture.state.parseCount).toBe(0);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
+  await audit(page);
+});
+
+test("a connected resume beyond the first page stays selected while its exact metadata loads", async ({ page, context, baseURL }) => {
+  const fixture = createFixture();
+  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
+  for (let id = 3; id <= 22; id++) fixture.resumes.push({ id, filename: `Newer-resume-${id}.pdf`, created_at: now, source_available: true, source_format: "pdf" });
+  let release = () => {};
+  fixture.state.pauseSelection = new Promise<void>((resolve) => { release = resolve; });
+  await fixture.install(context, baseURL!);
+  try {
+    await openWorkspace(page);
+    await expect.poll(() => fixture.requests.some((request) => request.path === "/resume/page" && request.query === "?limit=1&current_id=1")).toBe(true);
+    await expect(actions(page).resume).toHaveValue("1");
+    await expect(actions(page).status).toContainText("Checking whether the selected resume has its original file");
+    await expect(actions(page).generate).toBeDisabled();
+    await expect(actions(page).snapshot).toBeDisabled();
+    await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
+    await expect(actions(page).status).not.toContainText("original file is missing");
+    await expect(actions(page).status).not.toContainText("missing from the loaded resume list");
+  } finally { release(); }
+  await expect(actions(page).resume).toHaveValue("1");
+  await expect(actions(page).generate).toBeEnabled();
+  await expect(actions(page).snapshot).toBeEnabled();
+  await expect(actions(page).resume.locator("option")).toHaveCount(22); // placeholder, one page of 20, and the connected row
+  expect(fixture.requests.filter((request) => request.path === "/resume/page" && request.query.includes("cursor="))).toEqual([]);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  expect(fixture.state.parseCount).toBe(0);
+  expect(fixture.unexpected).toEqual([]);
+  await audit(page);
 });
 
 test("no selected resume keeps selection explicit even when a retained original is available", async ({ page, context, baseURL }) => {
