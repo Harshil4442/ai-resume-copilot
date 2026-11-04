@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-03T13:56:56.781777+00:00",
+  "updated_at": "2026-11-03T23:37:55.247448+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -22,8 +22,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The e23/schema25 pilot remains serving; public health returned HTTP 200 after maintenance and coordinator restoration. Complete owner journeys, representative workload measurements and final invoice allocation remain pending.",
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
+      "local_result": "The db8 application is promoted on schema26 and its three original services are healthy. Original schedules and coordinator restoration passed the joined final read and own narrow IAM cleanup. Complete owner review/cancel/revoke acceptance, representative workload measurements and invoice allocation remain pending.",
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
     },
     {
       "number": 2,
@@ -43,8 +43,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "Existing balances and customer obligations remain retained on schema25. Schema26 was not applied; unified-wallet conversion, new payment activation, invoice and tax reconciliation remain pending.",
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
+      "local_result": "Schema26 migration and original application promotion are observed; existing balances and customer obligations remain retained. Unified-wallet conversion, new payment activation, invoice and tax reconciliation remain pending. Source and CI checks do not activate billing.",
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
     },
     {
       "number": 3,
@@ -62,8 +62,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
-      "local_result": "Bootstrap/reuse and bounded polling remain deployed in e23. The c75 candidate includes transcription/evidence review and Dashboard changes, but its application was not promoted."
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
+      "local_result": "The db8 application, including bootstrap/reuse, transcription/evidence review and Dashboard changes, is promoted; the observed owner workspace was preserved. Comprehensive supported-cohort relevance and factuality acceptance remains pending."
     },
     {
       "number": 4,
@@ -91,8 +91,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
-      "local_result": "The scanner renewal is deployed and passed 17 native cases; definitions expire at 2026-11-05T06:24:10+00:00. The 200-case native/model qualification and independent human adjudication remain pending; optimized AI stays closed."
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
+      "local_result": "The previously recorded scanner proof remains historical evidence. Paid native document QA (80 documents across nine jobs) is on HOLD; broader native/model quality qualification and independent human acceptance remain pending. Source, inert and operating repairs do not qualify optimized AI; optimized AI stays closed."
     },
     {
       "number": 5,
@@ -114,8 +114,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
-      "local_result": "The metadata and 40/minute browser-quota repair is in the candidate and has not been promoted. Original-file review/cancel/revoke, responsive workload measurements and capacity qualification remain pending."
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
+      "local_result": "The shared native metadata admission remains 40/minute. Repaired production login returned HTTP 200 and explicit local companion recovery verified the retained identity. Original-file review/cancel and exact-device revocation remain pending because browser tool control is blocked. Capacity, representative responsive workloads and invoice-backed forecasts remain unqualified."
     },
     {
       "number": 6,
@@ -138,8 +138,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
-      "local_result": "Schema26 capture refused before a migration plan or DDL; the original coordinator, services and schedules were restored. The pending-session-denial validator correction passes local producer tests and an explicitly unqualified read-only check against current records. Migration acceptance and the funded seven-day shadow remain pending."
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
+      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks; own narrow IAM additions were removed and verified. Full R03/RTO qualification, funded seven-day shadow accounting and finance reconciliation remain pending."
     },
     {
       "number": 7,
@@ -165,8 +165,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The prior c75 source passed all five required CI jobs and seven backend qualification steps, and its immutable Build/image were verified. Its migration preparation refused before plan creation. The corrected successor still needs its own source qualification, CI, Build and live rollout. e23 remains serving; schema26, optimized AI, wallet conversion, new payments and final submission remain inactive.",
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00"
+      "local_result": "The db8 immutable application is promoted and healthy, and the PR97 frontend login repair is deployed. Reviewed companion 0.8.9 succeeded locally with the same retained identity; PR99 head 554 is a preview with CI last observed in progress, while public companion 0.8.8 remains unchanged. Paid canary/commercial acceptance, optimized AI, wallet conversion, new payments and final submission remain closed.",
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
     },
     {
       "number": 8,
@@ -179,8 +179,8 @@
       "evidence": [
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T13:56:56.781777+00:00",
-      "local_result": "Ongoing quality and economics remain pending. The native 200-case benchmark, two-reviewer human acceptance, capacity qualification, funded seven-day shadow and finance reconciliation are not yet qualified."
+      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
+      "local_result": "Original scheduled scan/cleanup requests returned HTTP 200 after restoration; this is operating evidence, not quality or economics qualification. Paid native document QA (80 documents across nine jobs) is on HOLD; broader native/model quality qualification, independent human acceptance, capacity qualification, funded seven-day shadow and finance reconciliation remain pending. Stage 8 remains ongoing operation, not a one-time profitability claim."
     }
   ],
   "requirements": [
@@ -342,7 +342,13 @@
       "id": "E02",
       "requirement": "Shared official job ingestion. Use the verified employer registry, documented feeds or permitted adapters. Fetch once for many users using conditional requests and changes since the last successful scan. Deduplicate by source ID, requisition, canonical URL and content revision. Record freshness and coverage limits.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "Source candidate only: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py implement optional metadata-only revalidation for the current reviewed population of nine Greenhouse, ten Ashby and one SmartRecruiters sources. This is not deployment or all-source conditional acceptance evidence.",
+        "Greenhouse and Ashby use a whole-collection validator only when it is bound to the exact successful SQL checkpoint, canonical posting set, source configuration and versioned normalization/skills pipeline. SmartRecruiters always reads both complete current listing passes and every detail, conditionally reusing only an individually validated unchanged detail; mixed 200/304 results must still form a complete scan. No raw response bodies are cached.",
+        "Redis is optional non-authorizing metadata: one bounded 64 KiB record per source, 24-hour maximum age, bounded I/O and no retries. Missing, expired, unsupported, oversized or mismatched metadata causes ordinary full reads. Anonymous request identity, no-store/Vary restrictions, the original 240-second public-read budget, source lease, publication dates and complete-scan closure remain enforced. Opaque weak ETags are validators, not content digests.",
+        "Validators publish only after a successful SQL commit and owned lease/configuration/checkpoint/posting-snapshot fences. Unchanged descriptions avoid repeated skill extraction only under the same proven pipeline revision. A 304 refreshes the exact retained SQL snapshot and never means an empty board or closes jobs. Cache publication failure loses efficiency without changing a genuinely completed scan.",
+        "Focused offline HTTP, metadata and SQLite lifecycle controls: 224 passed with socket connections/DNS denied and author-root imports verified. Four real PostgreSQL race controls are prepared for the existing mandatory owned CI database; they are not locally qualified when that URL is absent. Fresh backend and employer-worker release verification plus scoped read-only acceptance of all three current platforms remain pending; vendor support and savings are not assumed for every source. Paid native document QA remains on HOLD."
+      ]
     },
     {
       "id": "E03",

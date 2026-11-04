@@ -1,6 +1,6 @@
 {
   "observed_at": "2026-11-03T13:56:56.781777+00:00",
-  "scope": "Partial evidence for the original eight stages; no new completion, authorization, activation or estimate.",
+  "scope": "Original observation retained below; latest_operating_status records later verified facts for the same eight stages without changing acceptance gates.",
   "scanner": {
     "native_cases_passed": 17,
     "workflow_run": 41519968528,
@@ -60,5 +60,134 @@
   },
   "stage_completion_changed": false,
   "CI_tests_are_program_checkpoints": false,
-  "effort_estimates_added": false
+  "effort_estimates_added": false,
+  "latest_operating_status": {
+    "observed_at": "2026-11-03T23:37:55.247448+00:00",
+    "scope": "Later verified operating evidence for the original eight stages. Supersedes the earlier operating-state and pending rollout statements above; no new stage completion, paid QA or commercial acceptance is asserted.",
+    "source_evidence": {
+      "handoff": {
+        "private_evidence_relative_path": "20261103/CURRENT_HANDOFF.json",
+        "observed_sha256": "9c485eb93370faf5bd94488fe5fc042fc40ffa22c40733c5ecb820ee1f3070c3",
+        "hash_scope": "Digest observed for this status update. The handoff path is mutable; this is not its current path identity or runtime authority. No immutable copy of this historical handoff is claimed."
+      },
+      "restoration_receipt_index": {
+        "basename": "RESTORATION_RECEIPT_INDEX.json",
+        "sha256": "0d27cd9a32499109364bf3441cc4a452e7c4088ebb471373045bda8d8ba5082d",
+        "private_evidence_relative_directory": "20261104/schedule-host-launch-static-04a-ary684er"
+      },
+      "receipts": [
+        {
+          "basename": "S-resume.stdout",
+          "sha256": "ef5276d04d290e2bf0638423148ea6b1568851157f3e9bbfc6884b5cfef9fdb0"
+        },
+        {
+          "basename": "C-restore-reconcile-1.stdout",
+          "sha256": "4f9557e19a0bc70c4770402e4383221e04391f5970bed56c6f8c1a45f156fd46"
+        },
+        {
+          "basename": "joined-final.stdout",
+          "sha256": "29d4bd0e0e5ee457a319f542bab48bf9ebea95c4cb95f1dcad360e688e819de6"
+        },
+        {
+          "basename": "own-IAM-cleanup.stdout",
+          "sha256": "88adc707c84027e44bd22ec76f2320d39e05c074652e659f375207ba1406f1ae"
+        },
+        {
+          "basename": "COORDINATOR_POST_RESTORE_REQUESTS.json",
+          "sha256": "3e1b0dce6eecfb237a63d9b732da4f69610623198a489262b5422b77fe20291a"
+        }
+      ]
+    },
+    "operating_state": {
+      "serving_release": "db8a25adefaf3bc2e00a61f7543f8a1862597adf",
+      "database_schema": "20261031_0026",
+      "all_three_original_services_promoted_and_healthy": true,
+      "all_three_original_schedules_enabled": true,
+      "original_coordinator_restore_terminal": true,
+      "joined_final_status": "original_MNAS_C_joined_final_read_pass",
+      "schema_financial_policy_identity_secret_resource_checks_passed": true,
+      "joined_read_journal_writes": 0,
+      "joined_read_native_mutations": 0,
+      "inflight_invocations_proven_drained": false,
+      "own_narrow_IAM_addition_removed_verified": true,
+      "ordinary_post_restore_requests": {
+        "count": 12,
+        "HTTP_status": 200,
+        "scope": "Original scheduled scan and cleanup requests; bodies, headers and credentials were not read.",
+        "provider_resource_mutations": 0
+      }
+    },
+    "reviewed_source_and_CI": {
+      "CI_budget_fix": {
+        "PR": 98,
+        "head": "0df4bd7b90381e99e57c76c2299c4b55ddaed278",
+        "CI": 41717779407,
+        "CI_state": "all5plusrequired7SUCCESS",
+        "normal_merge": "8504e0c3c6bdc683806190048b9d63e5069da1ce",
+        "merged_at": "2026-11-03T22:23:16Z"
+      },
+      "CI_budget_scope": "Fixed 600-second wall guard for the complete owned CI child only. Production timeouts, assertions, selected suites and no-skip checks are unchanged; historical failed runs remain failed.",
+      "schedule_restoration_host": {
+        "PR": 96,
+        "head": "04a0173076e14a48c74b3fe0c9fc4a23ac66dcac",
+        "CI": 41719399316,
+        "CI_state": "all5plusrequired7SUCCESS",
+        "source_sha256": "6df4279927ea215c8a71131add182581c3469a33d2001f07337259d43e75a27e",
+        "normal_merge": "a3c8e9ba5d652f3f6b8baf24412818328d6c4780",
+        "merged_at": "2026-11-03T22:40:51Z"
+      },
+      "frontend_login_repair": {
+        "PR": 97,
+        "source": "3e9736e1aba38a6cdad38e216748795074b70455",
+        "CI": 41711030141,
+        "all5_and_required_success": true,
+        "normal_merge": "078fef749eb785bcd7a3862ffce851b8d2ca69dc",
+        "merged_at": "2026-11-03T21:27:13Z"
+      },
+      "companion_candidate": {
+        "PR": 99,
+        "head": "55483884b07e5246dd299bc28b37bfb4f314d682",
+        "CI": 41738198961,
+        "CI_state": "in_progress_last_seen",
+        "distribution": "0.8.9",
+        "executor_revision": "companion_0_8_1",
+        "public_rollout": false,
+        "preview_not_production": true
+      }
+    },
+    "owner_journey_scope": {
+      "password_login": "One saved-credential login returned HTTP 200 on the repaired production frontend.",
+      "retained_connection": "Explicit local 0.8.9 recovery verified the same retained browser identity; no new key, connection start or employer action.",
+      "public_companion_distribution": "0.8.8 remains public; 0.8.9 is a local reviewed update and PR99 preview, not a production rollout.",
+      "review_cancel_before_fill": "Pending; browser tool control is blocked.",
+      "exact_device_revocation": "Pending; a manual current-connection check was awaiting its result.",
+      "employer_fill_upload_or_submission": false
+    },
+    "activation": {
+      "optimized_AI": "closed",
+      "wallet_conversion": "not activated",
+      "new_payments": "not activated",
+      "final_submission": "not activated",
+      "paid_native_document_QA": {
+        "status": "HOLD",
+        "scope": "80 documents across nine jobs"
+      },
+      "broader_native_model_quality_qualification": "pending"
+    },
+    "pending_acceptance": [
+      "Paid native document QA (80 documents across nine jobs) is on HOLD; broader native/model quality qualification remains pending.",
+      "Independent human acceptance, including the second reviewer and adjudication.",
+      "10,000-user capacity and responsive workload qualification; shared metadata admission remains 40/minute.",
+      "Funded seven-day shadow accounting.",
+      "Invoice allocation, tax and finance reconciliation; commercial hosting and paid-launch decision.",
+      "Remaining owner review/cancel and exact-device revocation acceptance.",
+      "Full R03 recovery rehearsal and RTO qualification."
+    ],
+    "full_R03_qualified": false,
+    "RTO_qualified": false,
+    "capacity_10k_qualified": false,
+    "stage_completion_changed": false,
+    "routine_CI_passes_are_new_product_milestones": false,
+    "effort_estimates_added": false
+  }
 }

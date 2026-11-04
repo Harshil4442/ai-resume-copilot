@@ -25,7 +25,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from ..common import payload_fingerprint
-from . import host_pacing
+from . import host_pacing, source_revalidation
 
 READ_HOSTS = {
     "greenhouse": {"boards.greenhouse.io", "job-boards.greenhouse.io", "boards.eu.greenhouse.io"},
@@ -192,13 +192,24 @@ class _VerifiedPublicRedirect(Exception):
     """A fixed public GET destination; the originating stream must close first."""
 
 
+@dataclass(frozen=True)
+class _ReadResponse:
+    body: bytes | None
+    validator: dict | None = None
+    not_modified: bool = False
+
+
 class _PublicRead:
     """Unauthenticated public reads, bounded below the source worker's lease."""
 
-    def __init__(self, client: httpx.Client):
+    def __init__(self, client: httpx.Client, *, deadline: float | None = None,
+                 ingestion: bool = False, attempts: int = SMARTRECRUITERS_READ_ATTEMPTS,
+                 interval: float = SMARTRECRUITERS_READ_INTERVAL):
         self.client = client
-        self.deadline = time.monotonic() + SMARTRECRUITERS_SCAN_SECONDS
+        self.deadline = min(deadline if deadline is not None else float("inf"),
+                            time.monotonic() + SMARTRECRUITERS_SCAN_SECONDS)
         self.next_request_at = 0.0
+        self.ingestion, self.attempts, self.interval = ingestion, attempts, interval
 
     def _wait(self, delay: float = 0) -> None:
         delay = max(delay, self.next_request_at - time.monotonic(), 0)
@@ -207,14 +218,20 @@ class _PublicRead:
         if delay:
             time.sleep(delay)
 
-    def body(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None) -> bytes:
-        for attempt in range(SMARTRECRUITERS_READ_ATTEMPTS):
+    def response(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None,
+                 validator: dict | None = None) -> _ReadResponse:
+        if not self.ingestion or not source_revalidation.valid_validator(validator):
+            validator = None
+        for attempt in range(self.attempts):
             self._wait()
-            self.next_request_at = time.monotonic() + SMARTRECRUITERS_READ_INTERVAL
+            self.next_request_at = time.monotonic() + self.interval
             # Client defaults can include credential query parameters and headers.
             # Construct the public request independently; retain only its transport.
-            request = httpx.Request("GET", url, params=params,
-                headers={"User-Agent": "HireWiz-EmployerConnector/1.0", "Accept": "application/json"},
+            headers = (dict(source_revalidation.INGESTION_HEADERS) if self.ingestion else
+                       {"User-Agent": "HireWiz-EmployerConnector/1.0", "Accept": "application/json"})
+            if validator is not None:
+                headers["If-None-Match"] = validator["etag"]
+            request = httpx.Request("GET", url, params=params, headers=headers,
                 extensions={"timeout": httpx.Timeout(min(20, self.deadline - time.monotonic())).as_dict()})
             delay = 0.5 * (attempt + 1)
             try:
@@ -226,10 +243,14 @@ class _PublicRead:
                         raise _VerifiedPublicRedirect
                     if response.status_code == 404:
                         raise ConnectorError("posting_or_source_closed", safe_to_retry=False)
+                    if response.status_code == 304:
+                        if validator is None or not source_revalidation.matches_not_modified(validator, response.headers):
+                            raise ConnectorError("unexpected_source_not_modified", safe_to_retry=False)
+                        return _ReadResponse(None, source_revalidation.response_validator(response.headers, prior=validator), True)
                     if response.status_code != 200:
                         transient = response.status_code in {408, 429, 500, 502, 503, 504}
                         error = ConnectorError(f"source_http_{response.status_code}", safe_to_retry=transient)
-                        if not transient or attempt + 1 == SMARTRECRUITERS_READ_ATTEMPTS:
+                        if not transient or attempt + 1 == self.attempts:
                             raise error
                         retry_after = response.headers.get("Retry-After")
                         if retry_after:
@@ -252,12 +273,19 @@ class _PublicRead:
                             content.extend(chunk)
                             if len(content) > MAX_RESPONSE_BYTES:
                                 raise ConnectorError("source_response_too_large")
-                        return bytes(content)
+                        metadata = source_revalidation.response_validator(response.headers) if self.ingestion else None
+                        return _ReadResponse(bytes(content), metadata)
             except httpx.HTTPError as exc:
-                if attempt + 1 == SMARTRECRUITERS_READ_ATTEMPTS:
+                if attempt + 1 == self.attempts:
                     raise ConnectorError("source_unavailable") from exc
             self._wait(delay)
         raise ConnectorError("source_unavailable")
+
+    def body(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None) -> bytes:
+        result = self.response(url, params, expected_redirect=expected_redirect)
+        if result.body is None:
+            raise ConnectorError("unexpected_source_not_modified", safe_to_retry=False)
+        return result.body
 
 
     def get(self, url: str, params: dict | None = None, *, expected_redirect: str | None = None) -> dict:
@@ -583,6 +611,11 @@ def _smartrecruiters_identity(source: SourceContract, row: dict) -> str:
 def _smartrecruiters_detail(source: SourceContract, reader: _SmartRecruitersRead,
                           identity: str, summary: dict | None = None) -> dict:
     row = reader.get(_endpoint(source, identity))
+    return _smartrecruiters_detail_payload(source, identity, row, summary)
+
+
+def _smartrecruiters_detail_payload(source: SourceContract, identity: str, row: dict,
+                                   summary: dict | None = None) -> dict:
     _smartrecruiters_identity(source, row)
     if identity not in {str(row.get("id") or ""), str(row.get("uuid") or "")}:
         raise ConnectorError("posting_identity_changed", safe_to_retry=False)
@@ -832,6 +865,136 @@ def _normalized_postings(source: SourceContract, rows: list) -> list[dict]:
     if len({job["external_id"] for job in results}) != len(results):
         raise ConnectorError("duplicate_posting_identifiers")
     return results
+
+
+@dataclass(frozen=True)
+class ScanBaseline:
+    snapshot: source_revalidation.Snapshot
+    metadata: dict
+
+
+@dataclass(frozen=True)
+class CompleteScan:
+    postings: list[dict]
+    metadata: dict
+    reused_snapshot: bool = False
+
+
+@dataclass(frozen=True)
+class NotModifiedScan:
+    metadata: dict
+
+
+def _public_object(response: _ReadResponse) -> dict:
+    try:
+        data = json.loads(response.body) if response.body is not None else None
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ConnectorError("invalid_source_payload") from exc
+    if not isinstance(data, dict):
+        raise ConnectorError("invalid_source_payload")
+    return data
+
+
+def _snapshot_posting(value: dict) -> dict:
+    data = {key: value.get(key) for key in source_revalidation.PROVIDER_FIELDS}
+    for key in ("publication_at", "source_updated_at"):
+        data[key] = parse_date(data[key])
+    return data
+
+
+def _smartrecruiters_source_scan(source: SourceContract, reader: _SmartRecruitersRead,
+                                 baseline: ScanBaseline | None) -> CompleteScan:
+    # Pages always remain unconditional. A page validator cannot attest changes
+    # in an individual detail, including an inactive posting becoming active.
+    summaries = _smartrecruiters_list(source, reader)
+    previous = baseline.snapshot.postings if baseline is not None else {}
+    validators = baseline.metadata.get("details", {}) if baseline is not None else {}
+    postings, metadata = [], {}
+    reused = False
+    for summary in summaries:
+        identity = _smartrecruiters_identity(source, summary)
+        summary_sha = payload_fingerprint(summary)
+        entry, cached = validators.get(identity), previous.get(identity)
+        eligible = (isinstance(entry, dict) and entry.get("summary_sha256") == summary_sha
+            and source_revalidation.valid_validator(entry.get("validator")))
+        if eligible:
+            assert isinstance(entry, dict)
+            eligible = ((entry.get("excluded") is True and (cached is None or cached.get("is_open") is False))
+                or (isinstance(cached, dict) and cached.get("is_open") is True
+                    and entry.get("posting_sha256") == source_revalidation.posting_fingerprint(cached)))
+        validator = entry["validator"] if isinstance(entry, dict) and eligible else None
+        response = reader.response(_endpoint(source, identity), validator=validator)
+        if response.not_modified:
+            # Eligibility binds the same summary and the full detached SQL row
+            # under the successful source checkpoint and normalizer revision.
+            assert eligible and entry is not None
+            reused = True
+            if entry.get("excluded") is not True:
+                assert cached is not None
+                postings.append(_snapshot_posting(cached))
+            metadata[identity] = {**entry, "validator": response.validator}
+            continue
+        row = _smartrecruiters_detail_payload(source, identity, _public_object(response), summary)
+        normalized = _normalize(source, row)
+        if normalized is not None:
+            postings.append(normalized)
+        if response.validator is not None:
+            # The worker stamps a normalized row's actual committed SQL digest,
+            # including retained dates and derived fields, after applying it.
+            metadata[identity] = {"validator": response.validator, "summary_sha256": summary_sha,
+                                  **({"excluded": True} if normalized is None else {})}
+    def manifest(items):
+        return [(row.get("id"), row.get("uuid"), row.get("releasedDate")) for row in items]
+    if manifest(summaries) != manifest(_smartrecruiters_list(source, reader)):
+        raise ConnectorError("source_changed_during_scan")
+    if len(postings) > MAX_POSTINGS or len({row["external_id"] for row in postings}) != len(postings):
+        raise ConnectorError("duplicate_posting_identifiers")
+    reader._wait()
+    return CompleteScan(postings, {"collection": None, "details": metadata}, reused)
+
+
+def fetch_source_scan(source: SourceContract, client: httpx.Client | httpx.AsyncClient | None = None,
+                      *, baseline: ScanBaseline | None = None,
+                      deadline: float | None = None) -> CompleteScan | NotModifiedScan:
+    """Optional revalidation for ingestion only; form reads never enter here.
+
+    A complete 200 empty collection may close jobs. A proven 304 instead refers
+    to the worker's exact SQL snapshot, which it must fence again before commit.
+    """
+    if source.platform not in {"greenhouse", "ashby", "smartrecruiters"}:
+        postings = fetch_postings(source) if client is None else fetch_postings(source, client)
+        return CompleteScan(postings, {"collection": None, "details": {}})
+    if isinstance(client, httpx.AsyncClient):
+        raise ConnectorError("unsupported_public_transport", safe_to_retry=False)
+    owned_client = client is None
+    client = client or _client()
+    try:
+        if source.platform == "smartrecruiters":
+            return _smartrecruiters_source_scan(source,
+                _SmartRecruitersRead(client, deadline=deadline, ingestion=True), baseline)
+        # Preserve the existing one-attempt collection-read behavior. The same
+        # fixed public request strips all injected client credentials/defaults.
+        reader = _PublicRead(client, deadline=deadline, ingestion=True, attempts=1, interval=0)
+        validator = baseline.metadata.get("collection") if baseline is not None else None
+        response = reader.response(_endpoint(source), {"content": "true"} if source.platform == "greenhouse" else None,
+                                   validator=validator)
+        metadata = {"collection": response.validator, "details": {}}
+        if response.not_modified:
+            return NotModifiedScan(metadata)
+        data = _public_object(response)
+        rows = data.get("jobs")
+        if not isinstance(rows, list):
+            raise ConnectorError("invalid_source_payload")
+        if source.platform == "greenhouse" and (data.get("meta") or {}).get("total", len(rows)) != len(rows):
+            raise ConnectorError("incomplete_scan")
+        postings = _normalized_postings(source, rows)
+        reader._wait()
+        return CompleteScan(postings, metadata)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ConnectorError("invalid_source_payload") from exc
+    finally:
+        if owned_client:
+            client.close()
 
 
 def load_form(source: SourceContract, external_id: str, client: httpx.Client | None = None) -> dict:

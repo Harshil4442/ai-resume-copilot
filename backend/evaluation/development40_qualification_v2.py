@@ -138,7 +138,7 @@ def _bootstrap_child():
     module.__file__, module.__package__ = str(path), "scripts"
     sys.modules[module_name] = module
     raw = checked(path)
-    if hashlib.sha256(raw).hexdigest() != "a5f8a817beec1a92af8820667a0be1b10175f07e3ec0c016014d62d9568557b3":
+    if hashlib.sha256(raw).hexdigest() != "7287d51f2c54411dad4307c29f38dfb0fab534365e45cc89fe5b57b34c5865b5":
         raise ValueError("development_source_bootstrap_helper_changed")
 
     def deny(*args, **kwargs):
@@ -244,7 +244,7 @@ def source_identity(root: Path) -> dict:
         "semantic_entry_path": SEMANTIC_ENTRY, "semantic_entry_sha256": SEMANTIC_SHA256,
         "channel_sha256": CHANNEL_SHA256, "execution_dependencies": execution,
         "component_paths": components, "git_tree": tree, "expected_app_sha256": q.APP_SHA256,
-        "expected_app_files": 289, "source_only": True}
+        "expected_app_files": 290, "source_only": True}
     need(q.git(root, "rev-parse", "HEAD").decode().strip() == head
          and not q.git(root, "status", "--porcelain", "--untracked-files=all"), "source_changed")
     return {**body, "release": head, "qualification_sha256": digest(body),
@@ -312,8 +312,8 @@ class QualifiedRunner(BaseModel):
     image: str = Field(pattern="^" + re.escape(original.RUNNER_REPOSITORY) + r"@sha256:" + HASH + "$")
     qualification_sha256: str = Field(pattern="^" + HASH + "$")
     app_compatibility_sha256: str = Field(pattern="^" + HASH + "$")
-    app_sha256: Literal["9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"]
-    app_files: Literal[289]
+    app_sha256: Literal["13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"]
+    app_files: Literal[290]
     entry_path: Literal["backend/evaluation/development40_transport_v2.py"]
     entry_sha256: str = Field(pattern="^" + HASH + "$")
     semantic_entry_path: Literal["backend/scripts/native_acquisition_job.py"]

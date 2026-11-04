@@ -705,13 +705,15 @@ def test_unchanged_v1_checker_rejects_new_v2_imports_in_its_execution_closure(tm
     root.mkdir()
     helper = "backend/app/domains/analysis/native_input_acquisition.py"
     names = sorted({*old.RUNNER_PATHS, *old.CURRENT_EXECUTION_PATHS, helper})
+    added = set(old.CURRENT_ADDED_EXECUTION_PATHS)
     original = {}
-    for name in names:
+    for name in sorted(set(names) | added):
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'"""Owned inert historical source."""\n')
-        original[name] = path.read_bytes()
-    current = set(names) | set(q.PACKAGE_PATHS)
+        if name not in added:
+            original[name] = path.read_bytes()
+    current = set(names) | added | set(q.PACKAGE_PATHS)
     head = "f" * 40
 
     def readonly(where, *args):
@@ -720,8 +722,11 @@ def test_unchanged_v1_checker_rejects_new_v2_imports_in_its_execution_closure(tm
             return head.encode()
         if args == ("ls-tree", "-r", "--name-only", "HEAD"):
             return "\n".join(sorted(current)).encode()
+        if args == ("ls-tree", "-r", "-z", "--full-tree", head, "--", *old._current_execution_paths()):
+            return b"".join(b"100644 blob " + b"0" * 40 + b"\t" + name.encode() + b"\0"
+                for name in old._current_execution_paths())
         if len(args) == 2 and args[0] == "show" and args[1] in {
-                head + ":" + name for name in old.CURRENT_EXECUTION_PATHS}:
+                head + ":" + name for name in old._current_execution_paths()}:
             return (root / args[1].split(":", 1)[1]).read_bytes()
         assert args == ("ls-tree", "-r", "-z", "--full-tree", old.HISTORICAL_RELEASE)
         return b"".join(b"100644 blob " + hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw,

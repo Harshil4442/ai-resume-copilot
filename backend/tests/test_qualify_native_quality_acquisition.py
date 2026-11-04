@@ -6,10 +6,12 @@ import hashlib
 import io
 import json
 import os
+import socket
 import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,9 +35,10 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
     assert value["absent_package_ancestors"] == list(q.ABSENT_ANCESTORS)
     assert set(value["current_proof_inputs"]) == set(q.CURRENT_PROOF_PATHS)
-    assert len(value["execution_dependencies"]) == 464 and len(q.CURRENT_PROOF_PATHS) == 1
+    assert len(value["execution_dependencies"]) == 465 and len(q.CURRENT_PROOF_PATHS) == 1
     assert q.CURRENT_EXECUTION_PATHS == (
-        "backend/app/domains/credits/canary.py", "backend/app/domains/recovery/browser_pairing_production.py",
+        "backend/app/domains/credits/canary.py", "backend/app/domains/employer/connectors.py",
+        "backend/app/domains/employer/tasks.py", "backend/app/domains/recovery/browser_pairing_production.py",
         "backend/scripts/document_refresh.py", "backend/scripts/schema25_app_release_contract_v3.py",
         "infra/gcp/document_consumed_native.py", "infra/gcp/document_refresh_recovery.py",
         "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_candidate.py",
@@ -44,7 +47,8 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
         "infra/gcp/schema26_maintenance_guard.py",
         "infra/gcp/v3_readonly_adapter.py",
     )
-    assert set(value["current_execution_inputs"]) == set(q.CURRENT_EXECUTION_PATHS)
+    assert q.CURRENT_ADDED_EXECUTION_PATHS == ("backend/app/domains/employer/source_revalidation.py",)
+    assert set(value["current_execution_inputs"]) == {*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS}
     assert all(value["execution_dependencies"][name] == digest
         for name, digest in value["current_execution_inputs"].items())
     assert "runner_release" not in value and "runner_app_and_contract_sha256" not in value
@@ -82,7 +86,7 @@ def native_ports(monkeypatch):
             {"name": "gcr.io/cloud-builders/docker", "args": ["push", image.split("@")[0] + ":" + release]}],
         "results": {"images": [{"name": image.split("@")[0] + ":" + release, "digest": "sha256:" + "e" * 64}]}}
     observed = dict(release=release, qualification_sha256="a" * 64, app_sha256=q.APP_SHA256,
-        app_files=289, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64)
+        app_files=290, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64)
     receipt = dict(schema_version="native-quality-qualified-runner-v1",
         repository="https://github.com/Harshil4442/ai-resume-copilot.git", **observed,
         ci_run_id=1, build_id=build_id, image=image, qualification_contract="hirewiz_schema26_app_rolling_v3",
@@ -191,7 +195,7 @@ def test_wrong_raw_receipt_controller_crossbinding_and_failed_historical_source(
 
 def test_source_child_has_no_credential_env_and_is_bounded(monkeypatch, tmp_path):
     observed = dict(release="c" * 40, qualification_sha256="a" * 64, app_sha256=q.APP_SHA256,
-        app_files=289, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64,
+        app_files=290, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64,
         current_proof_sha256="8" * 64)
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/never/read")
     monkeypatch.setenv("GH_TOKEN", "synthetic-not-a-token")
@@ -286,7 +290,7 @@ def test_current_observer_only_committed_drift_changes_controller_not_runtime(mo
     assert before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
 
 
-@pytest.mark.parametrize("name", q.CURRENT_EXECUTION_PATHS)
+@pytest.mark.parametrize("name", (*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS))
 def test_uncommitted_successor_file_is_refused_in_actual_execution_closure(monkeypatch, name):
     original = Path.read_bytes
     def changed(path):
@@ -308,7 +312,7 @@ def test_unrelated_execution_file_still_requires_exact_failed_baseline_bytes(mon
         q.controller_dependency_hashes(ROOT)
 
 
-@pytest.mark.parametrize("name", q.CURRENT_EXECUTION_PATHS)
+@pytest.mark.parametrize("name", (*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS))
 def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(tmp_path, name):
     # A real local Git checkout with shared read-only objects avoids pretending
     # a committed foreign byte change is merely an uncommitted working-tree edit.
@@ -334,7 +338,7 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
     run("commit", "-q", "-m", "Synthetic foreign source only")
     assert not q.git(tmp_path, "status", "--porcelain")
     after = q.dependency_hashes(tmp_path)
-    assert len(before) == len(after) == 464
+    assert len(before) == len(after) == 465
     assert {key for key in before if before[key] != after[key]} == {name}
     assert q.digest(before) != q.digest(after)
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
@@ -392,7 +396,7 @@ def test_owned_append_changes_only_operator_context_and_not_qualified_runner_sna
     write_registry(registry_tree, value)
     after = q.source_identity(registry_tree)
     assert before["execution_dependencies"] == after["execution_dependencies"] == strict
-    assert len(strict) == 464 and before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
+    assert len(strict) == 465 and before["runtime_dependencies_sha256"] == after["runtime_dependencies_sha256"]
     assert before["component_paths"] == after["component_paths"]
     assert before["operator_data_inputs"] != after["operator_data_inputs"]
     assert before["controller_sha256"] != after["controller_sha256"]
@@ -538,7 +542,10 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
     _owned_source_clone(runner, application_release)
     # Only source execution inputs are materialized. The mismatch must refuse
     # before a full-checkout qualification, import, CI or provider operation.
-    archive = q.git(ROOT, "archive", "--format=tar", application_release, "--", *sorted(expected))
+    assert not q.git(ROOT, "ls-tree", "-r", "--name-only", application_release, "--",
+                     *q.CURRENT_ADDED_EXECUTION_PATHS).strip()
+    historical_paths = set(expected) - set(q.CURRENT_ADDED_EXECUTION_PATHS)
+    archive = q.git(ROOT, "archive", "--format=tar", application_release, "--", *sorted(historical_paths))
     materialized = set()
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as source:
         for member in source.getmembers():
@@ -551,7 +558,9 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(stream.read())
             materialized.add(member.name)
-    assert materialized == set(expected) and not (runner / "backend/evals").exists()
+    assert materialized == set(expected) - set(q.CURRENT_ADDED_EXECUTION_PATHS)
+    assert all(not (runner / name).exists() for name in q.CURRENT_ADDED_EXECUTION_PATHS)
+    assert not (runner / "backend/evals").exists()
     if application_release == "c75cb13f9d8ed1cfc583c9340c9b0c58906e8e97":
         # Preserve c75 execution code with the declared frozen registry DATA
         # reference in an owned synthetic commit. This is neither the actual
@@ -560,10 +569,13 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
         assert hashlib.sha256(registry).hexdigest() == q.REGISTRY_RUNNER_SHA256
         (runner / q.OPERATOR_REGISTRY_PATH).write_bytes(registry)
         registry_commit(runner)
-    actual = q.dependency_hashes(runner)
-    assert len(expected) == len(actual) == 464
-    assert {name for name in expected if expected[name] != actual[name]} == different
-    with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
+    common = {name: hashlib.sha256((runner / name).read_bytes()).hexdigest() for name in materialized}
+    assert {name for name in common if common[name] != expected[name]} == different | {
+        "backend/app/domains/employer/connectors.py", "backend/app/domains/employer/tasks.py",
+    }
+    with pytest.raises(ValueError, match="current_execution_not_committed"):
+        q.dependency_hashes(runner)
+    with pytest.raises(ValueError, match="current_execution_not_committed"):
         q._runner_source(runner)
     with pytest.raises(ValueError, match="runner_source_child_refused"):
         q.runner_source(runner)
@@ -598,12 +610,12 @@ def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tm
     synthetic_release = q.git(runner, "rev-parse", "HEAD").decode().strip()
     assert not (runner / "backend/evals/unified_credit_v2").exists()
     assert (runner / q.OPERATOR_REGISTRY_PATH).read_bytes() == q._registry_snapshot(ROOT)
-    assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 464
+    assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 465
     observed = q.runner_source(runner)
     fingerprint = contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
     assert observed["release"] == synthetic_release
     assert observed["qualification_sha256"] == fingerprint
-    assert observed["app_files"] == 289 and observed["app_sha256"] == q.APP_SHA256
+    assert observed["app_files"] == 290 and observed["app_sha256"] == q.APP_SHA256
     assert observed["runtime_dependencies_sha256"] == q.digest(dependencies)
 
 
@@ -901,3 +913,139 @@ def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
     pin.validate()
     q.git(ROOT, "merge-base", "--is-ancestor", record["release"], "HEAD")
     assert q.operator_data_hashes(ROOT)[q.OPERATOR_REGISTRY_PATH] != q.REGISTRY_RUNNER_SHA256
+
+
+@pytest.fixture
+def current_added_owned_tree(tmp_path, monkeypatch):
+    """Four tiny owned Git files; no actual checkout, provider or corpus reads."""
+    def denied(*args, **kwargs):
+        raise AssertionError("Owned execution-manifest tests forbid network I/O")
+
+    monkeypatch.setattr(socket, "create_connection", denied)
+    monkeypatch.setattr(socket, "getaddrinfo", denied)
+    monkeypatch.setattr(socket.socket, "connect", denied)
+    monkeypatch.setattr(socket.socket, "connect_ex", denied)
+    root = tmp_path.resolve()
+    base = "backend/app/owned_baseline.py"
+    added, = q.CURRENT_ADDED_EXECUTION_PATHS
+    registry = json.dumps({"version": 1, "sources": [synthetic_registry_row()]}).encode()
+    q.git(root, "init", "-q")
+
+    def write(name, raw):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+
+    def commit():
+        q.git(root, "add", "--all")
+        q.git(root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+            "-c", "user.name=Owned source control", "-c", "user.email=owned@example.invalid",
+            "commit", "-q", "-m", "Owned synthetic runtime manifest")
+        return q.git(root, "rev-parse", "HEAD").decode().strip()
+
+    write("Dockerfile", b"FROM owned-invalid.example/no-image\n")
+    write(base, b"VALUE = 'historical'\n")
+    write(q.OPERATOR_REGISTRY_PATH, registry)
+    historical = commit()
+    monkeypatch.setattr(q, "ROOT", root)
+    monkeypatch.setattr(q, "HISTORICAL_RELEASE", historical)
+    monkeypatch.setattr(q, "REGISTRY_RUNNER_RELEASE", historical)
+    monkeypatch.setattr(q, "REGISTRY_RUNNER_SHA256", hashlib.sha256(registry).hexdigest())
+    monkeypatch.setattr(q, "RUNNER_PATHS", ("Dockerfile",))
+    monkeypatch.setattr(q, "CURRENT_EXECUTION_PATHS", (base,))
+    write(base, b"VALUE = 'current'\n")
+    write(added, b"HELPER = 'owned-current-runtime'\n")
+    commit()
+    return SimpleNamespace(root=root, base=base, added=added, historical=historical, write=write, commit=commit)
+
+
+@pytest.mark.parametrize("reader", ["dependency_hashes", "controller_dependency_hashes"])
+def test_current_added_owned_runtime_is_committed_and_changes_runtime_fingerprint(current_added_owned_tree, reader):
+    owned = current_added_owned_tree
+    read = getattr(q, reader)
+    before = read(owned.root)
+    successors = q.current_execution_hashes(owned.root)
+    assert set(before) == {"Dockerfile", owned.base, owned.added, q.OPERATOR_REGISTRY_PATH}
+    assert set(successors) == {owned.base, owned.added}
+    assert before[owned.added] == hashlib.sha256((owned.root / owned.added).read_bytes()).hexdigest()
+    assert owned.added not in {*q.COMPONENT_PATHS, *q.PROOF_PATHS, *q.CURRENT_PROOF_PATHS}
+    owned.write(owned.added, b"HELPER = 'different-committed-runtime'\n")
+    owned.commit()
+    after = read(owned.root)
+    assert {name for name in before if before[name] != after[name]} == {owned.added}
+    assert q.digest(before) != q.digest(after)
+
+
+@pytest.mark.parametrize("reader", ["dependency_hashes", "controller_dependency_hashes"])
+@pytest.mark.parametrize("fault,code", [
+    ("uncommitted", "uncommitted_current_execution_changed"),
+    ("missing", "current_execution_path"), ("worktree-symlink", "current_execution_path"),
+    ("committed-symlink", "current_execution_type"), ("gitlink", "current_execution_type"),
+    ("untracked", "current_execution_not_committed"), ("empty", "current_execution_path"),
+    ("oversized", "current_execution_path"),
+])
+def test_current_added_owned_requires_regular_committed_bounded_bytes(current_added_owned_tree, reader, fault, code):
+    owned = current_added_owned_tree
+    path = owned.root / owned.added
+    if fault == "uncommitted":
+        path.write_bytes(path.read_bytes() + b"# changed\n")
+    elif fault == "missing":
+        path.unlink()
+    elif fault in {"worktree-symlink", "committed-symlink"}:
+        owned.write("owned-target.txt", b"Never import this target\n")
+        path.unlink()
+        path.symlink_to(owned.root / "owned-target.txt")
+        if fault == "committed-symlink":
+            owned.commit()
+    elif fault == "gitlink":
+        head = q.git(owned.root, "rev-parse", "HEAD").decode().strip()
+        q.git(owned.root, "update-index", "--add", "--cacheinfo", "160000," + head + "," + owned.added)
+        q.git(owned.root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+            "-c", "user.name=Owned source control", "-c", "user.email=owned@example.invalid",
+            "commit", "-q", "-m", "Owned non-blob negative")
+    elif fault == "untracked":
+        q.git(owned.root, "rm", "--cached", "--", owned.added)
+        q.git(owned.root, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+            "-c", "user.name=Owned source control", "-c", "user.email=owned@example.invalid",
+            "commit", "-q", "-m", "Owned untracked negative")
+    else:
+        path.write_bytes(b"" if fault == "empty" else b"x" * (512 * 1024 + 1))
+        owned.commit()
+    with pytest.raises(ValueError, match=code):
+        getattr(q, reader)(owned.root)
+
+
+@pytest.mark.parametrize("reader", ["dependency_hashes", "controller_dependency_hashes"])
+@pytest.mark.parametrize("name", ["backend/app/undeclared.py", "infra/gcp/undeclared.json"])
+def test_current_added_owned_does_not_exempt_any_other_new_execution_path(current_added_owned_tree, reader, name):
+    owned = current_added_owned_tree
+    owned.write(name, b"{}\n")
+    owned.commit()
+    with pytest.raises(ValueError, match="new_execution_dependency"):
+        getattr(q, reader)(owned.root)
+
+
+@pytest.mark.parametrize("overlap", ["historical", "current", "component", "proof", "current-proof", "registry"])
+def test_current_added_owned_manifest_is_absent_historically_and_disjoint(current_added_owned_tree, monkeypatch, overlap):
+    owned = current_added_owned_tree
+    if overlap == "historical":
+        monkeypatch.setattr(q, "HISTORICAL_RELEASE", q.git(owned.root, "rev-parse", "HEAD").decode().strip())
+        code = "current_added_execution_historical"
+    else:
+        name = {"current": owned.base, "component": q.COMPONENT_PATHS[0], "proof": q.PROOF_PATHS[0],
+                "current-proof": q.CURRENT_PROOF_PATHS[0], "registry": q.OPERATOR_REGISTRY_PATH}[overlap]
+        monkeypatch.setattr(q, "CURRENT_ADDED_EXECUTION_PATHS", (name,))
+        code = "current_execution_manifest" if overlap == "current" else "current_execution_manifest_overlap"
+    for read in (q.dependency_hashes, q.controller_dependency_hashes):
+        with pytest.raises(ValueError, match=code):
+            read(owned.root)
+
+
+def test_current_added_owned_old_runner_without_helper_refuses_before_validator_import(current_added_owned_tree, monkeypatch):
+    owned = current_added_owned_tree
+    q.git(owned.root, "reset", "--hard", owned.historical)
+    assert not (owned.root / owned.added).exists()
+    monkeypatch.setattr(q, "_source_modules", lambda: pytest.fail("Old runner reached current validators"))
+    for read in (q.dependency_hashes, q.controller_dependency_hashes, q._runner_source):
+        with pytest.raises(ValueError, match="current_execution_not_committed"):
+            read(owned.root)
