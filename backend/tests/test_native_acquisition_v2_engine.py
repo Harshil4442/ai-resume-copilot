@@ -185,7 +185,7 @@ def reviewed_toys(tmp_path, monkeypatch):
         "repository": "https://github.com/Harshil4442/ai-resume-copilot.git", "release": release,
         "ci_run_id": 1, "build_id": build_id, "image": image,
         "qualification_contract": "hirewiz_schema26_app_rolling_v3", "qualification_sha256": "1" * 64,
-        "app_files": 289, "app_sha256": source.APP_SHA256, "entry_path": source.ENTRY,
+        "app_files": contract.CANDIDATE_APP_FILES, "app_sha256": source.APP_SHA256, "entry_path": source.ENTRY,
         "entry_sha256": source.ENTRY_SHA256, "runtime_dependencies_sha256": "2" * 64,
         "observed_at": start.isoformat(), "ci_metadata_sha256": source.digest(ci),
         "build_metadata_sha256": source.digest(build)})
@@ -320,6 +320,18 @@ def test_complete_toy_protocol_never_claims_native_or_processing_approval(review
     result = check(reviewed_toys)
     assert len(result.case_ids) == 40 and not result.processing_authorized and not result.native_approval
     assert reviewed_toys.selections and set(reviewed_toys.selections) == {"development"}
+
+
+@pytest.mark.parametrize("field,value", [("app_files", 289),
+    ("app_sha256", "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e")])
+def test_old_application_receipt_cannot_be_reused_for_current_source(reviewed_toys, field, value):
+    t = reviewed_toys
+    runner = json.loads((t.root / t.lock["runner_receipt"]["path"]).read_bytes())
+    runner[field] = value
+    t.lock["runner_receipt"] = t.put("runner.json", runner)
+    t.auth = t.auth.model_copy(update={"native_development_lock": e.Artifact.model_validate(t.seal())})
+    with pytest.raises(ValueError):
+        check(t)
 
 
 def test_native_runtime_validation_does_not_import_unshipped_infra_or_controllers(reviewed_toys, monkeypatch):

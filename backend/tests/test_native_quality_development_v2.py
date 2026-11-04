@@ -488,7 +488,7 @@ def _receipt(**changes):
         "build_id": "11111111-1111-1111-1111-111111111111",
         "image": control.original.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
         "qualification_sha256": "a" * 64, "app_compatibility_sha256": "b" * 64,
-        "app_sha256": control.q.APP_SHA256, "app_files": 289, "entry_path": control.ENTRY,
+        "app_sha256": control.q.APP_SHA256, "app_files": 290, "entry_path": control.ENTRY,
         "entry_sha256": "f" * 64, "semantic_entry_path": control.SEMANTIC_ENTRY,
         "semantic_entry_sha256": control.SEMANTIC_SHA256, "channel_sha256": control.CHANNEL_SHA256,
         "runtime_dependencies_sha256": "1" * 64, "component_sha256": "2" * 64,
@@ -533,6 +533,7 @@ def test_new_receipt_binds_two_different_entries_and_old_verifier_still_refuses(
 @pytest.mark.parametrize("changes", [{"schema_version": "native-quality-qualified-runner-v1"},
     {"entry_path": control.SEMANTIC_ENTRY}, {"semantic_entry_path": control.ENTRY},
     {"semantic_entry_sha256": "f" * 64}, {"channel_sha256": "0" * 64},
+    {"app_files": 289}, {"app_sha256": "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"},
     {"release": control.q.HISTORICAL_RELEASE}, {"extra_authority": True}, {"observed_at": "2026-11-03T00:00:00"}])
 def test_changed_receipt_cannot_adopt_old_entry_or_authority(runtime_offline, changes):
     raw = _raw_receipt(**changes)

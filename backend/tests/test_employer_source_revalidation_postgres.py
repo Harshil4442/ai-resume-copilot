@@ -61,6 +61,7 @@ def owned_source_database(monkeypatch):
                 allowed_hosts=["owned.example"], verification_url="https://owned.example/careers",
                 verification_note="Synthetic source concurrency fixture", last_success_at=utcnow(), status="healthy")
             db.add(source)
+            db.flush()
             db.add(models.EmployerPosting(id="job-owned-pg", source_id=source.id, external_id="1",
                 title="Python engineer", employer=source.employer, location="India", description="Python services",
                 canonical_url="https://job-boards.greenhouse.io/owned/jobs/1",

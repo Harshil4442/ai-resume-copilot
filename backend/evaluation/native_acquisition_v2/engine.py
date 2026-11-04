@@ -214,7 +214,7 @@ class ReviewedDevelopmentRunner(Closed):
     image: str = Field(pattern=r"^us-central1-docker\.pkg\.dev/ai-resume-parser-482412/cloud-run-source-deploy/hirewiz@sha256:[a-f0-9]{64}$")
     qualification_contract: Literal["hirewiz_schema26_app_rolling_v3"]
     qualification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    app_files: int = Field(strict=True, ge=289, le=289)
+    app_files: int = Field(strict=True, ge=290, le=290)
     app_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     entry_path: Literal["backend/scripts/native_acquisition_job.py"]
     entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -241,7 +241,7 @@ class ReviewedDevelopmentTransportRunner(Closed):
     qualification_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     app_compatibility_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     app_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    app_files: int = Field(strict=True, ge=289, le=289)
+    app_files: int = Field(strict=True, ge=290, le=290)
     entry_path: Literal["backend/evaluation/development40_transport_v2.py"]
     entry_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     semantic_entry_path: Literal["backend/scripts/native_acquisition_job.py"]
