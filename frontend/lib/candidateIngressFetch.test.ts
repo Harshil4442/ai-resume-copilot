@@ -5,6 +5,7 @@ import { candidateIngressHeaders } from "./candidateIngressServer";
 const base = "https://api.example.invalid";
 const path = "/api/auth/candidate/v1/login";
 const availability = "/api/auth/candidate/v1/availability";
+const session = "/api/auth/candidate/v1/session";
 let send: typeof import("./candidateIngressFetch").candidateIngressFetch;
 beforeEach(async () => {
   vi.restoreAllMocks(); vi.resetModules();
@@ -185,18 +186,191 @@ it("keeps a health hint scoped and monotonic for at most the original 30 seconds
   expect(new Set(probes.map(([, init]) => new Headers(init!.headers).get("x-correlation-id"))).size).toBe(probes.length);
 });
 
-it("does not use the health hint for explicit native availability or other private operations", async () => {
+it("uses the health hint for the exact session GET while explicit availability and other private operations retain native probing", async () => {
   const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => String(url).endsWith("/api/health") ? healthHint(init!) : ready());
   vi.stubGlobal("fetch", fetch);
   await send(base, "/api/auth/login", { method: "POST", body: "{}" });
-  await send(base, "/api/auth/candidate/v1/session");
+  await send(base, session);
+  await send(base, path, { method: "POST", body: "{}" });
   await send(base, availability);
   expect(fetch.mock.calls.map(([url]) => url)).toEqual([
-    base + "/api/health", base + "/api/auth/login", base + availability,
-    base + "/api/auth/candidate/v1/session", base + availability,
+    base + "/api/health", base + "/api/auth/login", base + session,
+    base + availability, base + path, base + availability,
   ]);
-  expect(new Headers(fetch.mock.calls[2][1]!.headers).has("x-hirewiz-candidate-ingress")).toBe(true);
+  expect(new Headers(fetch.mock.calls[3][1]!.headers).has("x-hirewiz-candidate-ingress")).toBe(true);
 });
+
+it("bootstraps a cold session read with an unsigned health hint and one unchanged signed bearer GET", async () => {
+  const controller = new AbortController();
+  const init = { signal: controller.signal, headers: { authorization: "Bearer synthetic-private-token",
+    cookie: "synthetic-private-cookie", "content-type": "application/json" } };
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, request) => String(url).endsWith("/api/health")
+    ? healthHint(request!, { age: "0" }) : Response.json({ status: "ELIGIBLE" }));
+  vi.stubGlobal("fetch", fetch);
+  expect((await send(base, session, init)).status).toBe(200);
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([base + "/api/health", base + session]);
+  const probe = fetch.mock.calls[0][1]!;
+  expect(probe).toMatchObject({ method: "GET", credentials: "omit", redirect: "error", cache: "no-store", signal: controller.signal });
+  expect(probe.body).toBeUndefined();
+  const headers = new Headers(probe.headers);
+  for (const key of ["authorization", "cookie", "x-hirewiz-candidate-ingress", "content-type"]) expect(headers.has(key)).toBe(false);
+  const target = fetch.mock.calls[1][1]!;
+  const assertion = claim(target);
+  expect(target.body).toBeUndefined();
+  expect(target.signal).toBe(controller.signal);
+  expect(new Headers(target.headers).get("authorization")).toBe(init.headers.authorization);
+  expect(assertion).toMatchObject({ method: "GET", path: session });
+  expect(assertion.expires_at_ms - assertion.issued_at_ms).toBe(5000);
+  expect(new Headers(target.headers).get("x-hirewiz-candidate-ingress")).toBe(
+    candidateIngressHeaders(session, init, assertion.issued_at_ms, assertion.request_id).get("x-hirewiz-candidate-ingress"),
+  );
+});
+
+it.each(invalidHealthHeaders)("refuses a bad session hint without native availability fallback or bearer send: %j", async (headers) => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => healthHint(init!, headers));
+  vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session, { headers: { authorization: "Bearer synthetic-private-token" } })).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][0]).toBe(base + "/api/health");
+});
+
+it.each([302, 503])("refuses an unsuccessful health response %s before the session read", async (status) => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => healthHint(init!, {}, status));
+  vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session)).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each([[1000, 1501], [1000, 999], [1000, Infinity], [NaN, 1000]])(
+  "refuses an invalid session-hint RTT without fallback: %s to %s", async (start, end) => {
+    vi.spyOn(performance, "now").mockReturnValueOnce(start).mockReturnValueOnce(end);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => healthHint(init!)); vi.stubGlobal("fetch", fetch);
+    await expect(send(base, session)).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("keeps the session hint scoped and monotonic without extending its original age", async () => {
+  const monotonic = vi.spyOn(performance, "now").mockReturnValue(1000);
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => String(url).endsWith("/api/health") ? healthHint(init!) : ready());
+  vi.stubGlobal("fetch", fetch);
+  await send(base, session);
+  monotonic.mockReturnValue(2000);
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse(healthDate) + 600_000);
+  await send(base, session);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(claim(fetch.mock.calls[2][1]!).issued_at_ms).toBe(Date.parse(healthDate) + 1000);
+  monotonic.mockReturnValue(31_001);
+  await send(base, session);
+  await send("https://other-api.example.invalid", session);
+  vi.stubEnv("CANDIDATE_AUTH_TRANSPORT_KEY_ID", "another_fixture_key");
+  await send(base, session);
+  vi.stubEnv("NEXTAUTH_URL", "https://other-website.example.invalid");
+  await send(base, session);
+  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith("/api/health"))).toHaveLength(5);
+  expect(fetch.mock.calls.some(([url]) => String(url).endsWith(availability))).toBe(false);
+});
+
+it("discards a session estimate when the monotonic clock goes backwards", async () => {
+  const monotonic = vi.spyOn(performance, "now").mockReturnValue(1000);
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => String(url).endsWith("/api/health") ? healthHint(init!) : ready());
+  vi.stubGlobal("fetch", fetch);
+  await send(base, session);
+  monotonic.mockReturnValue(999);
+  await send(base, session);
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([base + "/api/health", base + session, base + "/api/health", base + session]);
+});
+
+it.each([401, 403, 429, 503])("returns target refusal %s unchanged without a target retry or adopting clock headers", async (status) => {
+  const refusal = new Response(null, { status, headers: { "x-hirewiz-ingress-time-lower": "1", "x-hirewiz-ingress-time-upper": "2" } });
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => String(url).endsWith("/api/health") ? healthHint(init!) : refusal);
+  vi.stubGlobal("fetch", fetch);
+  expect(await send(base, session)).toBe(refusal);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await send(base, session);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(claim(fetch.mock.calls[2][1]!).issued_at_ms).toBeGreaterThanOrEqual(Date.parse(healthDate));
+  expect(claim(fetch.mock.calls[2][1]!).request_id).not.toBe(claim(fetch.mock.calls[1][1]!).request_id);
+});
+
+it("does not repeat an unknown session outcome; a later manual read gets a new nonce", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+    if (String(url).endsWith("/api/health")) return healthHint(init!);
+    throw new TypeError("synthetic unknown transport outcome");
+  });
+  vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session)).rejects.toThrow("synthetic unknown transport outcome");
+  expect(fetch).toHaveBeenCalledTimes(2);
+  await expect(send(base, session)).rejects.toThrow("synthetic unknown transport outcome");
+  expect(fetch).toHaveBeenCalledTimes(3);
+  expect(claim(fetch.mock.calls[2][1]!).request_id).not.toBe(claim(fetch.mock.calls[1][1]!).request_id);
+});
+
+it("never sends the session request after an already-aborted or in-flight-aborted hint", async () => {
+  const controller = new AbortController(); controller.abort();
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => healthHint(init!)); vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session, { signal: controller.signal })).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).not.toHaveBeenCalled();
+  const pending = new AbortController();
+  fetch.mockImplementation(async (_url, init) => { pending.abort(); return healthHint(init!); });
+  await expect(send(base, session, { signal: pending.signal })).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each(["CANDIDATE_AUTH_TRANSPORT_KEY_ID", "NEXTAUTH_URL"])("refuses configuration changes during the hint: %s", async (key) => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+    vi.stubEnv(key, key === "NEXTAUTH_URL" ? "https://other.example.invalid" : "another_fixture_key");
+    return healthHint(init!);
+  });
+  vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session)).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("refuses a hint that ages out while its body cancellation is delayed", async () => {
+  const monotonic = vi.spyOn(performance, "now").mockReturnValue(1000);
+  const fetch = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
+    const response = new Response("discard", { headers: healthHint(init!).headers });
+    vi.spyOn(response.body!, "cancel").mockImplementation(async () => { monotonic.mockReturnValue(31_001); });
+    return response;
+  });
+  vi.stubGlobal("fetch", fetch);
+  await expect(send(base, session)).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("keeps concurrent backend hints local to their original invocation", async () => {
+  let release!: () => void, paused!: () => void;
+  const cancelled = new Promise<void>(resolve => { release = resolve; });
+  const waiting = new Promise<void>(resolve => { paused = resolve; });
+  const other = "https://other-api.example.invalid";
+  const otherDate = new Date(Date.parse(healthDate) + 60_000).toUTCString();
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+    if (String(url).endsWith("/api/health")) {
+      const response = new Response("discard", { headers: healthHint(init!, { date: String(url).startsWith(other) ? otherDate : healthDate }).headers });
+      if (String(url).startsWith(base)) vi.spyOn(response.body!, "cancel").mockImplementation(() => { paused(); return cancelled; });
+      return response;
+    }
+    return ready();
+  });
+  vi.stubGlobal("fetch", fetch);
+  const first = send(base, session);
+  await waiting;
+  await send(other, session);
+  release(); await first;
+  const targets = fetch.mock.calls.filter(([url]) => !String(url).endsWith("/api/health"));
+  expect(targets.map(([url]) => url)).toEqual([other + session, base + session]);
+  expect(claim(targets[0][1]!).issued_at_ms).toBeGreaterThanOrEqual(Date.parse(otherDate));
+  expect(claim(targets[1][1]!).issued_at_ms).toBeLessThan(Date.parse(healthDate) + 1000);
+});
+
+it.each(["http://localhost:8000", "https://user:password@api.example.invalid", "https://api.example.invalid/other"])(
+  "refuses an untrusted session clock origin without network access: %s", async target => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    await expect(send(target, session)).rejects.toThrow(/^AUTH_UNAVAILABLE$/);
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
 
 it("returns a backend clock-skew refusal unchanged without retrying the POST or adopting its hints", async () => {
   const refusal = unavailable(Date.parse(healthDate) - 15_000);
