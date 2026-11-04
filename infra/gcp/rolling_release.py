@@ -46,6 +46,31 @@ def need(value: Any, reason: str = "rolling_native_state_unverified") -> None:
         raise RollingDenied(reason)
 
 
+@dataclass(frozen=True)
+class EmployerCacheBinding:
+    """One optional cache reference; no service, environment or version wildcard."""
+    secret: str
+    version: str = "1"
+    service: str = "hirewiz-employer-worker"
+    environment_name: str = "REDIS_URL"
+
+    def validate(self) -> None:
+        need(type(self) is EmployerCacheBinding and self.service == release.SERVICES[2]
+             and self.environment_name == "REDIS_URL" and self.version == "1"
+             and type(self.secret) is str and re.fullmatch(r"[a-zA-Z0-9_-]{1,255}", self.secret),
+             "rolling_employer_cache_binding_invalid")
+
+
+def employer_cache_binding(plan) -> EmployerCacheBinding | None:
+    # Do not add a field to RollingPlan: historical asdict/journal hashes must
+    # remain unchanged. Only the new successor plan declares this extension.
+    value = getattr(plan, "candidate_employer_cache", None)
+    if value is not None:
+        need(type(value) is EmployerCacheBinding, "rolling_employer_cache_binding_invalid")
+        value.validate()
+    return value
+
+
 def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
@@ -258,7 +283,9 @@ class RollingPlan:
                  and pin.prior_revision != self.revision(pin.service))
             need(all(HASH.fullmatch(value) for value in (pin.template_sha256,
                 pin.static_sha256, pin.iam_sha256, pin.revision_sha256)))
-            need((pin.candidate_template_sha256 is None) if self.candidate_policies is None else
+            cache = employer_cache_binding(self)
+            changed = self.candidate_policies is not None or (cache is not None and pin.service == cache.service)
+            need((pin.candidate_template_sha256 is None) if not changed else
                  (type(pin.candidate_template_sha256) is str and HASH.fullmatch(pin.candidate_template_sha256)),
                  "rolling_candidate_template_pin_required")
             need(1 <= len(pin.revision_keys) <= 40 and len(set(pin.revision_keys)) == len(pin.revision_keys))
@@ -285,6 +312,11 @@ def candidate_service_pin(plan: RollingPlan, pin: ServicePin) -> ServicePin:
     secrets = tuple(replace(row, secret=replacements[row.environment_name].split(":")[0],
                             version=replacements[row.environment_name].split(":")[1])
                     if row.environment_name in replacements else row for row in pin.secrets)
+    cache = employer_cache_binding(plan)
+    if cache is not None and pin.service == cache.service:
+        need(not any(row.environment_name == cache.environment_name for row in secrets),
+             "rolling_employer_cache_reference_already_present")
+        secrets = (*secrets, SecretPin(cache.environment_name, cache.secret, cache.version))
     return replace(pin, prior_release=plan.release, secrets=secrets)
 
 
@@ -441,7 +473,9 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
         ref["version"] = secret.version
     expected_names = {s.environment_name for s in pin.secrets}
     need({name for name, row in env.items() if "valueSource" in row} == expected_names)
-    if plan.candidate_policies is not None:
+    cache = employer_cache_binding(plan)
+    candidate_changed = plan.candidate_policies is not None or (cache is not None and pin.service == cache.service)
+    if candidate_changed:
         target_pin = candidate_service_pin(plan, pin)
         for secret in target_pin.secrets:
             env[secret.environment_name] = {"name": secret.environment_name, "valueSource": {
@@ -459,7 +493,7 @@ def stage_body(plan: RollingPlan, pin: ServicePin, current: dict[str, Any]) -> d
     module = "app.main:app" if pin.service == release.SERVICES[0] else "app.worker_main:app"
     container["command"] = ["python"]
     container["args"] = ["-m", "uvicorn", module, "--host", "0.0.0.0", "--port", str(ports[0]["containerPort"])]
-    if plan.candidate_policies is not None:
+    if candidate_changed:
         verify_policy_bindings(plan.target_policies(), candidate_service_pin(plan, pin), template)
         if pin.candidate_template_sha256 is not None:
             need(template_sha(template, pin.service) == pin.candidate_template_sha256,

@@ -166,6 +166,7 @@ jobs:
           ../infra/gcp/github_builder.py ../infra/gcp/rolling_release.py ../infra/gcp/rolling_native.py
           tests/test_cutover_safe_observability.py tests/test_fresh_cutover_writes.py
           tests/test_fresh_worker_release.py tests/test_github_builder.py tests/test_rolling_release.py tests/test_rolling_native_reads.py
+          tests/test_schema26_app_successor.py
           app/resume_upload_worker.py app/services/resume_upload_coordinator.py
           tests/test_resume_upload_coordinator.py tests/test_resume_upload_coordinator_postgres.py
           tests/test_database_transfer.py tests/test_database_transfer_postgres.py
@@ -218,6 +219,7 @@ jobs:
           app/routers/privacy_erasure.py
           scripts/qualify_schema25_retained_v1.py app/routers/native_metadata_http.py
           ../infra/gcp/schema25_app_rolling_release.py ../infra/gcp/schema25_app_alias_retirement.py
+          scripts/schema26_app_successor.py
           scripts/credit_shadow_report.py
           scripts/unified_quality_packet.py
           scripts/materialize_quality_sources.py
