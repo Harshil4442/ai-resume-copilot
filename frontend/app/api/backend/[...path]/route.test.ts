@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { getToken } = vi.hoisted(() => ({ getToken: vi.fn() }));
 vi.mock("next-auth/jwt", () => ({ getToken }));
 
-import { DELETE, GET, PATCH, POST, PUT, maxDuration } from "./route";
+import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, maxDuration } from "./route";
 
 const site = "https://www.hirewizhq.com";
 const fetchBackend = vi.fn();
@@ -95,6 +95,33 @@ describe("BFF mutation request origin", () => {
     const response = await GET(request("GET", { origin: "https://other.example", "sec-fetch-site": "cross-site" }), context(["v1", "resumes"]));
     expect(response.status).toBe(200);
     expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("saved curated plan read-only transport", () => {
+  const savedContext = () => context(["recommendations", "match_strategy", "saved"]);
+  const savedRequest = (query = "?match_id=5", method = "GET") => new NextRequest(`${site}/api/backend/recommendations/match_strategy/saved${query}`, { method, headers: { origin: site } });
+  it("forwards the exact authenticated GET selector without a body or cache", async () => {
+    const response = await GET(savedRequest(), savedContext());
+    expect(response.status).toBe(200); expect(fetchBackend).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchBackend.mock.calls[0];
+    expect(String(url)).toBe("https://backend.example.test/api/recommendations/match_strategy/saved?match_id=5");
+    expect(options.method).toBe("GET"); expect(options.body).toBeUndefined(); expect(options.cache).toBe("no-store");
+    expect(options.headers.get("Authorization")).toBe("Bearer fixture-backend-token");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+  it("refuses a saved lookup without the current authenticated bearer", async () => {
+    getToken.mockResolvedValueOnce(null);
+    expect((await GET(savedRequest(), savedContext())).status).toBe(401); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each(["", "?match_id=0", "?match_id=-1", "?match_id=1.5", "?match_id=NaN", "?match_id=9007199254740992", "?match_id=5&match_id=6", "?match_id=5&owner_id=2", "?id=5"])("rejects invalid or additional selectors %s before auth/backend access", async (query) => {
+    expect((await GET(savedRequest(query), savedContext())).status).toBe(422);
+    expect(getToken).not.toHaveBeenCalled(); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each([["POST", POST], ["PUT", PUT], ["PATCH", PATCH], ["DELETE", DELETE], ["HEAD", HEAD], ["OPTIONS", OPTIONS]] as const)("does not route %s as a saved-plan lookup", async (method, handler) => {
+    const response = await handler(savedRequest("?match_id=5", method), savedContext());
+    expect(response.status).toBe(405); expect(response.headers.get("allow")).toBe("GET");
+    expect(getToken).not.toHaveBeenCalled(); expect(fetchBackend).not.toHaveBeenCalled();
   });
 });
 

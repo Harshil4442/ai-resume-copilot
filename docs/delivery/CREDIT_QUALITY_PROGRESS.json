@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-05T19:17:21.304195+00:00",
+  "updated_at": "2026-11-05T20:11:24.533761+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -62,7 +62,8 @@
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json",
-        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
       "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
       "local_result": "The db8 application, including bootstrap/reuse, transcription/evidence review and Dashboard changes, is promoted; the observed owner workspace was preserved. Comprehensive supported-cohort relevance and factuality acceptance remains pending."
@@ -92,7 +93,8 @@
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json",
-        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
       "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
       "local_result": "The stored scanner verification expired on 2026-11-05 at 06:24:10 UTC. Scanner maintenance and paid native document QA (80 documents across nine jobs) remain on HOLD. Broader native/model quality qualification and independent human acceptance remain pending; local source checks do not qualify optimized AI, which stays closed."
@@ -115,7 +117,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
       "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
       "local_result": "The shared native metadata admission remains 40/minute. The owner reviewed/downloaded the original file, cancelled before Fill and revoked the exact companion device; a read-only exact-ID SQL check confirmed the recorded cancellation/revocation state and no linked fill/submission work. This does not qualify real Fill/upload/submit, representative capacity or broad responsive workloads. Invoice-backed forecasts remain pending."
@@ -378,7 +381,11 @@
       "id": "E06",
       "requirement": "Correct reuse. Private cache keys include owner, source hash, approved evidence and correction versions, job revision, preferences, prompt, model, schema and validator versions. Share only public job data. Invalidate meaningful changes and coalesce identical active work. Cached results never bypass fresh authorization or job-availability checks.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "The saved-curated GET reuses exact owner/current curated-learning-v1 context without new admission, mutation or charge; the historical fingerprint is preserved. Broader cache/relevance criteria remain pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "E07",
@@ -432,7 +439,11 @@
       "id": "Q07",
       "requirement": "Unsupported inputs. Detect encrypted, scanned, corrupted, unusually complex or unsupported-language inputs before generation where possible. Request a suitable source, offer a clearly described alternative or decline without charging. Do not truncate relevant content silently to stay within budget.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Known qualified scope/source/context refusals are distinguished before paid work or reservation; no silent truncation. Broader native input envelope/language/render acceptance remains pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "Q08",
@@ -611,8 +622,11 @@
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
-      ]
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "New authenticated private no-store saved-curated GET and explicit unsupported-input refusal are source-bound and generated types synchronized. Current CI/deployment remain blocked.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "A04",
@@ -666,8 +680,11 @@
       "requirement": "Fair paid experience. Existing saved results remain readable under the disclosed retention policy. New paid work must have sufficient reserved capacity before acceptance. Never silently degrade quality, throttle beyond the promised delivery window or delete files to make a spreadsheet budget fit.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Exact saved curated guidance now has a read-only UI/API path during processing pauses; paid/curated modes remain distinct. Serving and full retention/quality acceptance remain pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "F04",
@@ -712,8 +729,11 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
-      ]
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Known unsupported source/scope/context refusals now have safe actionable422 guidance; genuine readiness/funding/processing outages retain503. Local evidence only, not launch acceptance.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "M01",

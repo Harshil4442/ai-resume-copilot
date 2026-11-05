@@ -23,7 +23,7 @@ from ..domains.credits.discovery_schemas import (
     DiscoveryCreate,
     DiscoveryRequest,
 )
-from ..domains.credits.finance import FundingUnavailable
+from ..domains.credits.finance import CreditServiceInputUnsupported, FundingUnavailable
 from ..domains.credits.models import CreditEvent, CreditGrant
 from ..domains.credits.payment_expenses import assert_new_exposure_funded
 from ..domains.credits.schemas import (
@@ -83,6 +83,29 @@ class CanaryChoiceView(BaseModel):
     sequence: int
     review_sha256: str
     idempotency_key: str
+
+
+def _unsupported_quote_error(db: Session, current_user: User, operation: str, input_payload: dict,
+                             error: CreditServiceInputUnsupported) -> HTTPException:
+    """Keep genuine product/qualification pauses ahead of input-change advice.
+
+    This runs only after the original quote preparation refused a known input.
+    Resolve the same configured operation without re-inspecting its source or
+    inventing a fallback route; no quote or provider request is created.
+    """
+    from ..domains.credits.runtime import current_runtime
+    from ..domains.credits.service_quotes import require_route
+
+    try:
+        configured = current_runtime(current_user.id, db=db)
+        route = configured.resolve_route(operation, input_payload)
+        require_route(route, configured.policy, now=service._stamp(None))
+        if not _route_available(route, current_user.id, current_user.email):
+            raise FundingUnavailable("This service is temporarily paused")
+    except FundingUnavailable:
+        return HTTPException(503, "This service is not ready for a new paid request.")
+    return HTTPException(422, {"code": "credit_service_input_unsupported",
+        "message": error.public_message, "run_created": False})
 
 
 @router.get("/canary-enrollment", response_model=CanaryEnrollmentView, response_model_exclude_none=True)
@@ -274,6 +297,9 @@ def analysis_quote(payload: AnalysisRunCreate, request: Request, response: Respo
         result = quote_view(quote)
         db.commit()
         return result
+    except CreditServiceInputUnsupported as exc:
+        db.rollback()
+        raise _unsupported_quote_error(db, current_user, payload.operation, payload.input, exc) from None
     except FundingUnavailable:
         db.rollback()
         raise HTTPException(503, "This service is not ready for a new paid request.") from None
@@ -377,6 +403,9 @@ def synchronous_quote(payload: SynchronousServiceRequest, request: Request, resp
         result = quote_view(quote)
         db.commit()
         return result
+    except CreditServiceInputUnsupported as exc:
+        db.rollback()
+        raise _unsupported_quote_error(db, current_user, payload.operation, payload.input, exc) from None
     except FundingUnavailable:
         db.rollback()
         raise HTTPException(503, "This service is not ready for a new paid request.") from None

@@ -24,6 +24,20 @@ class FundingUnavailable(ValueError):
     """No new work may be admitted under an unqualified financial envelope."""
 
 
+class CreditServiceInputUnsupported(FundingUnavailable):
+    """A known owned-input refusal, with finite public text rather than raw errors."""
+
+    def __init__(self, reason: Literal["scope", "format", "context", "source", "evidence"]):
+        self.public_message = {
+            "scope": "This resume or job exceeds the service's supported limits. Choose a supported input; no work was started.",
+            "format": "This resume format is not supported by this service. Upload a supported editable source or use your original resume.",
+            "context": "The complete resume, job and evidence do not fit this service's supported context. Nothing was shortened; choose a supported input.",
+            "source": "This resume cannot be safely prepared while preserving its layout. Use the original resume or upload editable DOCX or supported LaTeX source.",
+            "evidence": "Approve at least one relevant resume fact before requesting this service. No work was started.",
+        }[reason]
+        super().__init__(self.public_message)
+
+
 class Closed(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

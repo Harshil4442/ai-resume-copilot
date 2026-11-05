@@ -1,0 +1,115 @@
+{
+  "observed_at": "2026-11-05T20:11:24.533761+00:00",
+  "state": "LOCAL_IMPLEMENTED_REVIEWED_NOT_PUSHED_OR_DEPLOYED",
+  "parent_commit": "b54b67cfd6cab9969102fde240fc4e8ee026036a",
+  "requirements": [
+    "F03",
+    "F08",
+    "A03",
+    "E06",
+    "Q07"
+  ],
+  "implementation": {
+    "saved_curated_backend": "Authenticated GET /recommendations/match_strategy/saved with one positive match_id returns an exact owned current curated-learning-v1 plan or null. Shared creation/read context preserves historical fingerprints. Successful unpurged/noncancelled lookup is bounded to one row and independent of funding/flags. It neither generates a plan nor creates or settles runs, quotes, reservations or charges; copied current resource-link projection preserves stored output.",
+    "saved_curated_frontend": "Separate saved-curated lookup remains reachable when new optional processing pauses. Enhanced saved lookup remains separately reachable; mode-specific results do not mix. New curated generation and paid quote controls keep their original gates. Pending/missing/error states, exact match/provenance parsing, abort/selection/mode/unmount/owner boundaries and strict authenticated GET-only BFF query validation are retained.",
+    "unsupported_input": "A finite typed refusal maps only known owned input overflow, supported-source/context/preparation failures and missing approved facts to fixed safe HTTP422 code credit_service_input_unsupported with run_created:false. Malformed measurements, absent bounds, invalid model arity, expired qualification, funding/product pauses and processing outages stay generic503. Catch-only exact configured route/product recheck preserves pause precedence and existing source inspection order. No raw source/path/provider exception is returned.",
+    "contracts": "One new saved GET in OpenAPI; every existing path and component is unchanged. Generated frontend types updated. Current Source27 app312 with new source digest is bound to35 suites/98 mandatory groups; historical retained45b3/290/f277 and producer functions/authority unchanged."
+  },
+  "verification": {
+    "saved_backend": "22 distinct owned HTTP/SQL controls PASS, including expired/exhausted/disabled optional processing, null/missing, cross-owner/current-context changes, non-curated or unavailable stored state, zero writes/new work/charge, original context hash and resource view. Initial21PASS/1 JSON-null fixture/result edge retained; dict guard fixed and only that affected control rerun. Ruff3/Mypy2 and independent peer PASS.",
+    "unsupported_backend": "21 new controls plus5 existing selected regressions PASS. Actual HTTP includes safe size/format/full-context/evidence422, processing/runtime/qualification/product-pause503, owner404 and malformed/missing bound503. SQL capture proves no quote/run/hold/reservation/outbox/liability writes and unchanged40-credit wallet. Both product-pause red counterexamples retained and fixed. Ruff5/Mypy4 and independent peer PASS.",
+    "frontend": "112 focused UI/BFF controls PASS with0skips (19 reviewed-service,93 transport), exact4 ESLint and full TypeScript PASS; initial absent-lookup red retained. Independent finite peer PASS. Compiled optimized Next16.4.2 webpack build/TypeScript/50 pages PASS in16.647s with synthetic build-only auth/loopback backend. No live browser/provider or performance acceptance claim.",
+    "source_integration": "123 unique owned profile/contract/runner controls pass across initial122PASS and the single affected count-assertion rerun. Initial test expected3 new HTTP paths; reviewed saved GET makes4. Original failed JUnit retained; no broad repeat. Ruff5/Mypy4 PASS; collect-only624 nodes/35suites/all98 mandatory groups match. No test bodies/fixtures executed by collection. Independent integration peer verifies all68 top-level integration functions unchanged, exact pins/closure/newGET and historical boundary.",
+    "setup_note": "The first metadata-only integration script asserted23 new groups; observed fixtures contain22groups/43cases. Corrected that count before writing any pin/runner change. No source behavior/test threshold changed for this setup error."
+  },
+  "source_metadata": {
+    "app_files": 312,
+    "app_sha256": "999dc593913c049b26cf6394f43cca098dbf244d79c0d521d24ecd7c69d8256c",
+    "port_sha256": "98cf61897b6741fe447705dbf26d40a8bae6a18696250e3934305b2b9f618268",
+    "new_groups": 22,
+    "new_cases": 43,
+    "current_suites": 35,
+    "current_mandatory_groups": 98,
+    "new_path_sha256": "84cb75fbecc4fc9ba2f7cea63a5a461cf2c382e3094998065f27bbadcb1e4d3f",
+    "openapi_sha256": "c60e49843a9756ba3541bccdfcaa7b9ade4cdd50b4252e04de14a72eca2813f5",
+    "frontend_types_sha256": "bc0154cb10c40abd4c3626c731d6b50b83ffcb73d0382d76fe2104b042523c5d"
+  },
+  "source_files": {
+    "backend/app/domains/credits/analysis.py": "8cbd55586340e0f1d3592007414de650658ec5b8cf99bdeb9dc637b1171c3b81",
+    "backend/app/domains/credits/finance.py": "b1aac0daf15b3714bcb511ae632dbf24f1a63f0e3d8eb04be7998de278f40241",
+    "backend/app/domains/credits/runtime.py": "59fe949cce887cb5f7f2d5d75a245e83cacf672346eb9d9896ef6bedfaf893be",
+    "backend/app/domains/free_core/synchronous.py": "d5a23aeeb43a8c31d7334bd04d3ea5d62694734d25fe4548ff9074ba2f237060",
+    "backend/app/routers/credits.py": "aa9398f4a657444191a93354455b905d5aaf26ccdb329bbaeaf8a20e68861b34",
+    "backend/app/routers/recommendations.py": "a7a53b5c6546b21d79d6c3a160949fd201520a940b420a32aa9a576cca08af4f",
+    "backend/evaluation/native_acquisition_v2/qualification.py": "d40a0fd59750b23b759ec6dafec6fa7221d681b0358746a61bab83b767c091a6",
+    "backend/openapi.json": "c60e49843a9756ba3541bccdfcaa7b9ade4cdd50b4252e04de14a72eca2813f5",
+    "backend/scripts/qualify_native_quality_acquisition.py": "98cf61897b6741fe447705dbf26d40a8bae6a18696250e3934305b2b9f618268",
+    "backend/scripts/qualify_schema27.py": "259f8a7d9a6f946ae9128a78439d93108ca39292f41f674f0d7cbe5ca7993485",
+    "backend/scripts/schema27_app_release_contract.py": "e20e75db9fa371f74972479f9c34bf74a749f251ac9a43e594f4c330bc94b413",
+    "backend/tests/test_credit_input_unsupported.py": "f4ca603e87e544ab39ce9989ae33249291d592d3d49dc4aa38d94628b4c22329",
+    "backend/tests/test_curated_learning_reuse.py": "f084e5b84dfaee25eed19b8b1d99165c18ebfd590a301392f0124025fcc0c82a",
+    "backend/tests/test_schema27_app_release_contract.py": "35665b49a1f056eeb9281a53d71014b52dc7f16650098a745fce3c0c73206abc",
+    "frontend/app/api/backend/[...path]/route.test.ts": "61db3ebd38eaed9de132a5be393a4d998485875f0d5b8f77616e02ae117aeb32",
+    "frontend/app/api/backend/[...path]/route.ts": "ad839d233143da842a343dd879b72a2ac66521ffef4d94e50e64cf57ebd85a5a",
+    "frontend/components/career/LearningStrategyPanel.tsx": "68ef480cfbb0f0fcad7c1d291c8479916160fb495d558684ee46defe474834cd",
+    "frontend/components/career/ReviewedServices.test.tsx": "98e224b87332ecf0237e22f9989e5278bcb1a51733285f3a54dd983cf02d6dec",
+    "frontend/lib/generated/api.ts": "bc0154cb10c40abd4c3626c731d6b50b83ffcb73d0382d76fe2104b042523c5d"
+  },
+  "evidence": {
+    "saved_backend": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/curated-learning-reuse-422w2o0b/MANIFEST.json",
+      "sha256": "d6a4f3c6d61d281992e9bd93e75c6cb9654366bf531a2588ccd5124792bc43b5"
+    },
+    "saved_backend_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/curated-learning-reuse-422w2o0b/PEER_REVIEW.json",
+      "sha256": "baa2421e5c02f75e2b5838c93dc8164839158287c383dba584e6ead4c2295fb6"
+    },
+    "unsupported_backend": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/credit-input-unsupported-local/MANIFEST.json",
+      "sha256": "46d3339181ef2665832f27e24e0a13307a1a02d12b92ab4d86c8715e0e5db888"
+    },
+    "unsupported_backend_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/credit-input-unsupported-local/PEER_REVIEW.json",
+      "sha256": "2cc2cf2cf46be18621c8812c17b3098885c53c39ed66e409235d34a8e25ef0a5"
+    },
+    "frontend": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-curated-frontend-local/MANIFEST.json",
+      "sha256": "aa6d9c288f58ced032951129f6388394045279c7d8e4a1b57b1cb7efaa48d537"
+    },
+    "frontend_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-curated-frontend-local/PEER_REVIEW.json",
+      "sha256": "e6bb8f0c591c7ad82c3d35b2c1caa7075cd3af193af7d13ba9fc609272ff6d7d"
+    },
+    "source_initial_junit": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/junit.xml",
+      "sha256": "f4fc50af7df915db77ea43901392568a050b9df6f33fcb955cd4f51d36500e71"
+    },
+    "source_affected_junit": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/affected-junit.xml",
+      "sha256": "d80ba7e7f60b09e9510d100602c9dc121d19f9a36ed47209e153b4f025a8830f"
+    },
+    "source_affected_history": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/affected.json",
+      "sha256": "2a3cf4db6121bd7687a651811d8ec015d172e6f1f9f61eda9efda3a7ad5135e0"
+    },
+    "public_collection": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/collection.json",
+      "sha256": "80824ce4fd0548c3d3c7c34030c4c193f61400dc94fa46eb25dc794b5c5d4329"
+    },
+    "build": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/frontend-build.json",
+      "sha256": "21aa73c43ee2a219e2b1d28ee4406edd1a3ca06b00e0706db3201d531a91023b"
+    },
+    "integration_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/saved-guidance-feedback-source-yzswxfbr/INTEGRATION_PEER_REVIEW.json",
+      "sha256": "7ce5c3c257f02ab4b2ddb6fbfe9b2e7623cb95b63dfdca10846fbc6603649e94"
+    }
+  },
+  "limits": [
+    "Local source/owned synthetic SQLite and HTTP/UI evidence only; no real Gemini/provider/native, paid QA, cloud, DDL, sourceCI, actual-root checker, held-data read, deployment or payment activation.",
+    "No price, credit allowance, wallet, production policy or campaign changed. Saved reuse under this specific curated context is not whole E06/Q07/quality acceptance.",
+    "Last pushed source remains0c5e4ce in draftPR109; firstCI42085527252 failed allfive beforesteps with accountbillinglock. No CI retry without meaningful account-state change. Approved Support follow-up sent once; that is not unlock evidence.",
+    "Existing Scanner17/Native80/model/commercial holds remain; scanner verification expired2026-11-05T06:24:10Z. Independent human quality, load, finance, shadow and restore/rollout acceptance remain pending.",
+    "All eight existing stages,83 requirement identifiers and statuses remain unchanged; this evidence does not complete a stage or the goal."
+  ]
+}

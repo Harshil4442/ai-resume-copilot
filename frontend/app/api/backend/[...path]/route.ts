@@ -18,6 +18,10 @@ function notificationRoute(path: string[]) {
     : exact === "public/notifications/unsubscribe" ? "unsubscribe" : null;
 }
 
+function isSavedCuratedPlan(path: string[]) {
+  return path.join("/") === "recommendations/match_strategy/saved";
+}
+
 class NotificationBodyError extends Error {
   constructor(readonly status: number) { super("Invalid notification request"); }
 }
@@ -122,6 +126,17 @@ async function forward(
       status: 405, headers: { Allow: allowed.join(", "), "Cache-Control": "private, no-store" },
     });
     if (request.nextUrl.search) return NextResponse.json({ detail: "Invalid notification selector" }, {
+      status: 422, headers: { "Cache-Control": "private, no-store" },
+    });
+  }
+
+  if (isSavedCuratedPlan(path)) {
+    if (request.method !== "GET") return NextResponse.json({ detail: "Use GET to find a saved curated plan" }, {
+      status: 405, headers: { Allow: "GET", "Cache-Control": "private, no-store" },
+    });
+    const entries = [...request.nextUrl.searchParams];
+    if (entries.length !== 1 || entries[0][0] !== "match_id" || !/^[1-9]\d{0,15}$/.test(entries[0][1])
+      || !Number.isSafeInteger(Number(entries[0][1]))) return NextResponse.json({ detail: "Invalid saved plan selector" }, {
       status: 422, headers: { "Cache-Control": "private, no-store" },
     });
   }
@@ -250,7 +265,7 @@ export const HEAD = forward;
 
 export async function OPTIONS(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const { path } = await context.params;
-  if (notificationRoute(path)) return forward(request, { params: Promise.resolve({ path }) });
+  if (notificationRoute(path) || isSavedCuratedPlan(path)) return forward(request, { params: Promise.resolve({ path }) });
   // Match the pinned Next default for this route's pre-existing method exports.
   return new Response(null, { status: 204, headers: { Allow: "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT" } });
 }

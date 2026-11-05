@@ -8,6 +8,12 @@ customer refunds and supplier liabilities retain their original accounting.
 These are local fixes under F02/C03/C04/C05/Q10, not completed release gates.
 See [the scoped evidence](evidence/2026-11-06-funding-cancellation-resource-guards.json).
 
+The next local increment adds a read-only saved-curated-plan lookup that remains
+available when new processing pauses, and fixed unsupported-input guidance on
+paid quote requests. New generation remains gated. Funding, qualification and
+processing outages retain their unavailable response rather than being described
+as a user input problem. See [the workflow evidence](evidence/2026-11-06-saved-guidance-input-feedback.json).
+
 Draft PR109 contains the earlier `0c5e4ce` workspace successor. Its first CI run
 42085527252 failed before any job step started: GitHub reported an account
 billing lock. The additional local fixes are not pushed, qualified or deployed.

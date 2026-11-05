@@ -14725,6 +14725,62 @@
         ]
       }
     },
+    "/api/recommendations/match_strategy/saved": {
+      "get": {
+        "operationId": "saved_match_learning_strategy_api_recommendations_match_strategy_saved_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LearningStrategyResponse"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Saved Match Learning Strategy Api Recommendations Match Strategy Saved Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Saved Match Learning Strategy",
+        "tags": [
+          "recommendations"
+        ]
+      }
+    },
     "/api/resume/list": {
       "get": {
         "description": "Legacy array contract, bounded to 500 entries; new selectors use /page.",

@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CreditAvailability } from "../../lib/unifiedServiceQuotes";
-const state = vi.hoisted(() => ({ post: vi.fn() }));
-vi.mock("../../lib/api", () => ({ apiPostJson: state.post,
+const state = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn() }));
+vi.mock("../../lib/api", () => ({ apiPostJson: state.post, apiGet: state.get,
   ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
 import { ApiError } from "../../lib/api";
 import { ResumeSkillEnrichment } from "./ResumeSkillEnrichment";
@@ -27,6 +27,7 @@ function view(node: React.ReactNode) { return render(<QueryClientProvider client
 function makeQuote(operation: string) { return { schema_version: "unified-service-quote-v1", quote_id: "csq_sync", operation, input_fingerprint: "d".repeat(64), route_id: "sync-qualified", route_version: "1", mode: "enhanced", tariff_version: "v1", credits: 2,
   deliverable: "A validated source-grounded deliverable.", supported_limits: { max_pages: 2 }, created_at: "2026-10-27T10:00:00Z", expires_at: "2026-10-27T10:15:00Z", server_time: "2026-10-27T10:00:00Z" }; }
 beforeEach(() => { client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  state.get.mockReset().mockResolvedValue(learning);
   state.post.mockReset().mockImplementation(async (url, body) => {
     if (url === "/v1/credits/synchronous-reuse") return { reused_run: null, result: null };
     if (url === "/v1/credits/synchronous-service-quotes") return makeQuote(body.operation);
@@ -86,6 +87,98 @@ it("keeps curated learning free and shows source links and future projects", asy
   fireEvent.click(screen.getByRole("button", { name: "View curated plan" })); await screen.findByText(learning.readiness_summary);
   expect(screen.getByRole("link", { name: "SQL guide" })).toHaveAttribute("href", "https://postgresql.org/docs/");
   expect(state.post).toHaveBeenCalledExactlyOnceWith("/recommendations/match_strategy", { match_id: 5, mode: "curated" });
+});
+it("finds a saved curated plan while new plans are paused without a creation POST", async () => {
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  expect(screen.getByRole("button", { name: "View curated plan" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  await screen.findByText(learning.readiness_summary);
+  expect(state.get).toHaveBeenCalledExactlyOnceWith("/recommendations/match_strategy/saved?match_id=5", expect.any(AbortSignal));
+  expect(state.post).not.toHaveBeenCalled();
+});
+it("reports a missing saved curated plan without generating a replacement", async () => {
+  state.get.mockResolvedValue(null);
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  await screen.findByText(/No saved curated plan matches/);
+  expect(state.get).toHaveBeenCalledTimes(1); expect(state.post).not.toHaveBeenCalled();
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument();
+});
+it("shows a manual lookup error without retrying or creating a plan", async () => {
+  state.get.mockRejectedValue(new Error("Unavailable"));
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  await screen.findByRole("alert");
+  expect(state.get).toHaveBeenCalledTimes(1); expect(state.post).not.toHaveBeenCalled();
+  state.get.mockResolvedValue({ ...learning, warnings: ["Resource review expired."], learning_priorities: [{ ...learning.learning_priorities[0], resources: [{ ...learning.learning_priorities[0].resources[0], url: null }] }] });
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  await screen.findByText("Resource review expired.");
+  expect(screen.queryByRole("link", { name: "SQL guide" })).not.toBeInTheDocument();
+  expect(screen.getByText(/SQL guide/)).toBeVisible(); expect(state.get).toHaveBeenCalledTimes(2);
+});
+it.each([
+  { ...learning, match_id: 6 },
+  { ...learning, generated_by: "enhanced", provenance: "gemini" },
+  { match_id: 5 },
+])("refuses a wrong-match, non-curated or malformed saved response", async (value) => {
+  state.get.mockResolvedValue(value);
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  await screen.findByRole("alert");
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
+});
+it("keeps loading explicit and discards an old lookup after changing mode", async () => {
+  let finish!: (value: unknown) => void;
+  state.get.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  expect(screen.getByText(/Looking for your saved curated plan/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Find saved curated plan" })).toBeDisabled();
+  const signal = state.get.mock.calls[0][1] as AbortSignal;
+  fireEvent.change(screen.getByRole("combobox", { name: "Learning plan mode" }), { target: { value: "enhanced" } });
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(learning));
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Find saved curated plan" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Find saved result · no charge" })).toBeEnabled();
+  expect(state.post).not.toHaveBeenCalled();
+});
+it("does not carry a late saved lookup to another match or back to its previous selection", async () => {
+  let finish!: (value: unknown) => void;
+  state.get.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const rendered = view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  const signal = state.get.mock.calls[0][1] as AbortSignal;
+  rendered.rerender(<QueryClientProvider client={client}><LearningStrategyPanel resume={resume} job={job} matchId={6} availability={null} /></QueryClientProvider>);
+  expect(signal.aborted).toBe(true);
+  rendered.rerender(<QueryClientProvider client={client}><LearningStrategyPanel resume={resume} job={job} matchId={5} availability={null} /></QueryClientProvider>);
+  await act(async () => finish(learning));
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
+});
+it("does not adopt a previous owner's pending lookup after the session boundary remounts", async () => {
+  let finish!: (value: unknown) => void;
+  state.get.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const rendered = view(<LearningStrategyPanel key="owner-one" resume={resume} job={job} matchId={5} availability={null} />);
+  fireEvent.click(screen.getByRole("button", { name: "Find saved curated plan" }));
+  const signal = state.get.mock.calls[0][1] as AbortSignal;
+  rendered.rerender(<QueryClientProvider client={client}><LearningStrategyPanel key="owner-two" resume={resume} job={job} matchId={5} availability={null} /></QueryClientProvider>);
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(learning));
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
+});
+it("keeps enhanced saved lookup distinct from curated lookup while new execution is paused", async () => {
+  const paused = { ...availability, execution_enabled: false, supported_operations: [] };
+  state.post.mockResolvedValue({ reused_run: { id: "run_sync", operation: "sync_learning_strategy", status: "succeeded" }, result: { ...learning, generated_by: "enhanced", provenance: "gemini", credit_execution: { ...billing, reused: true, charged_this_request: 0 } } });
+  view(<LearningStrategyPanel resume={resume} job={job} matchId={5} availability={paused} />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Learning plan mode" }), { target: { value: "enhanced" } });
+  expect(screen.getByRole("button", { name: "Review personalized plan charge" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Find saved result · no charge" }));
+  await screen.findByText(learning.readiness_summary);
+  expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/credits/synchronous-reuse", { operation: "learning_strategy", input: { match_id: 5, mode: "enhanced" } });
+  expect(state.get).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole("combobox", { name: "Learning plan mode" }), { target: { value: "curated" } });
+  expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Find saved curated plan" })).toBeEnabled();
 });
 it("does not attach a late enrichment result to another selected resume", async () => {
   let finish!: (value: unknown) => void; const original = state.post.getMockImplementation()!;

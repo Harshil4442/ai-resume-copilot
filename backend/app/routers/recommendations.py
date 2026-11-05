@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -130,15 +130,10 @@ def _normalize_strategy(strategy: dict) -> dict:
     }
 
 
-@router.post("/match_strategy", response_model=schemas.LearningStrategyResponse)
-async def match_learning_strategy(
-    payload: schemas.LearningStrategyRequest,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
+def _owned_strategy_inputs(db: Session, user_id: int, match_id: int):
     match = (
         db.query(models.JobMatch)
-        .filter(models.JobMatch.id == payload.match_id, models.JobMatch.user_id == current_user.id)
+        .filter(models.JobMatch.id == match_id, models.JobMatch.user_id == user_id)
         .first()
     )
     if not match:
@@ -148,9 +143,34 @@ async def match_learning_strategy(
     if match.resume_id:
         resume = (
             db.query(models.Resume)
-            .filter(models.Resume.id == match.resume_id, models.Resume.user_id == current_user.id)
+            .filter(models.Resume.id == match.resume_id, models.Resume.user_id == user_id)
             .first()
         )
+    return match, resume
+
+
+@router.get("/match_strategy/saved", response_model=schemas.LearningStrategyResponse | None)
+def saved_match_learning_strategy(
+    response: Response,
+    match_id: int = Query(gt=0),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    from ..domains.free_core.synchronous import curated_learning_context, saved_curated_learning
+
+    response.headers["Cache-Control"] = "private, no-store"
+    match, resume = _owned_strategy_inputs(db, current_user.id, match_id)
+    return saved_curated_learning(db, user_id=current_user.id,
+                                 context=curated_learning_context(match, resume))
+
+
+@router.post("/match_strategy", response_model=schemas.LearningStrategyResponse)
+async def match_learning_strategy(
+    payload: schemas.LearningStrategyRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    match, resume = _owned_strategy_inputs(db, current_user.id, payload.match_id)
 
     resume_skills = resume.skills if resume and resume.skills else []
     experience_years = float(resume.experience_years or 0.0) if resume else 0.0
@@ -168,7 +188,7 @@ async def match_learning_strategy(
             accepted_service_quote_id=payload.accepted_service_quote_id,
             idempotency_key=payload.idempotency_key)
     if payload.mode == "curated":
-        from ..domains.free_core.synchronous import curated_learning
+        from ..domains.free_core.synchronous import curated_learning, curated_learning_context
 
         def build_curated():
             strategy = build_fallback_learning_strategy(
@@ -186,10 +206,8 @@ async def match_learning_strategy(
                 "warnings": ["Suggested projects are future work. Add claims only after completing the work and approving its evidence."],
             }).model_dump()
 
-        return curated_learning(db, user_id=current_user.id, context={
-            "match": synchronous._snapshot(match, ("id", "job_title", "company", "job_description", "match_score", "true_gaps", "partial_matches", "improvement_tips", "required_skills")),
-            "resume_skills": resume_skills, "experience_years": experience_years,
-        }, create=build_curated)
+        return curated_learning(db, user_id=current_user.id,
+            context=curated_learning_context(match, resume), create=build_curated)
 
     warnings = ["Suggested projects are future work. Add resume claims only after completing the work and approving its evidence."]
     request = synchronous.request("learning_strategy", payload)

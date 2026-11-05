@@ -53,10 +53,15 @@ class RuntimeConfig(finance.Closed):
             # Measurements originate from owned source artifacts, never from a
             # client claim of its own size. A new scope always needs new review.
             maximum = selected.supported_limits.get(name)
-            if type(value) is not int or value < 0 or maximum is None or value > maximum:
+            if type(value) is not int or value < 0 or type(maximum) is not int or maximum < 0:
                 raise finance.FundingUnavailable(
-                    "The selected scope does not support this input; review a different quote"
+                    "The reviewed route has no valid bound for the measured input"
                 )
+            if value > maximum:
+                # An expired/unfunded route is still a service pause, never a
+                # claim that changing the customer's input can restore it.
+                require_route(selected, self.policy, now=service._stamp(None))
+                raise finance.CreditServiceInputUnsupported("scope")
         return selected
 
 

@@ -74,27 +74,37 @@ def prepare_quote_context(db: Session, *, user_id: int, payload):
     }
     config = runtime.current_runtime(user_id, db=db)
     route = config.resolve_route(payload.operation, normalized, observed_limits=observed)
+    # Preserve the normal quote qualification gate before classifying a known
+    # input limit as something the candidate can correct. This is pure review
+    # validation; it creates no quote, liability or provider request.
+    from .service_quotes import require_route
+
+    require_route(route, config.policy, now=service._stamp(None))
     if payload.operation == "job_match":
         from ...services import matching_contract
         from ...services.model_cost_policy import input_token_estimate
         from ..analysis.operations import complete_matching_context
 
+        if len(route.model_quotes) != 1:
+            raise finance.FundingUnavailable("The comparison route needs a qualified provider configuration")
+        if not dependencies.get("approved_evidence"):
+            raise finance.CreditServiceInputUnsupported("evidence")
         resume = db.query(models.Resume).filter_by(id=normalized["resume_id"], user_id=user_id).one()
         try:
             context = complete_matching_context(db, user_id=user_id, resume=resume, payload=normalized)
             estimate = input_token_estimate(matching_contract.messages(context))
-        except matching_contract.MatchingContextUnavailable as exc:
-            raise finance.FundingUnavailable(str(exc)) from None
-        if len(route.model_quotes) != 1 or estimate > route.model_quotes[0].max_input_tokens:
-            raise finance.FundingUnavailable("The complete comparison requires one funded provider attempt covering the full context; no content or evidence was shortened.")
+        except matching_contract.MatchingContextUnavailable:
+            raise finance.CreditServiceInputUnsupported("context") from None
+        if type(estimate) is not int or estimate < 0:
+            raise finance.FundingUnavailable("The comparison context measurement is unavailable")
+        if estimate > route.model_quotes[0].max_input_tokens:
+            raise finance.CreditServiceInputUnsupported("context")
     if (
         payload.operation == "resume_tailor"
         and dependencies.get("resume", {}).get("source_format")
         not in route.supported_source_formats
     ):
-        raise finance.FundingUnavailable(
-            "The selected route is not qualified for this source format"
-        )
+        raise finance.CreditServiceInputUnsupported("format")
     if payload.operation in {"interview_questions", "resume_tailor"}:
         _require_analysis_prompt_capacity(
             db, user_id=user_id, operation=payload.operation,
@@ -113,10 +123,12 @@ def _require_analysis_prompt_capacity(
     )
     from ...services.interview_contract import InterviewContextUnavailable, load_approved_evidence
     from ...services.llm_client import TailoringOutputError
-    from ...services.resume_layout import ResumeLayoutError
+    from ...services.resume_layout import ResumeLayoutError, ResumeProcessingUnavailable
     from ..analysis.operations import tailoring_evidence_payload, tailoring_source_units
     from ..career.service import get_opportunity
 
+    if not route.model_quotes:
+        raise finance.FundingUnavailable("The analysis route needs a qualified provider configuration")
     if opportunity_id is None:
         raise finance.FundingUnavailable("Select an opportunity before requesting this quote")
     opportunity = get_opportunity(db, user_id, opportunity_id)
@@ -126,10 +138,8 @@ def _require_analysis_prompt_capacity(
             estimate = interview_prompt_bound(
                 opportunity.title, opportunity.job_description, evidence
             )
-        except InterviewContextUnavailable as exc:
-            raise finance.FundingUnavailable(
-                "The complete interview and repair prompt exceed its context scope"
-            ) from exc
+        except InterviewContextUnavailable:
+            raise finance.CreditServiceInputUnsupported("context") from None
     else:
         if not opportunity.resume_id:
             raise finance.FundingUnavailable("Connect a resume before requesting tailoring")
@@ -156,17 +166,16 @@ def _require_analysis_prompt_capacity(
                 source_units=units,
                 complete_context=True,
             )
-        except (ResumeLayoutError, TailoringOutputError) as exc:
-            raise finance.FundingUnavailable(
-                "The original resume cannot be safely prepared for this delivery route"
-            ) from exc
-    if not route.model_quotes or any(
+        except ResumeProcessingUnavailable:
+            raise finance.FundingUnavailable("The resume processing service is unavailable") from None
+        except (ResumeLayoutError, TailoringOutputError):
+            raise finance.CreditServiceInputUnsupported("source") from None
+    if type(estimate) is not int or estimate < 0:
+        raise finance.FundingUnavailable("The complete prompt measurement is unavailable")
+    if any(
         estimate > model.max_input_tokens for model in route.model_quotes
     ):
-        raise finance.FundingUnavailable(
-            "The complete prompt and bounded repair do not fit every qualified provider "
-            "attempt. No content was shortened or credits reserved."
-        )
+        raise finance.CreditServiceInputUnsupported("context")
 
 
 def _client_intent_fingerprint(payload) -> str:

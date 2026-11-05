@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '81eaaab9ae0d9f1bb4eaf0db57a683b0af2a3113a30930c3239f7a98888440a2'
+CANDIDATE_APP_SHA256 = '999dc593913c049b26cf6394f43cca098dbf244d79c0d521d24ecd7c69d8256c'
 CANDIDATE_APP_FILES = 312
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -40,6 +40,7 @@ HISTORICAL_CURRENT_IGNORES = (*v3.HISTORICAL_CURRENT_IGNORES,
     "tests/test_schema25_app_compatibility_v3_postgres.py", "tests/test_schema25_app_protocol_v3.py",
     "tests/test_schema25_app_rolling_v3.py")
 NEW_HTTP_PATHS = {
+    "/api/recommendations/match_strategy/saved": "84cb75fbecc4fc9ba2f7cea63a5a461cf2c382e3094998065f27bbadcb1e4d3f",
     "/api/public/notifications/unsubscribe": "c2d58bafabeb58932448485c133bd4a7613f3c134a48fa6d502d2cfda5fe2044",
     "/api/v1/notifications/preferences": "8bca55f75a9c5e9c67713554f1bea9d6fedf31cfef85fbea5066ebf7cea46cb4",
     "/api/v1/opportunities/page": "29f1a35114d7cf58e15d0816b6dcda425b4098c745bb18b64bbc15d08407f8a4",
@@ -93,6 +94,10 @@ F07_PATHS = (
     "backend/tests/test_free_core_funding_period.py", "backend/tests/test_free_core_funding_period_postgres.py",
     "backend/tests/test_unified_analysis_cancellation.py", "backend/tests/test_learning_resource_delivery.py",
     "backend/tests/test_native_expense_reconciliation.py",
+    "backend/app/domains/credits/finance.py", "backend/app/domains/credits/runtime.py",
+    "backend/app/routers/credits.py", "backend/tests/test_curated_learning_reuse.py",
+    "backend/tests/test_credit_input_unsupported.py", "frontend/components/career/LearningStrategyPanel.tsx",
+    "frontend/components/career/ReviewedServices.test.tsx",
     "frontend/lib/opportunityPageClient.ts", "frontend/lib/opportunityPageClient.test.ts",
     "frontend/app/workspace/page.tsx", "frontend/app/workspace/page.test.tsx",
     "frontend/lib/generated/api.ts", "frontend/app/api/backend/[...path]/route.test.ts",
