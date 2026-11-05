@@ -94,3 +94,54 @@ statements. Larger histories need measured incremental reconciliation before
 these limits become an availability constraint. A successful rolling release
 reports infrastructure completion only; the full goal remains open until the
 user-facing requirements are verified.
+
+## Schema26: policy expiry after zero-traffic staging
+
+`backend/scripts/schema26_app_successor.py` provides a separate restore-only
+recovery contract for this specific state. Its original plan and journal remain
+immutable. Recovery requires all three original stage intents and acknowledgements,
+all three exact native operations completed successfully, no promotion or rollback
+intent, and exact current staged templates, generations and traffic. An original
+stage may lack its checked marker: recovery observes the real acknowledged operation
+and never writes that missing marker into the old journal.
+
+Use a separately qualified clean controller, target and prior source checkout.
+`recovery-capture` requires the original plan file and exact SHA, its original
+private journal, a fresh nonce and the controller's genuine CI run. It saves a new
+private recovery plan. `recovery-restore` and `recovery-reconcile` require that new
+plan and SHA, a separate private journal, and the same original plan file/SHA and
+journal. Both journals are exclusively locked; the original lock is opened
+read-only and must already exist. Recovery cannot be used as an ordinary release
+plan or authorize forward promotion.
+
+Each restore binds a fresh provider preimage and etag and saves one durable intent
+before its only PATCH. It restores the exact immutable prior revision template and
+original pinned traffic. Thus the original aliases and 100% prior allocation remain;
+only the failed plan's owned zero-traffic staging alias is removed. Both old and
+staged revisions remain. An acknowledged pending operation is observed on its
+original handle; a missing acknowledgement permits reconciliation only, never
+another send. Prior HTTP health is required before a checked marker or the next
+restore. Source, schema26, SQL financial state, protected liabilities, resources,
+numeric secrets, runtime UID, static service configuration and IAM are rechecked.
+
+An expired policy is parsed, approval/hash checked and structurally audited only
+as historical rollback configuration while every cost-bearing admission remains
+closed. That is not current funding authority. After recovery is fully checked,
+capture a fresh ordinary successor with the independently reviewed numeric pair
+`--candidate-expense-secret NAME:VERSION` and
+`--candidate-model-policy-secret NAME:VERSION`. Both are required together. Current
+expiry, source model coverage, funded ceilings and catalog arithmetic must pass
+before SQL capture and every forward gate. Model credentials, primary model and
+API base cannot change through this pair. The old policy remains an immutable
+rollback reference; its expiry is never extended in place.
+
+Owned tests verify these failure and ownership boundaries. They do not prove
+native restoration, a successful production renewal, document quality, capacity,
+invoice reconciliation, or permission to enable payments.
+
+Forward capture additionally requires at least four hours remaining on the exact
+target expense policy and every primary/source-fallback model price quote. This
+capture-only buffer applies to both same-policy and candidate-pair releases after
+normal current funding verification and before SQL capture. It does not extend
+any expiry or guarantee rollout duration; later gates still enforce current
+expiry. Restore-only historical recovery does not use this forward buffer.
