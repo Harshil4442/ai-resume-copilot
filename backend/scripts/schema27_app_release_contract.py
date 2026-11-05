@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = "2ae6d25711ac405b390f85ed97661ada040ace3c88ab9832966e3e4ae1623146"
+CANDIDATE_APP_SHA256 = 'eab9c268ea4c563d2b10a8d354130b12eb5d6ccc6a9826a3b625741d774ee6e5'
 CANDIDATE_APP_FILES = 309
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -74,6 +74,8 @@ F07_PATHS = (
     "backend/tests/test_notification_digest_emulator.py", "backend/tests/test_notification_schema26_reader_compatibility.py",
     "backend/tests/test_qualify_schema27.py", "backend/tests/test_qualify_schema26_retained_v3.py",
     "backend/tests/test_schema27_app_compatibility_postgres.py",
+    "backend/tests/test_interview_input_guards.py", "backend/tests/test_interview_input_postgres.py",
+    "backend/tests/test_credit_release_margin_gate.py",
     "backend/tests/fixtures/schema26_notification_reader/PROVENANCE.json",
     "backend/tests/fixtures/schema26_notification_reader/gcp_partitioned_contracts.py.snapshot",
     "frontend/components/WeeklyDigestPreference.tsx", "frontend/components/WeeklyDigestPreference.test.tsx",

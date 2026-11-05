@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-03T23:37:55.247448+00:00",
+  "updated_at": "2026-11-05T16:53:32.435381+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -366,7 +366,9 @@
       "id": "E05",
       "requirement": "Context selection. Send relevant approved evidence, the exact job revision and requested edits. Limit unrelated history and duplicate source text. Validate that evidence selection did not omit a fact needed to meet the promised deliverable before admitting the model call.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "E06",
@@ -432,7 +434,9 @@
       "id": "Q08",
       "requirement": "Interview completeness. A paid eight-question set must contain eight distinct, role-relevant questions with actionable preparation guidance. Limited personal evidence may produce job-based questions marked as needing evidence, but must never produce invented personal answers or a one-question deliverable billed as eight.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "Q09",
@@ -707,7 +711,9 @@
       "id": "G02",
       "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and \u20b935,000 overhead as the approved adverse scenario. It leaves \u20b914,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most \u20b935,141 for 15% and \u20b930,399 for 20%. Include omitted costs before testing either gate.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "G03",

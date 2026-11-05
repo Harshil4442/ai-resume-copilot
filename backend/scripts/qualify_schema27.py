@@ -27,6 +27,9 @@ COMPATIBILITY_SUITES = (
     "tests/test_digest_delivery_integration.py",
     "tests/test_mail_budget_postgres.py",
     "tests/test_schema27_app_compatibility_postgres.py",
+    "tests/test_interview_input_guards.py",
+    "tests/test_interview_input_postgres.py",
+    "tests/test_credit_release_margin_gate.py",
 )
 PROTOCOL_SUITES = (
     "tests/test_notification_digest_emulator.py",
@@ -52,6 +55,12 @@ REQUIRED_CASES = {
         ("test_notification_schema_compat_postgres", "test_inflight_schema26_privacy_token_completes_on_exact26_or27_with_original_audit"): 2,
         ("test_digest_delivery_integration", "test_api_consent_to_real_native_and_postgres_budget_to_intercepted_http_once"): 1,
         ("test_schema27_app_compatibility_postgres", "test_actual_prior26_and_current27_processes_exchange_preserved_storage"): 2,
+        ("test_interview_input_postgres", "test_final_interview_snapshot_serializes_real_mutations_through_credit_commit"): 6,
+        ("test_interview_input_postgres", "test_preexisting_writer_order_declines_without_deadlock_provider_replay_or_charge"): 2,
+        ("test_interview_input_postgres", "test_retained_mismatched_resume_refuses_before_supplier_and_refunds"): 1,
+        ("test_credit_release_margin_gate", "test_launch_review_cannot_relax_either_approved_margin_floor"): 3,
+        ("test_credit_release_margin_gate", "test_commercial_policy_guard_also_denies_direct_execution_without_a_release_review"): 3,
+        ("test_credit_release_margin_gate", "test_production_runtime_rejects_floor_before_canary_audience_or_database"): 3,
     },
     "protocol": {
         ("test_notification_digest_emulator", "test_real_emulator_consent_send_and_complete_census"): 1,
