@@ -2284,6 +2284,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/{opportunity_id}/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace */
+        get: operations["get_workspace_api_v1_opportunities__opportunity_id__workspace_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/workspace/body": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace Body */
+        get: operations["get_workspace_body_api_v1_opportunities__opportunity_id__workspace_body_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/workspace/source-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Workspace Source Snapshot */
+        post: operations["create_workspace_source_snapshot_api_v1_opportunities__opportunity_id__workspace_source_snapshot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace Page */
+        get: operations["get_workspace_page_api_v1_opportunities__opportunity_id__workspace__collection__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/opportunities/{opportunity_id}/workspace/{collection}/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace Item */
+        get: operations["get_workspace_item_api_v1_opportunities__opportunity_id__workspace__collection___item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reminders": {
         parameters: {
             query?: never;
@@ -2331,6 +2416,23 @@ export interface paths {
         put?: never;
         /** Create Resume Version */
         post: operations["create_resume_version_api_v1_resume_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resume-versions/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Resume Version Page */
+        get: operations["get_resume_version_page_api_v1_resume_versions_page_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2409,6 +2511,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityMetadata */
+        ActivityMetadata: {
+            /** Event Type */
+            event_type: string;
+            /** From Stage */
+            from_stage: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Opportunity Id */
+            opportunity_id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /** Resume Version Id */
+            resume_version_id: string | null;
+            /** Source */
+            source: string;
+            /** To Stage */
+            to_stage: string | null;
+        };
         /** AnalysisQuoteAcceptance */
         AnalysisQuoteAcceptance: {
             /** Pricing Version */
@@ -2956,6 +3085,27 @@ export interface components {
             name?: string | null;
             /** Phone */
             phone?: string | null;
+        };
+        /** ContactMetadata */
+        ContactMetadata: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Role */
+            role: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ContactResponse */
         ContactResponse: {
@@ -3512,6 +3662,33 @@ export interface components {
             /** Skipped */
             skipped: number;
         };
+        /** EvidenceMetadata */
+        EvidenceMetadata: {
+            /** Approval State */
+            approval_state: string;
+            /** Category */
+            category: string;
+            /** Confidence */
+            confidence: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Provenance */
+            provenance: string;
+            /** Resume Id */
+            resume_id: number | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** EvidenceResponse */
         EvidenceResponse: {
             /** Approval State */
@@ -3553,6 +3730,25 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** EvidenceTranscriptionReview */
+        EvidenceTranscriptionReview: {
+            /** Assessment Fingerprint */
+            assessment_fingerprint: string;
+            /** Filename */
+            filename: string;
+            /** Resume Id */
+            resume_id: number;
+            section: components["schemas"]["TranscriptionSectionReview"] | null;
+            /** Source Format */
+            source_format: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_required" | "needs_review" | "reviewed" | "editable_source_required";
         };
         /** EvidenceUpdate */
         EvidenceUpdate: {
@@ -4094,6 +4290,19 @@ export interface components {
             /** Why It Matters */
             why_it_matters: string;
         };
+        /** OpportunityBody */
+        OpportunityBody: {
+            /** Job Description */
+            job_description: string;
+            /** Job Snapshot */
+            job_snapshot: {
+                [key: string]: unknown;
+            };
+            /** Notes */
+            notes: string;
+            /** Outcome Notes */
+            outcome_notes: string | null;
+        };
         /** OpportunityCreate */
         OpportunityCreate: {
             /**
@@ -4222,6 +4431,59 @@ export interface components {
             exported_at: string;
             latest_match: components["schemas"]["OpportunityMatchResponse"] | null;
             opportunity: components["schemas"]["OpportunityDetailResponse"];
+        };
+        /** OpportunityHeader */
+        OpportunityHeader: {
+            /** Archived At */
+            archived_at: string | null;
+            /** Company */
+            company: string;
+            /** Compensation */
+            compensation: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Deadline At */
+            deadline_at: string | null;
+            /** Id */
+            id: string;
+            /** Latest Analysis Run Id */
+            latest_analysis_run_id: string | null;
+            /** Latest Match Id */
+            latest_match_id: number | null;
+            /** Location */
+            location: string;
+            /** Next Action */
+            next_action: string | null;
+            /** Outcome */
+            outcome: string | null;
+            /** Outcome At */
+            outcome_at: string | null;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "medium" | "high";
+            /** Resume Id */
+            resume_id: number | null;
+            /** Source */
+            source: string;
+            /** Source Url */
+            source_url: string | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "saved" | "evaluating" | "preparing" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | "archived";
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** OpportunityListResponse */
         OpportunityListResponse: {
@@ -4928,6 +5190,60 @@ export interface components {
             structured_content?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** ResumeVersionMetadata */
+        ResumeVersionMetadata: {
+            /** Approval State */
+            approval_state: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Opportunity Id */
+            opportunity_id: string | null;
+            /** Resume Id */
+            resume_id: number;
+            /** Submitted At */
+            submitted_at: string | null;
+            /** Version Number */
+            version_number: number;
+        };
+        /** ResumeVersionOption */
+        ResumeVersionOption: {
+            /** Approval State */
+            approval_state: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Opportunity Id */
+            opportunity_id: string | null;
+            /** Resume Id */
+            resume_id: number;
+            /** Source Preserving Edits */
+            source_preserving_edits: boolean;
+            /** Submitted At */
+            submitted_at: string | null;
+            /** Version Number */
+            version_number: number;
+        };
+        /** ResumeVersionPageResponse */
+        ResumeVersionPageResponse: {
+            /** Items */
+            items: components["schemas"]["ResumeVersionOption"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            selected_version: components["schemas"]["ResumeVersionOption"] | null;
         };
         /** ResumeVersionResponse */
         ResumeVersionResponse: {
@@ -5661,6 +5977,77 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WorkspaceEvidenceDetail */
+        WorkspaceEvidenceDetail: {
+            evidence: components["schemas"]["EvidenceResponse"];
+            transcription: components["schemas"]["EvidenceTranscriptionReview"] | null;
+            /**
+             * Transcription Unavailable
+             * @default false
+             */
+            transcription_unavailable: boolean;
+        };
+        /** WorkspacePage[ActivityMetadata] */
+        WorkspacePage_ActivityMetadata_: {
+            /** Items */
+            items: components["schemas"]["ActivityMetadata"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** WorkspacePage[ContactMetadata] */
+        WorkspacePage_ContactMetadata_: {
+            /** Items */
+            items: components["schemas"]["ContactMetadata"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** WorkspacePage[EvidenceMetadata] */
+        WorkspacePage_EvidenceMetadata_: {
+            /** Items */
+            items: components["schemas"]["EvidenceMetadata"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** WorkspacePage[ReminderResponse] */
+        WorkspacePage_ReminderResponse_: {
+            /** Items */
+            items: components["schemas"]["ReminderResponse"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** WorkspacePage[ResumeVersionMetadata] */
+        WorkspacePage_ResumeVersionMetadata_: {
+            /** Items */
+            items: components["schemas"]["ResumeVersionMetadata"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** WorkspacePages */
+        WorkspacePages: {
+            activity?: components["schemas"]["WorkspacePage_ActivityMetadata_"] | null;
+            contacts?: components["schemas"]["WorkspacePage_ContactMetadata_"] | null;
+            evidence?: components["schemas"]["WorkspacePage_EvidenceMetadata_"] | null;
+            reminders?: components["schemas"]["WorkspacePage_ReminderResponse_"] | null;
+            resume_versions: components["schemas"]["WorkspacePage_ResumeVersionMetadata_"];
+        };
+        /** WorkspaceResponse */
+        WorkspaceResponse: {
+            /** Approved Evidence Count */
+            approved_evidence_count: number | null;
+            match: components["schemas"]["OpportunityMatchResponse"] | null;
+            /**
+             * Match Source State
+             * @enum {string}
+             */
+            match_source_state: "none" | "current" | "different_resume" | "unavailable";
+            opportunity: components["schemas"]["OpportunityHeader"];
+            pages: components["schemas"]["WorkspacePages"];
+            resumes: components["schemas"]["ResumePageResponse"];
+            selected_resume_version: components["schemas"]["ResumeVersionMetadata"] | null;
+            submitted_resume_version: components["schemas"]["ResumeVersionMetadata"] | null;
+            /** Submitted Resume Version Id */
+            submitted_resume_version_id: string | null;
         };
     };
     responses: never;
@@ -11488,7 +11875,9 @@ export interface operations {
     };
     get_opportunity_match_api_v1_opportunities__opportunity_id__match_get: {
         parameters: {
-            query?: never;
+            query?: {
+                resume_id?: number | null;
+            };
             header?: never;
             path: {
                 opportunity_id: string;
@@ -11574,6 +11963,172 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_api_v1_opportunities__opportunity_id__workspace_get: {
+        parameters: {
+            query?: {
+                tab?: "overview" | "resume" | "learning" | "interview" | "outcome" | "activity";
+                limit?: number;
+                selected_version_id?: string | null;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_body_api_v1_opportunities__opportunity_id__workspace_body_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_source_snapshot_api_v1_opportunities__opportunity_id__workspace_source_snapshot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_page_api_v1_opportunities__opportunity_id__workspace__collection__get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                state?: string | null;
+            };
+            header?: never;
+            path: {
+                opportunity_id: string;
+                collection: "activity" | "contacts" | "reminders" | "evidence" | "resume_versions";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspacePage_ActivityMetadata_"] | components["schemas"]["WorkspacePage_ContactMetadata_"] | components["schemas"]["WorkspacePage_ReminderResponse_"] | components["schemas"]["WorkspacePage_EvidenceMetadata_"] | components["schemas"]["WorkspacePage_ResumeVersionMetadata_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_item_api_v1_opportunities__opportunity_id__workspace__collection___item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+                collection: "activity" | "contacts" | "reminders" | "evidence" | "resume_versions";
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationEventResponse"] | components["schemas"]["ContactResponse"] | components["schemas"]["ReminderResponse"] | components["schemas"]["WorkspaceEvidenceDetail"] | components["schemas"]["ResumeVersionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11738,6 +12293,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_resume_version_page_api_v1_resume_versions_page_get: {
+        parameters: {
+            query: {
+                resume_id: number;
+                limit?: number;
+                cursor?: string | null;
+                approval_state?: string | null;
+                current_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeVersionPageResponse"];
                 };
             };
             /** @description Validation Error */

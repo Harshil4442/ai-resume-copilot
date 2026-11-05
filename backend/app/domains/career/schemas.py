@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from ...schemas import ResumePageResponse
+
 OpportunityStage = Literal[
     "saved",
     "evaluating",
@@ -366,3 +368,157 @@ class OpportunityExportResponse(BaseModel):
     opportunity: OpportunityDetailResponse
     latest_match: OpportunityMatchResponse | None
     evidence_items: list[EvidenceResponse]
+
+
+# Browsing metadata is deliberately separate from review/approval bodies.
+WorkspaceTab = Literal["overview", "resume", "learning", "interview", "outcome", "activity"]
+WorkspaceCollection = Literal["activity", "contacts", "reminders", "evidence", "resume_versions"]
+
+
+class OpportunityHeader(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    resume_id: int | None
+    latest_match_id: int | None
+    latest_analysis_run_id: str | None
+    title: str
+    company: str
+    location: str
+    source: str
+    source_url: str | None
+    stage: OpportunityStage
+    priority: OpportunityPriority
+    compensation: str | None
+    deadline_at: datetime | None
+    next_action: str | None
+    outcome: str | None
+    archived_at: datetime | None
+    outcome_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class OpportunityBody(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_description: str
+    job_snapshot: dict[str, Any]
+    notes: str
+    outcome_notes: str | None
+
+
+class ActivityMetadata(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    opportunity_id: str
+    event_type: str
+    from_stage: str | None
+    to_stage: str | None
+    source: str
+    resume_version_id: str | None
+    occurred_at: datetime
+    recorded_at: datetime
+
+
+class ContactMetadata(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    opportunity_id: str
+    name: str
+    role: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EvidenceMetadata(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    resume_id: int | None
+    category: str
+    title: str
+    approval_state: str
+    provenance: str
+    confidence: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResumeVersionMetadata(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    resume_id: int
+    opportunity_id: str | None
+    version_number: int
+    label: str
+    approval_state: str
+    submitted_at: datetime | None
+    created_at: datetime
+
+
+class WorkspacePage[Metadata](BaseModel):
+    items: list[Metadata]
+    next_cursor: str | None
+
+
+class WorkspacePages(BaseModel):
+    resume_versions: WorkspacePage[ResumeVersionMetadata]
+    activity: WorkspacePage[ActivityMetadata] | None = None
+    contacts: WorkspacePage[ContactMetadata] | None = None
+    reminders: WorkspacePage[ReminderResponse] | None = None
+    evidence: WorkspacePage[EvidenceMetadata] | None = None
+
+
+class WorkspaceResponse(BaseModel):
+    resumes: ResumePageResponse
+    match: OpportunityMatchResponse | None
+    match_source_state: Literal["none", "current", "different_resume", "unavailable"]
+    opportunity: OpportunityHeader
+    pages: WorkspacePages
+    submitted_resume_version_id: str | None
+    submitted_resume_version: ResumeVersionMetadata | None
+    selected_resume_version: ResumeVersionMetadata | None
+    approved_evidence_count: int | None
+
+
+WorkspacePageResponse = (
+    WorkspacePage[ActivityMetadata] | WorkspacePage[ContactMetadata]
+    | WorkspacePage[ReminderResponse] | WorkspacePage[EvidenceMetadata]
+    | WorkspacePage[ResumeVersionMetadata]
+)
+
+
+class EvidenceTranscriptionReview(BaseModel):
+    resume_id: int
+    filename: str
+    source_format: str
+    source_sha256: str
+    assessment_fingerprint: str
+    status: Literal["not_required", "needs_review", "reviewed", "editable_source_required"]
+    section: TranscriptionSectionReview | None
+
+
+class WorkspaceEvidenceDetail(BaseModel):
+    evidence: EvidenceResponse
+    transcription: EvidenceTranscriptionReview | None
+    transcription_unavailable: bool = False
+
+
+WorkspaceItemResponse = (
+    ApplicationEventResponse | ContactResponse | ReminderResponse
+    | WorkspaceEvidenceDetail | ResumeVersionResponse
+)
+
+
+class ResumeVersionOption(ResumeVersionMetadata):
+    source_preserving_edits: bool
+
+
+class ResumeVersionPageResponse(BaseModel):
+    items: list[ResumeVersionOption]
+    next_cursor: str | None
+    selected_version: ResumeVersionOption | None
