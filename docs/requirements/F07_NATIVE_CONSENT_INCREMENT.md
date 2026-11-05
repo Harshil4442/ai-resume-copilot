@@ -203,6 +203,27 @@ They do not initialize application ORM, database setup or notification senders.
 Existing funding imports re-export the same classes and validator; validation,
 funding amounts, outcome acknowledgment and JSON wire values remain unchanged.
 
+## Application and historical qualification
+
+The new application has a separate Source27 contract. It binds the 309 application
+files, the additive notification API, migration, default-off image, consent
+commands, unsubscribe purpose and release checks. Its application/operator source
+identity explicitly grants no native document-processing or commercial authority.
+Existing producer identities and historical quality results retain their original
+meaning; they cannot qualify the new application by being renamed.
+
+The updated CI workflow retains historical checks against the exact previously
+qualified schema26 source and adds mandatory current schema27 compatibility and
+protocol checks. Current PostgreSQL tests use the prepared Linux CI database;
+missing prerequisites fail instead of silently skipping. The protocol checks
+include actual local Firestore emulator transactions. Separate current/prior
+application processes must also demonstrate compatible preserved SQL data.
+
+These runners and source guards are local implementation. Owned fixture tests and
+emulator results do not constitute an exact-source CI result. The historical-source
+runner and current full-source qualification still require a genuine CI run;
+no previous source's passing run can be reused for this branch.
+
 ## Local evidence and remaining release work
 
 Focused source tests cover real owned PostgreSQL locking/schema/privacy behavior,

@@ -29,6 +29,7 @@ from sqlalchemy import text  # noqa: E402
 from scripts import notification_schema27_contract as contract  # noqa: E402
 from scripts import notification_schema27_step as step  # noqa: E402
 from scripts import schema26_app_successor as successor  # noqa: E402
+from scripts import schema27_app_release_contract as application27  # noqa: E402
 
 KIND = "hirewiz_schema27_native_additive_v1"
 MARKER = "schema27-migration"
@@ -45,6 +46,8 @@ class Source27BridgeBoundary(app26.Source26Boundary):
     """Exact reviewed27 source, genuine unchanged image/Build/CI provenance."""
 
     def verify_source_image(self, *, release, image_digest, build_id, ci_run_id):
+        need(Path(application27.__file__).resolve() == ROOT / "backend/scripts/schema27_app_release_contract.py",
+             "application_contract_origin")
         tracked = rolling.release.source_guard.checked_files(self.root, release)
         need(rolling.release.source_guard.migration_chain(
             self.root, tracked, allow_literal_sql=True
@@ -54,6 +57,26 @@ class Source27BridgeBoundary(app26.Source26Boundary):
         need(dockerfile.is_file() and not dockerfile.is_symlink()
              and hashlib.sha256(dockerfile.read_bytes()).hexdigest() == BRIDGE_DOCKERFILE_SHA256,
              "baked_off_image_source_changed")
+        # This NEW explicit application/operator role invokes the27 family
+        # fingerprint. It is never a retained producer or native-QA receipt.
+        from evaluation.native_acquisition_v2 import qualification
+
+        need(Path(qualification.__file__).resolve() == ROOT / "backend/evaluation/native_acquisition_v2/qualification.py",
+             "application_profile_origin")
+        identity = qualification.current_application_identity(self.root, family=application27.CONTRACT)
+        source = identity.get("application_source", {})
+        need(identity.get("family") == application27.CONTRACT
+             and identity.get("role") == source.get("role") == "current_application_operator_source"
+             and source.get("family") == application27.CONTRACT and source.get("release") == release
+             and source.get("app_sha256") == application27.CANDIDATE_APP_SHA256
+             and type(source.get("app_files")) is int and source["app_files"] == application27.CANDIDATE_APP_FILES
+             and type(source.get("qualification_sha256")) is str
+             and rolling.HASH.fullmatch(source["qualification_sha256"])
+             and all(value.get("source_only") is True and all(value.get(key) is False for key in
+                 ("native_runner_eligible", "retained_producer_proof", "processing_authorized", "native_approval"))
+                 for value in (identity, source))
+             and identity.get("authorizes_retail") is False, "current_application_source_role")
+        application27.verify_native_ci(self, ci_run_id)
         self._verify_source_image_provenance(
             release=release, image_digest=image_digest, build_id=build_id, ci_run_id=ci_run_id
         )

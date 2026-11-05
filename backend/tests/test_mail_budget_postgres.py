@@ -1,7 +1,8 @@
 """Owned local PG17 admission races; no provider, live account or native authority.
 
-Opt in with HIREWIZ_MAIL_BUDGET_TEST_ROOT pointing to a private owned directory.
-Only a fresh cluster and two canonical ledger-related fixture tables are used.
+Local use opts in with HIREWIZ_MAIL_BUDGET_TEST_ROOT and owns a fresh cluster.
+Mandatory GitHub CI uses only its exact already-prepared loopback PostgreSQL17;
+missing prerequisites refuse, never skip or discover a provider database.
 """
 from __future__ import annotations
 
@@ -24,10 +25,34 @@ from app.domains.notifications import mail_budget as budget
 from app.models import AdminAuditEvent
 
 NOW = datetime(2026, 10, 31, 6, tzinfo=UTC)
+CI_POSTGRES_URL = "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test"
+
+
+def prepared_ci_postgres_url(environment):
+    """Only the already prepared disposable CI service; never discover a target."""
+    if environment.get("CI") != "true" or environment.get("GITHUB_ACTIONS") != "true":
+        raise ValueError("Owned GitHub CI PostgreSQL context is required")
+    if environment.get("HIREWIZ_TEST_POSTGRES_URL") != CI_POSTGRES_URL:
+        raise ValueError("The exact prepared CI PostgreSQL URL is required")
+    if environment.get("HIREWIZ_MAIL_BUDGET_TEST_ROOT"):
+        raise ValueError("CI cannot substitute a local PostgreSQL cluster")
+    return CI_POSTGRES_URL
 
 
 @pytest.fixture(scope="module")
 def owned_pg_url():
+    if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+        configured_ci = prepared_ci_postgres_url(os.environ)
+        engine = create_engine(configured_ci, hide_parameters=True)
+        try:
+            with engine.connect() as connection:
+                assert int(connection.scalar(text("SHOW server_version_num"))) // 10000 == 17
+                assert connection.scalar(text("SELECT current_database()")) == "hirewiz_admission_test"
+                assert connection.scalar(text("SELECT session_user")) == "hirewiz"
+            yield configured_ci
+        finally:
+            engine.dispose()
+        return
     configured = os.getenv("HIREWIZ_MAIL_BUDGET_TEST_ROOT")
     if not configured:
         pytest.skip("Set HIREWIZ_MAIL_BUDGET_TEST_ROOT for owned local PostgreSQL17 admission tests")

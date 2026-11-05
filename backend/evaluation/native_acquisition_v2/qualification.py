@@ -49,11 +49,19 @@ LITERAL_INPUTS = {
     "backend/scripts/schema25_app_release_contract_v3.py": ("CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
         "COMPATIBILITY_STEP", "PROTOCOL_STEP", "RETAINED_STEP"),
 }
+# These are current APPLICATION/operator inputs, never literal_image_inputs or
+# a reason to reinterpret the retained producer's fixed runtime/source receipt.
+APPLICATION_CONTRACTS = {
+    "hirewiz_schema26_app_rolling_v3": ("backend/scripts/schema25_app_release_contract_v3.py",
+        "infra/gcp/schema26_app_rolling_v3.py"),
+    "hirewiz_schema27_app_v1": ("backend/scripts/schema27_app_release_contract.py",
+        "infra/gcp/schema27_native_migration.py"),
+}
 ENTRY = PREFIX + "job.py"
 VERSION = "held-out-native-source-v2"
 MAX_SOURCE = 512 * 1024
 PORT_PATH = "backend/scripts/qualify_native_quality_acquisition.py"
-PORT_SHA256 = 'dec897ceb6568c1e64b5e8a0d1fb7bd65d7588bc472626ab6ebc8a268863037e'
+PORT_SHA256 = '3b110242f96514b494247b83e8cc537eaf339d1afc96345ab7239151a94cf128'
 _PORTS: types.ModuleType | None = None
 _CHILD_ROOT: Path | None = None
 
@@ -406,6 +414,57 @@ def source_identity(root: Path) -> dict[str, Any]:
         "entry_sha256": package[ENTRY]}
 
 
+def current_application_identity(root: Path, *, family: str) -> dict[str, Any]:
+    """Source-bound current application/operator role, never native-runner proof.
+
+    The retained producer's engine, bridge, literal_image_inputs and runtime
+    dependency calculation remain unchanged. A future current producer requires
+    its own versioned entry, real source/CI/Build and native QA qualification.
+    """
+    need(type(family) is str and family in APPLICATION_CONTRACTS, "application_family")
+    need(root.is_absolute() and root.resolve() == root, "application_root")
+    q = _ports()
+    source = q.current_application_source(root, family=family)
+    need(source["role"] == "current_application_operator_source" and source["family"] == family
+         and all(source[name] is False for name in ("native_runner_eligible", "retained_producer_proof",
+             "processing_authorized", "native_approval")) and source["source_only"] is True,
+         "application_role_required")
+    head = source["release"]
+    contract, observer = APPLICATION_CONTRACTS[family]
+    inputs = {PORT_PATH: (("CURRENT_APPLICATION_FAMILY", "CURRENT_APPLICATION_APP_SHA256",
+                         "CURRENT_APPLICATION_APP_FILES") if family == "hirewiz_schema27_app_v1" else ("APP_SHA256",)),
+        contract: ("CONTRACT", "CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
+                   "COMPATIBILITY_STEP", "PROTOCOL_STEP", "RETAINED_STEP")}
+    literals = {}
+    for name, required in inputs.items():
+        values = {}
+        for node in ast.parse(_committed(root, name, head, q)).body:
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in required:
+                        need(target.id not in values, "duplicate_application_literal")
+                        values[target.id] = ast.literal_eval(node.value)
+        need(set(values) == set(required), "missing_application_literal")
+        literals[name] = values
+    app = literals[contract]
+    need(app["CONTRACT"] == family and app["CANDIDATE_APP_SHA256"] == source["app_sha256"]
+         and app["CANDIDATE_APP_FILES"] == source["app_files"], "application_literal_changed")
+    if family == "hirewiz_schema27_app_v1":
+        current = literals[PORT_PATH]
+        need((current["CURRENT_APPLICATION_FAMILY"], current["CURRENT_APPLICATION_APP_SHA256"],
+              current["CURRENT_APPLICATION_APP_FILES"]) == (family, source["app_sha256"], source["app_files"]),
+             "application_port_literal_changed")
+    controller = _imports(root, (PORT_PATH, contract, observer), head, q)
+    need(q.git(root, "rev-parse", "HEAD").decode().strip() == head
+         and q.current_application_source(root, family=family) == source, "application_source_changed")
+    body = {"schema_version": "current-application-operator-source-v1", "role": source["role"],
+        "family": family, "application_source": source, "controller_dependencies": controller,
+        "literal_application_inputs": literals, "native_runner_eligible": False,
+        "retained_producer_proof": False, "source_only": True, "native_approval": False,
+        "processing_authorized": False, "authorizes_retail": False, "provider_calls": 0}
+    return {**body, "application_operator_sha256": digest(body)}
+
+
 def _runtime_modules(closure: dict[str, str]) -> None:
     for path in PACKAGE_PATHS:
         module_name = path.removeprefix("backend/").removesuffix(".py").replace("/", ".")
@@ -525,10 +584,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--source-child", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--application-family", choices=tuple(APPLICATION_CONTRACTS),
+        help="Current application/operator source only; no native producer or QA qualification")
     args = parser.parse_args(argv)
     try:
+        need(not (args.source_child and args.application_family), "application_role_conflict")
         if args.source_child:
             result = _source_child(args.root)
+        elif args.application_family:
+            need(args.root == ROOT, "application_controller_root")
+            result = current_application_identity(ROOT, family=args.application_family)
         else:
             need(args.root == ROOT, "controller_root")
             result = {**source_identity(ROOT), "source_only": True, "provider_calls": 0,

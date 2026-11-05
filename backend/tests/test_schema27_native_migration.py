@@ -69,6 +69,8 @@ def test_new_bridge_source_never_accepts_old_or_unknown_chain(monkeypatch, tmp_p
 
 
 def test_exact_bridge_chain_requires_pinned_baked_off_image_then_original_provenance(monkeypatch, tmp_path):
+    from evaluation.native_acquisition_v2 import qualification
+
     source = m.Source27BridgeBoundary(tmp_path)
     dockerfile = ROOT / "Dockerfile"
     assert hashlib.sha256(dockerfile.read_bytes()).hexdigest() == m.BRIDGE_DOCKERFILE_SHA256
@@ -78,14 +80,26 @@ def test_exact_bridge_chain_requires_pinned_baked_off_image_then_original_proven
                         lambda *_a, **_k: (*m.app26.initial.CHAIN, m.contract.BEFORE, m.contract.SCHEMA))
     checked = []
     monkeypatch.setattr(m.contract, "verify_source", lambda root: checked.append(root))
+    current = {"role": "current_application_operator_source", "family": m.application27.CONTRACT,
+               "release": "a" * 40, "qualification_sha256": "f" * 64,
+               "app_sha256": m.application27.CANDIDATE_APP_SHA256,
+               "app_files": m.application27.CANDIDATE_APP_FILES, "source_only": True,
+               "native_runner_eligible": False, "retained_producer_proof": False,
+               "processing_authorized": False, "native_approval": False}
+    def role(root, *, family):
+        checked.append(("current_application", root, family))
+        return {**current, "application_source": current, "authorizes_retail": False}
+    monkeypatch.setattr(qualification, "current_application_identity", role)
+    monkeypatch.setattr(m.application27, "verify_native_ci", lambda _observer, run: checked.append(("current_ci", run)))
     source._verify_source_image_provenance = lambda **kwargs: checked.append(kwargs)
     args = dict(release="a" * 40, image_digest="sha256:" + "b" * 64, build_id="c", ci_run_id=1)
     source.verify_source_image(**args)
-    assert checked == [tmp_path, args]
+    expected = [tmp_path, ("current_application", tmp_path, m.application27.CONTRACT), ("current_ci", 1), args]
+    assert checked == expected
     (tmp_path / "Dockerfile").write_bytes(dockerfile.read_bytes() + b"\nENV NOTIFICATION_DIGESTS_ENABLED=true\n")
     with pytest.raises(m.rolling.RollingDenied, match="baked_off_image_source_changed"):
         source.verify_source_image(**args)
-    assert len(checked) == 3  # source checked again; provenance never reached
+    assert checked == [*expected, tmp_path]  # source checked again; new role/CI/provenance never reached
 
 
 def test_live_recheck_uses_metadata_health_not_old_schema26_database(prepared):
