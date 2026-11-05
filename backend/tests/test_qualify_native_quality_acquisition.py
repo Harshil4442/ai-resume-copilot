@@ -924,7 +924,7 @@ def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
 
     value = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())
     baseline = q._registry_value(q._registry_snapshot(ROOT))
-    assert value["sources"][:5] == baseline["sources"] and 6 <= len(value["sources"]) <= 8
+    assert value["sources"][:5] == baseline["sources"] and 6 <= len(value["sources"]) <= 32
     record = value["sources"][5]
     assert record == {"release": "c6a03af0636c7e9815159f807c9b126336d03233",
         "image_digest": "sha256:2ebc717174904f6becc3309aedc5f487a47e31b7a5c60e4fc34b3494f6f8acb1",
@@ -932,6 +932,12 @@ def test_registered_c6_tuple_is_append_only_actual_data_not_runner_source():
     pin = applications.Source(**record)
     pin.validate()
     q.git(ROOT, "merge-base", "--is-ancestor", record["release"], "HEAD")
+    pagination_source = {"release": "01b80b130467ef7acb661805f785b00a56306174",
+        "image_digest": "sha256:a283b02b73c50762f3c5ac8aa26d3becc3769ec2a3c781942412960751c099dd",
+        "build_id": "711a21d5-bbbe-4692-8818-253d06a3315f", "ci_run_id": 41930847703}
+    assert pagination_source in value["sources"]
+    applications.Source(**pagination_source).validate()
+    q.git(ROOT, "merge-base", "--is-ancestor", pagination_source["release"], "HEAD")
     assert q.operator_data_hashes(ROOT)[q.OPERATOR_REGISTRY_PATH] != q.REGISTRY_RUNNER_SHA256
 
 
