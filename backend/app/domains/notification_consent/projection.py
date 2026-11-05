@@ -18,8 +18,9 @@ from ..candidate_accounts.service import revision_from_row
 from ..employer.admissions import lock_application_set
 from ..recovery.contracts import fingerprint
 from ..recovery.gcp_partitioned_contracts import DigestConsentHead
-from ..recovery.store import GuardDenied
+from ..recovery.store import GuardDenied, GuardUnavailable
 from .models import NotificationPreference
+from .schema_compat import FAILURE, projection_available
 
 
 def _owner_id(value: int) -> None:
@@ -129,6 +130,8 @@ def apply_projection(
     ):
         raise GuardDenied("Exact captured revision and original native digest head are required")
     _owner_id(revision.candidate_id)
+    if not projection_available(db):
+        raise GuardUnavailable(FAILURE)
     next_due = next_weekly_due(now)
     lock_application_set(db, revision.candidate_id)
     current, current_email = _snapshot_locked(db, revision.candidate_id)
@@ -186,6 +189,8 @@ def _utc(value: datetime | None) -> datetime | None:
 def export_preference(db: Session, user_id: int) -> dict | None:
     """Owner export of cache metadata only; never adopt it into native state."""
     _owner_id(user_id)
+    if not projection_available(db):
+        return None
     row = db.query(NotificationPreference).filter_by(user_id=user_id).one_or_none()
     if row is None:
         return None

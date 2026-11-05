@@ -35,6 +35,11 @@ def _enabled() -> None:
         raise GuardUnavailable("Digest native runtime is disabled")
 
 
+def require_digest_enabled() -> None:
+    """Cheap closed-feature preflight; no account, SDK or network construction."""
+    _enabled()
+
+
 class ConfiguredDigestNative:
     def __init__(self, accounts: ConfiguredCandidateAccounts | None = None):
         _enabled()

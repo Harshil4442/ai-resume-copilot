@@ -22,8 +22,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The db8 application is promoted on schema26 and its three original services are healthy. Original schedules and coordinator restoration passed the joined final read and own narrow IAM cleanup. Complete owner review/cancel/revoke acceptance, representative workload measurements and invoice allocation remain pending.",
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
+      "local_result": "The db8 application is last verified on schema26 with its three original services and restored schedules/coordinator. The owner original-file review, cancellation before Fill and exact-device revocation portion is now verified; representative workload measurements, broader acceptance and invoice allocation remain pending.",
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00"
     },
     {
       "number": 2,
@@ -91,8 +91,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "The previously recorded scanner proof remains historical evidence. Paid native document QA (80 documents across nine jobs) is on HOLD; broader native/model quality qualification and independent human acceptance remain pending. Source, inert and operating repairs do not qualify optimized AI; optimized AI stays closed."
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
+      "local_result": "The stored scanner verification expired on 2026-11-05 at 06:24:10 UTC. Scanner maintenance and paid native document QA (80 documents across nine jobs) remain on HOLD. Broader native/model quality qualification and independent human acceptance remain pending; local source checks do not qualify optimized AI, which stays closed."
     },
     {
       "number": 5,
@@ -114,8 +114,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "The shared native metadata admission remains 40/minute. Repaired production login returned HTTP 200 and explicit local companion recovery verified the retained identity. Original-file review/cancel and exact-device revocation remain pending because browser tool control is blocked. Capacity, representative responsive workloads and invoice-backed forecasts remain unqualified."
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
+      "local_result": "The shared native metadata admission remains 40/minute. The owner reviewed/downloaded the original file, cancelled before Fill and revoked the exact companion device; a read-only exact-ID SQL check confirmed the recorded cancellation/revocation state and no linked fill/submission work. This does not qualify real Fill/upload/submit, representative capacity or broad responsive workloads. Invoice-backed forecasts remain pending."
     },
     {
       "number": 6,
@@ -165,8 +165,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The db8 immutable application is promoted and healthy, and the PR97 frontend login repair is deployed. Reviewed companion 0.8.9 succeeded locally with the same retained identity; PR99 head 554 is a preview with CI last observed in progress, while public companion 0.8.8 remains unchanged. Paid canary/commercial acceptance, optimized AI, wallet conversion, new payments and final submission remain closed.",
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
+      "local_result": "Last verified public www frontend source751319 includes companion0.8.9; db8 API/workers remain on schema26. The owner review/download/cancel-before-Fill/exact-device revoke portion passed. F07 notifications and schema-transition fixes are local, default off and not release-qualified. GitHub CI is blocked by the account billing lock, and scanner maintenance remains held. Controlled successor promotion, paid canary/commercial acceptance, optimized AI, wallet conversion, new payments and final submission remain pending.",
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00"
     },
     {
       "number": 8,

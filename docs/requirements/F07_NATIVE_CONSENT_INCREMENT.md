@@ -11,6 +11,9 @@ The Profile page exposes an explicit weekly-email preference. No account is opte
 in automatically. The control reads the current native state and sends the exact
 expected generation with an explicit confirmation. An uncertain write requires a
 manual state refresh; the browser never repeats the mutation automatically.
+Disabled or malformed delivery flags refuse private preference requests before
+account authentication, SQL or SDK construction. Enabled routes still require the
+existing candidate authentication; public disable-only opt-out stays separate.
 
 An eligible digest includes at most five distinct updates to roles the owner
 already saved or obtained through a completed search. It does not perform another
@@ -69,6 +72,36 @@ backfill or default. The row stores account binding, native generation/hash,
 recipient hash, policy, enabled state and next check time. It is scheduling/cache
 metadata, never a send grant. A read of a retained native head cannot be projected
 as an original write acknowledgment.
+
+The compatible application must be qualified and promoted with optional mail off
+**before** the additive migration. The older production privacy implementation
+requires schema26 and cannot be treated as schema27-compatible. The bridge checks
+the exact26/27 marker and current namespace: only exact26 with no projection table
+may omit the cache during export/erasure. Exact27 requires its ordinary permanent,
+unshadowed table; unknown markers, table drift and missing successor tables refuse.
+There is no catch-and-skip fallback and no request repairs the schema.
+
+Preference reads/changes and delivery require the successor schema before any
+native consent mutation or send admission. A valid login-free opt-out can still
+disable an existing native consent after an exact26 SQL-only restoration loses
+the scheduling projection. Its original native acknowledgment is returned with
+`projection_current=false`; no table, consent or schedule is recreated. Existing
+privacy-erasure proofs and completion-audit versions remain unchanged across the
+bridge, and the canonical evidence-write fence is not weakened.
+
+The initial all-off SQL release unit observes the exact projection columns,
+constraints, index, FK triggers and runtime/observer permissions while preserving
+the protected schema26 catalog. Traditional inheritance, RLS, extra grants and an
+observer switching into the runtime writer role refuse. Its supplied-transaction
+step uses standard Alembic, bounded migration/FK locks, and grants only new-table
+runtime CRUD and observer SELECT. It restores the original schema permissions and
+checks retained table ACLs, evidence fences and financial invariants.
+
+This unit does not obtain credentials, attest deployed flags, commit, retry,
+reconcile an uncertain commit or promote services. An authenticated controller
+must still prove the bridge, exact source/CI/image, native configuration, resource
+and IAM state before using it. Initial all-off catalog evidence does not qualify
+future populated-wallet rollout or commercial activation.
 
 The orchestration captures SQL facts, releases owner/row locks for native IO, then
 reacquires the existing account-erasure owner fence before projecting an original
@@ -144,9 +177,20 @@ Local production build and mobile confirmation hydration passed under the actual
 strict CSP with mocked API traffic and no external requests. They do not establish
 production IAM, provider durability, live email delivery or load capacity.
 
+The connected local PostgreSQL/native-SDK tests additionally cover schema26
+refusing enable/delivery before a native write and actual schema27 consent followed
+by a SQL-only predecessor restoration: opt-out succeeds while delivery is paused,
+does not recreate the projection and refuses reuse of the consumed proof. These
+are owned synthetic restoration controls, not a production downgrade procedure.
+The frozen canonical decoder from the last-verified DB8 source accepts genuine
+earlier scoped records and refuses the valid new digest intent accepted by the
+current decoder. This records the compatibility boundary; rollback still needs
+its own full qualification.
+
 Before activation, the release still needs:
 
-- Schema27 catalogue/role/compatibility and controlled migration/recovery support.
+- Authenticated schema27 bridge/migration controller and uncertain-commit recovery,
+  completing the caller-owned SQL catalog/role/transaction unit.
 - Matched source/profile/OpenAPI qualification and genuine exact-source CI.
 - Full required regressions and rollback/old-reader denial for the new native rows.
 - Fresh scanner verification and the already-required document/quality gates.

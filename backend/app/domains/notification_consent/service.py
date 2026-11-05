@@ -17,8 +17,10 @@ from ..common import utcnow
 from ..notifications.native import ConfiguredDigestNative
 from ..recovery.gcp_partitioned_contracts import DigestConsentHead
 from ..recovery.password_reauth import CandidateWebSession
+from ..recovery.store import GuardUnavailable
 from .models import NotificationPreference
 from .projection import apply_projection, projection_matches, snapshot_owner
+from .schema_compat import projection_available
 from .unsubscribe import UnsubscribeTokens
 
 DIGEST_POLICY_VERSION = "weekly-digest-v1"
@@ -43,6 +45,8 @@ def _view(head: DigestConsentHead | None, projection: NotificationPreference | N
 
 def read_preferences(db: Session, user_id: int) -> dict:
     native = ConfiguredDigestNative()  # Default-off refusal before new-schema SQL.
+    if not projection_available(db):
+        raise GuardUnavailable("Notification schema is not ready")
     revision, email = snapshot_owner(db, user_id)
     db.rollback()
     head = native.read_current(revision, email_digest(email))
@@ -60,6 +64,8 @@ def read_preferences(db: Session, user_id: int) -> dict:
 def change_preferences(db: Session, context: CandidateWebSession, *, expected_generation: int,
                        enabled: bool) -> dict:
     native = ConfiguredDigestNative()
+    if not projection_available(db):
+        raise GuardUnavailable("Notification schema is not ready")
     revision, email = snapshot_owner(db, context.candidate_id)
     db.rollback()
     head = native.change(context, revision, expected_generation=expected_generation,
@@ -77,12 +83,18 @@ def change_preferences(db: Session, context: CandidateWebSession, *, expected_ge
 def unsubscribe(db: Session, token: str) -> dict:
     proof = UnsubscribeTokens(JWT_SECRET.encode("utf-8")).verify(token, now_ms=time.time_ns() // 1_000_000)
     native = ConfiguredDigestNative.for_unsubscribe()
+    has_projection = projection_available(db)
     revision, email = snapshot_owner(db, proof.identity.candidate_id)
     db.rollback()
     if email_digest(email) != proof.email_sha256:
         from ..recovery.store import GuardDenied
         raise GuardDenied("Notification recipient changed")
     head = native.disable_verified_email(proof, revision)
+    if not has_projection:
+        # An exact schema26 SQL restoration may lose the scheduling cache while
+        # native consent survives. Its original disable ACK still stops mail;
+        # never recreate a table or adopt a retained head to acknowledge it.
+        return _view(head, None)
     try:
         projection = apply_projection(db, revision, email, head, now=utcnow())
         result = _view(head, projection)

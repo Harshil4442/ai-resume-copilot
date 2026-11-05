@@ -28,6 +28,7 @@ from ..notification_consent.projection import (
     projection_matches,
     snapshot_owner,
 )
+from ..notification_consent.schema_compat import projection_available
 from ..notification_consent.service import email_digest, unsubscribe_token
 from ..recovery.store import GuardDenied, GuardUnavailable
 from .digest_content import build_digest_content
@@ -312,6 +313,8 @@ def deliver_pending_digests(db: Session, *, limit: int = MAX_OWNERS) -> DigestDe
         return DigestDeliverySummary(False)
     if type(limit) is not int or not 1 <= limit <= MAX_OWNERS:
         raise ValueError("Bounded digest batch required")
+    if not projection_available(db):
+        raise GuardUnavailable("Notification schema is not ready")
     now = utcnow()
     # An interrupted callback is unknown; no SQL claim restoration can replay it.
     db.query(NotificationOutbox).filter(NotificationOutbox.notification_type == TYPE,

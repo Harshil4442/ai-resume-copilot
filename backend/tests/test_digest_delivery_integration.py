@@ -32,6 +32,7 @@ from app.domains.notification_consent.models import NotificationPreference
 from app.domains.notifications import digest_delivery as delivery
 from app.domains.notifications import mail_budget, provider
 from app.domains.recovery.gcp_scoped_census import validate_scoped_rows
+from app.domains.recovery.store import GuardUnavailable
 from app.models import AdminAuditEvent, NotificationOutbox, Opportunity, User
 from app.routers import notification_preferences
 from app.security import create_access_token
@@ -61,6 +62,10 @@ def pipeline(owned_pg_url, configured, monkeypatch):
     Base.metadata.create_all(c.source)
     with c.source.begin() as connection:
         install_evidence_fence(connection, schema)
+        # This fixture exercises the runtime schema boundary, not the complete
+        # release catalogue/role qualification performed by migration tests.
+        connection.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
+        connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('20261105_0027')")
     factory = sessionmaker(c.source, expire_on_commit=False, autoflush=False)
     monkeypatch.setattr(database, "engine", c.source)
     monkeypatch.setattr(database, "SessionLocal", factory)
@@ -212,6 +217,54 @@ def test_login_free_unsubscribe_still_works_while_sending_paused(pipeline, monke
     with c.factory() as db:
         assert delivery._deliver(db, identity) == delivery.CANCELLED
     assert c.provider_calls == []
+
+
+def restore_schema26_projection_absence(c):
+    # SQL-only predecessor restoration is deliberately independent of retained
+    # native history. This is not an authorized production downgrade operation.
+    with c.source.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE notification_preferences")
+        connection.exec_driver_sql("UPDATE alembic_version SET version_num='20261031_0026'")
+
+
+def test_schema26_bridge_cannot_create_native_consent_or_admit_delivery(pipeline):
+    c = pipeline
+    restore_schema26_projection_absence(c)
+    original = copy.deepcopy(c.native.values())
+    response = c.client.put("/api/v1/notifications/preferences", json={"expected_generation": 0,
+        "weekly_digest": True, "explicit_confirmation": True})
+    assert response.status_code == 503
+    with c.factory() as db:
+        with pytest.raises(GuardUnavailable, match="schema is not ready"):
+            delivery.deliver_pending_digests(db)
+        db.rollback()
+        assert db.query(NotificationOutbox).count() == 0
+        assert db.query(AdminAuditEvent).filter_by(action=mail_budget.RESERVATION).count() == 0
+    assert c.native.values() == original and c.provider_calls == []
+
+
+def test_schema26_restoration_keeps_native_unsubscribe_available_without_projection(pipeline, monkeypatch):
+    c = pipeline
+    opt_in(c)
+    saved_job(c)
+    identity, _ = queued(c)
+    with c.factory() as db:
+        row = db.get(NotificationOutbox, identity)
+        _, _, text_body = delivery._open(row, now=STAMP)
+        proof = text_body.split("#token=", 1)[1]
+    restore_schema26_projection_absence(c)
+    monkeypatch.setenv("NOTIFICATION_DIGESTS_ENABLED", "false")
+    monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "false")
+    response = c.client.post("/api/public/notifications/unsubscribe", headers={"Authorization": ""},
+                             json={"token": proof})
+    assert response.status_code == 200, response.text
+    assert response.json()["weekly_digest"] is False and response.json()["generation"] == 2
+    assert response.json()["projection_current"] is False
+    repeated = c.client.post("/api/public/notifications/unsubscribe", headers={"Authorization": ""},
+                             json={"token": proof})
+    assert repeated.status_code == 403
+    assert c.provider_calls == []
+    validate_scoped_rows(c.native.values())
 
 
 @pytest.mark.parametrize("field,value", [("recipient", "other@example.invalid"),

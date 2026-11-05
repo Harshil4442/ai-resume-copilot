@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..domains.candidate_accounts.access import context_from_claims
 from ..domains.notification_consent import service
+from ..domains.notifications.native import require_digest_enabled
 from ..domains.recovery.native_metadata_admission import MetadataAdmissionError
 from ..domains.recovery.store import GuardDenied, GuardUnavailable
 from ..models import User
@@ -71,7 +72,14 @@ def _failure(error, *, public=False):
                          headers={"Cache-Control": "private, no-store"})
 
 
-@router.get("/preferences", response_model=PreferenceResponse)
+def _preferences_enabled() -> None:
+    try:
+        require_digest_enabled()
+    except GuardUnavailable as error:
+        raise _failure(error) from None
+
+
+@router.get("/preferences", response_model=PreferenceResponse, dependencies=[Depends(_preferences_enabled)])
 @limiter.limit("10/minute")
 def preferences(request: Request, response: Response, current_user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
@@ -83,7 +91,7 @@ def preferences(request: Request, response: Response, current_user: User = Depen
         raise _failure(error) from None
 
 
-@router.put("/preferences", response_model=PreferenceResponse)
+@router.put("/preferences", response_model=PreferenceResponse, dependencies=[Depends(_preferences_enabled)])
 @limiter.limit("5/minute")
 def change(request: Request, response: Response, payload: PreferenceChange,
            current_user: User = Depends(get_current_user), token: str = Depends(oauth2_scheme),
