@@ -3,6 +3,7 @@
 import { AlertCircle, ArrowRight, CheckCircle2, FileText, FileUp, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -16,6 +17,7 @@ import { apiPatchJson } from "../../lib/api";
 import type { Opportunity, OpportunityDetail } from "../../lib/career";
 import { directResumeUploadEnabled, ResumeUploadCancelled, uploadResumeFile, usesDirectResumeUpload, validateResumeFile, type UploadProgress } from "../../lib/resumeUpload";
 import type { ResumeParseResponse } from "../../lib/types";
+import { resetWorkspaceAfterSourceConnection } from "../../lib/workspacePages";
 
 function ResumeUploadContent() {
   const router = useRouter();
@@ -23,6 +25,8 @@ function ResumeUploadContent() {
   const requestedOpportunity = searchParams.get("opportunity");
   const opportunityId = requestedOpportunity && /^opp_[A-Za-z0-9_-]{1,60}$/.test(requestedOpportunity) ? requestedOpportunity : null;
   const queryClient = useQueryClient();
+  const { data: session, status: sessionStatus } = useSession();
+  const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ResumeParseResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +117,7 @@ function ResumeUploadContent() {
     setConnecting(true);
     try {
       const updated = await apiPatchJson<Opportunity>(`/v1/opportunities/${encodeURIComponent(opportunityId)}`, { resume_id: data.resume_id });
+      await resetWorkspaceAfterSourceConnection(queryClient, ownerKey, opportunityId, { resumeId: data.resume_id, title: updated.title });
       await queryClient.cancelQueries({ queryKey: ["opportunity", opportunityId] });
       queryClient.setQueryData<OpportunityDetail>(["opportunity", opportunityId], (cached) => cached ? { ...cached, ...updated } : undefined);
       await Promise.all([

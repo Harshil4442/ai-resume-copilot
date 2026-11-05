@@ -337,13 +337,29 @@ def opportunity_export(
     )
 
 
+def _match_refresh_required() -> None:
+    raise HTTPException(409, detail={"code": "match_refresh_required", "message":
+        "This saved match is unavailable for the selected resume. Refresh the match for this resume before using it."})
+
+
 def latest_opportunity_match(
     db: Session,
     user_id: int,
     opportunity_id: str,
+    *,
+    resume_id: int | None = None,
 ) -> schemas.OpportunityMatchResponse:
-    opportunity = get_opportunity(db, user_id, opportunity_id)
+    # The optional current-source view never changes the historical/export view.
+    # This saved-match read needs only the owned link, not the full job body.
+    opportunity = db.query(models.Opportunity.id, models.Opportunity.latest_match_id, models.Opportunity.resume_id).filter(
+        models.Opportunity.user_id == user_id, models.Opportunity.id == opportunity_id).first()
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+    if resume_id is not None and opportunity.resume_id != resume_id:
+        _match_refresh_required()
     if not opportunity.latest_match_id:
+        if resume_id is not None:
+            _match_refresh_required()
         raise HTTPException(status_code=404, detail="This opportunity has no match analysis yet")
     match = (
         db.query(models.JobMatch)
@@ -354,7 +370,11 @@ def latest_opportunity_match(
         .first()
     )
     if not match:
+        if resume_id is not None:
+            _match_refresh_required()
         raise HTTPException(status_code=404, detail="Match analysis not found")
+    if resume_id is not None and match.resume_id != resume_id:
+        _match_refresh_required()
     analysis = (
         db.query(models.AnalysisRun)
         .filter(

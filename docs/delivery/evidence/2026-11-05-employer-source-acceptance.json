@@ -1,0 +1,394 @@
+{
+  "observed_at": "2026-11-05T17:54:00.414974+00:00",
+  "state": "PUBLIC_READ_ACCEPTANCE_AND_RETAINED_LOCAL_PG_PROOF_NOT_DEPLOYMENT",
+  "requirements": [
+    "E02"
+  ],
+  "implementation": {
+    "registry_scope": "Exactly 20 reviewed employer-origin sources: 9 Greenhouse, 10 Ashby and 1 SmartRecruiters. The registry permits discovery only. Source IDs below are registry-index acceptance IDs, not production SQL identifiers.",
+    "conditional_scope": "Live acceptance used baseline=None ordinary complete scans. It does not qualify conditional HTTP 304 reuse across all sources, cache publication or SQL source freshness."
+  },
+  "verification": {
+    "public_adapter_acceptance": {
+      "observed_from_utc": "2026-11-05T17:06:07.802028+00:00",
+      "observed_through_utc": "2026-11-05T17:08:10.530935+00:00",
+      "duration_seconds": 122.916,
+      "source_count": 20,
+      "platform_counts": {
+        "greenhouse": 9,
+        "smartrecruiters": 1,
+        "ashby": 10
+      },
+      "complete_source_count": 20,
+      "failed_source_count": 0,
+      "normalized_postings_count": 1375,
+      "physical_get_count": 145,
+      "http_status_counts": {
+        "200": 145
+      },
+      "all_response_streams_complete": true,
+      "physical_http_retries": 0,
+      "smartrecruiters": "Freshworks returned 122 postings: 122 detail GETs plus 2 listing pages read twice for stock end-of-scan completeness validation; 126 GETs total. The other 19 sources used 1 GET each. The two repeated page hashes are required completeness reads, not retries.",
+      "sources": [
+        {
+          "duration_seconds": 1.093,
+          "metadata_sha256": "2d723ec7e72a54a389bdb4c4762b292466ebe12c1dcd90aff9945e13a163043e",
+          "origin": "https://razorpay.com/careers/",
+          "platform": "greenhouse",
+          "postings_count": 26,
+          "postings_sha256": "1c22f60ee4eebee0e3d31c1d451203ff9df9201e7317e81d7ffef844d59c73f1",
+          "registry_index": 1,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:08.857681+00:00",
+          "source_id": "1:greenhouse:razorpaysoftwareprivatelimited",
+          "started_at_utc": "2026-11-05T17:06:07.764210+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 122.656,
+          "metadata_sha256": "169133834e3298e6c270bce8df702f6d5f4ba5a0959fcae924d02279253a3a76",
+          "origin": "https://www.freshworks.com/company/careers/",
+          "platform": "smartrecruiters",
+          "postings_count": 122,
+          "postings_sha256": "a852b45459d8e53a5c0415e05dbf9ebd843093d404131905886a25f3fab62b9f",
+          "registry_index": 2,
+          "request_count": 126,
+          "retrieved_at_utc": "2026-11-05T17:08:10.419890+00:00",
+          "source_id": "2:smartrecruiters:Freshworks",
+          "started_at_utc": "2026-11-05T17:06:07.764289+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.144,
+          "metadata_sha256": "80c520bcd8e8978b48157fff18d3a1dd488073b76573b4896828b7c9109dca4d",
+          "origin": "https://www.figma.com/careers/",
+          "platform": "greenhouse",
+          "postings_count": 143,
+          "postings_sha256": "03a39b59931cb3628b4782a31db51c304d4f3badde1ce347c503add254505372",
+          "registry_index": 3,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:08.908441+00:00",
+          "source_id": "3:greenhouse:figma",
+          "started_at_utc": "2026-11-05T17:06:07.764315+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.681,
+          "metadata_sha256": "54c1d6d8a68da96fc811ef5f4a3a88126353440d09dbe3a22e1464e983b815e8",
+          "origin": "https://supabase.com/careers",
+          "platform": "ashby",
+          "postings_count": 70,
+          "postings_sha256": "999eb1f9e309b68a0aabca31fc5ca3455ab3a59c76f702bf69735bec2e6132c0",
+          "registry_index": 4,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:09.696008+00:00",
+          "source_id": "4:ashby:supabase",
+          "started_at_utc": "2026-11-05T17:06:09.014580+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.301,
+          "metadata_sha256": "3f47de3ea4f31d6c0ce00dd0abd88ca2443778e7ec1e1f169ac12620222e5f0c",
+          "origin": "https://www.harness.io/company/jobs",
+          "platform": "greenhouse",
+          "postings_count": 66,
+          "postings_sha256": "5669a8c47887c93a5eb0c0b0ed2e4cc7c30394780917a85e38423352de2317ca",
+          "registry_index": 5,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:10.318150+00:00",
+          "source_id": "5:greenhouse:harnessinc",
+          "started_at_utc": "2026-11-05T17:06:09.016709+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 2.601,
+          "metadata_sha256": "7ac1cf6a4f22de137c3bedf85d56aeb0c9fb3c7fb8c1e42cc13f653707848e49",
+          "origin": "https://www.observe.ai/careers",
+          "platform": "greenhouse",
+          "postings_count": 12,
+          "postings_sha256": "de9bf044a5aa3349cd7f8ab6e60b486712c04cf4fbb67b896c1269eba15bb48f",
+          "registry_index": 6,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:12.436527+00:00",
+          "source_id": "6:greenhouse:observeai",
+          "started_at_utc": "2026-11-05T17:06:09.835750+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.509,
+          "metadata_sha256": "491139289b26749b8969b188deac221e9cb2ec6e230011f822250d2b4fdd4818",
+          "origin": "https://www.notion.com/careers",
+          "platform": "ashby",
+          "postings_count": 150,
+          "postings_sha256": "1d0697c55642b0c5129263bd5feeac75d4f6dc770185bad3e2a60e96d30aca3e",
+          "registry_index": 7,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:11.939007+00:00",
+          "source_id": "7:ashby:notion",
+          "started_at_utc": "2026-11-05T17:06:10.430068+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 2.948,
+          "metadata_sha256": "c82abca1cb37faaca13b313dcec2f795e52f37e9d37c0474383b34f5008c4025",
+          "origin": "https://mixpanel.com/jobs/",
+          "platform": "greenhouse",
+          "postings_count": 42,
+          "postings_sha256": "59aabc5fede44d2d33605af67325db3569af149dda5c8b93d92d855653de2070",
+          "registry_index": 8,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:15.000572+00:00",
+          "source_id": "8:greenhouse:mixpanel",
+          "started_at_utc": "2026-11-05T17:06:12.052775+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.107,
+          "metadata_sha256": "b44df2c2072b46b3b9b1ab5691e61c6c4fc32800f63078c9b791ba721a2ac16e",
+          "origin": "https://amplitude.com/careers",
+          "platform": "ashby",
+          "postings_count": 50,
+          "postings_sha256": "b24ca3839445cd33a2a532e53e331fb883edd35e73eab277dcac78720d402290",
+          "registry_index": 9,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:13.670532+00:00",
+          "source_id": "9:ashby:amplitude",
+          "started_at_utc": "2026-11-05T17:06:12.563533+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.193,
+          "metadata_sha256": "3bd657490f1f624930a0d9c1b08994190902b7e838fceea588c72861effce83e",
+          "origin": "https://vercel.com/careers",
+          "platform": "greenhouse",
+          "postings_count": 88,
+          "postings_sha256": "f11d11d41b9e60e8ae38a2233ec8fa9af2c7ea5e5e690f9e2a57d615944aa803",
+          "registry_index": 10,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:15.002596+00:00",
+          "source_id": "10:greenhouse:vercel",
+          "started_at_utc": "2026-11-05T17:06:13.809806+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.028,
+          "metadata_sha256": "988170e844a3f2db4c708d8318644f14b8950ac0a69231428e43a8ad77e17c28",
+          "origin": "https://commercetools.com/careers",
+          "platform": "greenhouse",
+          "postings_count": 35,
+          "postings_sha256": "110bc56968e0795243463b95cc59a3d2870f3f1a444f077e03cbf3700667f615",
+          "registry_index": 11,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:16.151922+00:00",
+          "source_id": "11:greenhouse:commercetools",
+          "started_at_utc": "2026-11-05T17:06:15.123369+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.677,
+          "metadata_sha256": "362f35d32c1ec8a0b3479b3ba04124bdfe8578ea28735aec464d50d02ccb1076",
+          "origin": "https://sentry.io/careers/",
+          "platform": "ashby",
+          "postings_count": 39,
+          "postings_sha256": "e6c4cc7a4dcb85d1c20c454469641098cdd49d36f858484a5b3c1e2aff4cddf6",
+          "registry_index": 12,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:15.829406+00:00",
+          "source_id": "12:ashby:sentry",
+          "started_at_utc": "2026-11-05T17:06:15.152210+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.502,
+          "metadata_sha256": "d1a4569c2dff0df944a8b690cbb3d2c32dfed6c938afcae60449074ee337db98",
+          "origin": "https://www.docker.com/career-openings/",
+          "platform": "ashby",
+          "postings_count": 51,
+          "postings_sha256": "b5b944a6c43d4077677b823c43451988096b2dde4216b7a1fbd5ff8829833ab1",
+          "registry_index": 13,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:16.476529+00:00",
+          "source_id": "13:ashby:docker",
+          "started_at_utc": "2026-11-05T17:06:15.974162+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 1.439,
+          "metadata_sha256": "66fbd4fd071903238cb7e7e825e67543e336b558e49fd02f73facf4334d61f30",
+          "origin": "https://linear.app/careers",
+          "platform": "ashby",
+          "postings_count": 31,
+          "postings_sha256": "c04a3aa03c2c1ef423c8640b2bc7a48ad9e1b4ab44bbc7465a7eb3c8c548d2cc",
+          "registry_index": 14,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:17.719558+00:00",
+          "source_id": "14:ashby:Linear",
+          "started_at_utc": "2026-11-05T17:06:16.280457+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.946,
+          "metadata_sha256": "f987efb678ac33778679ae00cf3421597d6942a55410556fe05fdd27e40f846a",
+          "origin": "https://redditinc.com/careers",
+          "platform": "greenhouse",
+          "postings_count": 165,
+          "postings_sha256": "77f36c12b262578f0e9faba013b095201ce6c1256456b6364e7b7daf04b29e16",
+          "registry_index": 15,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:17.535233+00:00",
+          "source_id": "15:greenhouse:reddit",
+          "started_at_utc": "2026-11-05T17:06:16.589382+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.753,
+          "metadata_sha256": "5d783a54b0a69426387ad1a4dc4d5972ad2e886c29b1935d90de745fbb5f821c",
+          "origin": "https://ramp.com/careers",
+          "platform": "ashby",
+          "postings_count": 171,
+          "postings_sha256": "9eeab8330bb8213793d8a09d77801330f006476b23c4b3af6aae3f32d8463738",
+          "registry_index": 16,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:18.432174+00:00",
+          "source_id": "16:ashby:ramp",
+          "started_at_utc": "2026-11-05T17:06:17.679528+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.552,
+          "metadata_sha256": "9a1cb1604e1ec78988af863a1fc31db47c75dbe8fa78ae216eb11818fb7d9566",
+          "origin": "https://sourcegraph.com/jobs",
+          "platform": "greenhouse",
+          "postings_count": 6,
+          "postings_sha256": "f20fc150617bd04e970e64d41640f5f089b040d2cbcee29dd4d363c0facb57a7",
+          "registry_index": 17,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:18.422953+00:00",
+          "source_id": "17:greenhouse:sourcegraph91",
+          "started_at_utc": "2026-11-05T17:06:17.870381+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.371,
+          "metadata_sha256": "6d326e3a930510182fe514a784251134cae8d463583395fbff4aa1a1df720cf2",
+          "origin": "https://freetrade.io/careers",
+          "platform": "ashby",
+          "postings_count": 3,
+          "postings_sha256": "d646624c349b002cd572016be4d4173ab5ec04289c1aac8f5aa3ea3ee93f69ad",
+          "registry_index": 18,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:18.914193+00:00",
+          "source_id": "18:ashby:freetrade",
+          "started_at_utc": "2026-11-05T17:06:18.543231+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.492,
+          "metadata_sha256": "2d006f6de41d14767f14b30444e7fe06443ba0fdf9e1cb7d98bc105547a89a13",
+          "origin": "https://www.pinecone.io/careers/",
+          "platform": "ashby",
+          "postings_count": 5,
+          "postings_sha256": "33a2c9642c52b7427e1e06442a2c81a24fdc47385b579bd82259cbdafaaffe53",
+          "registry_index": 19,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:19.061825+00:00",
+          "source_id": "19:ashby:pinecone",
+          "started_at_utc": "2026-11-05T17:06:18.570171+00:00",
+          "status": "complete"
+        },
+        {
+          "duration_seconds": 0.559,
+          "metadata_sha256": "b1e68adbf0df110a6d9699335e911632398510d93f68a03a3abbe0e2e9db938b",
+          "origin": "https://www.langchain.com/careers",
+          "platform": "ashby",
+          "postings_count": 100,
+          "postings_sha256": "88d5157cd4c1041e15bba4388318ff5fdfa7d1bb3804989e91fc2a09fca97ca9",
+          "registry_index": 20,
+          "request_count": 1,
+          "retrieved_at_utc": "2026-11-05T17:06:19.610066+00:00",
+          "source_id": "20:ashby:langchain",
+          "started_at_utc": "2026-11-05T17:06:19.051296+00:00",
+          "status": "complete"
+        }
+      ]
+    },
+    "retained_postgresql_races": {
+      "original_source_commit": "09fb8203fb5897eb733ba0305b69db85d84dec77",
+      "completed_at_utc": "2026-11-04T18:47:53.037311+00:00",
+      "database": "Disposable owned loopback PostgreSQL17.11; original cluster stopped and removed. No production database.",
+      "case_count": 4,
+      "cases": [
+        {
+          "class": "tests.test_employer_source_revalidation_postgres",
+          "name": "test_postgres_source_changes_during_http_cannot_commit_or_publish_old_snapshot[source-config]",
+          "seconds": "0.078",
+          "status": "passed"
+        },
+        {
+          "class": "tests.test_employer_source_revalidation_postgres",
+          "name": "test_postgres_source_changes_during_http_cannot_commit_or_publish_old_snapshot[posting-date]",
+          "seconds": "0.027",
+          "status": "passed"
+        },
+        {
+          "class": "tests.test_employer_source_revalidation_postgres",
+          "name": "test_postgres_source_changes_during_http_cannot_commit_or_publish_old_snapshot[lease-owner]",
+          "seconds": "0.024",
+          "status": "passed"
+        },
+        {
+          "class": "tests.test_employer_source_revalidation_postgres",
+          "name": "test_postgres_competing_refresh_observes_running_lease_without_another_get",
+          "seconds": "0.024",
+          "status": "passed"
+        }
+      ],
+      "test_sha256": "305f4af600d8d5ec36e001912bf645f9a006a09056c29c94695d96108e8938a6",
+      "junit_sha256": "2ba5453d5ff307b820f9cb05a3b3a42037502f1540bbe73b32366484531523e1",
+      "unchanged_source_readback": "17 finite production, test and lockfile hashes match the original local proof, including all 9 pipeline inputs. The User class is byte-identical despite additive changes elsewhere in the models file. RESULT, JUnit, source-manifest and import-origin integrity verified. No test rerun.",
+      "current_User_class_sha256": "b47b3647ce7dd811c9877c8727d295a5c9929330c72165678b99d41c07b4c99d"
+    },
+    "this_document_update": "Metadata and hash readback only; no tests, HTTP/provider/cloud/SQL/Redis/native actions repeated."
+  },
+  "source_files": {
+    "backend/app/domains/common.py": "ef2da11430971fe62e1709427603a38c7de2cd46794bb6271c00fed6c17d9082",
+    "backend/app/domains/employer/connectors.py": "180eb2d5902fd4b612fd985c0373388a0dce72265b245fa7eda9d154032ad06d",
+    "backend/app/domains/employer/host_pacing.py": "1bb033fcabc24de5573732633c33af7c8d3c10b2c0de000e88354f72df0cb21d",
+    "backend/app/domains/employer/source_revalidation.py": "876611447dfdf01932265dbd0ab0be660f79eb7492843cc1cca68b95e96b547a",
+    "backend/resources/employer_sources.reviewed.json": "cce3dcc118abac04c06df97f864d74b4e1e714ced095bf93af7fa66aeb12274e"
+  },
+  "evidence": {
+    "public_adapter_result": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/reviewed20-public-adapters-rfn4qcl0/RESULT.json",
+      "sha256": "b5898b705fd95b86f3fb45b92216cefa3d3d3e11935824233af7a81ae186b415"
+    },
+    "public_adapter_acceptance": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/reviewed20-public-adapters-rfn4qcl0/ACCEPTANCE.json",
+      "sha256": "7be16aac8f33d6d81ef32540b18542b0d31f689cfa4ce6ee1a0b85ae63c35a9d"
+    },
+    "public_adapter_manifest": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/reviewed20-public-adapters-rfn4qcl0/MANIFEST.json",
+      "sha256": "85dbcac4ae6977b9c3447c466d76fcc8d75544f4f00294dd520c4b7194addd3f"
+    },
+    "original_pg4_result": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261104/employer-conditional-pg4-local-cb52okwm/RESULT.json",
+      "sha256": "7e39396bac1e65654d0a118f56c06a64af724fd214ccd1477435f220b9a857fb"
+    },
+    "original_pg4_source_manifest": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261104/employer-conditional-pg4-local-cb52okwm/SOURCE_MANIFEST.json",
+      "sha256": "956e88e0794575d7c1187eae2027f7db8eaaf097e2b71b4a9c50997dd59a31d4"
+    },
+    "unchanged_pg4_source_readback": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/E02-PG4-unchanged-source-readback.json",
+      "sha256": "34048516e65576642fbed1741404a2feee60fd834d9c06666c7ad47b4cbb44bb"
+    }
+  },
+  "limitations": [
+    "No current sourceCI, backend/employer-worker build or release qualification, serving deployment or SQL publication.",
+    "No observed serving-catalogue freshness/SLA, all-source conditional-request acceptance or measured recurring cost savings.",
+    "No expanded registry, worldwide 95% coverage proof, employer credentials or application/submission permission.",
+    "Original E02 status remains pending. All 8 stage / 83 requirement identifiers and statuses remain unchanged; no new checkpoint.",
+    "Paid native document QA (80 cases), scanner maintenance (17 cases), model and commercial holds are unchanged."
+  ],
+  "scope_preservation": "Documentation-only E02 evidence correction; every other requirement entry, all stages and release gates unchanged."
+}

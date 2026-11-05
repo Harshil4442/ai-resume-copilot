@@ -705,3 +705,6 @@ from .domains.credits import discovery_models as _credit_discovery_models  # noq
 from .domains.free_core import models as _free_core_models  # noqa: E402,F401
 from .domains.dispatch import models as _dispatch_models  # noqa: E402,F401
 from .domains.employer import models as _employer_models  # noqa: E402,F401
+
+# Register the disposable native-consent scheduling projection; no native initialization.
+from .domains.notification_consent import models as _notification_consent_models  # noqa: E402,F401

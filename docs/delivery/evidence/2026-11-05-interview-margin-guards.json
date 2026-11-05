@@ -1,0 +1,77 @@
+{
+  "observed_at": "2026-11-05T16:53:32.435381+00:00",
+  "state": "LOCAL_IMPLEMENTED_REVIEWED_NOT_DEPLOYED_OR_RELEASE_QUALIFIED",
+  "parent_commit": "5dca7fd02f2652d6028fe4e240042787775d1cfa",
+  "requirements": [
+    "E05",
+    "Q08",
+    "G02"
+  ],
+  "implementation": {
+    "interview": "Enhanced interviews use original provider-input freshness guard, including changes during original preflight/before admission. Final result and credit settlement retain owner/run serialization and acquire PostgreSQL NOWAIT owner/opportunity/resume/all-state evidence/profile row locks. Existing conflicting writers cause exact55P03 rollback/nonretryable busy refusal with credit restoration and no supplier replay; other SQL failures propagate. New facts/profile inserts are blocked by real owner FK locks through commit. Retained mismatched resume selections refuse before generation. Curated outputs also receive a final freshness check.",
+    "margin": "Commercial policy activation and every launch review require minimum>=1500bps and target>=2000bps. Policy parsing, historical/what-if forecasts and calculations remain unchanged. No pack prices or service charges changed.",
+    "source": "Current309 application hash eab9c268ea4c563d2b10a8d354130b12eb5d6ccc6a9826a3b625741d774ee6e5; separate current application/operator role remains native-runner ineligible. Original retained/producer pins unchanged. New controls source-bound and required in existing schema27 compatibility phase."
+  },
+  "verification": {
+    "interview": "16 distinct =7 synthetic callback/55P03/numeric-selection +9 actual ownedPG controls:6 finalmutation races,2existingwriter orders,1retained mismatch. Synthetic8-question output; real unified5-credit settlement/refund. Ruff4/Mypy2PASS. All4ownedclusters stopped.",
+    "margin": "3 before-fix failing counterexamples retained;18new+9existing finance controls PASS, including1paise adverseboundary, checkout/current-runtime denial and valid policy/historical parsing. Ruff3/Mypy2PASS.",
+    "source_integration": "123 synthetic profile/contract/runner controlsPASS1.09s after currentpin/requiredsuite updates. Ruff5/Mypy4PASS. Collection-only397publicnodes/21suites/all19mandatorygroups match; no fixtures/testbodies executed by that collection.",
+    "OpenAPI": "Exported after sourcechanges, byte-identical79f165139af563e75e6bde3beb49675b877f1fa89b75e3e882b859addcee0a2b; no frontend contract change or build needed.",
+    "peers": "Independent exact4file interview peer and exact5file currentpin/runner peer PASS; Root exact3file financial review PASS."
+  },
+  "source_files": {
+    "backend/app/domains/analysis/operations.py": "90276aefded5cb00f6ffea5ddc16dcf064accae9d4ee7d0a2064310247b146a5",
+    "backend/app/domains/analysis/service.py": "0b27c7a3d8170d7f54a06599337375da135765b250f1d92a0716d8d2c614a068",
+    "backend/tests/test_interview_input_guards.py": "54c54838c50bb136316296f85f3270b27a17c5f30f75102e1a58cba1ee5474ef",
+    "backend/tests/test_interview_input_postgres.py": "21ed377796ad992352c6ea5f1d7830b874dedf88b0dd7fb1c64c166d3a67b0f9",
+    "backend/app/domains/credits/finance.py": "f3f40219650fd7435345aa8a2987a681250bf4b01b6ff4c2e78681e212165068",
+    "backend/app/domains/credits/release.py": "94abef7ceb666a0fb07532f9a2046946c99d3f13dd3692ac8e551c7d066a7900",
+    "backend/tests/test_credit_release_margin_gate.py": "f6849a1a74bb39f3a541523dda5f561745048e79ae96c22cfb3a18631b4044bf",
+    "backend/scripts/qualify_native_quality_acquisition.py": "3368a33c873df5d8e0fe4e1796ff74e28021796e2b6fb4d2d1cfd547785fbe15",
+    "backend/evaluation/native_acquisition_v2/qualification.py": "1741bdc9492faa429ff0e707aadd3da95ac61b39bf546e82e3ded4a7cb2e05fd",
+    "backend/scripts/schema27_app_release_contract.py": "f37b0fb689549f740286f8e745cbc06261975c08d2c5d45dd4e56b6736cc06d6",
+    "backend/scripts/qualify_schema27.py": "c2843a45ce6564de587cb50fbdfc3c2f789a9791512518ebd4a357750d67a3fa",
+    "backend/tests/test_schema27_app_release_contract.py": "de9bc5f3d0408df598c0fd6aea671f0ffe08fa381b782c593714da46018eede4"
+  },
+  "evidence": {
+    "interview": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/interview-input-guards-w2cv0p0k/MANIFEST.json",
+      "sha256": "f75cc8b9c00185b4885430a2f96a6126ffc94b0119c1e6743779bd31bbf4d143"
+    },
+    "interview_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/interview-input-guards-w2cv0p0k/PEER_REVIEW.json",
+      "sha256": "1c06d833bacd23b9a5a3e1bb8851b4205febee44b8788bbe76691f5a87a404ad"
+    },
+    "margin": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/commercial-margin-floor-ueqwepmn/MANIFEST.json",
+      "sha256": "f7836a351ecf4b60a0aa761ca09c3314ac2b6900c8ded6a9179713d8d2466b91"
+    },
+    "margin_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/commercial-margin-floor-ueqwepmn/ROOT_PEER_REVIEW.json",
+      "sha256": "8454c82a00978098d4c00295679ec0b4270bd2f0691fd748e50fc6d64e190949"
+    },
+    "pins": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/source27-guard-pin-manifest.json",
+      "sha256": "38a340929aae5dfc7462c702705b6eeb6067169a68c4c46727f66295f944f96d"
+    },
+    "pin_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/source27-guard-pin-peer.json",
+      "sha256": "bc2b99f72f52909dd8461a71f8402e8dab7ec36c06e2d5b4efad01430e4c160f"
+    },
+    "root_synthetic_tests": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/source27-guard-pin-integration-junit.xml",
+      "sha256": "65b3d968caea1b6fcf6c110f2640cef562dcb79b6fb6451de932d6422f036add"
+    },
+    "public_node_collection": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/source27-guard-node-collection.json",
+      "sha256": "01e5cb59df137d4a6eece874ec2054b1764eb3d2a9acb51633ac9a07b9949ca7"
+    }
+  },
+  "limitations": [
+    "No Gemini call, real supplier/native semantic quality evaluation, actual retained/fullRoot checker, cloud build, deployment, DDL or paidQA.",
+    "Does not complete the original E05/Q08/G02 scopes or any of8stages. Real sourceCI, semantic/human/native document quality,capacity,invoices/shadow/canary/rollout gates remain pending.",
+    "Invoice allocation/category completeness and real fully-loaded margin are still unverified. This is a threshold guard, not proof of profit.",
+    "Scanner17 maintenance/native80QA/models/commercial holds remain unchanged."
+  ],
+  "scope_preservation": "Original8stages/83requirements and statuses unchanged; no new checkpoint."
+}

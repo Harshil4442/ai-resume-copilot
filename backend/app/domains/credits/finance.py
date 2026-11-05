@@ -16,6 +16,8 @@ Minor = Annotated[int, Field(strict=True, ge=0)]
 Positive = Annotated[int, Field(strict=True, gt=0)]
 Bps = Annotated[int, Field(strict=True, ge=0, le=10_000)]
 POLICY_VERSION = "unified-credit-economics-2026-10-27-v1"
+MINIMUM_COMMERCIAL_MARGIN_BPS = 1500
+TARGET_COMMERCIAL_MARGIN_BPS = 2000
 
 
 class FundingUnavailable(ValueError):
@@ -65,7 +67,18 @@ def require_current_policy(
         raise FundingUnavailable("The financial policy needs a current review")
     if commercial and policy.provenance != "invoice_reconciled":
         raise FundingUnavailable("Paid activation requires reconciled expense evidence")
+    if commercial:
+        require_commercial_margins(policy)
     return policy
+
+
+def require_commercial_margins(policy: FinancialPolicy) -> None:
+    """Launch/execution floor only; historical parsing and what-if remain valid."""
+    if (policy.minimum_net_margin_bps < MINIMUM_COMMERCIAL_MARGIN_BPS
+            or policy.target_net_margin_bps < TARGET_COMMERCIAL_MARGIN_BPS):
+        raise FundingUnavailable(
+            "Commercial activation requires at least 15% minimum margin and 20% target margin"
+        )
 
 
 def _nonnegative(value: int, name: str) -> int:

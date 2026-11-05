@@ -16,7 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
+APP_SHA256 = '4c86409a4eae9bd941e2e89a3b000b972fd891f3d1c67a9ed0fe68b3effb27af'
+# Current application/operator identity is separate from retained input producers.
+# These pins never relabel APP_SHA256, the old entry or a historical runner.
+SOURCE26_APPLICATION_FAMILY = "hirewiz_schema26_app_rolling_v3"
+CURRENT_APPLICATION_FAMILY = "hirewiz_schema27_app_v1"
+CURRENT_APPLICATION_APP_SHA256 = '0f0e21c8e94abfa55c8b544ecf9035ecac8abdaa8bde075086d848fadd586a6e'
+CURRENT_APPLICATION_APP_FILES = 312
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -374,6 +380,62 @@ def _source_modules():
     return schema26_app_rolling_v3, schema25_app_release_contract_v3, unified_credit_schema25_release
 
 
+def current_application_modules(family: str):
+    """Explicit application source family; never a retained-producer decoder.
+
+    The historical default _source_modules and its consumers remain unchanged.
+    Source27 is not selected from a schema label, receipt or operator Boolean.
+    """
+    need(type(family) is str, "application_family")
+    if family == SOURCE26_APPLICATION_FAMILY:
+        return _source_modules()
+    need(family == CURRENT_APPLICATION_FAMILY, "application_family")
+    sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp")]
+    import schema27_native_migration
+    import unified_credit_schema25_release
+
+    from scripts import schema27_app_release_contract
+
+    for module, name in ((schema27_native_migration, "infra/gcp/schema27_native_migration.py"),
+            (schema27_app_release_contract, "backend/scripts/schema27_app_release_contract.py"),
+            (unified_credit_schema25_release, "infra/gcp/unified_credit_schema25_release.py")):
+        need(Path(module.__file__).resolve() == ROOT / name, "current_application_foreign_validator")
+    contract = schema27_app_release_contract
+    need(contract.CONTRACT == family and contract.CANDIDATE_APP_SHA256 == CURRENT_APPLICATION_APP_SHA256
+         and contract.CANDIDATE_APP_FILES == CURRENT_APPLICATION_APP_FILES, "current_application_pins")
+    return schema27_native_migration, contract, unified_credit_schema25_release
+
+
+def current_application_observer(root: Path, *, family: str):
+    """Select the exact source-image observer; construction grants no action."""
+    native, _, _ = current_application_modules(family)
+    if family == CURRENT_APPLICATION_FAMILY:
+        return native.Source27BridgeBoundary(root)
+    return native.Source26Boundary(root)
+
+
+def current_application_source(root: Path, *, family: str) -> dict:
+    """Usable current app source proof, deliberately ineligible as native QA.
+
+    The actual retained producer/runtime entry has its own unchanged source and
+    receipt. A versioned Source27 producer still requires separate qualification.
+    """
+    need(root.is_absolute() and root.resolve() == root, "current_application_root")
+    native, contract, release = current_application_modules(family)
+    head = git(root, "rev-parse", "HEAD").decode().strip()
+    need(re.fullmatch(r"[a-f0-9]{40}", head), "current_application_head")
+    native.rolling.release.source_guard.checked_files(root, head)
+    fingerprint = contract.source_fingerprint(root, release.prior_app_files(root, contract.PRIOR_RELEASE))
+    need(type(fingerprint) is str and re.fullmatch(r"[a-f0-9]{64}", fingerprint), "current_application_fingerprint")
+    native.rolling.release.source_guard.checked_files(root, head)
+    need(git(root, "rev-parse", "HEAD").decode().strip() == head, "current_application_head_changed")
+    return {"role": "current_application_operator_source", "family": family, "release": head,
+        "qualification_sha256": fingerprint, "app_sha256": contract.CANDIDATE_APP_SHA256,
+        "app_files": contract.CANDIDATE_APP_FILES, "source_only": True,
+        "native_runner_eligible": False, "retained_producer_proof": False,
+        "processing_authorized": False, "native_approval": False}
+
+
 def _runner_source(root: Path) -> dict:
     """Executed in an isolated I/O-denied child; runner files are data, never imports."""
     need(root.is_absolute() and root.resolve() == root, "runner_root")
@@ -547,11 +609,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--source-child", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--application-family", choices=(SOURCE26_APPLICATION_FAMILY, CURRENT_APPLICATION_FAMILY),
+        help="Current application/operator source only; never retained producer or native QA qualification")
     args = parser.parse_args()
     try:
+        need(not (args.source_child and args.application_family), "application_role_conflict")
         if args.source_child:
             _child_guards(args.root)
             result = _runner_source(args.root)
+        elif args.application_family:
+            need(args.root == ROOT, "current_application_controller_root")
+            result = current_application_source(args.root, family=args.application_family)
         else:
             need(args.root == ROOT and not git(args.root, "status", "--porcelain"), "clean_controller_required")
             result = {**source_identity(args.root), "controller_head": git(args.root, "rev-parse", "HEAD").decode().strip(),

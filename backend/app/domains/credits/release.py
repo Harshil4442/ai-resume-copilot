@@ -13,7 +13,14 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from ...billing.razorpay import RazorpaySettings
-from .finance import Closed, FinancialPolicy, FundingUnavailable, forecast, require_current_policy
+from .finance import (
+    Closed,
+    FinancialPolicy,
+    FundingUnavailable,
+    forecast,
+    require_commercial_margins,
+    require_current_policy,
+)
 from .pricing import CATALOG_VERSION, PRODUCTS
 
 
@@ -44,6 +51,7 @@ class ReleaseReview(Closed):
             raise ValueError("Shadow evidence dates must be timezone-aware")
         if self.shadow_ended_at - self.shadow_started_at < timedelta(days=7):
             raise ValueError("At least seven days of representative shadow accounting are required")
+        require_commercial_margins(self.policy)
         if self.policy.execution_minor_per_credit > 45:
             raise ValueError("The reviewed tariff funds at most 45 paise per credit")
         overhead = self.monthly_shared_minor + self.monthly_additional_business_minor

@@ -57,6 +57,28 @@ function createFixture() {
     return { id: "run_tailoring_failed", operation: "resume_tailor", opportunity_id: opportunityId, status: "failed", usage_state: state.failureUsageState, estimated_units: 10, committed_units: 0, created_at: now, updated_at: now, started_at: now, completed_at: now, cancel_requested: false, cancelled_at: null, attempt_count: 1, error_code: state.failureCode, provider: "local-fixture", model: "local-fixture", prompt_version: "fixture-v1", input_purged_at: null, result_purged_at: null, ...(state.failureGuidance === undefined ? {} : { failure_guidance: state.failureGuidance }) };
   }
 
+  function resumePage() {
+    const ordered = [...resumes].sort((left, right) => right.created_at.localeCompare(left.created_at) || right.id - left.id);
+    return { resumes: ordered.slice(0, 20), next_cursor: ordered.length > 20 ? "fixture-resume-page-20" : null,
+      selected_resume: resumes.find((resume) => resume.id === opportunity.resume_id) || null };
+  }
+  function workspaceValue(tab: string) {
+    const { job_description, job_snapshot, notes, outcome_notes, activity, contacts, reminders, resume_versions, ...header } = opportunity;
+    void job_description; void job_snapshot; void notes; void outcome_notes; void activity; void contacts; void reminders;
+    const ownEvidence = evidence.filter((entry) => entry.resume_id === opportunity.resume_id);
+    return { opportunity: header, resumes: resumePage(), match: null, match_source_state: "none",
+      pages: { resume_versions: { items: resume_versions.slice(0, 20).map(({ structured_content, evidence_ids, generation_run_id, rendered_artifact_ref, ...metadata }) => {
+        void structured_content; void evidence_ids; void generation_run_id; void rendered_artifact_ref; return metadata;
+      }), next_cursor: null },
+        ...(tab === "resume" ? { evidence: { items: ownEvidence.slice(0, 20).map(({ evidence_text, skills, metrics, source_ref, snapshot_fingerprint, ...metadata }) => {
+          void evidence_text; void skills; void metrics; void source_ref; void snapshot_fingerprint; return metadata;
+        }), next_cursor: ownEvidence.length > 20 ? "fixture-evidence-page-20" : null } } : {}),
+        ...(tab === "overview" ? { contacts: { items: [], next_cursor: null }, reminders: { items: [], next_cursor: null } } : {}),
+        ...(tab === "activity" ? { activity: { items: [], next_cursor: null } } : {}) },
+      approved_evidence_count: tab === "resume" ? ownEvidence.filter((entry) => entry.approval_state === "approved").length : null,
+      submitted_resume_version_id: null, submitted_resume_version: null, selected_resume_version: null };
+  }
+
   async function install(context: BrowserContext, baseURL: string) {
     // A signed dummy cookie passes local middleware; every backend request stays mocked.
     const token = await encode({
@@ -114,6 +136,30 @@ function createFixture() {
           value = { resumes: ordered.slice(offset, offset + limit), next_cursor: offset + limit < ordered.length ? `fixture-resume-page-${offset + limit}` : null,
             selected_resume: selected || null };
         }
+      } else if (path === `/v1/opportunities/${opportunityId}/workspace` && method === "GET") {
+        expect(url.searchParams.get("limit")).toBe("20");
+        const tab = url.searchParams.get("tab");
+        expect(["overview", "resume", "learning", "interview", "outcome", "activity"]).toContain(tab);
+        if (state.pauseList) await state.pauseList;
+        if (state.pauseSelection) await state.pauseSelection;
+        if (state.connected && state.pauseConnectedOpportunity) { state.heldOpportunityReads++; await state.pauseConnectedOpportunity; }
+        if (state.listError) { status = 503; value = { detail: "Source metadata temporarily unavailable." }; }
+        else value = workspaceValue(tab!);
+      } else if (path === `/v1/opportunities/${opportunityId}/workspace/body` && method === "GET") {
+        value = { job_description: opportunity.job_description, job_snapshot: opportunity.job_snapshot, notes: opportunity.notes, outcome_notes: opportunity.outcome_notes };
+      } else if (path.startsWith(`/v1/opportunities/${opportunityId}/workspace/evidence/`) && method === "GET") {
+        const entry = evidence.find((item) => item.id === path.split("/").at(-1) && item.resume_id === opportunity.resume_id);
+        if (!entry) { status = 404; value = { detail: "Evidence not found." }; }
+        else {
+          const resume = resumes.find((item) => item.id === entry.resume_id);
+          value = { evidence: entry, transcription: resume?.source_available && resume.source_format ? {
+            resume_id: resume.id, filename: resume.filename, source_format: resume.source_format, source_sha256: "b".repeat(64),
+            assessment_fingerprint: "c".repeat(64), status: "not_required", section: null,
+          } : null, transcription_unavailable: !resume?.source_available };
+        }
+      } else if (path.startsWith(`/v1/opportunities/${opportunityId}/workspace/resume_versions/`) && method === "GET") {
+        value = opportunity.resume_versions.find((version) => version.id === path.split("/").at(-1));
+        if (!value) { status = 404; value = { detail: "Version not found." }; }
       } else if (path === `/v1/opportunities/${opportunityId}`) {
         if (method === "PATCH" && state.connectionError) { status = 503; value = { detail: "Could not connect this resume." }; }
         else if (method === "PATCH") {
@@ -129,7 +175,6 @@ function createFixture() {
           value = opportunity;
         }
       } else if (path === "/v1/opportunities") value = { items: [opportunity], total: 1 };
-      else if (path === "/v1/evidence-items") value = evidence.filter((entry) => entry.resume_id === Number(url.searchParams.get("resume_id")));
       else if (path.startsWith("/v1/evidence-items/transcription-review/") && method === "GET") {
         const resume = resumes.find((item) => item.id === Number(path.split("/").at(-1)));
         if (!resume) { status = 404; value = { detail: "Resume not found." }; }
@@ -154,8 +199,15 @@ function createFixture() {
           Object.assign(entry, changes, { snapshot_fingerprint: "e".repeat(64) });
           value = entry;
         }
-      } else if (path === "/v1/resume-versions" && method === "POST") {
-        value = { id: "rsv_snapshot", version_number: 1, approval_state: "draft", generation_run_id: null, rendered_artifact_ref: null, submitted_at: null, created_at: now, ...body };
+      } else if (path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && method === "POST") {
+        expect(body).toEqual({}); // The server selects approved links; no client evidence IDs or file choice.
+        const source = resumes.find((resume) => resume.id === opportunity.resume_id);
+        expect(source?.source_available).toBe(true);
+        value = { id: "rsv_snapshot", version_number: 1, approval_state: "draft", generation_run_id: null,
+          rendered_artifact_ref: null, submitted_at: null, created_at: now, resume_id: opportunity.resume_id,
+          opportunity_id: opportunityId, label: "Example Studio source snapshot",
+          structured_content: { format_preservation: "source", source_format: source!.source_format, source_edits: [] },
+          evidence_ids: evidence.filter((entry) => entry.resume_id === opportunity.resume_id && entry.approval_state === "approved").map((entry) => entry.id) };
         opportunity.resume_versions.push(value as Record<string, unknown>);
         status = 201;
       } else if (path === "/resume/parse" && method === "POST") {
@@ -234,7 +286,7 @@ for (const failure of failures) {
     await expect(generate).toBeEnabled();
     await expect(page.getByText(/Version \d+ created\./)).toHaveCount(0);
     expect(fixture.opportunity.resume_versions).toEqual([]);
-    expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" || request.path.endsWith("/result"))).toEqual([]);
+    expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot") || request.path.endsWith("/result"))).toEqual([]);
     expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {}, accepted_quote: { pricing_version: "tailoring-fixture-v1", units: 2 } });
     expect(fixture.unexpected).toEqual([]);
     await audit(page);
@@ -256,17 +308,17 @@ test("failure recovery waits for a resume connection and saves the currently sel
   fixture.state.pauseConnectedOpportunity = new Promise<void>((resolve) => { releaseConnection = resolve; });
   await actions(page).resume.selectOption("2");
   await expect.poll(() => fixture.state.heldOpportunityReads).toBeGreaterThan(0);
-  await expect(saveUnchanged).toBeDisabled();
-  expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions")).toEqual([]);
+  await expect(saveUnchanged).toHaveCount(0); // Connecting a new source clears the old failure action.
+  await expect(actions(page).snapshot).toBeDisabled();
+  await expect(actions(page).generate).toBeDisabled();
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot"))).toEqual([]);
   releaseConnection();
   await expect(actions(page).resume).toHaveValue("2");
-  await expect(saveUnchanged).toBeEnabled();
-  await saveUnchanged.click();
-  await expect(page.getByRole("heading", { name: "Example Studio source snapshot", exact: true })).toBeVisible();
-  expect(fixture.requests.filter((request) => request.path === "/v1/resume-versions" && request.method === "POST").map((request) => request.body)).toEqual([{
-    resume_id: 2, opportunity_id: opportunityId, label: "Example Studio source snapshot",
-    structured_content: { format_preservation: "source", source_format: "pdf", source_edits: [] }, evidence_ids: [],
-  }]);
+  await expect(saveUnchanged).toHaveCount(0);
+  await expect(actions(page).snapshot).toBeEnabled();
+  await actions(page).snapshot.click();
+  await expect(page.getByRole("region", { name: "Review changes before approval", exact: true }).getByText("Version 1: Example Studio source snapshot", { exact: true })).toBeVisible();
+  expect(fixture.requests.filter((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && request.method === "POST").map((request) => request.body)).toEqual([{}]);
   expect(fixture.requests.filter((request) => request.path === "/v1/analysis-runs" && request.method === "POST")).toHaveLength(1);
   expect(fixture.requests.filter((request) => request.path.endsWith("/result"))).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
@@ -315,29 +367,32 @@ test("unknown source metadata can be refreshed without claiming the original is 
   await expect(generate).toBeEnabled();
   await expect(snapshot).toBeEnabled();
   const refreshed = fixture.requests.slice(before);
-  expect(refreshed.some((request) => request.path === "/resume/page")).toBe(true);
-  expect(refreshed.some((request) => request.path === `/v1/opportunities/${opportunityId}`)).toBe(true);
+  expect(refreshed.some((request) => request.path === `/v1/opportunities/${opportunityId}/workspace` && request.query === "?tab=resume&limit=20")).toBe(true);
+  expect(refreshed.some((request) => request.path === "/resume/page" || request.path === "/v1/evidence-items")).toBe(false);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
 });
 
-test("a source details request failure has an enabled retry that restores the actions", async ({ page, context, baseURL }) => {
+test("a workspace refresh failure retains source context and retries before further actions", async ({ page, context, baseURL }) => {
   const fixture = createFixture();
-  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
-  fixture.state.listError = true;
+  delete fixture.resumes[0].source_available;
+  delete fixture.resumes[0].source_format;
   await fixture.install(context, baseURL!);
   await openWorkspace(page);
-  const { generate, snapshot, status } = actions(page);
-  await expect(status).toContainText("Could not load the selected resume's source details");
-  await expect(generate).toBeDisabled();
-  await expect(snapshot).toBeDisabled();
-  const refresh = page.getByRole("button", { name: "Refresh details", exact: true });
-  await expect(refresh).toBeEnabled();
+  fixture.state.listError = true;
+  await page.getByRole("button", { name: "Refresh details", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert").filter({ hasText: "The workspace could not be refreshed." })).toContainText("Your visible drafts are retained");
+  await expect(actions(page).resume).toHaveValue("1");
+  await expect(actions(page).generate).toBeDisabled();
+  await expect(actions(page).snapshot).toBeDisabled();
   await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
   fixture.state.listError = false;
-  await refresh.click();
-  await expect(generate).toBeEnabled();
-  await expect(snapshot).toBeEnabled();
+  await page.getByRole("button", { name: "Refresh workspace", exact: true }).click();
+  await expect(actions(page).generate).toBeEnabled();
+  await expect(actions(page).snapshot).toBeEnabled();
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
 });
@@ -352,11 +407,8 @@ test("a retained original allows a source snapshot without approved evidence", a
   await expect(generate).toBeDisabled();
   await expect(snapshot).toBeEnabled();
   await snapshot.click();
-  await expect(page.getByRole("heading", { name: "Example Studio source snapshot", exact: true })).toBeVisible();
-  expect(fixture.requests.find((request) => request.path === "/v1/resume-versions" && request.method === "POST")?.body).toEqual({
-    resume_id: 2, opportunity_id: opportunityId, label: "Example Studio source snapshot",
-    structured_content: { format_preservation: "source", source_format: "pdf", source_edits: [] }, evidence_ids: [],
-  });
+  await expect(page.getByRole("region", { name: "Review changes before approval", exact: true }).getByText("Version 1: Example Studio source snapshot", { exact: true })).toBeVisible();
+  expect(fixture.requests.find((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && request.method === "POST")?.body).toEqual({});
   expect(fixture.requests.some((request) => request.path === "/v1/analysis-runs")).toBe(false);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
@@ -375,10 +427,11 @@ test("choosing a retained upload loads its own facts and does not transfer the e
   await expect(generate).toBeDisabled();
   await expect(page.getByRole("heading", { name: "No evidence imported", exact: true })).toBeVisible();
   expect(fixture.requests.find((request) => request.path === `/v1/opportunities/${opportunityId}` && request.method === "PATCH")?.body).toEqual({ resume_id: 2 });
-  expect(fixture.requests.some((request) => request.path === "/v1/evidence-items" && request.query === "?resume_id=2")).toBe(true);
+  expect(fixture.requests.some((request) => request.path.endsWith("/workspace") && request.query === "?tab=resume&limit=20")).toBe(true);
   await page.getByRole("button", { name: "Import from resume", exact: true }).click();
   await expect(page.getByRole("heading", { name: "New upload service performance work", exact: true })).toBeVisible();
   await expect(generate).toBeDisabled();
+  await page.getByRole("button", { name: "Open New upload service performance work for review", exact: true }).click();
   await page.getByRole("button", { name: "Approve evidence", exact: true }).click();
   await expect(generate).toBeEnabled();
   expect(fixture.requests.find((request) => request.path === "/v1/evidence-items/evi_upload_2" && request.method === "PATCH")?.body).toEqual({ approval_state: "approved", expected_fingerprint: "d".repeat(64) });
@@ -402,8 +455,14 @@ test("upload recovery uses the new resume immediately while the return GET is de
   try {
     await page.getByRole("button", { name: "Use for this opportunity", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/workspace/${opportunityId}\\?tab=resume$`));
-    await expect(page.getByRole("button", { name: "Resume & evidence", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => fixture.state.heldOpportunityReads).toBeGreaterThan(0);
+    await expect(page.getByText("Connected resume #3. Checking this workspace before further actions.", { exact: true })).toBeVisible();
+    await expect(actions(page).generate).toHaveCount(0);
+    await expect(actions(page).snapshot).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "No evidence imported", exact: true })).toHaveCount(0);
+    expect(fixture.requests.some((request) => request.path === "/v1/analysis-runs")).toBe(false);
+    release();
+    await expect(page.getByRole("button", { name: "Resume & evidence", exact: true })).toHaveAttribute("aria-pressed", "true");
     const { generate, snapshot, resume } = actions(page);
     await expect(resume).toHaveValue("3");
     await expect(snapshot).toBeEnabled();
@@ -412,13 +471,14 @@ test("upload recovery uses the new resume immediately while the return GET is de
     await page.getByRole("button", { name: "Import from resume", exact: true }).click();
     await expect(page.getByRole("heading", { name: "New upload service performance work", exact: true })).toBeVisible();
     await expect(generate).toBeDisabled();
+    await page.getByRole("button", { name: "Open New upload service performance work for review", exact: true }).click();
     await page.getByRole("button", { name: "Approve evidence", exact: true }).click();
     await expect(generate).toBeEnabled();
   } finally { release(); }
   expect(fixture.state.parseCount).toBe(1);
   expect(fixture.requests.find((request) => request.path === `/v1/opportunities/${opportunityId}` && request.method === "PATCH")?.body).toEqual({ resume_id: 3 });
   expect(fixture.patchResponses[0]).not.toHaveProperty("resume_versions");
-  expect(fixture.requests.some((request) => request.path === "/v1/evidence-items" && request.query === "?resume_id=3")).toBe(true);
+  expect(fixture.requests.some((request) => request.path.endsWith("/workspace/evidence/evi_upload_3"))).toBe(true);
   expect(fixture.requests.some((request) => request.path === "/v1/analysis-runs")).toBe(false);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
@@ -459,18 +519,18 @@ test("an ordinary upload keeps the existing add-target-role flow", async ({ page
   await audit(page);
 });
 
-test("an unavailable connected resume lookup offers refresh without claiming its original is missing", async ({ page, context, baseURL }) => {
+test("an unavailable exact selected resume offers refresh without claiming its original is missing", async ({ page, context, baseURL }) => {
   const fixture = createFixture();
   const [connectedResume] = fixture.resumes.splice(0, 1);
   await fixture.install(context, baseURL!);
   await openWorkspace(page);
-  await expect(actions(page).status).toContainText("Could not load the selected resume's source details. Refresh details");
+  await expect(actions(page).status).toContainText("The connected resume is missing from the loaded resume list. Refresh details");
   await expect(actions(page).resume).toHaveValue("1");
   await expect(page.getByRole("button", { name: "Refresh details", exact: true })).toBeEnabled();
   await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
   await expect(actions(page).generate).toBeDisabled();
   await expect(actions(page).snapshot).toBeDisabled();
-  expect(fixture.requests.some((request) => request.path === "/resume/page" && request.query === "?limit=1&current_id=1")).toBe(true);
+  expect(fixture.requests.some((request) => request.path.endsWith("/workspace") && request.query === "?tab=resume&limit=20")).toBe(true);
   expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
 
   // A manual refresh resolves the same owner-bound selection, without another upload.
@@ -485,7 +545,7 @@ test("an unavailable connected resume lookup offers refresh without claiming its
   await audit(page);
 });
 
-test("a connected resume beyond the first page stays selected while its exact metadata loads", async ({ page, context, baseURL }) => {
+test("a connected resume beyond the first page is selected atomically without fetching all pages", async ({ page, context, baseURL }) => {
   const fixture = createFixture();
   Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
   for (let id = 3; id <= 22; id++) fixture.resumes.push({ id, filename: `Newer-resume-${id}.pdf`, created_at: now, source_available: true, source_format: "pdf" });
@@ -493,21 +553,20 @@ test("a connected resume beyond the first page stays selected while its exact me
   fixture.state.pauseSelection = new Promise<void>((resolve) => { release = resolve; });
   await fixture.install(context, baseURL!);
   try {
-    await openWorkspace(page);
-    await expect.poll(() => fixture.requests.some((request) => request.path === "/resume/page" && request.query === "?limit=1&current_id=1")).toBe(true);
-    await expect(actions(page).resume).toHaveValue("1");
-    await expect(actions(page).status).toContainText("Checking whether the selected resume has its original file");
-    await expect(actions(page).generate).toBeDisabled();
-    await expect(actions(page).snapshot).toBeDisabled();
-    await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
-    await expect(actions(page).status).not.toContainText("original file is missing");
-    await expect(actions(page).status).not.toContainText("missing from the loaded resume list");
+    await page.goto(workspacePath);
+    await expect.poll(() => fixture.requests.some((request) => request.path.endsWith("/workspace") && request.query === "?tab=resume&limit=20")).toBe(true);
+    await expect(page.getByRole("status", { name: "Loading", exact: true })).toBeVisible();
+    await expect(actions(page).generate).toHaveCount(0);
+    await expect(actions(page).snapshot).toHaveCount(0);
+    await expect(page.getByText(/original file is missing|missing from the loaded resume list/)).toHaveCount(0);
+    expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
   } finally { release(); }
   await expect(actions(page).resume).toHaveValue("1");
   await expect(actions(page).generate).toBeEnabled();
   await expect(actions(page).snapshot).toBeEnabled();
-  await expect(actions(page).resume.locator("option")).toHaveCount(22); // placeholder, one page of 20, and the connected row
-  expect(fixture.requests.filter((request) => request.path === "/resume/page" && request.query.includes("cursor="))).toEqual([]);
+  await expect(actions(page).resume.locator("option")).toHaveCount(22); // placeholder, first20, exact current row
+  expect(fixture.requests.filter((request) => request.path === "/resume/page" || request.path === "/v1/evidence-items")).toEqual([]);
+  expect(fixture.requests.filter((request) => request.query.includes("cursor="))).toEqual([]);
   expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
   expect(fixture.state.parseCount).toBe(0);
   expect(fixture.unexpected).toEqual([]);
@@ -529,24 +588,24 @@ test("no selected resume keeps selection explicit even when a retained original 
   expect(fixture.unexpected).toEqual([]);
 });
 
-test("loading source details blocks both actions until metadata arrives", async ({ page, context, baseURL }) => {
+test("loading the compact source context exposes no actions until its metadata arrives", async ({ page, context, baseURL }) => {
   const fixture = createFixture();
   Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
   let release = () => {};
   fixture.state.pauseList = new Promise<void>((resolve) => { release = resolve; });
   await fixture.install(context, baseURL!);
   try {
-    await openWorkspace(page);
-    await expect(actions(page).status).toContainText("Checking whether the selected resume has its original file");
-    await expect(actions(page).generate).toBeDisabled();
-    await expect(actions(page).snapshot).toBeDisabled();
+    await page.goto(workspacePath);
+    await expect(page.getByRole("status", { name: "Loading", exact: true })).toBeVisible();
+    await expect(actions(page).generate).toHaveCount(0);
+    await expect(actions(page).snapshot).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Upload source again", exact: true })).toHaveCount(0);
+    expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
   } finally { release(); }
   await expect(actions(page).generate).toBeEnabled();
   await expect(actions(page).snapshot).toBeEnabled();
   expect(fixture.unexpected).toEqual([]);
 });
-
 
 test("unified tailoring review shows exact source and credits before any execution", async ({ page, context, baseURL }) => {
   const fixture = createFixture(); fixture.state.unified = true;
@@ -563,4 +622,39 @@ test("unified tailoring review shows exact source and credits before any executi
   await expect(page.getByRole("button", { name: "Approve 8 credits", exact: true })).toHaveCount(0);
   expect(fixture.requests.filter((record) => record.path === "/v1/analysis-runs")).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
+});
+
+
+test("workspace evidence bodies require an explicit exact-source review before any approval", async ({ page, context, baseURL }) => {
+  const fixture = createFixture();
+  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
+  await fixture.install(context, baseURL!); await openWorkspace(page);
+  await expect(page.getByRole("heading", { name: fixture.evidence[0].title, exact: true })).toBeVisible();
+  await expect(page.getByText(fixture.evidence[0].evidence_text, { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve evidence", exact: true })).toHaveCount(0);
+  expect(fixture.requests.some((request) => /\/workspace\/evidence\//.test(request.path))).toBe(false);
+  await page.getByRole("button", { name: `Open ${fixture.evidence[0].title} for review`, exact: true }).click();
+  await expect(page.getByText(fixture.evidence[0].evidence_text, { exact: true })).toBeVisible();
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/evidence/evi_old"))).toHaveLength(1);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toEqual([]);
+  expect(fixture.requests.some((request) => request.path === "/v1/evidence-items" || request.path.startsWith("/v1/evidence-items/transcription-review/"))).toBe(false);
+  expect(fixture.unexpected).toEqual([]); await audit(page);
+});
+
+test("source snapshots use server evidence links and version bodies open only on request", async ({ page, context, baseURL }) => {
+  const fixture = createFixture();
+  Object.assign(fixture.resumes[0], { source_available: true, source_format: "pdf" });
+  await fixture.install(context, baseURL!); await openWorkspace(page);
+  await actions(page).snapshot.click();
+  await expect(page.getByText("Open version 1 for review", { exact: true })).toBeVisible();
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot")).map((request) => request.body)).toEqual([{}]);
+  expect(fixture.opportunity.resume_versions[0].evidence_ids).toEqual(["evi_old"]);
+  expect(fixture.requests.some((request) => /\/workspace\/resume_versions\//.test(request.path))).toBe(false);
+  await expect(page.getByRole("button", { name: "Download PDF", exact: true })).toHaveCount(0);
+  await page.getByText("Open version 1 for review", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Download PDF", exact: true })).toBeVisible();
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/resume_versions/rsv_snapshot"))).toHaveLength(1);
+  expect(fixture.requests.filter((request) => request.method !== "GET")).toHaveLength(1);
+  expect(fixture.requests.some((request) => request.path === "/v1/resume-versions" || request.path === "/v1/analysis-runs" || request.path.includes("/download"))).toBe(false);
+  expect(fixture.unexpected).toEqual([]); await audit(page);
 });

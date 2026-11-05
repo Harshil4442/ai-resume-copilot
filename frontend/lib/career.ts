@@ -55,6 +55,10 @@ export function fetchResumeVersionPdf(versionId: string, signal?: AbortSignal): 
 
 export type Opportunity = components["schemas"]["OpportunityResponse"];
 export type OpportunityDetail = components["schemas"]["OpportunityDetailResponse"];
+export type Workspace = components["schemas"]["WorkspaceResponse"];
+export type WorkspaceBody = components["schemas"]["OpportunityBody"];
+export type WorkspaceEvidenceDetail = components["schemas"]["WorkspaceEvidenceDetail"];
+export type WorkspaceVersion = components["schemas"]["ResumeVersionMetadata"];
 export type OpportunityList = components["schemas"]["OpportunityListResponse"];
 export type OpportunityMatch = components["schemas"]["OpportunityMatchResponse"];
 export type ApplicationEvent = components["schemas"]["ApplicationEventResponse"];

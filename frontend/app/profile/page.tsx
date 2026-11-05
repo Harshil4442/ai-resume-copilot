@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import CareerMemoryPanel from "../../components/CareerMemoryPanel";
+import WeeklyDigestPreference from "../../components/WeeklyDigestPreference";
 import { Button } from "../../components/ui/Button";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { resetAnalyticsIdentity, trackEvent } from "../../lib/analytics";
@@ -38,7 +39,7 @@ function splitSkills(text: string) {
   return text.split(/[,|\n]/).map((skill) => skill.trim()).filter(Boolean);
 }
 
-export default function ProfilePage() {
+function ProfileContent() {
   const queryClient = useQueryClient();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
@@ -130,11 +131,10 @@ export default function ProfilePage() {
     }
   }
 
-  if (loading) return <main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>;
+  if (loading) return <LoadingBlock rows={7} />;
 
   return (
-    <main className="app-page">
-      <div className="page-container space-y-10">
+    <>
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div><p className="eyebrow">Profile and preferences</p><h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Your career context</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Only the information visible here and in Career Memory is reusable across your workspace.</p></div>
           {profile ? <div className="min-w-56"><div className="flex items-end justify-between"><span className="data-label">Profile completeness</span><span className="text-2xl font-semibold text-primary">{profile.profile_completeness}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface"><div className="h-full bg-primary" style={{ width: `${profile.profile_completeness}%` }} /></div><p className="mt-2 truncate text-xs text-muted-foreground">{profile.email}</p></div> : null}
@@ -189,7 +189,13 @@ export default function ProfilePage() {
             <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display font-normal text-coral">Delete account</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Delete career data and unlink retained accounting records. This cannot be undone.</p></div>{!confirmDelete ? <Button variant="danger" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Delete account</Button> : <div className="flex flex-wrap gap-2"><Button variant="danger" onClick={deleteAccount} disabled={accountBusy}>{accountBusy ? "Deleting..." : "Permanently delete"}</Button><Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={accountBusy}>Cancel</Button></div>}</div>
           </div>
         </section>
-      </div>
-    </main>
+    </>
   );
+}
+
+export default function ProfilePage() {
+  return <main className="app-page"><div className="page-container space-y-10">
+    <ProfileContent />
+    <WeeklyDigestPreference />
+  </div></main>;
 }

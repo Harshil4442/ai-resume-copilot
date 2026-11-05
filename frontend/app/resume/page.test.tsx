@@ -8,15 +8,17 @@ import * as uploads from "../../lib/resumeUpload";
 import type { ResumeParseResponse } from "../../lib/types";
 import ResumePage from "./page";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: "upload-fixture-owner" } } }) }));
+const navigation = vi.hoisted(() => ({ opportunity: "", push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: navigation.push }), useSearchParams: () => new URLSearchParams(navigation.opportunity ? { opportunity: navigation.opportunity } : {}) }));
 vi.mock("../../lib/analytics", () => ({ trackEvent: vi.fn() }));
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
-vi.mock("../../lib/api", () => ({ apiGet: api.get, apiPostJson: api.post, apiPatchJson: vi.fn(), apiPostForm: vi.fn(),
+const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
+vi.mock("../../lib/api", () => ({ apiGet: api.get, apiPostJson: api.post, apiPatchJson: api.patch, apiPostForm: vi.fn(),
   ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
 const resume: ResumeParseResponse = { resume_id: 42, skills: ["Python"], experience_years: 1, sections: {}, contact_info: {}, source_available: true, source_format: "pdf", extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [] };
 const clients: QueryClient[]=[];
 
-beforeEach(()=>{vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue(ownedBootstrapFixture());});
+beforeEach(()=>{navigation.opportunity="";api.patch.mockReset();vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue(ownedBootstrapFixture());});
 afterEach(()=>{cleanup();clients.forEach((client)=>client.clear());clients.length=0;vi.restoreAllMocks();vi.unstubAllEnvs();});
 function display(){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});clients.push(client);return render(<QueryClientProvider client={client}><ResumePage/></QueryClientProvider>);}
 function select(){fireEvent.change(screen.getByLabelText("Choose your source resume"),{target:{files:[new File(["synthetic file"],"resume.pdf",{type:"application/pdf"})]}});}
@@ -73,4 +75,23 @@ it("uploads without AI first and exposes a separate enrichment review for unifie
   expect(upload).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ enrichSkills: false }));
   expect(api.post).not.toHaveBeenCalled();
   expect(screen.getByText(/1 new parsed resume per rolling 30 days/)).toBeVisible();
+});
+
+it("clears the old owned compact workspace before returning from an uploaded source connection", async () => {
+  navigation.opportunity = "opp_connection";
+  vi.spyOn(uploads, "uploadResumeFile").mockResolvedValue(resume);
+  api.patch.mockResolvedValue({ id: "opp_connection", title: "New source role", resume_id: 42 });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } }); clients.push(client);
+  const stale = ["workspace", "authenticated:upload-fixture-owner", "opp_connection", "tab", "resume"];
+  client.setQueryData(stale, { opportunity: { resume_id: 1 }, approved_evidence_count: 90 });
+  client.setQueryData(["workspace", "authenticated:another-owner", "opp_connection", "tab", "resume"], { retained: true });
+  render(<QueryClientProvider client={client}><ResumePage /></QueryClientProvider>);
+  select(); fireEvent.click(screen.getByRole("button", { name: /parse resume/i }));
+  await screen.findByText("Resume parsed");
+  fireEvent.click(screen.getByRole("button", { name: "Use for this opportunity" }));
+  await waitFor(() => expect(navigation.push).toHaveBeenCalledWith("/workspace/opp_connection?tab=resume"));
+  expect(api.patch).toHaveBeenCalledExactlyOnceWith("/v1/opportunities/opp_connection", { resume_id: 42 });
+  expect(client.getQueryData(stale)).toBeUndefined();
+  expect(client.getQueryData(["workspace", "authenticated:another-owner", "opp_connection", "tab", "resume"])).toEqual({ retained: true });
+  expect(client.getQueryData(["workspace-source-connection", "authenticated:upload-fixture-owner", "opp_connection"])).toEqual({ resumeId: 42, title: "New source role" });
 });

@@ -440,6 +440,7 @@ def export_account(
 ):
     from ..domains.credits.privacy import export_account_data as export_credit_account_data
     from ..domains.employer.service import export_account_data
+    from ..domains.notification_consent.projection import export_preference
 
     uid = current_user.id
     profile = db.query(UserProfile).filter(UserProfile.user_id == uid).first()
@@ -472,6 +473,7 @@ def export_account(
         "usage_events": _rows(db, UsageEvent, uid),
         "employer_services": export_account_data(db, uid),
         "unified_credits": export_credit_account_data(db, uid),
+        "notification_preferences": export_preference(db, uid),
         "model_call_events": _rows(db, ModelCallEvent, uid),
         "payment_orders": [
             {

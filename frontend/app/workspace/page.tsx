@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
@@ -30,7 +31,7 @@ import {
   stages,
 } from "../../lib/career";
 import { trackEvent } from "../../lib/analytics";
-import { opportunitiesOptions } from "../../lib/opportunityQueries";
+import { opportunityPageOptions, type OpportunityPageItem } from "../../lib/opportunityPageClient";
 
 import { useResumeOptions } from "../../lib/resumeOptions";
 import { ResumeSelector } from "../../components/ResumeSelector";
@@ -51,10 +52,10 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(value));
 }
 
-function OpportunityRow({ opportunity }: { opportunity: Opportunity }) {
+function OpportunityRow({ opportunity }: { opportunity: OpportunityPageItem }) {
   return (
     <Link
-      href={`/workspace/${opportunity.id}`}
+      href={`/workspace/${encodeURIComponent(opportunity.id)}`}
       className="group grid min-h-28 gap-4 border-b border-border px-1 py-5 transition-colors hover:bg-surface sm:grid-cols-[1fr_auto] sm:items-center sm:px-4"
     >
       <div className="min-w-0">
@@ -75,14 +76,20 @@ function OpportunityRow({ opportunity }: { opportunity: Opportunity }) {
   );
 }
 
-export default function WorkspacePage() {
+function WorkspaceContent({ ownerKey, authenticated }: { ownerKey: string; authenticated: boolean }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const dialogTrigger = useRef<HTMLButtonElement | null>(null);
-  const [stage, setStage] = useState("all");
+  const mounted = useRef(false);
   const [search, setSearch] = useState("");
-  const opportunities = useQuery(opportunitiesOptions({ limit: 200 }));
+  const [selection, setSelection] = useState({ stage: "all", search: "", includeArchived: false, cursor: null as string | null });
+  const debouncing = search.trim() !== selection.search;
+  const opportunities = useQuery(opportunityPageOptions({ ownerKey, stage: selection.stage === "all" ? null : selection.stage,
+    search: selection.search, includeArchived: selection.includeArchived, cursor: selection.cursor,
+    enabled: authenticated && !debouncing }));
+  const page = !debouncing && !opportunities.isError ? opportunities.data : undefined;
+  const loading = debouncing || (authenticated && opportunities.isPending);
   const form = useForm<OpportunityForm>({
     resolver: zodResolver(opportunitySchema),
     defaultValues: {
@@ -96,7 +103,27 @@ export default function WorkspacePage() {
     },
   });
   const selectedResumeId = useWatch({ control: form.control, name: "resume_id" });
-  const resumes = useResumeOptions({ selectedId: selectedResumeId });
+  const resumes = useResumeOptions({ selectedId: selectedResumeId, enabled: dialogOpen && authenticated, ownerKey });
+
+  const newest = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: opportunityPageOptions({ ownerKey, stage: selection.stage === "all" ? null : selection.stage,
+        search: selection.search, includeArchived: selection.includeArchived }).queryKey,
+      exact: true, refetchType: "none",
+    });
+    if (mounted.current) setSelection((current) => ({ ...current, cursor: null }));
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  useEffect(() => {
+    const timer = globalThis.setTimeout(() => setSelection((current) => current.search === search.trim()
+      ? current : { ...current, search: search.trim(), cursor: null }), 300);
+    return () => globalThis.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("new") !== "1") return;
@@ -113,27 +140,16 @@ export default function WorkspacePage() {
         resume_id: values.resume_id ? Number(values.resume_id) : null,
       }),
     onSuccess: async (created) => {
+      if (!mounted.current) return;
       trackEvent("opportunity_created", { source: created.source, has_resume: Boolean(created.resume_id) });
-      await queryClient.invalidateQueries({ queryKey: ["opportunities"] });
+      setSelection((current) => ({ ...current, cursor: null }));
+      await queryClient.invalidateQueries({ queryKey: ["opportunities"], refetchType: "none" });
+      if (!mounted.current) return;
       setDialogOpen(false);
       form.reset();
       router.push(`/workspace/${created.id}`);
     },
   });
-
-  const filtered = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    return (opportunities.data?.items || []).filter((item) => {
-      const matchesStage = stage === "all" || item.stage === stage;
-      const matchesSearch =
-        !normalized ||
-        `${item.title} ${item.company} ${item.location}`.toLowerCase().includes(normalized);
-      return matchesStage && matchesSearch;
-    });
-  }, [opportunities.data?.items, search, stage]);
-
-  const activeCount = (opportunities.data?.items || []).filter((item) => !["rejected", "withdrawn", "archived"].includes(item.stage)).length;
-  const interviewCount = (opportunities.data?.items || []).filter((item) => item.stage === "interviewing").length;
 
   return (
     <main className="app-page">
@@ -143,10 +159,11 @@ export default function WorkspacePage() {
             <p className="eyebrow">Career Workspace</p>
             <h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Your opportunities</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              {activeCount} active {activeCount === 1 ? "role" : "roles"} and {interviewCount} in interview stage.
+              {page ? `${page.active_count} active ${page.active_count === 1 ? "role" : "roles"} and ${page.interview_count} in interview stage.`
+                : opportunities.isError ? "Opportunity totals are unavailable." : "Loading your opportunity totals…"}
             </p>
           </div>
-          <Button onClick={(event) => { dialogTrigger.current = event.currentTarget; setDialogOpen(true); }}>
+          <Button disabled={!authenticated} onClick={(event) => { dialogTrigger.current = event.currentTarget; setDialogOpen(true); }}>
             <Plus size={16} aria-hidden="true" /> Add opportunity
           </Button>
         </header>
@@ -159,10 +176,10 @@ export default function WorkspacePage() {
                   key={value}
                   type="button"
                   role="tab"
-                  aria-selected={stage === value}
-                  onClick={() => setStage(value)}
+                  aria-selected={selection.stage === value}
+                  onClick={() => setSelection((current) => ({ ...current, stage: value, cursor: null }))}
                   className={`min-h-9 shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
-                    stage === value ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                    selection.stage === value ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-surface hover:text-foreground"
                   }`}
                 >
                   {value === "all" ? "All" : stageLabels[value]}
@@ -175,28 +192,50 @@ export default function WorkspacePage() {
               <input
                 className="field-control pl-9"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                maxLength={200}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setSelection((current) => ({ ...current, cursor: null }));
+                  void queryClient.cancelQueries({ queryKey: ["opportunities", "pages", ownerKey] });
+                }}
                 placeholder="Search role or company"
               />
             </label>
           </div>
+          <label className="mt-3 inline-flex min-h-9 items-center gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" checked={selection.includeArchived}
+              onChange={(event) => setSelection((current) => ({ ...current, includeArchived: event.target.checked, cursor: null }))} />
+            Include archived opportunities
+          </label>
 
-          <div className="mt-5">
-            {opportunities.isLoading ? <LoadingBlock rows={5} /> : null}
-            {opportunities.isError ? (
-              <div className="border-y border-coral/25 bg-coral/5 px-5 py-6 text-sm text-coral">
+          <div className="mt-5" aria-busy={loading}>
+            {loading ? <LoadingBlock rows={5} /> : null}
+            {!debouncing && opportunities.isError ? (
+              <div role="alert" className="border-y border-coral/25 bg-coral/5 px-5 py-6 text-sm text-coral">
                 {opportunities.error instanceof Error ? opportunities.error.message : "Could not load opportunities."}
+                <Button variant="secondary" className="mt-3" onClick={() => { void opportunities.refetch(); }}>Refresh opportunities</Button>
+                {selection.cursor ? <Button variant="secondary" className="ml-3 mt-3" onClick={() => { void newest(); }}>Return to newest opportunities</Button> : null}
               </div>
             ) : null}
-            {!opportunities.isLoading && !opportunities.isError && filtered.length === 0 ? (
+            {page && page.items.length === 0 ? (
               <EmptyState
                 icon={BriefcaseBusiness}
-                title={opportunities.data?.items.length ? "No opportunities match these filters" : "Add your first target role"}
-                description={opportunities.data?.items.length ? "Change the stage or search to return to your active work." : "Preserve the role, connect your resume, and keep every decision in one place."}
-                action={!opportunities.data?.items.length ? <Button onClick={(event) => { dialogTrigger.current = event.currentTarget; setDialogOpen(true); }}><Plus size={16} /> Add opportunity</Button> : undefined}
+                title={page.total_owned ? "No opportunities match this page or these filters" : "Add your first target role"}
+                description={page.total_owned ? "Change the stage or search, or return to the newest results." : "Preserve the role, connect your resume, and keep every decision in one place."}
+                action={!page.total_owned ? <Button onClick={(event) => { dialogTrigger.current = event.currentTarget; setDialogOpen(true); }}><Plus size={16} /> Add opportunity</Button> : undefined}
               />
             ) : null}
-            {filtered.length ? <div className="border-t border-border">{filtered.map((item) => <OpportunityRow key={item.id} opportunity={item} />)}</div> : null}
+            {page ? <>
+              <p className="mb-3 text-xs text-muted-foreground" role="status">Showing {page.items.length} of {page.total} matching opportunities · {page.total_owned} saved in total.</p>
+              {page.items.length ? <div className="border-t border-border">{page.items.map((item) => <OpportunityRow key={item.id} opportunity={item} />)}</div> : null}
+              <nav aria-label="Opportunity pages" className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <Button variant="secondary" disabled={!selection.cursor || opportunities.isFetching}
+                  onClick={() => { void newest(); }}>Newest opportunities</Button>
+                <span className="text-xs text-muted-foreground">{selection.cursor ? "Viewing older results" : "Viewing newest results"}</span>
+                <Button variant="secondary" disabled={!page.next_cursor || opportunities.isFetching}
+                  onClick={() => { const cursor = page.next_cursor; if (cursor) setSelection((current) => ({ ...current, cursor })); }}>Older opportunities</Button>
+              </nav>
+            </> : null}
           </div>
         </section>
       </div>
@@ -265,4 +304,11 @@ export default function WorkspacePage() {
       </Dialog.Root>
     </main>
   );
+}
+
+export default function WorkspacePage() {
+  const { data: session, status } = useSession();
+  const ownerKey = `${status}:${session?.user?.id || ""}`;
+  return <WorkspaceContent key={ownerKey} ownerKey={ownerKey}
+    authenticated={status === "authenticated" && Boolean(session?.user?.id)} />;
 }

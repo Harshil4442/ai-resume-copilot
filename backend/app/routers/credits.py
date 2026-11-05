@@ -25,6 +25,7 @@ from ..domains.credits.discovery_schemas import (
 )
 from ..domains.credits.finance import FundingUnavailable
 from ..domains.credits.models import CreditEvent, CreditGrant
+from ..domains.credits.payment_expenses import assert_new_exposure_funded
 from ..domains.credits.schemas import (
     CreditAvailabilityView,
     CreditCatalogView,
@@ -135,7 +136,8 @@ def _headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, private"
 
 
-def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Session | None = None) -> bool:
+def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Session | None = None,
+                      check_payment_funding: bool = True) -> bool:
     if not release.checkout_ready():
         return False
     if user_id is None and os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower() != "reviewed_public":
@@ -148,7 +150,14 @@ def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Sessio
         from ..domains.credits.service_quotes import require_route
         for route in config.routes:
             require_route(route, config.policy, now=datetime.now(UTC))
-        return bool(_service_offers(user_id, email, db=db))
+        if not _service_offers(user_id, email, db=db):
+            return False
+        # Complete audience/route qualification before taking money locks.
+        if check_payment_funding:
+            if db is None:
+                return False
+            assert_new_exposure_funded(db, policy=config.policy, now=datetime.now(UTC))
+        return True
     except FundingUnavailable:
         return False
 
@@ -178,9 +187,10 @@ def _catalog(db: Session, user_id: int | None = None, email: str = "") -> Credit
     if not release.rollout_enabled():
         raise HTTPException(404, "Unified credits are not available yet.")
     try:
+        offers = _service_offers(user_id, email, db=db)
         result = pricing.public_catalog(campaign=service.configured_campaign(db), now=datetime.now(UTC),
                                         checkout_enabled=_purchase_enabled(user_id, email, db=db))
-        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": _service_offers(user_id, email, db=db)})
+        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": offers})
     except pricing.CreditContractError:
         raise HTTPException(503, "Credit pricing is temporarily unavailable.") from None
 
@@ -202,12 +212,13 @@ def catalog(response: Response, db: Session = Depends(get_db), current_user: Use
 def purchase_quote(payload: PurchaseQuoteRequest, request: Request, response: Response,
                    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email, db=db):
+    if not _purchase_enabled(current_user.id, current_user.email, db=db, check_payment_funding=False):
         raise HTTPException(503, "Credit purchases are not available yet.")
     try:
         offers = _service_offers(current_user.id, current_user.email, db=db)
         if not offers:
             raise FundingUnavailable("No qualified service is available for this pass.")
+        assert_new_exposure_funded(db, policy=release.current_review().policy, now=datetime.now(UTC))
         quote = service.issue_purchase_quote(db, user_id=current_user.id, sku=payload.sku,
                                              idempotency_key=payload.idempotency_key, checkout_enabled=True,
                                              eligible_services=offers)
@@ -468,7 +479,7 @@ def _status(db: Session, order: PaymentOrder, email: str) -> dict:
     return {"schema_version": "unified-credits-v1", "order_id": order.public_id,
             "provider_order_id": order.provider_order_id, "status": _normalized_order_status(order),
             "payment_status": order.status, "fulfilled": bool(grant and entitlement),
-            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db) and order.status == "created"
+            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db, check_payment_funding=False) and order.status == "created"
                 and order.provider_order_id and _offers_remain_available(view, order.user_id, email, db=db)),
             "amount_minor": order.gross_amount_minor, "refunded_amount_minor": order.refunded_amount_minor,
             "currency": order.currency, "sku": order.sku, "created_at": pricing.aware(order.created_at),
@@ -506,7 +517,9 @@ def _checkout(order: PaymentOrder, user: User, settings: RazorpaySettings) -> di
 def create_order(payload: CreateCreditOrder, request: Request, response: Response,
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email, db=db):
+    # Existing payable identities must remain recoverable after this new-loss
+    # circuit pauses admission. Product/authentication kill switches still apply.
+    if not _purchase_enabled(current_user.id, current_user.email, db=db, check_payment_funding=False):
         raise HTTPException(503, "Credit purchases are not available yet.")
     settings = RazorpaySettings.from_env()
     identity = payload.order_reference or purchase_request_id(current_user.id, "unified:" + payload.idempotency_key)
@@ -537,6 +550,7 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
         if not _offers_remain_available(view, current_user.id, current_user.email, db=db):
             raise pricing.CreditContractError("Supported services changed. Review a fresh purchase quote.")
         now = datetime.now(UTC)
+        assert_new_exposure_funded(db, policy=review.policy, now=now)
         order = PaymentOrder(public_id=identity, user_id=user.id, provider="razorpay", provider_mode=settings.mode,
             provider_key_id=settings.key_id, sku=view.sku, catalog_version=view.catalog_version,
             cost_policy_snapshot={"unified_purchase_quote": dict(quote.snapshot), "release_review": review.model_dump(mode="json")},

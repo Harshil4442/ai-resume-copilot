@@ -159,6 +159,15 @@ def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payloa
     # Model work occurs outside the result-write transaction. Reload mutable
     # source rows so the session identity map cannot mask a concurrent edit.
     db.expire_all()
+    opportunity = get_opportunity(db, run.user_id,
+        run.opportunity_id or str(payload.get("opportunity_id", "")))
+    selected = payload.get("resume_id") or opportunity.resume_id
+    effective_resume_id = _owned_resume(db, run.user_id, selected).id if selected is not None else None
+    if effective_resume_id != opportunity.resume_id:
+        raise InterviewInputsChanged(
+            "The interview resume selection differs from its saved role. Review the current inputs "
+            "and request a new question set; this attempt will not be charged."
+        )
     semantic_input = {key: value for key, value in payload.items() if key != "_accepted_analysis_quote"}
     current = _current_input_fingerprint(db, run, semantic_input)
     if current != run.input_fingerprint:
@@ -166,6 +175,66 @@ def ensure_interview_inputs_current(db: Session, run: models.AnalysisRun, payloa
             "The selected resume, approved evidence, job or interview contract changed. "
             "Review the current inputs and request a new question set; this attempt will not be charged."
         )
+
+
+def lock_interview_inputs_current(db: Session, run: models.AnalysisRun, payload: dict) -> None:
+    """Keep the final interview snapshot stable through result and usage commit.
+
+    Call only after generation. The normal result boundary owns the owner lock
+    first; source rows follow the tailoring order. FOR UPDATE on the owner also
+    blocks FK-backed evidence/profile insertions, including an approved fact
+    that did not exist when the snapshot was read. Lock every existing fact in
+    the selected scope, since approving a pending fact changes the fingerprint.
+    NOWAIT refuses an already active writer without a lock-order cycle or retry.
+    The caller must commit/rollback before any provider or native IO.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    from ...services.interview_contract import InterviewInputsChanged
+    from ...services.result_commit import ResultOwnerGone, begin_result_commit
+
+    begin_result_commit(db, run.user_id, run.id)
+    try:
+        with db.no_autoflush:
+            owner = db.query(models.User.id).filter_by(id=run.user_id).with_for_update(nowait=True).one_or_none()
+            if owner is None:
+                raise ResultOwnerGone()
+            opportunity_id = run.opportunity_id or str(payload.get("opportunity_id", ""))
+            opportunity = db.query(models.Opportunity).filter_by(
+                id=opportunity_id, user_id=run.user_id,
+            ).populate_existing().with_for_update(nowait=True).one_or_none()
+            # A missing source is refused by the same complete freshness check;
+            # never substitute another opportunity, resume, or fact collection.
+            opportunity_resume_id = opportunity.resume_id if opportunity is not None else None
+            effective_resume_id = payload.get("resume_id") or opportunity_resume_id
+            resume_ids = {opportunity_resume_id} if opportunity_resume_id is not None else set()
+            if effective_resume_id is not None:
+                # Normal admission makes these identical. Retained/internal runs
+                # must still lock both generator and fingerprint selections.
+                resume_ids.add(_owned_resume(db, run.user_id, effective_resume_id).id)
+            if resume_ids:
+                db.query(models.Resume.id).filter(models.Resume.user_id == run.user_id,
+                    models.Resume.id.in_(resume_ids)).order_by(models.Resume.id).with_for_update(nowait=True).all()
+            evidence = db.query(models.EvidenceItem.id).filter_by(user_id=run.user_id)
+            if effective_resume_id is not None and opportunity_resume_id is not None:
+                evidence = evidence.filter(models.EvidenceItem.resume_id.in_(resume_ids))
+            evidence.order_by(models.EvidenceItem.id).with_for_update(nowait=True).all()
+            db.query(models.UserProfile.id).filter_by(user_id=run.user_id).order_by(
+                models.UserProfile.id,
+            ).with_for_update(nowait=True).all()
+            ensure_interview_inputs_current(db, run, payload)
+
+    except DBAPIError as exc:
+        if (db.get_bind().dialect.name != "postgresql"
+                or getattr(exc.orig, "sqlstate", None) != "55P03"):
+            raise
+        # Older review/import paths have different row-lock orders. Decline
+        # rather than wait in a cycle or replay already performed model work.
+        db.rollback()
+        raise InterviewInputsChanged(
+            "The interview inputs are being edited. Review the current inputs and request a new "
+            "question set; this attempt will not be charged."
+        ) from None
 
 
 class TailoringInputsChanged(ValueError):

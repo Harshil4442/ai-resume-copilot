@@ -31,6 +31,8 @@ from ...models import (
 )
 from ..career.evidence_write_fence import evidence_write_scope
 from ..employer.admissions import lock_application_set
+from ..notification_consent.models import NotificationPreference
+from ..notification_consent.schema_compat import projection_available
 
 
 def lock_account_erasure(db: Session, user_id: int) -> None:
@@ -42,9 +44,11 @@ def erased_owner_rows_absent(db: Session, user_id: int) -> bool:
     """Exact completion audit callers additionally verify no live owner rows."""
     if db.get(User, user_id, populate_existing=True) is not None:
         return False
+    has_projection = projection_available(db)
     for model in (CandidatePasswordAccount, UserProfile, Resume, JobMatch, Opportunity, ApplicationEvent,
                   ResumeVersion, EvidenceItem, Reminder, OpportunityContact, CareerMemoryEntry, AnalysisRun,
-                  UsageEvent, ModelCallEvent, NotificationOutbox):
+                  UsageEvent, ModelCallEvent, NotificationOutbox,
+                  *((NotificationPreference,) if has_projection else ())):
         if db.query(model.user_id).filter_by(user_id=user_id).first() is not None:
             return False
     return True
@@ -54,6 +58,7 @@ def erase_account_sql(db: Session, user_id: int) -> None:
     """Authorized exact-owner SQL work only; this function does not commit."""
     uid = user_id
     now = datetime.now(UTC)
+    has_projection = projection_available(db)
 
     lock_account_erasure(db, uid)
 
@@ -95,6 +100,8 @@ def erase_account_sql(db: Session, user_id: int) -> None:
         db.query(DispatchOutbox).filter(DispatchOutbox.topic == "analysis.run", DispatchOutbox.aggregate_id.in_(run_ids)).delete(synchronize_session=False)
     db.query(AnalysisRequestKey).filter_by(user_id=uid).delete(synchronize_session=False)
     db.query(NotificationOutbox).filter(NotificationOutbox.user_id == uid).delete(synchronize_session=False)
+    if has_projection:
+        db.query(NotificationPreference).filter_by(user_id=uid).delete(synchronize_session=False)
     db.query(AdminAuditEvent).filter(AdminAuditEvent.actor_user_id == uid).update(
         {AdminAuditEvent.actor_user_id: None}, synchronize_session=False
     )

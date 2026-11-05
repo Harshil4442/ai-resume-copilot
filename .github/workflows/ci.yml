@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: mirror.gcr.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
@@ -122,6 +122,9 @@ jobs:
           tests/test_schema25_app_compatibility_v2_postgres.py tests/test_schema25_app_protocol_v2.py
           tests/test_schema25_app_compatibility_v3_postgres.py tests/test_schema25_app_protocol_v3.py
           tests/test_schema25_app_rolling_v3.py tests/test_qualify_schema26_compatibility.py
+          tests/test_qualify_schema27.py tests/test_qualify_schema26_retained_v3.py
+          tests/test_notification_digest_emulator.py tests/test_schema27_app_compatibility_postgres.py
+          tests/test_mail_budget_postgres.py
           tests/test_evidence_writer_adapters.py tests/test_evidence_writer_fence.py
           tests/test_evidence_writer_fence_postgres.py tests/test_evidence_writer_schema26_contract.py
           tests/test_neon_schema26_release_transport.py tests/test_schema26_operator_successors.py
@@ -214,6 +217,7 @@ jobs:
           scripts/schema25_app_release_contract_v3.py scripts/evidence_writer_schema26_contract.py
           scripts/evidence_writer_schema26_step.py
           scripts/qualify_schema26_compatibility.py scripts/qualify_schema25_retained_v2.py
+          scripts/qualify_schema27.py scripts/qualify_schema26_retained_v3.py
           scripts/reconcile_native_expenses_schema26.py scripts/review_canary_audience_schema26.py
           ../infra/gcp/schema26_app_rolling_v3.py ../infra/gcp/schema26_migration_metadata.py
           app/routers/privacy_erasure.py
@@ -299,9 +303,11 @@ jobs:
           from sqlalchemy import create_engine, text
           from app.database import DATABASE_URL
           from scripts import evidence_writer_schema26_contract as contract
+          from scripts import notification_schema27_contract as successor
 
           configuration = Config("alembic.ini")
-          assert ScriptDirectory.from_config(configuration).get_current_head() == contract.SCHEMA
+          assert ScriptDirectory.from_config(configuration).get_current_head() == successor.SCHEMA
+          assert ScriptDirectory.from_config(configuration).get_revision(contract.SCHEMA).revision == contract.SCHEMA
           command.upgrade(configuration, contract.SCHEMA)
           engine = create_engine(DATABASE_URL, hide_parameters=True)
           def snapshot():
@@ -399,12 +405,6 @@ jobs:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
         run: .venv/bin/python scripts/qualify_schema25_retained_v1.py
-      - name: Qualify schema26 app v3 compatibility
-        working-directory: backend
-        env:
-          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
-          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
-        run: .venv/bin/python -I -B scripts/qualify_schema26_compatibility.py
       - name: Prepare pinned owned TLS Redis wire binary
         id: native-metadata-redis
         timeout-minutes: 7
@@ -426,6 +426,14 @@ jobs:
             > "$owned_redis_root/build.log" 2>&1
           test -x "$owned_redis_root/source/src/redis-server"
           printf 'binary=%s\n' "$owned_redis_root/source/src/redis-server" >> "$GITHUB_OUTPUT"
+      - name: Qualify schema26 app v3 compatibility
+        working-directory: backend
+        env:
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase compatibility
       - name: Qualify retained actual-source schema25 app v2
         working-directory: backend
         env:
@@ -441,10 +449,27 @@ jobs:
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_schema25_app_protocol_v3.py
+        run: .venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase protocol
+      - name: Qualify schema27 app compatibility
+        working-directory: backend
+        env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase compatibility
+      - name: Qualify schema27 app native protocol
+        working-directory: backend
+        env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
+          HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
+          HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
+          HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase protocol
       - name: Run backend tests
         working-directory: backend
         env:
+          HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           PYTEST_ADDOPTS: "--durations=50"
           CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
@@ -463,7 +488,9 @@ jobs:
             --owned ../infra/document-processing/service.py
           # Catch the native delivery/application contract before the full suite.
           .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics tests/test_analysis_runs.py::test_evidence_tailoring_creates_a_traceable_version_and_commits_once
-          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics --ignore=tests/test_schema25_app_compatibility_v2_postgres.py --ignore=tests/test_schema25_app_rolling_v2.py --ignore=tests/test_schema25_app_alias_retirement.py --ignore=tests/test_schema25_app_protocol_v2.py
+          # The three root-bound V3 files run above from exact qualified45b3.
+          # Current27 mixed-source/process behavior is a separate mandatory gate.
+          .venv/bin/pytest -q -p scripts.ci_postgres_lock_diagnostics --ignore=tests/test_schema25_app_compatibility_v2_postgres.py --ignore=tests/test_schema25_app_rolling_v2.py --ignore=tests/test_schema25_app_alias_retirement.py --ignore=tests/test_schema25_app_protocol_v2.py --ignore=tests/test_schema25_app_compatibility_v3_postgres.py --ignore=tests/test_schema25_app_protocol_v3.py --ignore=tests/test_schema25_app_rolling_v3.py
       - name: Save encrypted PostgreSQL failure diagnostics
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
@@ -528,7 +555,7 @@ jobs:
           git diff --exit-code -- openapi.json
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -567,7 +594,7 @@ jobs:
         run: npm run test:e2e
 
   security-and-container:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -599,7 +626,7 @@ jobs:
         run: docker build --tag hirewiz-ci:${{ github.sha }} .
 
   browser-companion:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -649,7 +676,7 @@ jobs:
 
   cold-browser-journey:
     # Independent of mocked responsive tests: production Next → real API → PG.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read

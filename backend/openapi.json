@@ -1,6 +1,82 @@
 {
   "components": {
     "schemas": {
+      "ActivityMetadata": {
+        "properties": {
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "from_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Stage"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "resume_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Version Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "to_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Stage"
+          }
+        },
+        "required": [
+          "id",
+          "opportunity_id",
+          "event_type",
+          "from_stage",
+          "to_stage",
+          "source",
+          "resume_version_id",
+          "occurred_at",
+          "recorded_at"
+        ],
+        "title": "ActivityMetadata",
+        "type": "object"
+      },
       "AnalysisQuoteAcceptance": {
         "additionalProperties": false,
         "properties": {
@@ -1618,6 +1694,53 @@
         "title": "ContactInfo",
         "type": "object"
       },
+      "ContactMetadata": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "opportunity_id",
+          "name",
+          "role",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ContactMetadata",
+        "type": "object"
+      },
       "ContactResponse": {
         "properties": {
           "created_at": {
@@ -3015,6 +3138,68 @@
         "title": "EvidenceImportResponse",
         "type": "object"
       },
+      "EvidenceMetadata": {
+        "properties": {
+          "approval_state": {
+            "title": "Approval State",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "resume_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resume_id",
+          "category",
+          "title",
+          "approval_state",
+          "provenance",
+          "confidence",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EvidenceMetadata",
+        "type": "object"
+      },
       "EvidenceResponse": {
         "properties": {
           "approval_state": {
@@ -3113,6 +3298,61 @@
           "snapshot_fingerprint"
         ],
         "title": "EvidenceResponse",
+        "type": "object"
+      },
+      "EvidenceTranscriptionReview": {
+        "properties": {
+          "assessment_fingerprint": {
+            "title": "Assessment Fingerprint",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TranscriptionSectionReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_format": {
+            "title": "Source Format",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "not_required",
+              "needs_review",
+              "reviewed",
+              "editable_source_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_id",
+          "filename",
+          "source_format",
+          "source_sha256",
+          "assessment_fingerprint",
+          "status",
+          "section"
+        ],
+        "title": "EvidenceTranscriptionReview",
         "type": "object"
       },
       "EvidenceUpdate": {
@@ -4540,6 +4780,42 @@
         "title": "MissingHiringSignal",
         "type": "object"
       },
+      "OpportunityBody": {
+        "properties": {
+          "job_description": {
+            "title": "Job Description",
+            "type": "string"
+          },
+          "job_snapshot": {
+            "additionalProperties": true,
+            "title": "Job Snapshot",
+            "type": "object"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "outcome_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Notes"
+          }
+        },
+        "required": [
+          "job_description",
+          "job_snapshot",
+          "notes",
+          "outcome_notes"
+        ],
+        "title": "OpportunityBody",
+        "type": "object"
+      },
       "OpportunityCreate": {
         "additionalProperties": false,
         "properties": {
@@ -4946,6 +5222,200 @@
         "title": "OpportunityExportResponse",
         "type": "object"
       },
+      "OpportunityHeader": {
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "compensation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compensation"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_analysis_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Analysis Run Id"
+          },
+          "latest_match_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Match Id"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "outcome_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome At"
+          },
+          "priority": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "resume_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "stage": {
+            "enum": [
+              "saved",
+              "evaluating",
+              "preparing",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn",
+              "archived"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "resume_id",
+          "latest_match_id",
+          "latest_analysis_run_id",
+          "title",
+          "company",
+          "location",
+          "source",
+          "source_url",
+          "stage",
+          "priority",
+          "compensation",
+          "deadline_at",
+          "next_action",
+          "outcome",
+          "archived_at",
+          "outcome_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OpportunityHeader",
+        "type": "object"
+      },
       "OpportunityListResponse": {
         "properties": {
           "items": {
@@ -5126,6 +5596,145 @@
           "outcome"
         ],
         "title": "OpportunityOutcomeUpdate",
+        "type": "object"
+      },
+      "OpportunityPageItem": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 200,
+            "title": "Company",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "location": {
+            "maxLength": 200,
+            "title": "Location",
+            "type": "string"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "priority": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "saved",
+              "evaluating",
+              "preparing",
+              "applied",
+              "interviewing",
+              "offer",
+              "rejected",
+              "withdrawn",
+              "archived"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "company",
+          "location",
+          "stage",
+          "priority",
+          "next_action",
+          "updated_at"
+        ],
+        "title": "OpportunityPageItem",
+        "type": "object"
+      },
+      "OpportunityPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_count": {
+            "minimum": 0.0,
+            "title": "Active Count",
+            "type": "integer"
+          },
+          "interview_count": {
+            "minimum": 0.0,
+            "title": "Interview Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityPageItem"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "schema_version": {
+            "const": "opportunity-page-v1",
+            "default": "opportunity-page-v1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_owned": {
+            "minimum": 0.0,
+            "title": "Total Owned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "total_owned",
+          "active_count",
+          "interview_count"
+        ],
+        "title": "OpportunityPageResponse",
         "type": "object"
       },
       "OpportunityResponse": {
@@ -5846,6 +6455,79 @@
           "password"
         ],
         "title": "PasswordEnrollment",
+        "type": "object"
+      },
+      "PreferenceChange": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_generation": {
+            "exclusiveMaximum": 9007199254740992.0,
+            "minimum": 0.0,
+            "title": "Expected Generation",
+            "type": "integer"
+          },
+          "explicit_confirmation": {
+            "const": true,
+            "title": "Explicit Confirmation",
+            "type": "boolean"
+          },
+          "weekly_digest": {
+            "title": "Weekly Digest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expected_generation",
+          "weekly_digest",
+          "explicit_confirmation"
+        ],
+        "title": "PreferenceChange",
+        "type": "object"
+      },
+      "PreferenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "exclusiveMaximum": 9007199254740992.0,
+            "minimum": 0.0,
+            "title": "Generation",
+            "type": "integer"
+          },
+          "next_digest_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Digest At"
+          },
+          "policy_version": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "projection_current": {
+            "title": "Projection Current",
+            "type": "boolean"
+          },
+          "weekly_digest": {
+            "title": "Weekly Digest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "weekly_digest",
+          "generation",
+          "policy_version",
+          "next_digest_at",
+          "projection_current"
+        ],
+        "title": "PreferenceResponse",
         "type": "object"
       },
       "ProjectRecommendation": {
@@ -6936,6 +7618,178 @@
           "resume_id"
         ],
         "title": "ResumeVersionCreate",
+        "type": "object"
+      },
+      "ResumeVersionMetadata": {
+        "properties": {
+          "approval_state": {
+            "title": "Approval State",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opportunity Id"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "resume_id",
+          "opportunity_id",
+          "version_number",
+          "label",
+          "approval_state",
+          "submitted_at",
+          "created_at"
+        ],
+        "title": "ResumeVersionMetadata",
+        "type": "object"
+      },
+      "ResumeVersionOption": {
+        "properties": {
+          "approval_state": {
+            "title": "Approval State",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opportunity Id"
+          },
+          "resume_id": {
+            "title": "Resume Id",
+            "type": "integer"
+          },
+          "source_preserving_edits": {
+            "title": "Source Preserving Edits",
+            "type": "boolean"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "resume_id",
+          "opportunity_id",
+          "version_number",
+          "label",
+          "approval_state",
+          "submitted_at",
+          "created_at",
+          "source_preserving_edits"
+        ],
+        "title": "ResumeVersionOption",
+        "type": "object"
+      },
+      "ResumeVersionPageResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ResumeVersionOption"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "selected_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumeVersionOption"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "selected_version"
+        ],
+        "title": "ResumeVersionPageResponse",
         "type": "object"
       },
       "ResumeVersionResponse": {
@@ -8476,6 +9330,24 @@
         "title": "TranscriptionSectionReview",
         "type": "object"
       },
+      "UnsubscribeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "UnsubscribeRequest",
+        "type": "object"
+      },
       "UploadCreate": {
         "additionalProperties": false,
         "properties": {
@@ -9176,6 +10048,314 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WorkspaceEvidenceDetail": {
+        "properties": {
+          "evidence": {
+            "$ref": "#/components/schemas/EvidenceResponse"
+          },
+          "transcription": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceTranscriptionReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transcription_unavailable": {
+            "default": false,
+            "title": "Transcription Unavailable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evidence",
+          "transcription"
+        ],
+        "title": "WorkspaceEvidenceDetail",
+        "type": "object"
+      },
+      "WorkspacePage_ActivityMetadata_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[ActivityMetadata]",
+        "type": "object"
+      },
+      "WorkspacePage_ContactMetadata_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContactMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[ContactMetadata]",
+        "type": "object"
+      },
+      "WorkspacePage_EvidenceMetadata_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[EvidenceMetadata]",
+        "type": "object"
+      },
+      "WorkspacePage_ReminderResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReminderResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[ReminderResponse]",
+        "type": "object"
+      },
+      "WorkspacePage_ResumeVersionMetadata_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ResumeVersionMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[ResumeVersionMetadata]",
+        "type": "object"
+      },
+      "WorkspacePages": {
+        "properties": {
+          "activity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePage_ActivityMetadata_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contacts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePage_ContactMetadata_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePage_EvidenceMetadata_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePage_ReminderResponse_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resume_versions": {
+            "$ref": "#/components/schemas/WorkspacePage_ResumeVersionMetadata_"
+          }
+        },
+        "required": [
+          "resume_versions"
+        ],
+        "title": "WorkspacePages",
+        "type": "object"
+      },
+      "WorkspaceResponse": {
+        "properties": {
+          "approved_evidence_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Evidence Count"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityMatchResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match_source_state": {
+            "enum": [
+              "none",
+              "current",
+              "different_resume",
+              "unavailable"
+            ],
+            "title": "Match Source State",
+            "type": "string"
+          },
+          "opportunity": {
+            "$ref": "#/components/schemas/OpportunityHeader"
+          },
+          "pages": {
+            "$ref": "#/components/schemas/WorkspacePages"
+          },
+          "resumes": {
+            "$ref": "#/components/schemas/ResumePageResponse"
+          },
+          "selected_resume_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumeVersionMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_resume_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumeVersionMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_resume_version_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted Resume Version Id"
+          }
+        },
+        "required": [
+          "resumes",
+          "match",
+          "match_source_state",
+          "opportunity",
+          "pages",
+          "submitted_resume_version_id",
+          "submitted_resume_version",
+          "selected_resume_version",
+          "approved_evidence_count"
+        ],
+        "title": "WorkspaceResponse",
         "type": "object"
       }
     },
@@ -13211,6 +14391,157 @@
         "summary": "Public Catalog",
         "tags": [
           "public-credits"
+        ]
+      }
+    },
+    "/api/public/notifications/unsubscribe": {
+      "post": {
+        "operationId": "unsubscribe_api_public_notifications_unsubscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "summary": "Unsubscribe",
+        "tags": [
+          "notification-unsubscribe"
         ]
       }
     },
@@ -17916,6 +19247,186 @@
         ]
       }
     },
+    "/api/v1/notifications/preferences": {
+      "get": {
+        "operationId": "preferences_api_v1_notifications_preferences_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Preferences",
+        "tags": [
+          "notification-preferences"
+        ]
+      },
+      "put": {
+        "operationId": "change_api_v1_notifications_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferenceChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "detail": {
+                      "const": "Invalid authentication request",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication input rejected without reflecting private values"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Change",
+        "tags": [
+          "notification-preferences"
+        ]
+      }
+    },
     "/api/v1/opportunities": {
       "get": {
         "operationId": "list_opportunities_api_v1_opportunities_get",
@@ -18060,6 +19571,117 @@
           }
         ],
         "summary": "Create Opportunity",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/page": {
+      "get": {
+        "operationId": "page_opportunities_api_v1_opportunities_page_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Stage"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Page Opportunities",
         "tags": [
           "career-workspace"
         ]
@@ -18328,6 +19950,24 @@
               "title": "Opportunity Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "resume_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9223372036854775808,
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resume Id"
+            }
           }
         ],
         "responses": {
@@ -18472,6 +20112,410 @@
           }
         ],
         "summary": "Transition Opportunity",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace": {
+      "get": {
+        "operationId": "get_workspace_api_v1_opportunities__opportunity_id__workspace_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tab",
+            "required": false,
+            "schema": {
+              "default": "overview",
+              "enum": [
+                "overview",
+                "resume",
+                "learning",
+                "interview",
+                "outcome",
+                "activity"
+              ],
+              "title": "Tab",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "selected_version_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Selected Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Workspace",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/body": {
+      "get": {
+        "operationId": "get_workspace_body_api_v1_opportunities__opportunity_id__workspace_body_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityBody"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Workspace Body",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/source-snapshot": {
+      "post": {
+        "operationId": "create_workspace_source_snapshot_api_v1_opportunities__opportunity_id__workspace_source_snapshot_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Workspace Source Snapshot",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": {
+      "get": {
+        "operationId": "get_workspace_page_api_v1_opportunities__opportunity_id__workspace__collection__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "enum": [
+                "activity",
+                "contacts",
+                "reminders",
+                "evidence",
+                "resume_versions"
+              ],
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 24,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_ActivityMetadata_"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_ContactMetadata_"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_ReminderResponse_"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_EvidenceMetadata_"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_ResumeVersionMetadata_"
+                    }
+                  ],
+                  "title": "Response Get Workspace Page Api V1 Opportunities  Opportunity Id  Workspace  Collection  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Workspace Page",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/{collection}/{item_id}": {
+      "get": {
+        "operationId": "get_workspace_item_api_v1_opportunities__opportunity_id__workspace__collection___item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "enum": [
+                "activity",
+                "contacts",
+                "reminders",
+                "evidence",
+                "resume_versions"
+              ],
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ApplicationEventResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ContactResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ReminderResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspaceEvidenceDetail"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ResumeVersionResponse"
+                    }
+                  ],
+                  "title": "Response Get Workspace Item Api V1 Opportunities  Opportunity Id  Workspace  Collection   Item Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Workspace Item",
         "tags": [
           "career-workspace"
         ]
@@ -18751,6 +20795,119 @@
           }
         ],
         "summary": "Create Resume Version",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/resume-versions/page": {
+      "get": {
+        "operationId": "get_resume_version_page_api_v1_resume_versions_page_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "resume_id",
+            "required": true,
+            "schema": {
+              "exclusiveMaximum": 9223372036854775808,
+              "exclusiveMinimum": 0,
+              "title": "Resume Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approval_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 24,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Approval State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "current_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeVersionPageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Resume Version Page",
         "tags": [
           "career-workspace"
         ]

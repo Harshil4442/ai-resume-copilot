@@ -171,6 +171,53 @@ describe("catalog-only latency propagation", () => {
   });
 });
 
+describe("workspace page cancellation", () => {
+  const pageContext = () => context(["v1", "opportunities", "page"]);
+  const pageRequest = (signal: AbortSignal) => new NextRequest(
+    `${site}/api/backend/v1/opportunities/page?limit=20&search=designer`, { signal },
+  );
+
+  it("propagates an abandoned search to its upstream read signal", async () => {
+    const controller = new AbortController();
+    const response = await GET(pageRequest(controller.signal), pageContext());
+    expect(response.status).toBe(200);
+    const [target, options] = fetchBackend.mock.calls[0];
+    expect(String(target)).toBe("https://backend.example.test/api/v1/opportunities/page?limit=20&search=designer");
+    expect(options.signal.aborted).toBe(false);
+    controller.abort();
+    expect(options.signal.aborted).toBe(true);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    expect(options.cache).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+
+  it("retains the upstream deadline when the browser remains connected", async () => {
+    const timeout = new AbortController();
+    const spy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    try {
+      await GET(pageRequest(new AbortController().signal), pageContext());
+      const signal = fetchBackend.mock.calls[0][1].signal;
+      expect(spy).toHaveBeenCalledWith(65_000);
+      expect(signal.aborted).toBe(false);
+      timeout.abort(new DOMException("Synthetic deadline", "TimeoutError"));
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason.name).toBe("TimeoutError");
+    } finally { spy.mockRestore(); }
+  });
+
+  it("does not reinterpret a browser cancellation as authority to cancel a mutation", async () => {
+    const controller = new AbortController();
+    const incoming = new NextRequest(`${site}/api/backend/v1/opportunities`, {
+      method: "POST", signal: controller.signal, headers: { origin: site, "content-type": "application/json" }, body: "{}",
+    });
+    expect((await POST(incoming, context(["v1", "opportunities"]))).status).toBe(200);
+    const signal = fetchBackend.mock.calls[0][1].signal;
+    controller.abort();
+    expect(signal.aborted).toBe(false);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+  });
+});
+
 
 describe("generic proxy cannot reach credential or private native operations", () => {
   it.each([ ["auth","login"], ["auth","google-login"], ["auth","register"],
