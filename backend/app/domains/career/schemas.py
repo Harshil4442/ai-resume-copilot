@@ -100,6 +100,27 @@ class OpportunityListResponse(BaseModel):
     total: int
 
 
+class OpportunityPageItem(StrictModel):
+    id: str = Field(min_length=1, max_length=64)
+    title: str = Field(max_length=200)
+    company: str = Field(max_length=200)
+    location: str = Field(max_length=200)
+    stage: OpportunityStage
+    priority: OpportunityPriority
+    next_action: str | None = Field(max_length=240)
+    updated_at: datetime
+
+
+class OpportunityPageResponse(StrictModel):
+    schema_version: Literal["opportunity-page-v1"] = "opportunity-page-v1"
+    items: list[OpportunityPageItem] = Field(max_length=50)
+    total: int = Field(strict=True, ge=0)
+    total_owned: int = Field(strict=True, ge=0)
+    active_count: int = Field(strict=True, ge=0)
+    interview_count: int = Field(strict=True, ge=0)
+    next_cursor: str | None = Field(default=None, max_length=1024)
+
+
 class ApplicationEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

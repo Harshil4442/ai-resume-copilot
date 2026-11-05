@@ -193,13 +193,18 @@ async function forward(
   const upstreamTimeoutMs = request.method === "POST" && path.length === 2
     && path[0] === "resume" && path[1] === "parse" ? 120_000 : 65_000;
   try {
+    const deadline = AbortSignal.timeout(upstreamTimeoutMs);
+    // A superseded Workspace search may release this read immediately. Keep
+    // mutation transport unchanged: a disconnected client cannot undo a write.
+    const upstreamSignal = request.method === "GET" && path.join("/") === "v1/opportunities/page"
+      ? AbortSignal.any([request.signal, deadline]) : deadline;
     const response = await fetch(target, {
       method: request.method,
       redirect: "error",
       headers,
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(upstreamTimeoutMs),
+      signal: upstreamSignal,
     });
     const responseHeaders = new Headers({
       "Cache-Control": "private, no-store, max-age=0",

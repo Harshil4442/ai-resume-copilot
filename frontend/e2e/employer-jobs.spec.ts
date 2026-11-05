@@ -43,12 +43,15 @@ function fixture() {
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 100, sources: [{ id: "src_fixture", employer: "Example Studio", platform: "greenhouse", careers_url: "https://employer.example/careers", last_success_at: now, status: "healthy", application_mode: "api" }] };
   const posting = { id: "job_fixture", source_id: "src_fixture", external_id: "123", title: "Backend Engineer", employer: "Example Studio", location: "Remote", description: "Build reliable Python and PostgreSQL services.", canonical_url: "https://employer.example/careers/123", apply_url: "https://employer.example/apply/123", platform: "greenhouse", publication_at: null, last_checked_at: now, application_mode: "api" };
   const application: EmployerApplication = { id: "app_fixture", status: "needs_action", application_mode: "api", posting, resume_id: 1, resume_choice: "original", resume_version_id: null, form: { version: "fixture-v1", fields: [{ id: "name", label: "Full name", type: "text", required: true, options: [] }, { id: "work", label: "Work authorization", type: "single_select", required: true, options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }] }], consents: [{ id: "privacy", label: "Employer privacy consent", required: true, policy_url: "https://employer.example/privacy" }] }, package_digest: digest, artifact: { sha256: "b".repeat(64), filename: "Taylor-resume.docx", size_bytes: 1000, media_type: docxType, preview_url: "unused" }, answers: {}, consents: {}, missing_fields: ["name", "work", "privacy"], credit_cost: 7, charged_credits: 0, requires_user_action: true, error: null };
-  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false, savedResultsUnavailable: false };
+  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false, savedResultsUnavailable: false, lazyResumePages: false };
   const requests: { path: string; method: string; body: Record<string, unknown>; query: string }[] = [];
   const unexpected: string[] = [];
   const searches: EmployerSearch[] = [];
   const runs: Record<string, unknown>[] = [];
   const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved" as const, source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
+  const workspaceRows: components["schemas"]["OpportunityPageItem"][] = [{ id: opportunity.id,
+    title: opportunity.title, company: opportunity.company, location: opportunity.location, stage: opportunity.stage,
+    priority: "medium", next_action: opportunity.next_action, updated_at: opportunity.updated_at }];
   const resumes = [{ id: 1, filename: "Taylor-resume.docx", source_available: true, source_format: "docx", created_at: now }, { id: 2, filename: "Custom-resume.docx", source_available: true, source_format: "docx", created_at: now }];
   const versionOptions = [
     { id: "version_approved", resume_id: 1, opportunity_id: "opp_fixture", version_number: 2, label: "Backend Engineer", approval_state: "approved", submitted_at: null, created_at: now, source_preserving_edits: true },
@@ -126,6 +129,27 @@ function fixture() {
       else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
       else if (path === "/analytics/summary") value = { profile_completeness: 80, average_match_score: 0, resume_count: 1, applications_count: 0, match_history: [] };
       else if (path === "/v1/reminders") value = [];
+      else if (path === "/v1/opportunities/page" && method === "GET") {
+        expect(url.searchParams.get("limit")).toBe("20");
+        expect([...url.searchParams.keys()].every((key) => ["limit", "stage", "search", "include_archived", "cursor"].includes(key))).toBe(true);
+        const stage = url.searchParams.get("stage");
+        const search = (url.searchParams.get("search") || "").trim().toLowerCase();
+        const includeArchived = url.searchParams.get("include_archived") === "true";
+        const filtered = workspaceRows.filter((row) => (stage ? row.stage === stage : includeArchived || row.stage !== "archived")
+          && (!search || `${row.title} ${row.company} ${row.location}`.toLowerCase().includes(search)))
+          .sort((left, right) => right.updated_at.localeCompare(left.updated_at) || right.id.localeCompare(left.id));
+        // Fixture-only continuation; genuine signed cursor behavior has
+        // separate backend ownership/filter/production-dialect controls.
+        const prefix = `workspace_${createHash("sha256").update(JSON.stringify({ stage, search, includeArchived })).digest("hex").slice(0, 12)}_`;
+        const cursor = url.searchParams.get("cursor");
+        if (cursor) expect(cursor.startsWith(prefix)).toBe(true);
+        const offset = cursor ? Number(cursor.slice(prefix.length)) : 0;
+        expect(Number.isSafeInteger(offset) && offset >= 0).toBe(true);
+        value = { schema_version: "opportunity-page-v1", items: filtered.slice(offset, offset + 20), total: filtered.length,
+          total_owned: workspaceRows.length, active_count: workspaceRows.filter((row) => !["rejected", "withdrawn", "archived"].includes(row.stage)).length,
+          interview_count: workspaceRows.filter((row) => row.stage === "interviewing").length,
+          next_cursor: offset + 20 < filtered.length ? `${prefix}${offset + 20}` : null } satisfies components["schemas"]["OpportunityPageResponse"];
+      }
       else if (path === "/v1/opportunities" && method === "GET") value = { items: [opportunity], total: 1 };
       else if (path === "/v1/opportunities/opp_existing_fixture/workspace" && method === "GET") {
         expect(url.searchParams.get("limit")).toBe("20");
@@ -149,7 +173,11 @@ function fixture() {
         const currentId = url.searchParams.get("current_id");
         const selected = resumes.find((resume) => resume.id === Number(currentId));
         if (currentId && !selected) { status = 404; value = { detail: "Resume not found." }; }
-        else value = { resumes, next_cursor: null, selected_resume: selected || null };
+        else if (state.lazyResumePages && !currentId) {
+          const older = url.searchParams.get("cursor");
+          if (older) expect(older).toBe("resume_fixture_older");
+          value = { resumes: older ? [resumes[0]] : [resumes[1]], next_cursor: older ? null : "resume_fixture_older", selected_resume: null };
+        } else value = { resumes, next_cursor: null, selected_resume: selected || null };
       }
       else if (path === `${base}/catalog`) value = catalog;
       else if (path === `${base}/credits` && method === "GET") value = { balance: catalog.balance, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null } satisfies ServiceCreditHistoryPage;
@@ -208,7 +236,7 @@ function fixture() {
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     });
   }
-  return { catalog, application, state, requests, unexpected, searches, install, billingQuote };
+  return { catalog, application, state, requests, unexpected, searches, workspaceRows, install, billingQuote };
 }
 
 async function searchOne(page: Page) {
@@ -502,6 +530,54 @@ test("queued application polling reaches confirmation and refreshes paid status"
   await expect(dialog.getByRole("heading", { name: "Employer submission confirmed" })).toBeVisible(); await dialog.getByRole("button", { name: "Close application review" }).click(); await expect(page.getByRole("button", { name: /Backend Engineer Example Studio Submission confirmed/ })).toBeVisible(); await expect(page.getByRole("main").getByText("93", { exact: true })).toBeVisible(); expect(f.requests.filter((r) => r.path.endsWith("/execute"))).toHaveLength(1); expect(f.unexpected).toEqual([]);
 });
 
+
+test("workspace pages search all saved roles and load resume options only on demand", async ({ page, context, baseURL }, testInfo) => {
+  const f = fixture(); f.state.lazyResumePages = true;
+  f.workspaceRows.splice(0, f.workspaceRows.length, ...Array.from({ length: 45 }, (_, index) => ({
+    id: `opp_page_${String(index).padStart(3, "0")}`, title: index === 6 ? "Needle %_ Engineer" : `Owned role ${String(index).padStart(3, "0")}`,
+    company: "Example Studio", location: "Remote", stage: (index < 5 ? "archived" : index < 10 ? "interviewing" : "saved") as "archived" | "interviewing" | "saved",
+    priority: "medium" as const, next_action: null, updated_at: now,
+  })));
+  await f.install(context, baseURL!); await page.goto("/workspace");
+  await expect(page.getByText("40 active roles and 5 in interview stage.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Showing 20 of 40 matching opportunities · 45 saved in total.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Owned role 044", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Needle %_ Engineer", exact: true })).toHaveCount(0);
+  const pages = () => f.requests.filter((request) => request.path === "/v1/opportunities/page");
+  const resumeReads = () => f.requests.filter((request) => request.path === "/resume/page");
+  expect(pages()).toHaveLength(1); expect(resumeReads()).toHaveLength(0);
+  expect(f.requests.some((request) => request.path === "/v1/opportunities" && request.method === "GET")).toBe(false);
+  await page.getByRole("button", { name: "Older opportunities", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Owned role 024", exact: true })).toBeVisible();
+  await expect(page.getByText("Viewing older results", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Older opportunities", exact: true })).toBeDisabled();
+  expect(pages()).toHaveLength(2); expect(new URLSearchParams(pages().at(-1)!.query).has("cursor")).toBe(true);
+  await page.getByRole("button", { name: "Newest opportunities", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Owned role 044", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Search opportunities", exact: true }).fill("Needle %_");
+  await expect(page.getByRole("heading", { name: "Needle %_ Engineer", exact: true })).toBeVisible();
+  await expect(page.getByText("Showing 1 of 1 matching opportunities · 45 saved in total.", { exact: true })).toBeVisible();
+  await expect(page.getByText("40 active roles and 5 in interview stage.", { exact: true })).toBeVisible();
+  expect(new URLSearchParams(pages().at(-1)!.query).get("search")).toBe("Needle %_");
+  expect(new URLSearchParams(pages().at(-1)!.query).has("cursor")).toBe(false); expect(resumeReads()).toHaveLength(0);
+  await checkLayout(page);
+  await page.getByRole("button", { name: "Add opportunity", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("combobox", { name: "Resume", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("option", { name: "Custom-resume.docx · #2", exact: true })).toBeAttached();
+  expect(resumeReads()).toHaveLength(1);
+  await dialog.getByRole("button", { name: "Load older resumes", exact: true }).click();
+  await expect(dialog.getByRole("option", { name: "Taylor-resume.docx · #1", exact: true })).toBeAttached();
+  await dialog.getByRole("combobox", { name: "Resume", exact: true }).selectOption("1");
+  await expect(dialog.getByRole("combobox", { name: "Resume", exact: true })).toHaveValue("1"); expect(resumeReads()).toHaveLength(2);
+  await checkLayout(page);
+  if (process.env.PLAYWRIGHT_SCREENSHOT_DIR) {
+    await mkdir(process.env.PLAYWRIGHT_SCREENSHOT_DIR, { recursive: true });
+    await page.screenshot({ path: `${process.env.PLAYWRIGHT_SCREENSHOT_DIR}/workspace-page-${testInfo.project.name}.png`, fullPage: true });
+  }
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  expect(f.requests.filter((request) => request.method !== "GET")).toEqual([]); expect(f.unexpected).toEqual([]);
+});
 
 test("existing dashboard, workspace, resume and billing remain usable at every width", async ({ page, context, baseURL }, testInfo) => {
   const f = fixture(); await f.install(context, baseURL!);

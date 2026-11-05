@@ -103,13 +103,13 @@ def test_ci_fixture_really_checks_server17_and_disposes_owned_client(monkeypatch
 
 def identity():
     return {"family": gate.FAMILY, "source_only": True, "application_source": {"family": gate.FAMILY,
-        "qualification_sha256": "a" * 64, "app_sha256": "b" * 64, "app_files": 311},
+        "qualification_sha256": "a" * 64, "app_sha256": "b" * 64, "app_files": 312},
         **dict.fromkeys(("native_runner_eligible", "retained_producer_proof", "native_approval",
                         "processing_authorized", "authorizes_retail"), False)}
 
 
 def test_current_application_consumer_keeps_non_native_role_and_exact_family_app_fingerprint():
-    contract = SimpleNamespace(CANDIDATE_APP_SHA256="b" * 64, CANDIDATE_APP_FILES=311)
+    contract = SimpleNamespace(CANDIDATE_APP_SHA256="b" * 64, CANDIDATE_APP_FILES=312)
     gate.validate_application_identity(identity(), contract, "a" * 64)
 
 
@@ -123,7 +123,7 @@ def test_current_application_role_cannot_be_relabelled_native_or_other_source(fi
         value[field] = True if field != "source_only" else False
     with pytest.raises(gate.Schema27QualificationDenied):
         gate.validate_application_identity(value, SimpleNamespace(CANDIDATE_APP_SHA256="b" * 64,
-            CANDIDATE_APP_FILES=311), "a" * 64)
+            CANDIDATE_APP_FILES=312), "a" * 64)
 
 
 def write_report(path, *, phase, damage=None):

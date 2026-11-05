@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-05T17:56:41.958931+00:00",
+  "updated_at": "2026-11-05T18:32:36.685437+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -594,7 +594,8 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
       ]
     },
     {
@@ -655,7 +656,8 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md"
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
       ]
     },
     {
@@ -664,7 +666,8 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
-        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md"
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
       ]
     },
     {

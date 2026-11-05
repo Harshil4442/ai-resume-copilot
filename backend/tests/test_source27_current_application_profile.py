@@ -48,7 +48,7 @@ def modules(tmp_path, monkeypatch):
         Source27BridgeBoundary=lambda root: ("Source27", root))
     contract = module("scripts.schema27_app_release_contract", "backend/scripts/schema27_app_release_contract.py",
         CONTRACT=FAMILY, CANDIDATE_APP_SHA256=q.CURRENT_APPLICATION_APP_SHA256,
-        CANDIDATE_APP_FILES=311, PRIOR_RELEASE="c" * 40)
+        CANDIDATE_APP_FILES=312, PRIOR_RELEASE="c" * 40)
     monkeypatch.setattr(scripts, "schema27_app_release_contract", contract, raising=False)
     release = module("unified_credit_schema25_release", "infra/gcp/unified_credit_schema25_release.py")
     old = (SimpleNamespace(Source26Boundary=lambda root: ("Source26", root)), SimpleNamespace(), SimpleNamespace())
@@ -79,7 +79,7 @@ def test_current_family_refuses_foreign_validator_origins(modules, name):
 
 @pytest.mark.parametrize("name,value", [("CONTRACT", LEGACY), ("CANDIDATE_APP_SHA256", "0" * 64),
     ("CANDIDATE_APP_FILES", 294)])
-def test_current_family_requires_the_exact_new_contract_and311_pin(modules, name, value):
+def test_current_family_requires_the_exact_new_contract_and312_pin(modules, name, value):
     setattr(modules.contract, name, value)
     with pytest.raises(ValueError, match="application_pins"):
         q.current_application_modules(FAMILY)
@@ -94,7 +94,7 @@ def test_application_source_invokes_its_actual_family_fingerprint_and_two_source
     monkeypatch.setattr(q, "git", lambda root, *args: HEAD.encode())
     result = q.current_application_source(m.root, family=FAMILY)
     assert [row[0] for row in calls] == ["checked", "fingerprint", "checked"]
-    assert result["qualification_sha256"] == STAMP and result["app_files"] == 311
+    assert result["qualification_sha256"] == STAMP and result["app_files"] == 312
     assert result["family"] == FAMILY and result["role"] == "current_application_operator_source"
     assert result["native_runner_eligible"] is result["retained_producer_proof"] is result["processing_authorized"] is False
     assert "entry_sha256" not in result and "build_id" not in result
@@ -117,11 +117,11 @@ def owned_profile(tmp_path, monkeypatch, request):
     root.mkdir()
     contract, observer = profile.APPLICATION_CONTRACTS[family]
     app_sha = q.CURRENT_APPLICATION_APP_SHA256 if family == FAMILY else q.APP_SHA256
-    count = 311 if family == FAMILY else 294
+    count = 312 if family == FAMILY else 294
     literal = {"CONTRACT": family, "CANDIDATE_APP_SHA256": app_sha, "CANDIDATE_APP_FILES": count,
         "COMPATIBILITY_STEP": "Owned compatibility", "PROTOCOL_STEP": "Owned protocol", "RETAINED_STEP": "Owned retained"}
     port = {"CURRENT_APPLICATION_FAMILY": FAMILY, "CURRENT_APPLICATION_APP_SHA256": q.CURRENT_APPLICATION_APP_SHA256,
-            "CURRENT_APPLICATION_APP_FILES": 311} if family == FAMILY else {"APP_SHA256": q.APP_SHA256}
+            "CURRENT_APPLICATION_APP_FILES": 312} if family == FAMILY else {"APP_SHA256": q.APP_SHA256}
     files = {profile.PORT_PATH: "\n".join(name + " = " + repr(value) for name, value in port.items()) + "\nimport " + Path(observer).stem + "\n",
         contract: "\n".join(name + " = " + repr(value) for name, value in literal.items()) + "\n",
         observer: "from app import owned_helper\n", "backend/app/owned_helper.py": '"""Owned source; never execute."""\n'}

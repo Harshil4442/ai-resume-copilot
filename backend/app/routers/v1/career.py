@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ... import models
 from ...database import get_db
-from ...domains.career import schemas, service, transcription_review, workspace
+from ...domains.career import browsing, schemas, service, transcription_review, workspace
 from ...feature_flags import decide_feature
 from ...security import get_current_user
 from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
@@ -74,6 +74,22 @@ def list_applications(
     application_stages = {"applied", "interviewing", "offer", "rejected", "withdrawn"}
     applications = [item for item in items if item.stage in application_stages]
     return schemas.OpportunityListResponse(items=applications, total=len(applications))
+
+
+@router.get("/opportunities/page", response_model=schemas.OpportunityPageResponse)
+def page_opportunities(
+    response: Response,
+    stage: str | None = Query(default=None, max_length=32),
+    search: str | None = Query(default=None, max_length=200),
+    include_archived: bool = False,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=1024),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return browsing.page(db, current_user.id, stage=stage, search=search,
+        include_archived=include_archived, limit=limit, cursor=cursor)
 
 
 @router.get("/opportunities/{opportunity_id}", response_model=schemas.OpportunityDetailResponse)

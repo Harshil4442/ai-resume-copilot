@@ -2215,6 +2215,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/opportunities/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page Opportunities */
+        get: operations["page_opportunities_api_v1_opportunities_page_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/opportunities/{opportunity_id}": {
         parameters: {
             query?: never;
@@ -4578,6 +4595,55 @@ export interface components {
              * @enum {string}
              */
             outcome: "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
+        };
+        /** OpportunityPageItem */
+        OpportunityPageItem: {
+            /** Company */
+            company: string;
+            /** Id */
+            id: string;
+            /** Location */
+            location: string;
+            /** Next Action */
+            next_action: string | null;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "low" | "medium" | "high";
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "saved" | "evaluating" | "preparing" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn" | "archived";
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OpportunityPageResponse */
+        OpportunityPageResponse: {
+            /** Active Count */
+            active_count: number;
+            /** Interview Count */
+            interview_count: number;
+            /** Items */
+            items: components["schemas"]["OpportunityPageItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Schema Version
+             * @default opportunity-page-v1
+             * @constant
+             */
+            schema_version: "opportunity-page-v1";
+            /** Total */
+            total: number;
+            /** Total Owned */
+            total_owned: number;
         };
         /** OpportunityResponse */
         OpportunityResponse: {
@@ -11977,6 +12043,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    page_opportunities_api_v1_opportunities_page_get: {
+        parameters: {
+            query?: {
+                stage?: string | null;
+                search?: string | null;
+                include_archived?: boolean;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityPageResponse"];
                 };
             };
             /** @description Validation Error */

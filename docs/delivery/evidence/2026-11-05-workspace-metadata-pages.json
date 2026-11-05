@@ -1,0 +1,123 @@
+{
+  "observed_at": "2026-11-05T18:32:36.685437+00:00",
+  "state": "LOCAL_IMPLEMENTED_REVIEWED_NOT_DEPLOYED_OR_CAPACITY_QUALIFIED",
+  "parent_commit": "e040049077fbbf330e7c51adeac7e9ad1c312511",
+  "requirements": [
+    "A03",
+    "F04",
+    "F05"
+  ],
+  "implementation": {
+    "problem": "Workspace landing downloaded up to200 complete Opportunity bodies and snapshots, then filtered only that prefix locally. Older saved roles were absent from screen search; large descriptions inflated initial payload.",
+    "backend": "Additive authenticated, feature-gated /api/v1/opportunities/page returns20/default50/max closed metadata rows and signed owner/filter/archive/limit-bound keyset cursors. Literal server search covers all owned roles; separate scalar and metadata statements retain actual owner filtering without loading descriptions, snapshots or notes. Total counts are filtered while active/interview/total_owned counters cover the explicit owner scope. Counts and pages are advisory current reads, not an immutable snapshot. Existing legacy detail/list/export and native authentication remain unchanged.",
+    "frontend": "Strict generated-DTO metadata client uses owner/filter/window keys and cancellation,300ms search, manual Older/Newest, honest global counts and no automatic retry/traversal/legacy fallback. Newest refreshes the current firstpage; invalid older cursor has explicit fresh-head recovery. Changed owner remounts local state and suppresses late create callback effects. Resume selector reads only when Add dialog opens.",
+    "BFF": "Only exact new opportunity-page GET combines incoming client abort with its original65s upstream deadline. Mutations, other GETs and upload timeout retain existing behavior. This releases the BFF read but does not prove already-started sync backend/native work stopped.",
+    "current_source": "Current312 app0f0e21c8e94abfa55c8b544ecf9035ecac8abdaa8bde075086d848fadd586a6e; newHTTPpath/2schemas bound explicitly, generated types synchronized. Source27 current application role remains source-only/native-runner ineligible. Historical retained45b3/290/f277 and producer pins/roles unchanged."
+  },
+  "verification": {
+    "payload": {
+      "synthetic_owned_roles": 201,
+      "JD_chars_per_role": 99992,
+      "legacy_200_body_response_proven_lower_bound_bytes": 30000000,
+      "new_default20_metadata_bytes": 3803,
+      "older_role201_search_upper_bound_bytes": 2000,
+      "scope": "Same large-body synthetic fixture. Retained legacy read not repeated solely for final measurement; no production latency or universal savings claim."
+    },
+    "backend": "23 distinct local controls:22 ASGI/SQLite plus1 real owned PostgreSQL17 dialect/escaping/ties/ownership/two-query check; Ruff5/defaultMypy3PASS. Original before-fix404/body-prefix case retained. Owned PG stopped.",
+    "frontend": "24 author-observed unique controls(14client+10UI), focused delta XML and honest fixture/async history retained; strictESLint4/fullTypeScriptPASS. Independent final4hash peerPASS.",
+    "BFF": "Expected before-red(client abort ignored); final76/76 existing+new controlsPASS,0skips; ESLint2PASS; independent exact2hash/reversalpeerPASS.",
+    "browser": "10/10 affected cases on compiled local production frontend, single attempts, no retries/skips/unexpected calls, at320/390/768/1024/1440. Embedded Axe, horizontal-overflow, keyboard, paging/search/count/lazy-selector and existing account-page controlsPASS. API responses intercepted with synthetic fixtures; separate ASGI/PG evidence covers data behavior. Root stopped exact local server62352(exit130) and verified3187closed.",
+    "build": "Local Next16.4.2/Node24.18.1 optimized webpack build,TypeScript and50static pagesPASS. Initial compile/typecheck passed but page-config collection failed because local NEXTAUTH_SECRET was absent; repeat used explicit build-only synthetic auth/loopback settings. No product auth code changed or real credentials used. This is not GitHub/Vercel production qualification.",
+    "current_source": "123 owned synthetic source/profile/runner controlsPASS1.15s; Ruff8/Mypy4PASS. Collection-only500publicnodes/28suites/all43mandatorygroups match; no testfixtures/bodies executed by collection. Exact8leaf reverse/historypeer plus one E2E-closure addendumPASS.",
+    "OpenAPI": {
+      "sha256": "bb908fb53e30cbb55b6a2176fb0ef2f65f7adb5cbbaee2546e9686b81a2aa33d",
+      "generated_types_sha256": "d9cc3234e29ed5ce108287902572f262433e7d9679df382d67a09d8b14ae35b2",
+      "change": "Exactly1newGETpath and2newschemas; no prior path/schema changed or removed."
+    }
+  },
+  "source_files": {
+    "backend/app/domains/career/browsing.py": "3b18daa0a4cc99f23480457c54c5ccec5db5a1aef09e6f5c99344859cc9daed5",
+    "backend/app/domains/career/schemas.py": "0624f227c3853f736dd4b6172b8d957d878a838192afefa43f42e9e74729792b",
+    "backend/app/routers/v1/career.py": "3cb3613b76fd31054cfd9b73e9daad92320d0fda1e732b193d53f2c6b7d07152",
+    "backend/evaluation/native_acquisition_v2/qualification.py": "b1c7035a2284e09d1630a0277ea314df7877cf1bcf49c78cd8f4901814a93c6f",
+    "backend/openapi.json": "bb908fb53e30cbb55b6a2176fb0ef2f65f7adb5cbbaee2546e9686b81a2aa33d",
+    "backend/scripts/qualify_native_quality_acquisition.py": "959c70ca57552680db9ec873aa62c8cd384c9d09480c748161ece9eba3a0451b",
+    "backend/scripts/qualify_schema27.py": "290862e135b08dcc941c94e49988a3d133be1a50fc24cc0b0b98b1ff73e037f2",
+    "backend/scripts/schema27_app_release_contract.py": "54a322e5e2c8dfefa2a05a02fb70b2dbad3437539f1275056bbb094f518688eb",
+    "backend/tests/test_opportunity_browsing.py": "f6629adade4495e0e695a33dc3fdc0609ac05e97c1bd10eb2026e2ee12f8bdaa",
+    "backend/tests/test_opportunity_browsing_postgres.py": "c6f33069fd04b3183e3dd759720d6165953eeb684b835b5062a2d4119132744e",
+    "backend/tests/test_qualify_schema27.py": "f9dfa2575cbffa254b3dfbb6750d61ab3a8730c71584849b87dd4287d7486666",
+    "backend/tests/test_schema27_app_compatibility_postgres.py": "a9cd743ed006fda768abeb32e878e71a0a2f0265ac2d9ae7104c7fc6b0a4bcf9",
+    "backend/tests/test_schema27_app_release_contract.py": "a27696340e34aeb4f2fa3161d02d44afac157db0267f46da1b5ea8a0d0a9507c",
+    "backend/tests/test_source27_current_application_profile.py": "ada734f12d5ac7c143897622077cd4a1b8ca6e97ff6ee7f0b53b35517f622c9d",
+    "frontend/app/api/backend/[...path]/route.test.ts": "fd2e1b470653e17e2f0dbf3c713122ae6db0706b4049935ed57ff316716f1da1",
+    "frontend/app/api/backend/[...path]/route.ts": "bf6b3c3c9fda15e14ebb025056784bbd7325c1e7cdfe81098621219d536b5c69",
+    "frontend/app/workspace/page.test.tsx": "b9639fd322dba7da5f0f291bbf9d38c761221a5763d3bef7eb1a6d2b60ea23c2",
+    "frontend/app/workspace/page.tsx": "56548669608ff34a0f28c041a4cc0410051d8cb6f38ba2f00b54ce57ab97e512",
+    "frontend/e2e/employer-jobs.spec.ts": "01f1f49fd79198e0374575a105376a242743d76075236854d6cd4c10bc4c1cf5",
+    "frontend/lib/generated/api.ts": "d9cc3234e29ed5ce108287902572f262433e7d9679df382d67a09d8b14ae35b2",
+    "frontend/lib/opportunityPageClient.test.ts": "318fbc915816e26310fbd1348807a53191a41c85db9321698bd808729dc10bde",
+    "frontend/lib/opportunityPageClient.ts": "2fb446e242b91d86874c453b80ddbdc30ed605b4438dd92b879d0d16febcbdc0"
+  },
+  "evidence": {
+    "backend": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/opportunity-metadata-page-local/MANIFEST_V2.json",
+      "sha256": "e5950ff18e04f7411aa40e7a254fdb315a94fa3264c8ff417499bd90700f9a07"
+    },
+    "backend_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/opportunity-metadata-page-local/PEER_REVIEW.json",
+      "sha256": "eb1694f6bbd69428e4c3de104905e21f5ac22c637e528e56dc964978505b60c3"
+    },
+    "frontend": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-landing-frontend-zp4n7qd2/MANIFEST.json",
+      "sha256": "f1857e85fa355fb7f4cf95e1e87db8546751ecbc95db5f227215c00e3e5aa2b1"
+    },
+    "frontend_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-landing-frontend-zp4n7qd2/PEER_REVIEW.json",
+      "sha256": "2abd284c2996201f3e87f5f12ef4c9cff7cec1e56c8bc7794fc31fbd3d264bed"
+    },
+    "BFF_before": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-bff-before.json",
+      "sha256": "84d5d6bea82e951eb0f14eb22cbc740bf90778c84ddb81c431b5ac86102c1135"
+    },
+    "BFF_final": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-bff-final.json",
+      "sha256": "7548f3723ada5395296e6444e319f496d8cdc9944974c29c94503305945dafef"
+    },
+    "BFF_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-bff-peer-0j_styl0/PEER_REVIEW.json",
+      "sha256": "60cd45cc7b73026fc25a56bd1e1aa5c8f0e2eafa41f69a2b66fcb225bf9b49e7"
+    },
+    "current_source_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-source-pin-peer.json",
+      "sha256": "3c29c3aced54318c9322f77f756e6e076eafafed2e9ad14d3091b6b46797efb5"
+    },
+    "current_source_tests": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-source-integration-junit.xml",
+      "sha256": "3f82df20c5d10593574f86d8fc9ee80133d43e0318379ce403926314b73e3a78"
+    },
+    "public_collection": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-source-node-collection.json",
+      "sha256": "5ec31f3ac6d9a7b0dbf6790197e4f8b895133128deea74153d54f4a218f1f27b"
+    },
+    "production_browser": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-production-e2e-local/MANIFEST.json",
+      "sha256": "505ce40388d261e0d67cf15d3346f0ceb636f7cc1465538416bac00706213fa0"
+    },
+    "browser_and_closure_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-production-e2e-local/PEER_ADDENDUM.json",
+      "sha256": "d20553e9cd37fdc060fa5056f894c4424418407ee85d5758998a3f6b4bcef290"
+    },
+    "local_build_and_story": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/workspace-page-root-build-and-story.json",
+      "sha256": "3bab9ed60dc198a004d1491466ee8e9134030c568ee6d8654cb964ef0c78616a"
+    }
+  },
+  "limitations": [
+    "Not deployed, current-source CI not yet run, and no actual-root qualification/retained fulltree export performed.",
+    "No Gemini/provider/employer/GCP/native paid QA or commercial action. Original scanner17/native80/model/commercial holds remain.",
+    "Does not complete original A03/F04/F05, Stage5 or fullI02. Real operating load, p95/p75LCP/INP/CLS under agreed network/region/device conditions, capacity and final production acceptance remain pending.",
+    "Browser fixtures are local synthetic controls, not proof of real candidate or employer authorization. No submission or production-data mutation."
+  ],
+  "scope_preservation": "Original8stages/83requirement identifiers and statuses unchanged; no new checkpoint."
+}

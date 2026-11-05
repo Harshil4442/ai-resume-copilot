@@ -35,6 +35,8 @@ COMPATIBILITY_SUITES = (
     "tests/test_payment_funding_postgres.py",
     "tests/test_payment_funding_operator.py",
     "tests/test_unified_payment_expense_admission.py",
+    "tests/test_opportunity_browsing.py",
+    "tests/test_opportunity_browsing_postgres.py",
 )
 PROTOCOL_SUITES = (
     "tests/test_notification_digest_emulator.py",
@@ -83,6 +85,13 @@ REQUIRED_CASES = {
         ("test_payment_funding_operator", "test_clock_refresh_after_money_lock_stops_before_first_mutation"): 1,
         ("test_payment_funding_operator", "test_prepare_uses_post_gate_creation_clock"): 1,
         ("test_payment_funding_operator", "test_actual_boundary_requires_native_gate_distinct27_and_original_receipt"): 3,
+        ("test_opportunity_browsing", "test_new_page_avoids_actual_legacy_body_prefix_and_finds_role201"): 1,
+        ("test_opportunity_browsing", "test_default_page_is_bounded_closed_metadata_with_one_auth_two_sql"): 1,
+        ("test_opportunity_browsing", "test_tied_times_deleted_anchor_and_newest_insert_do_not_break_older_traversal"): 1,
+        ("test_opportunity_browsing", "test_cursor_is_owner_bound_tamper_evident_and_not_a_workspace_token"): 1,
+        ("test_opportunity_browsing", "test_stage_global_counts_and_existing_archive_semantics"): 1,
+        ("test_opportunity_browsing", "test_actual_http_retains_existing_auth_and_feature_gate"): 1,
+        ("test_opportunity_browsing_postgres", "test_actual_pg_literal_filters_counts_keyset_owner_and_metadata_only"): 1,
     },
     "protocol": {
         ("test_notification_digest_emulator", "test_real_emulator_consent_send_and_complete_census"): 1,

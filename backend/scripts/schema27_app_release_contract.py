@@ -1,6 +1,6 @@
 """Distinct reviewed Source27 application contract; never native QA authority.
 
-45b3 is the genuinely qualified retained26 source. Current311 application
+45b3 is the genuinely qualified retained26 source. Current312 application
 bytes and optional digest wire are a NEW family; old v3 fingerprints, producer
 receipts, private runtime proofs and qualification commands remain disjoint.
 """
@@ -20,8 +20,8 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '77cae81f1ce59466e86d32ecbdf24a504d33b159c6a8bff88144cfe300c5d1e4'
-CANDIDATE_APP_FILES = 311
+CANDIDATE_APP_SHA256 = '0f0e21c8e94abfa55c8b544ecf9035ecac8abdaa8bde075086d848fadd586a6e'
+CANDIDATE_APP_FILES = 312
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
 RETAINED_STEP = "Qualify schema26 app v3 compatibility"
@@ -42,11 +42,14 @@ HISTORICAL_CURRENT_IGNORES = (*v3.HISTORICAL_CURRENT_IGNORES,
 NEW_HTTP_PATHS = {
     "/api/public/notifications/unsubscribe": "c2d58bafabeb58932448485c133bd4a7613f3c134a48fa6d502d2cfda5fe2044",
     "/api/v1/notifications/preferences": "8bca55f75a9c5e9c67713554f1bea9d6fedf31cfef85fbea5066ebf7cea46cb4",
+    "/api/v1/opportunities/page": "29f1a35114d7cf58e15d0816b6dcda425b4098c745bb18b64bbc15d08407f8a4",
 }
 NEW_HTTP_SCHEMAS = {
     "PreferenceChange": "f836f891975e90293310e2b7ed501a2ad5e41d7ad80d8f46a74dcdcd5419a072",
     "PreferenceResponse": "10ad227d9d00a4a1dbcf928fed2047bfc30e9d2ca56715cb07318a3fa91c813b",
     "UnsubscribeRequest": "a87c23e73f8c868aaf837fcc755f290412fbecb636f714bd41b042badff0de6a",
+    "OpportunityPageItem": "8393811d947f625ea1a973b02547823c23ce0b75016f780babe2275a4c47b95d",
+    "OpportunityPageResponse": "fc5888ecca03cb83495b1d8733ed477c28de5ed83caf794e480cfe2b2328d244",
 }
 HTTP_PATHS = {**v3.HTTP_PATHS, **NEW_HTTP_PATHS}
 HTTP_SCHEMAS = {**v3.HTTP_SCHEMAS, **NEW_HTTP_SCHEMAS}
@@ -80,6 +83,12 @@ F07_PATHS = (
     "infra/gcp/payment_funding_operator.py", "backend/tests/test_payment_expenses.py",
     "backend/tests/test_payment_funding.py", "backend/tests/test_payment_funding_postgres.py",
     "backend/tests/test_payment_funding_operator.py", "backend/tests/test_unified_payment_expense_admission.py",
+    "backend/app/domains/career/browsing.py", "backend/tests/test_opportunity_browsing.py",
+    "backend/tests/test_opportunity_browsing_postgres.py",
+    "frontend/lib/opportunityPageClient.ts", "frontend/lib/opportunityPageClient.test.ts",
+    "frontend/app/workspace/page.tsx", "frontend/app/workspace/page.test.tsx",
+    "frontend/lib/generated/api.ts", "frontend/app/api/backend/[...path]/route.test.ts",
+    "frontend/e2e/employer-jobs.spec.ts",
     "backend/tests/fixtures/schema26_notification_reader/PROVENANCE.json",
     "backend/tests/fixtures/schema26_notification_reader/gcp_partitioned_contracts.py.snapshot",
     "frontend/components/WeeklyDigestPreference.tsx", "frontend/components/WeeklyDigestPreference.test.tsx",
