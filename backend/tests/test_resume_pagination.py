@@ -157,8 +157,28 @@ def test_even_signed_malformed_cursor_is_rejected_before_sql(owned, payload):
     import json
 
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    signature = hmac.new(resume.JWT_SECRET.encode(), resume._CURSOR_PURPOSE + raw, hashlib.sha256).digest()
+    from app.domains.resume_uploads import browsing
+
+    signature = hmac.new(browsing.JWT_SECRET.encode(), browsing._CURSOR_PURPOSE + raw, hashlib.sha256).digest()
     cursor = base64.urlsafe_b64encode(raw + signature).decode().rstrip("=")
     owned[3].clear()
     assert owned[0].get("/api/resume/page", params={"cursor": cursor}).status_code == 400
     assert owned[3] == []
+
+
+def test_pre_extraction_v1_cursor_golden_bytes_and_http_continuation(owned, monkeypatch):
+    """Fixed old V1 JSON/purpose/signature vector remains valid after extraction."""
+    from app.domains.resume_uploads import browsing
+
+    monkeypatch.setattr(browsing, "JWT_SECRET", "owned-resume-cursor-v1-compatibility-vector")
+    golden = "WzEsMSwiMjAyNi0xMS0wMVQwMDowMDowMCIsMl2BV5mAs8mBS1CoDee7zG8i65VsomqOhSdLVI9Hpbu8Pw"
+    row = SimpleNamespace(created_at=datetime(2026, 11, 1), id=2)
+    assert browsing._resume_cursor(1, row) == golden
+    assert browsing._read_resume_cursor(golden, 1) == (datetime(2026, 11, 1), 2)
+    client, factory, _, _ = owned
+    for identity in [1, 2, 3]:
+        add(factory, identity)
+    response = client.get("/api/resume/page", params={"limit": 1, "cursor": golden})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["resumes"]] == [1]
+    assert response.json()["next_cursor"] is None

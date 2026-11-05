@@ -50,6 +50,23 @@ function fixture() {
   const runs: Record<string, unknown>[] = [];
   const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved" as const, source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
   const resumes = [{ id: 1, filename: "Taylor-resume.docx", source_available: true, source_format: "docx", created_at: now }, { id: 2, filename: "Custom-resume.docx", source_available: true, source_format: "docx", created_at: now }];
+  const versionOptions = [
+    { id: "version_approved", resume_id: 1, opportunity_id: "opp_fixture", version_number: 2, label: "Backend Engineer", approval_state: "approved", submitted_at: null, created_at: now, source_preserving_edits: true },
+    { id: "version_snapshot", resume_id: 1, opportunity_id: "opp_fixture", version_number: 1, label: "Source snapshot", approval_state: "approved", submitted_at: null, created_at: now, source_preserving_edits: false },
+    { id: "version_pending", resume_id: 1, opportunity_id: "opp_fixture", version_number: 3, label: "Unapproved wording", approval_state: "pending", submitted_at: null, created_at: now, source_preserving_edits: true },
+  ];
+  function workspaceValue(tab: string) {
+    const { job_description, job_snapshot, notes, outcome_notes, activity, contacts, reminders, resume_versions, ...header } = opportunity;
+    void job_description; void job_snapshot; void notes; void outcome_notes; void activity; void contacts; void reminders; void resume_versions;
+    return { opportunity: header, resumes: { resumes, next_cursor: null, selected_resume: resumes.find((resume) => resume.id === opportunity.resume_id) || null },
+      match: null, match_source_state: "none", pages: { resume_versions: { items: [], next_cursor: null },
+        ...(tab === "resume" ? { evidence: { items: [], next_cursor: null } } : {}),
+        ...(tab === "overview" ? { contacts: { items: [], next_cursor: null }, reminders: { items: [], next_cursor: null } } : {}),
+        ...(tab === "activity" ? { activity: { items: [], next_cursor: null } } : {}) },
+      submitted_resume_version_id: null, submitted_resume_version: null, selected_resume_version: null,
+      approved_evidence_count: tab === "resume" ? 0 : null };
+  }
+
   const products = ([
     { sku: "starter_bundle", name: "Starter", description: "Finite prepaid pack", amount_minor: 64900, amount_display: "₹649", entitlement_quantity: 100, analysis_units: 2 },
     { sku: "growth_bundle", name: "Growth", description: "Finite prepaid pack", amount_minor: 109900, amount_display: "₹1,099", entitlement_quantity: 300, analysis_units: 6 },
@@ -110,17 +127,30 @@ function fixture() {
       else if (path === "/analytics/summary") value = { profile_completeness: 80, average_match_score: 0, resume_count: 1, applications_count: 0, match_history: [] };
       else if (path === "/v1/reminders") value = [];
       else if (path === "/v1/opportunities" && method === "GET") value = { items: [opportunity], total: 1 };
+      else if (path === "/v1/opportunities/opp_existing_fixture/workspace" && method === "GET") {
+        expect(url.searchParams.get("limit")).toBe("20");
+        const tab = url.searchParams.get("tab");
+        expect(["overview", "resume", "learning", "interview", "outcome", "activity"]).toContain(tab);
+        value = workspaceValue(tab!);
+      }
+      else if (path === "/v1/opportunities/opp_existing_fixture/workspace/body" && method === "GET") value = {
+        job_description: opportunity.job_description, job_snapshot: opportunity.job_snapshot, notes: opportunity.notes, outcome_notes: opportunity.outcome_notes,
+      };
       else if (path === "/v1/opportunities/opp_existing_fixture") value = opportunity;
-      else if (path === "/v1/evidence-items") value = [];
       else if (path.startsWith("/v1/evidence-items/transcription-review/") && method === "GET") {
         const resume = resumes.find((item) => item.id === Number(path.split("/").at(-1)));
         if (!resume) { status = 404; value = { detail: "Resume not found." }; }
         else value = { resume_id: resume.id, filename: resume.filename, source_format: resume.source_format,
           source_sha256: digest, assessment_fingerprint: "d".repeat(64), status: "not_required", sections: [], unmapped_text: null } satisfies components["schemas"]["TranscriptionReviewResponse"];
       }
-      else if (path === "/v1/analysis-runs" && method === "POST") { const run = { id: `run_fixture_${runs.length}`, operation: body.operation, status: "failed", usage_state: "released", estimated_units: 1, committed_units: 0, error_code: "FixtureError" }; runs.push(run); value = run; }
+      else if (path === "/v1/analysis-runs" && method === "POST") { const run = { id: `run_fixture_${runs.length}`, operation: body.operation, opportunity_id: body.opportunity_id, status: "failed", usage_state: "released", estimated_units: 1, committed_units: 0, error_code: "FixtureError" }; runs.push(run); value = run; }
       else if (path.startsWith("/v1/analysis-runs/run_fixture_")) value = runs.find((run) => run.id === path.split("/").at(-1));
-      else if (path === "/resume/page") value = { resumes };
+      else if (path === "/resume/page" && method === "GET") {
+        const currentId = url.searchParams.get("current_id");
+        const selected = resumes.find((resume) => resume.id === Number(currentId));
+        if (currentId && !selected) { status = 404; value = { detail: "Resume not found." }; }
+        else value = { resumes, next_cursor: null, selected_resume: selected || null };
+      }
       else if (path === `${base}/catalog`) value = catalog;
       else if (path === `${base}/credits` && method === "GET") value = { balance: catalog.balance, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null } satisfies ServiceCreditHistoryPage;
       else if (path === `${base}/search-summaries` && method === "GET") {
@@ -150,7 +180,16 @@ function fixture() {
       else if (path === `${base}/applications/app_fixture/execute`) { application.status = state.executeOutcome; application.charged_credits = state.executeOutcome === "confirmed" ? application.credit_cost : 0; application.receipt = state.executeOutcome === "confirmed" ? { receipt_id: "fixture-only-confirmation" } : null; value = application; }
       else if (path === `${base}/applications/app_fixture/cancel`) { application.status = "cancelled"; value = application; }
       else if (path === `${base}/applications/app_fixture`) value = application;
-      else if (path === "/v1/resume-versions") value = [{ id: "version_approved", resume_id: 1, opportunity_id: "opp_fixture", version_number: 2, label: "Backend Engineer", approval_state: "approved", structured_content: { format_preservation: "source", source_format: "docx", source_edits: [{ unit_id: "unit_fixture", original_text: "Created reliable services.", replacement_text: "Built reliable services.", evidence_ids: ["evidence_fixture"], reason: "Use a relevant, supported action." }] } }, { id: "version_snapshot", resume_id: 1, opportunity_id: "opp_fixture", version_number: 1, label: "Source snapshot", approval_state: "approved", structured_content: { format_preservation: "source", source_format: "docx", source_edits: [] } }, { id: "version_pending", approval_state: "pending", structured_content: { format_preservation: "source" } }];
+      else if (path === "/v1/resume-versions/page" && method === "GET") {
+        expect(url.searchParams.get("limit")).toBe("20");
+        expect(url.searchParams.get("approval_state")).toBe("approved");
+        const sourceId = Number(url.searchParams.get("resume_id"));
+        const currentId = url.searchParams.get("current_id");
+        const approved = versionOptions.filter((version) => version.resume_id === sourceId && version.approval_state === "approved");
+        const selected = currentId ? approved.find((version) => version.id === currentId) : null;
+        if (currentId && !selected) { status = 404; value = { detail: "Version not found." }; }
+        else value = { items: approved, next_cursor: null, selected_version: selected || null };
+      }
       else if (path === "/resume/parse") value = { resume_id: 2, skills: ["Python"], experience_years: 3, sections: {}, extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [], source_available: true, source_format: "docx", parsed_json: {} };
       else if (path === "/v1/opportunities" && method === "POST") value = { id: "opp_job_fixture", ...body };
       else if (path === "/public/billing/catalog") value = { catalog_version: "fixture-v1", market: "IN", checkout_enabled: true, provider: "razorpay", products };
@@ -364,6 +403,8 @@ test("tailored or custom file choices are saved explicitly before use", async ({
   const f = fixture(); await f.install(context, baseURL!); await searchOne(page); await page.getByRole("button", { name: "Prepare application", exact: true }).click(); const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("tailored"); await dialog.getByRole("combobox", { name: "Approved version", exact: true }).selectOption("version_approved"); await expect(dialog.locator("option[value=version_pending]")).toHaveCount(0); await expect(dialog.locator("option[value=version_snapshot]")).toHaveCount(0); await dialog.getByRole("button", { name: "Save and refresh review" }).click(); await expect(dialog.getByText("Exact sealed application file")).toBeVisible();
   expect(f.requests.filter((r) => r.method === "PUT").at(-1)?.body).toMatchObject({ resume_choice: "tailored", resume_version_id: "version_approved" });
+  expect(f.requests.some((r) => r.path === "/v1/resume-versions/page" && r.query.includes("resume_id=1") && r.query.includes("limit=20") && r.query.includes("approval_state=approved"))).toBe(true);
+  expect(f.requests.some((r) => r.path === "/v1/resume-versions" || /\/workspace\/(evidence|resume_versions)\//.test(r.path))).toBe(false);
   await dialog.getByRole("combobox", { name: "Resume choice", exact: true }).selectOption("custom"); await dialog.getByLabel("Upload a custom PDF, DOCX or TeX source").setInputFiles({ name: "custom.docx", mimeType: docxType, buffer: Buffer.from("Local custom file fixture") }); await expect(dialog.getByText("Your saved preview is out of date.", { exact: false })).toBeVisible(); await dialog.getByRole("button", { name: "Save and refresh review" }).click();
   expect(f.requests.filter((r) => r.method === "PUT").at(-1)?.body).toMatchObject({ resume_choice: "custom", resume_id: 2, resume_version_id: null }); expect(f.requests.some((r) => r.path.endsWith("/approve"))).toBe(false); expect(f.unexpected).toEqual([]);
 });

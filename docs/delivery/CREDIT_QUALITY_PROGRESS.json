@@ -646,7 +646,8 @@
       "requirement": "Responsive performance. Keep common interactions usable on mobile and desktop. Proposed acceptance targets are p75 LCP at most 2.5 seconds, INP at most 200 ms and CLS at most 0.1 on the agreed test profile, and p95 common authenticated reads at most one second under the approved load excluding external identity-provider time. Record device, region, network and test conditions; do not assert these targets are already met.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md"
       ]
     },
     {
@@ -654,7 +655,8 @@
       "requirement": "Efficient delivery. Cache eligible public pages and static assets, lazy-load secondary UI, paginate lists, reduce duplicate polling and serve signed authorized downloads directly. Reuse validated previews. A cache must not expose private resumes or bypass expired access rights.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md"
       ]
     },
     {
