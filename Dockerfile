@@ -44,6 +44,9 @@ RUN useradd --create-home --uid 10001 hirewiz \
     && chown -R hirewiz:hirewiz /app
 USER hirewiz
 
+# Reviewed bridge images keep optional delivery off when deployment flags are absent.
+ENV NOTIFICATION_DIGESTS_ENABLED=false LIFECYCLE_EMAILS_ENABLED=false
+
 EXPOSE 10000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

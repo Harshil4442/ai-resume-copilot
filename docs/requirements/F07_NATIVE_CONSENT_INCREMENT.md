@@ -97,11 +97,10 @@ step uses standard Alembic, bounded migration/FK locks, and grants only new-tabl
 runtime CRUD and observer SELECT. It restores the original schema permissions and
 checks retained table ACLs, evidence fences and financial invariants.
 
-This unit does not obtain credentials, attest deployed flags, commit, retry,
-reconcile an uncertain commit or promote services. An authenticated controller
-must still prove the bridge, exact source/CI/image, native configuration, resource
-and IAM state before using it. Initial all-off catalog evidence does not qualify
-future populated-wallet rollout or commercial activation.
+The SQL unit does not obtain credentials, attest deployed flags, commit, retry,
+reconcile an uncertain commit or promote services. Its local native controller
+provides the separate orchestration described below. Initial all-off catalog
+evidence does not qualify future populated-wallet rollout or commercial activation.
 
 The orchestration captures SQL facts, releases owner/row locks for native IO, then
 reacquires the existing account-erasure owner fence before projecting an original
@@ -166,6 +165,44 @@ uncertain responses remain unknown. No model calls or cloud QA were needed for
 this source work. The native metadata governor remains unchanged at 40/minute;
 representative capacity qualification is still required.
 
+## Native deployment and recovery controller
+
+The local controller captures a bridge plan through the existing native successor
+factory. Its distinct source observer admits exactly the reviewed migration chain
+through27 and pins the application Dockerfile before the existing real Git,
+Cloud Build, image-digest and CI checks. The pinned image explicitly sets both
+optional-mail flags false. Only after proving that same image may an absent
+Cloud Run flag inherit the baked false value; true, malformed and secret-reference
+overrides refuse.
+
+The stock successor stages and promotes the compatible bridge while SQL remains26.
+Migration capture then checks all three services and every traffic/tag/latest
+revision, original stage/promote request and completion records, native operations,
+HTTP health, runtime identity, IAM, resources and numeric secret versions. The
+existing fresh document-acceptance gate remains required. An all-off bridge does
+not bypass an expired scanner or held document qualification.
+
+Before opening the write connection, the controller durably records one migration
+intent with file and directory fsync. The fixed existing Neon manager supplies the
+bootstrap connection; no caller DSN, password or transport is accepted. The DDL
+transaction also inserts a detached audit receipt binding that exact intent, plan,
+source and catalog. It has no customer foreign key and commits atomically with the
+new table and grants.
+
+Read-only recovery uses separately issued exact26 or exact27 database bindings.
+Every earlier purpose keeps its earlier schema; the new27 purpose cannot relabel
+an old binding. Recovery verifies the same physical target and the same-transaction
+receipt, never just a27 marker. An uncertain commit cannot start another DDL
+transaction. Known commit acknowledgments and checked observations must agree
+with the fresh SQL result, including within the original invocation. Contradictory
+or malformed custody refuses; the controller never drops tables, restores an old
+image, enables features or grants LOGIN as recovery.
+
+Pure native census imports now use a lightweight mail result/error contract.
+They do not initialize application ORM, database setup or notification senders.
+Existing funding imports re-export the same classes and validator; validation,
+funding amounts, outcome acknowledgment and JSON wire values remain unchanged.
+
 ## Local evidence and remaining release work
 
 Focused source tests cover real owned PostgreSQL locking/schema/privacy behavior,
@@ -189,8 +226,8 @@ its own full qualification.
 
 Before activation, the release still needs:
 
-- Authenticated schema27 bridge/migration controller and uncertain-commit recovery,
-  completing the caller-owned SQL catalog/role/transaction unit.
+- Qualification and controlled execution of the local authenticated schema27
+  bridge/migration/recovery controller, including real identity and IAM checks.
 - Matched source/profile/OpenAPI qualification and genuine exact-source CI.
 - Full required regressions and rollback/old-reader denial for the new native rows.
 - Fresh scanner verification and the already-required document/quality gates.

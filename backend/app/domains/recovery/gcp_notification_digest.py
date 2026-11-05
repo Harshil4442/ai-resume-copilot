@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from ..candidate_accounts.contracts import CandidateCredentialRevision
 from ..notification_consent.unsubscribe import VerifiedUnsubscribeProof
-from ..notifications.mail_budget import ProviderResult, _result
+from ..notifications.mail_contracts import ProviderResult, _result
 from .contracts import fingerprint
 from .gcp_buffer import BufferedTransaction
 from .gcp_contracts import AmbiguousCommit
