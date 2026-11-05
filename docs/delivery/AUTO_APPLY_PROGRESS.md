@@ -1,58 +1,60 @@
 # HireWiz development and deployment progress
 
-Updated **5 November 2026 (IST)**. The current API and both application workers
-serve DB8 on schema26. Their original promotions are healthy, the original
-schedules and coordinator are restored, and the joined read-only proof passed.
-Frontend 751/Hohsg serves companion 0.8.9. The active 27 October credit/cost/quality
-goal across the existing eight stages remains incomplete; the six accepted
-26 October outcomes below remain historical acceptance for their named releases.
+Updated **5 November 2026 (IST)**. The API and both application workers still
+serve DB8 on schema26; frontend 751/Hohsg remains the production frontend.
+The new pagination/authentication application image is verified but is **not
+serving**. The older 9b9 zero-traffic stages await restoration before another
+forward rollout. The active 27 October credit/cost/quality goal across the
+existing eight stages remains incomplete. The six accepted 26 October outcomes
+below retain their original historical scope.
 
-The current browser identity check passed with no application action enabled and
-zero fields filled. Fresh original-file review, cancellation before Fill and
-exact-device revocation remain pending. The website session expired on a fresh
-base-page GET; no new Fill, upload, submission or revocation was performed.
-The current identity check does not renew the historical application acceptance.
+A fresh owner journey on the deployed website and existing companion reviewed
+the exact original resume and only the saved first-name answer. The original PDF
+download matched its retained digest and its one-page layout was visually intact.
+Assistance was cancelled **before application approval, Fill, attachment upload or
+submission**; revocation of the exact existing device was verified in the UI.
+No fields were filled. This is current UI/download evidence, **not** a fresh SQL
+zero-execution/accounting proof, a new tailoring result or full application acceptance.
 
 New AI generation/tailoring, unified credits, funded free-core processing,
 checkout and final employer submission remain closed. Paid native document QA
-(80 documents/nine jobs) and ordinary 17-case scanner maintenance are both on
+(80 documents/nine jobs) and ordinary 17-case scanner maintenance remain on
 **OWNER HOLD**. Broader native/model quality qualification remains pending.
 Human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 commercial/finance gates and full R03/RTO qualification remain pending.
 
-## Latest verified runtime and pending successor
+## Latest verified runtime and pending releases
 
-| Component | Current release | Verification and boundary |
+| Component | Current evidence | Verification and boundary |
 |---|---|---|
-| API and application workers | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Build `05fafcae-934e-448f-9790-26a60b6f3b64`, exact-source CI `41650961963`, committed schema26 and retained promotion/restoration proofs. All three application services are healthy. The 4 November UTC / 5 November IST traffic observations show three aliases per service, all reaching that service's same DB8 revision; aliases were not changed. |
-| Frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Exact-source CI `41750684597` and normal PR99 merge; retained production alias/readback and public companion 0.8.9 archive SHA-256 `b17b7a75f3d6a81ca91d2a90c88bd5d79409b965977ecb5f7340f69025964362`. Frontend/root build inputs are unchanged through 9b9, so the existing verified deployment is retained without another frontend build or alias mutation. |
-| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Retained definition proof expires `2026-11-05T06:24:10Z`. A metadata-only configuration check passed; it performed no document processing or new native acceptance. Both the 17-case maintenance and paid 80-document QA runs remain held, with no expiry waiver. |
-| Companion | Public/source package **0.8.9** | The existing browser identity's current-connection check passed with no action enabled and zero fields filled. Fresh original-file review/cancel/revoke remains pending; historical acceptance below is not relabeled as current. |
-| Application successor — built only | Source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4`; image `sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3` | Build `3447322a-4f1b-41b8-afe5-43307ada80cd` succeeded and official Source26 verification passed against exact-source CI `41853042750`. **Not deployed.** The independent alias-capture controller fix `a206f5408c0cbd7abece0cd43add143bcb1883bc` is in PR103 / CI `41898489779`, pending qualification. Registry PR102 is normally merged at `deaed009fd9b1a6b6db2e893859c8dc19433ac17`; its CI `41893799752` completed successfully, while runtime provenance remains bound to the separate 9b9 source and Build. |
+| Serving API and application workers | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
+| Production frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Production remains at the retained verified deployment. New bounded resume selectors/session changes and reviewed header-read deferral require their matching frontend publication; a READY preview is not a production alias promotion. |
+| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expires `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain; no expiry waiver or new document-processing acceptance is claimed. |
+| Companion | Public/source package **0.8.9** | Fresh review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval/Fill/upload/submit. Device `23d49cfd-0140-4254-afd8-87881b56b423` was then revoked with UI verification. No fresh SQL-count proof is claimed. |
+| Older staged application | Source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4`; image `sha256:34205f3ddc6c48215b682ac518c21d25d66243e5286c986010fcbc4eda084be3` | Its original zero-traffic staging is retained and restoration remains pending; DB8 still serves. Restore-only controller source `612385cc0a850e47850d63ea82a60efa74c0dfe3` passed CI `41929288019` and was normally merged by PR106. Controller qualification is not native restoration. |
+| Newly verified application image | Source `01b80b130467ef7acb661805f785b00a56306174`; image `sha256:a283b02b73c50762f3c5ac8aa26d3becc3769ec2a3c781942412960751c099dd` | Build `711a21d5-bbbe-4692-8818-253d06a3315f`, exact-source CI `41930847703`, normal PR105 merge `30056fd2cbe3f684fee08b85b2186e95b4ae44f8`, and official Source26 Git/recipe/image verification passed. **Not serving.** Registry entry nine records this actual tuple; no duplicate application Build is needed. |
+| Reviewed policies | Expense policy **5**, model policy **3** | Published and independently reviewed, but **unreferenced by serving services**. Publication does not activate funding, model generation, sales or a policy cutover. |
 
-The original S/C restoration and joined final proof used their retained custody;
-temporary health IAM access was removed and ordinary post-restoration coordinator
-requests returned HTTP200. These scoped observations do not establish full R03,
-RTO, representative capacity or paid native document quality acceptance.
-
-The successor capture stopped before creating a plan or journal and before any
-service mutation. Repeated traffic aliases exposed a controller proof-collection
-bug; PR103 preserves every alias and pins each distinct revision once per service.
-The target application bytes are unchanged by that fix, so it needs a qualified
-controller rather than a new application image. Neither a successful Build nor
-pending CI authorizes deployment or new paid work.
+The current source-image verification record has SHA-256
+`37aa5f225d2167ba39d8dcb92e69feca1dbc417b10e423a402a5ca7187493ea9`.
+The current owner review/cancel/revoke UI record has SHA-256
+`b73c37dcd010d24df5b2af19c8d9a9572110284bf91f078675ab8be563286afb`.
+These are scoped records, not replacements for the historical SQL/native proofs
+below. The old staging plan/journal must retain their original custody; recovery
+must reconcile original operations and restore the prior configuration before a
+fresh successor can use the reviewed numeric policy pair. No completed recovery,
+new traffic promotion, fresh SQL accounting audit or full R03/RTO is claimed here.
 
 The Gemini monthly spend cap remains **INR450**. Provider enforcement can lag;
 application cost reservations and reconciled financial qualification remain
 required. Retail purchases are unavailable.
 
-[Current runtime metadata and proof boundaries](evidence/2026-11-05-runtime-status.json)
-and [the eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md) distinguish
-completed deployment work from remaining functional and commercial acceptance.
-All eight existing stage rows and all 83 requirement statuses remain unchanged.
-CI checks are evidence, not additional development checkpoints. No original total
-effort estimate is retained; missing estimates remain null. Earlier dated reports
-and observations below remain scoped to their original releases.
+The [earlier runtime snapshot](evidence/2026-11-05-runtime-status.json) remains
+scoped to its recorded observation time. The [eight-stage credit/quality checklist](UNIFIED_CREDIT_ROLLOUT.md)
+retains all eight stage rows and all 83 requirement IDs/statuses unchanged.
+CI checks are evidence, not additional development checkpoints. Missing original
+effort estimates remain null; no aggregate completion ETA is reconstructed.
+Earlier dated observations below retain their original release scope.
 
 ## Original six outcomes — historical acceptance on 26 October
 
@@ -80,13 +82,17 @@ and revocation 71→20 metadata calls. These are synthetic production-path count
 not measured whole-HTTP production budgets. The shared **60/minute** project
 quota still limits concurrent capacity; no quota increase is claimed.
 
-A separate password-login improvement is prepared and source-reviewed. It combines
-three protected post-activation finalization steps into one transaction, preserving
-fresh identity, credential, mailbox and activation checks. Focused SDK-intercepted
-controls measured account-path metadata calls falling from 29 to 25. This is not
-a whole-HTTP or live speed measurement, does not change Google OAuth, and does not
-establish the 10,000-user capacity target. Its own release qualification and
-deployment remain pending.
+The password-login improvement is included in qualified source `01b80b1` and
+its verified application image, but is not yet serving. It combines three protected
+post-activation finalization steps into one transaction, preserving fresh identity,
+credential, mailbox and activation checks. Focused SDK-intercepted controls measured
+account-path metadata calls falling from 29 to 25. This is not a whole-HTTP or live
+speed measurement, does not change Google OAuth, and does not establish the
+10,000-user capacity target. The same qualified source contains bounded resume
+metadata pagination and the exact-session GET timestamp-hint improvement.
+Reviewed header-read deferral on the four public authentication pages is prepared
+for the matched frontend release; it changes no owner cache or backend authority.
+Production publication and whole-journey capacity acceptance remain pending.
 
 Earlier connection attempts encountered genuine metadata-quota failures and
 unresolved rejection/expiry outcomes. A later actual confirmation returned backend

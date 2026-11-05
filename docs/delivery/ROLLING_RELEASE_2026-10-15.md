@@ -1,4 +1,43 @@
-# Updating the existing schema18 deployment
+# Application rolling releases and schema26 recovery
+
+## Current schema26 evidence — 5 November 2026
+
+The schema18 procedure below records the earlier deployment contract. The serving
+API and both application workers are now DB8 source
+`db8a25adefaf3bc2e00a61f7543f8a1862597adf`, image
+`sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`,
+on schema `20261031_0026`. Production frontend remains source
+`751319a19420d5f141697643f68b6853ea2da5c6` /
+`dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH`; companion public/source package is 0.8.9.
+
+Application source `01b80b130467ef7acb661805f785b00a56306174` passed CI
+`41930847703` and normal PR105 merge
+`30056fd2cbe3f684fee08b85b2186e95b4ae44f8`. Build
+`711a21d5-bbbe-4692-8818-253d06a3315f` produced
+`sha256:a283b02b73c50762f3c5ac8aa26d3becc3769ec2a3c781942412960751c099dd`;
+official Source26 immutable Git/CI/recipe/image verification passed at
+`2026-11-05T00:26:38Z`. This is registry entry nine and is **not serving**.
+The original 9b9 zero-traffic stages await restoration. Restore-only controller
+`612385cc0a850e47850d63ea82a60efa74c0dfe3` passed CI `41929288019`
+and normal PR106 merge `2a7642ff478e8865594f1eebc4beb2ff8b7a81b2`.
+Its qualification does not prove native restore execution.
+
+Expense policy 5 and model policy 3 are published and reviewed but unreferenced
+by serving services. Preserve the original plan/journal and restore its prior
+configuration using the qualified restore-only contract below before capturing a
+fresh forward successor with the reviewed numeric pair. No expiry extension,
+missing-ack replay, new app Build, policy activation or traffic promotion is
+inferred from these records.
+
+The retained inspector image is
+`sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36`;
+its definition proof expires `2026-11-05T06:24:10Z`. The 17-case scanner maintenance,
+80-document/nine-job native QA, model-generation and payment holds remain.
+The current owner original-file review/cancel-before-approval-or-Fill and exact
+existing-device revocation were UI-verified; no fresh SQL-count, Fill, employer
+upload/submission or full eight-stage/83-requirement acceptance is claimed.
+
+## Historical schema18 procedure
 
 The first preserved-data cutover and subsequent application releases have
 different responsibilities. `fresh_cutover_docker.py` performs the reviewed
