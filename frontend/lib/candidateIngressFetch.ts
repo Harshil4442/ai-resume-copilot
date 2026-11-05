@@ -3,13 +3,14 @@ import { candidateIngressHeaders } from "./candidateIngressServer";
 import { randomUUID } from "node:crypto";
 
 const AVAILABILITY = "/api/auth/candidate/v1/availability";
+const SESSION = "/api/auth/candidate/v1/session";
 const HEALTH = "/api/health";
 const SIGN_IN = new Set(["/api/auth/login", "/api/auth/google-login"]);
 const CLOCK_ESTIMATE_AGE_MS = 30_000;
 const MAX_HEALTH_RTT_MS = 500;
 type ClockEstimate = { scope: string; issued: number; started: number };
 let clock: ClockEstimate | undefined;
-let signInClock: ClockEstimate | undefined;
+let healthClock: ClockEstimate | undefined;
 
 function estimatedTime(scope: string, estimate = clock) {
   if (!estimate || estimate.scope !== scope) return undefined;
@@ -43,7 +44,7 @@ export async function candidateIngressFetch(base: string, path: string, init: Re
         && target.protocol === "http:" && ["localhost", "127.0.0.1"].includes(target.hostname)))) throw new Error("AUTH_UNAVAILABLE");
   const scope = `${target.origin}|${process.env.CANDIDATE_AUTH_TRANSPORT_KEY_ID}|${process.env.NEXTAUTH_URL}`;
 
-  async function signInTimeHint() {
+  async function healthTimeHint(): Promise<ClockEstimate> {
     if (target.protocol !== "https:") throw new Error("AUTH_UNAVAILABLE");
     const nonce = randomUUID();
     const started = performance.now();
@@ -64,7 +65,7 @@ export async function candidateIngressFetch(base: string, path: string, init: Re
       // Date has whole-second precision and is only a timestamp hint. Anchor at
       // receipt without rounding forward; the backend still decides freshness
       // from independent provider UTC and performs every native admission check.
-      signInClock = { scope, issued, started: completed };
+      return { scope, issued, started: completed };
     } finally { await response.body?.cancel(); }
   }
 
@@ -87,14 +88,20 @@ export async function candidateIngressFetch(base: string, path: string, init: Re
   }
 
   if (path === AVAILABILITY && (init.method || "GET") === "GET") return availability(init);
-  if ((init.method || "GET") === "POST" && SIGN_IN.has(path)) {
-    let issued = estimatedTime(scope) ?? estimatedTime(scope, signInClock);
+  const method = init.method || "GET";
+  if ((method === "POST" && SIGN_IN.has(path)) || (method === "GET" && path === SESSION)) {
+    if (init.signal?.aborted) throw new Error("AUTH_UNAVAILABLE");
+    let sampled: ClockEstimate | undefined;
+    let issued = estimatedTime(scope) ?? estimatedTime(scope, healthClock);
     if (issued === undefined) {
-      await signInTimeHint();
-      issued = estimatedTime(scope, signInClock);
+      sampled = await healthTimeHint();
+      issued = estimatedTime(scope, sampled);
     }
-    if (issued === undefined) throw new Error("AUTH_UNAVAILABLE");
-    // No native availability fallback and no automatic credential POST retry.
+    if (issued === undefined || init.signal?.aborted
+        || scope !== `${target.origin}|${process.env.CANDIDATE_AUTH_TRANSPORT_KEY_ID}|${process.env.NEXTAUTH_URL}`) throw new Error("AUTH_UNAVAILABLE");
+    if (sampled) healthClock = sampled;
+    // A timestamp hint never replaces native admission. Neither these exact
+    // requests nor an unavailable hint fall back or retry the target request.
     return send(path, init, issued);
   }
   if (estimatedTime(scope) === undefined) {

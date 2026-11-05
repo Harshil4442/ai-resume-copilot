@@ -544,3 +544,56 @@ def test_native_closed_mode_requires_explicit_original_custody_before_any_client
         lambda *_a, **_k: pytest.fail("No native client without explicit custody"))
     with pytest.raises(rolling.RollingDenied, match="maintenance_custody_required"):
         app.NativeApp26Boundary(ROOT)
+
+
+@pytest.fixture
+def owned_pagination_http(tmp_path, monkeypatch):
+    """Exercise only the finite HTTP guard on owned copies of public schemas."""
+    current = json.loads((ROOT / "backend/openapi.json").read_bytes())
+    prior = contract.git_bytes(ROOT, "backend/openapi.json")
+    target = tmp_path / "backend/openapi.json"
+    target.parent.mkdir(parents=True)
+
+    def prior_bytes(root, name):
+        assert root == tmp_path and name == "backend/openapi.json"
+        return prior
+
+    def write(value):
+        target.write_text(json.dumps(value))
+
+    monkeypatch.setattr(contract, "git_bytes", prior_bytes)
+    write(current)
+    return tmp_path, current, write
+
+
+def test_owned_reviewed_pagination_http_delta_is_accepted(owned_pagination_http):
+    root, _, _ = owned_pagination_http
+    assert {"/api/resume/list", "/api/resume/page"} <= contract.HTTP_PATHS.keys()
+    assert "ResumePageResponse" in contract.HTTP_SCHEMAS
+    contract.additive_http(root)
+
+
+@pytest.mark.parametrize("group,name", [
+    ("paths", "/api/resume/list"),
+    ("paths", "/api/resume/page"),
+    ("schemas", "ResumePageResponse"),
+])
+def test_owned_pagination_http_delta_tamper_is_refused(owned_pagination_http, group, name):
+    root, current, write = owned_pagination_http
+    values = current["paths"] if group == "paths" else current["components"]["schemas"]
+    values[name]["description"] = "Owned unreviewed description change"
+    write(current)
+    with pytest.raises(contract.v1.schema25.Schema25Denied, match="reviewed_http_delta_changed"):
+        contract.additive_http(root)
+
+
+@pytest.mark.parametrize("group", ["paths", "schemas"])
+def test_owned_pagination_other_http_delta_is_refused(owned_pagination_http, group):
+    root, current, write = owned_pagination_http
+    values = current["paths"] if group == "paths" else current["components"]["schemas"]
+    name = "/api/owned-unreviewed" if group == "paths" else "OwnedUnreviewed"
+    assert name not in values
+    values[name] = {"description": "An unrelated change must remain denied"}
+    write(current)
+    with pytest.raises(contract.v1.schema25.Schema25Denied, match="unreviewed_http_change"):
+        contract.additive_http(root)

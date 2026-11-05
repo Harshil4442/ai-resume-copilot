@@ -25,6 +25,14 @@ function recoveryBackendReply(data: unknown, status = 200) {
   vi.stubGlobal("fetch", fetch);
   return fetch;
 }
+function eligibilityBackendReply(data: unknown, status = 200) {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => String(url).endsWith("/api/health")
+    ? new Response(null, { headers: { date: new Date().toUTCString(),
+      "x-correlation-id": new Headers(init?.headers).get("x-correlation-id")! } })
+    : Response.json(data, { status }));
+  vi.stubGlobal("fetch", fetch);
+  return fetch;
+}
 
 describe("candidate website projected BFF contracts", () => {
   const legacy = { hirewizUserId: 12, accessToken: "synthetic-private-legacy-bearer", candidateSignInMethod: "google" };
@@ -106,9 +114,17 @@ describe("candidate website projected BFF contracts", () => {
   });
   it("decodes private eligibility with the issuer's trimmed secret", async () => {
     vi.stubEnv("NEXTAUTH_SECRET", ` ${secret} `);
-    const fetch=vi.fn(async()=>Response.json({status:"ELIGIBLE"}));vi.stubGlobal("fetch",fetch);
+    const fetch=eligibilityBackendReply({status:"ELIGIBLE"});
     const result=await GET(await request("eligibility",retained),params("eligibility"));
     expect(await result.json()).toEqual({status:"ELIGIBLE"});expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://backend.example.com/api/health", "https://backend.example.com/api/auth/candidate/v1/session",
+    ]);
+    const probe = fetch.mock.calls[0][1]!;
+    expect(probe.body).toBeUndefined();
+    expect(new Headers(probe.headers).has("authorization")).toBe(false);
+    expect(new Headers(probe.headers).has("cookie")).toBe(false);
+    expect(new Headers(fetch.mock.calls[1][1]!.headers).get("authorization")).toBe(`Bearer ${retained.accessToken}`);
   });
   it.each([[undefined, "PASSWORD_SIGN_IN_REQUIRED"], [{hirewizUserId: 12}, "LEGACY_ENROLLMENT_UNAVAILABLE"],
     [{browserPairingSession: {candidate_id: 12}}, "UNAVAILABLE"]] as const)("projects absent, legacy and malformed private sessions without native calls", async (token, status) => {
@@ -117,11 +133,37 @@ describe("candidate website projected BFF contracts", () => {
     expect(result.status).toBe(200); expect(await result.json()).toEqual({ status }); expect(fetch).not.toHaveBeenCalled();
   });
   it.each([[200, {status: "ELIGIBLE"}, "ELIGIBLE"], [401, {detail: "private-error"}, "PASSWORD_SIGN_IN_REQUIRED"],
-    [503, {detail: "private-error"}, "UNAVAILABLE"], [200, {status: "ELIGIBLE", session_id: "private"}, "UNAVAILABLE"]] as const)("checks actual backend eligibility but exposes only fixed status", async (status, data, expected) => {
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json(data, {status})));
+    [429, {detail: "private-error"}, "UNAVAILABLE"], [503, {detail: "private-error"}, "UNAVAILABLE"],
+    [200, {status: "ELIGIBLE", session_id: "private"}, "UNAVAILABLE"]] as const)("checks actual backend eligibility but exposes only fixed status", async (status, data, expected) => {
+    const fetch = eligibilityBackendReply(data, status);
     const result = await GET(await request("eligibility", retained), params("eligibility"));
     expect(result.status).toBe(200); expect(await result.json()).toEqual({status: expected});
     expect(result.headers.get("cache-control")).toBe("private, no-store");
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "https://backend.example.com/api/health", "https://backend.example.com/api/auth/candidate/v1/session",
+    ]);
+  });
+  it("keeps an unknown session outcome unavailable without another target or availability request", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      if (String(url).endsWith("/api/health")) return new Response(null, { headers: {
+        date: new Date().toUTCString(), "x-correlation-id": new Headers(init?.headers).get("x-correlation-id")!,
+      } });
+      throw new TypeError("synthetic-private-unknown-outcome");
+    });
+    vi.stubGlobal("fetch", fetch);
+    const result = await GET(await request("eligibility", retained), params("eligibility"));
+    expect(await result.json()).toEqual({ status: "UNAVAILABLE" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][0]).toBe("https://backend.example.com/api/auth/candidate/v1/session");
+  });
+  it("never turns a health response into eligibility when the hint is invalid", async () => {
+    const fetch = vi.fn(async () => Response.json({ status: "ELIGIBLE" }, { headers: {
+      date: new Date().toUTCString(), "x-correlation-id": "replayed-response",
+    } }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await GET(await request("eligibility", retained), params("eligibility"));
+    expect(await result.json()).toEqual({ status: "UNAVAILABLE" });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("does not permit native signup to replace a retained identity or create another account", async () => {
     const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);

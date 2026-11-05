@@ -6,9 +6,15 @@ The bounded V2 cohort closer is deliberately not a normal lifecycle fallback.
 """
 from __future__ import annotations
 
+import json
+import re
+from dataclasses import dataclass
+from threading import Lock
 from typing import Protocol
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 
+from ..recovery.contracts import canonical
 from ..recovery.gcp_password_lifetime import (
     GcpPasswordLifetimeCoordinator,
     PasswordLifetimeOwnedAck,
@@ -54,11 +60,38 @@ class CandidateLifetimeRetention(Protocol):
     def delete_account(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool: ...
 
 
+@dataclass(eq=False, frozen=True, repr=False)
+class PendingPasswordLogin:
+    """Opaque original pending result; not a session or authorization grant."""
+
+    _raw: bytes
+    _issuer: object
+
+
+class ProtectedPasswordLoginFinalizer(Protocol):
+    def finalize_password_login(self, context: CandidateWebSession,
+                                revision: CandidateCredentialRevision, email_sha256: str) -> bool: ...
+
+
+class PasswordLoginFinalizer(Protocol):
+    def begin_password_login(self, revision: CandidateCredentialRevision, *, email_sha256: str,
+                             expires_at_ms: int) -> PendingPasswordLogin | None: ...
+    def finalize_password_login(self, pending: PendingPasswordLogin) -> CandidateWebSession: ...
+
+
 class NativeCandidateLifetimeRetention:
-    def __init__(self, issuer: GcpPasswordLifetimeCoordinator, protected: ProtectedCandidateLifetimes):
+    def __init__(self, issuer: GcpPasswordLifetimeCoordinator, protected: ProtectedCandidateLifetimes, *,
+                 login_finalizer: ProtectedPasswordLoginFinalizer | None = None):
         if type(issuer) is not GcpPasswordLifetimeCoordinator:
             raise GuardUnavailable("Candidate lifetime configuration is unavailable")
         self.issuer, self.protected = issuer, protected
+        self._login_finalizer = login_finalizer
+        self._login_issuer, self._login_lock = object(), Lock()
+        # Weak ownership retains no abandoned login after its caller releases it.
+        # This stores pending canonical bytes, never a successful UID observation.
+        self._pending_logins: WeakKeyDictionary[
+            PendingPasswordLogin, tuple[bytes, ProtectedPasswordLoginFinalizer]
+        ] = WeakKeyDictionary()
 
     def enroll(self, revision: CandidateCredentialRevision) -> bool:
         if revision.auth_generation != 1:
@@ -76,6 +109,12 @@ class NativeCandidateLifetimeRetention:
         return self.protected.check_recovery_mailbox(revision, email_sha256)
 
     def issue(self, revision: CandidateCredentialRevision, *, expires_at_ms: int) -> CandidateWebSession | None:
+        context = self._issue_password(revision, expires_at_ms=expires_at_ms)
+        if context is None or self.protected.check_session(context, revision) is not True:
+            return None
+        return context
+
+    def _issue_password(self, revision: CandidateCredentialRevision, *, expires_at_ms: int) -> CandidateWebSession | None:
         if self.protected.check_account(revision) is not True:
             raise GuardUnavailable("Candidate account lifetime is unavailable")
         execution = self.issuer.execute(self.issuer.allocate(CreateVerifiedPasswordWebSession(
@@ -86,9 +125,45 @@ class NativeCandidateLifetimeRetention:
                 or execution.context is None
                 or self.protected.activate(execution.owned_ack, self.issuer) is not True):
             return None
-        if self.protected.check_session(execution.context, revision) is not True:
-            return None
         return execution.context
+
+    def begin_password_login(self, revision: CandidateCredentialRevision, *, email_sha256: str,
+                             expires_at_ms: int) -> PendingPasswordLogin | None:
+        """Keep an activated original private until one fresh final transaction."""
+        finalizer = self._login_finalizer
+        if (finalizer is None or type(revision) is not CandidateCredentialRevision
+                or type(email_sha256) is not str or re.fullmatch(r"[a-f0-9]{64}", email_sha256) is None):
+            raise GuardUnavailable("Exact protected login finalization is unavailable")
+        context = self._issue_password(revision, expires_at_ms=expires_at_ms)
+        if context is None:
+            return None
+        if self._login_finalizer is not finalizer:
+            raise GuardUnavailable("Protected login finalizer changed during issuance")
+        raw = canonical({"revision": revision.model_dump(mode="json"),
+                         "context": context.model_dump(mode="json"),
+                         "email_sha256": email_sha256, "expires_at_ms": expires_at_ms}).encode()
+        pending = PendingPasswordLogin(raw, self._login_issuer)
+        with self._login_lock:
+            self._pending_logins[pending] = raw, finalizer
+        return pending
+
+    def finalize_password_login(self, pending: PendingPasswordLogin) -> CandidateWebSession:
+        """Consume before IO; an unknown Commit or failed proof cannot be retried."""
+        with self._login_lock:
+            owned = self._pending_logins.pop(pending, None) if type(pending) is PendingPasswordLogin else None
+            if owned is None:
+                raise GuardUnavailable("Original pending login is absent or consumed")
+            raw, finalizer = owned
+            if (pending._issuer is not self._login_issuer or pending._raw != raw
+                    or self._login_finalizer is not finalizer):
+                raise GuardUnavailable("Original pending login is absent or consumed")
+        value = json.loads(raw)
+        context = CandidateWebSession.model_validate(value["context"])
+        revision = CandidateCredentialRevision.model_validate(value["revision"])
+        if finalizer.finalize_password_login(context, revision, value["email_sha256"]) is not True:
+            raise GuardUnavailable("Protected login finalization is unavailable")
+        # The trusted IO port never owns the context exported to the caller.
+        return CandidateWebSession.model_validate(json.loads(raw)["context"])
 
     def issue_oauth(self, revision: CandidateCredentialRevision, *, principal_sha256: str, verified_proof_sha256: str, expires_at_ms: int) -> CandidateWebSession | None:
         if principal_sha256 != revision.principal_sha256 or self.protected.check_account(revision) is not True:

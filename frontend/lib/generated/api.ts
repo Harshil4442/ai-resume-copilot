@@ -861,9 +861,29 @@ export interface paths {
         };
         /**
          * List Resumes
-         * @description Return all parsed resumes for the current user (used for dropdown selection).
+         * @description Legacy array contract, bounded to 500 entries; new selectors use /page.
          */
         get: operations["list_resumes_api_resume_list_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/resume/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Page Resumes
+         * @description One bounded metadata page plus at most one independently owned selection.
+         */
+        get: operations["page_resumes_api_resume_page_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4826,6 +4846,14 @@ export interface components {
             /** Resumes */
             resumes: components["schemas"]["ResumeListItem"][];
         };
+        /** ResumePageResponse */
+        ResumePageResponse: {
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Resumes */
+            resumes: components["schemas"]["ResumeListItem"][];
+            selected_resume?: components["schemas"]["ResumeListItem"] | null;
+        };
         /** ResumeParseResponse */
         ResumeParseResponse: {
             contact_info: components["schemas"]["ContactInfo"];
@@ -8441,6 +8469,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResumeListResponse"];
+                };
+            };
+        };
+    };
+    page_resumes_api_resume_page_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                current_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumePageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

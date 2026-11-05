@@ -67,7 +67,9 @@ import {
 import { trackEvent } from "../../../lib/analytics";
 import { retryRead } from "../../../lib/readQueryPolicy";
 import { useProgressQuery } from "../../../lib/useProgressQuery";
-import type { ResumeListResponse, ResumeSourceFormat } from "../../../lib/types";
+import type { ResumeSourceFormat } from "../../../lib/types";
+import { useResumeOptions } from "../../../lib/resumeOptions";
+import { ResumeSelector, ResumeVersionMetadata } from "../../../components/ResumeSelector";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
 type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" | "unknown_metadata" | "confirmed_absent" | "ready";
@@ -212,17 +214,14 @@ function OpportunityContent() {
     queryKey: ["opportunity", opportunityId],
     queryFn: () => apiGet<OpportunityDetail>(`/v1/opportunities/${opportunityId}`),
   });
-  const resumes = useQuery({
-    queryKey: ["resumes"],
-    queryFn: () => apiGet<ResumeListResponse>("/resume/list"),
-  });
+  const resumes = useResumeOptions({ selectedId: opportunity.data?.resume_id });
   const creditAvailability = useQuery(creditAvailabilityOptions());
   const pricingKnown = creditAvailability.isSuccess && creditAvailability.data !== null;
   const unifiedServices = Boolean(creditAvailability.data?.catalog_enabled || creditAvailability.data?.execution_enabled);
   const basicAllowance = creditAvailability.data?.free_core_limits.basic_match;
   const curatedAllowance = creditAvailability.data?.free_core_limits.curated_interview;
   const skillAllowance = creditAvailability.data?.free_core_limits.skill_roi;
-  const sourceResume = resumes.data?.resumes.find((resume) => resume.id === opportunity.data?.resume_id);
+  const sourceResume = resumes.selected;
   const sourceState: SourceState = !opportunity.data?.resume_id ? "no_selection"
     : resumes.isLoading ? "loading"
     : resumes.isError ? "request_error"
@@ -645,14 +644,7 @@ function OpportunityContent() {
             <p className="mt-2 text-sm font-semibold text-muted-foreground">{item.company || "Company not set"}{item.location ? ` · ${item.location}` : ""}</p>
           </div>
           <div className={`grid gap-4 rounded-xl border border-border bg-surface/60 p-4 sm:grid-cols-2 sm:p-5 ${item.resume_versions.length ? "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"}`}>
-            <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
-              Resume
-              <select ref={resumeSelectRef} className="field-control min-w-0 truncate pr-8" title={sourceResume?.filename} value={item.resume_id || ""} onChange={(event) => connectResume.mutate(event.target.value)} disabled={connectResume.isPending}>
-                <option value="">Not connected</option>
-                {item.resume_id && !sourceResume ? <option value={item.resume_id}>Connected resume #{item.resume_id} · details unavailable</option> : null}
-                {(resumes.data?.resumes || []).map((resume) => <option key={resume.id} value={resume.id}>{resume.filename} · #{resume.id} · {resume.source_available === false ? "needs upload" : resume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(resume.source_format || "") ? `${(resume.source_format || "").toUpperCase()} original saved` : "source status unknown"}</option>)}
-              </select>
-            </label>
+            <ResumeSelector catalog={resumes} selectRef={resumeSelectRef} value={item.resume_id || ""} emptyLabel="Not connected" disabled={connectResume.isPending} onChange={(value) => connectResume.mutate(value)} format={(resume) => `${resume.filename} · #${resume.id} · ${resume.source_available === false ? "needs upload" : resume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(resume.source_format || "") ? `${(resume.source_format || "").toUpperCase()} original saved` : "source status unknown"}`} />
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
               Application stage
               <select
@@ -920,7 +912,7 @@ function OpportunityContent() {
                 <div className="mt-6 space-y-5">
                   {item.resume_versions.map((version) => {
                     const content = getSourcePreservingContent(version.structured_content);
-                    const versionResume = resumes.data?.resumes.find((resume) => resume.id === version.resume_id);
+                    return <ResumeVersionMetadata key={version.id} resumeId={version.resume_id} required={Boolean(content)} known={resumes.data?.resumes.find((resume) => resume.id === version.resume_id)}>{(versionResume, versionSourceState) => {
                     const nativeFormat = content && versionResume?.source_available && versionResume.source_format === content.source_format ? content.source_format : null;
                     const hasPdf = nativeFormat === "pdf" || nativeFormat === "tex" || nativeFormat === "texzip";
                     const isUpdating = updateVersion.isPending && updateVersion.variables?.id === version.id;
@@ -961,7 +953,7 @@ function OpportunityContent() {
                               {!content.source_edits.length ? <p className="text-sm leading-6 text-muted-foreground">This snapshot keeps your original resume unchanged. View the original file before approving it.</p> : null}
                               {content.evidence_needed?.length ? <div className="border-l-2 border-border pl-4"><p className="data-label">Requirements needing more evidence</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-muted-foreground">{content.evidence_needed.map((requirement, index) => <li key={index}>{requirement}</li>)}</ul></div> : null}
                               <Button asChild size="sm" variant="ghost"><Link href={`/resume/preview?resume=${version.resume_id}`}><FileText size={15} /> View original source</Link></Button>
-                              {!nativeFormat ? <p className="text-sm leading-6 text-muted-foreground">{resumes.isLoading ? "Checking the original file before approval and download..." : resumes.isError ? "Source file details could not be loaded. Retry loading above before approval or download." : "The original source for this version is unavailable. Upload the source again and generate a new version before approval or download."}</p> : null}
+                              {!nativeFormat ? <p className="text-sm leading-6 text-muted-foreground">{versionSourceState === "not_requested" ? "Load saved version source details before approval or download. The original file has not been checked yet." : versionSourceState === "loading" ? "Checking the original file before approval and download..." : versionSourceState === "error" ? "Source file details could not be verified. Retry loading above before approval or download." : versionSourceState === "unavailable" ? "The original source for this version is unavailable. Upload the source again and generate a new version before approval or download." : "The saved source format does not match this version. Refresh its source details before approval or download."}</p> : null}
                               <div className="border-t border-border pt-4">
                                 {version.approval_state !== "approved" ? <label className="flex items-start gap-3 text-sm leading-6 text-foreground"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={Boolean(reviewedVersionIds[version.id])} onChange={(event) => { const checked = event.target.checked; setReviewedVersionIds((reviewed) => ({ ...reviewed, [version.id]: checked })); }} /> I have reviewed this version and its proposed changes.</label> : null}
                                 <div className="mt-4 flex flex-wrap gap-2">
@@ -979,6 +971,7 @@ function OpportunityContent() {
                         )}
                       </article>
                     );
+                    }}</ResumeVersionMetadata>;
                   })}
                   {!item.resume_versions.length ? <p className="text-sm leading-6 text-muted-foreground">No version saved yet. Generate a tailored version or save your unchanged source snapshot.</p> : null}
                 </div>

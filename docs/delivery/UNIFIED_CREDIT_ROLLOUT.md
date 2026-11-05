@@ -1,8 +1,27 @@
 # Unified credit release runbook
 
-Status: schema25 base deployment completed on 29 October; current account and
-companion acceptance and the eight-stage qualification program remain in progress.
-This runbook does not grant a financial budget or enable checkout.
+Status observed **5 November 2026 (IST)**: DB8 is the healthy production API and
+application-worker release on committed schema26; original schedules/coordinator
+are restored and the joined read-only proof passed. Frontend 751/Hohsg serves
+companion 0.8.9. Qualified application image 9b9 is built and source-verified,
+**not deployed**. Its independent alias-capture controller PR103/CI41898489779
+remains pending. Registry PR102 is normally merged at `deaed009`; its own
+CI41893799752 completed successfully; runtime provenance remains the separate
+9b9 source and Build.
+
+Current companion original-file review/cancel/revoke, human Reviewer 2, shadow
+accounting, 10,000-user capacity, finance/commercial gates and full R03/RTO
+qualification remain pending. Paid 80-document/nine-job native QA and ordinary
+17-case scanner maintenance are OWNER HOLD; broader native/model quality
+qualification remains pending. The retained scanner proof expires
+`2026-11-05T06:24:10Z`, with no expiry waiver. The current browser identity check
+passed with no action enabled; a fresh base-page GET found an expired website
+session, and no new Fill, upload, submission or revocation occurred.
+
+[Current runtime metadata](evidence/2026-11-05-runtime-status.json) separates serving
+releases from build-only and pending work. The eight stage rows and all 83
+requirement statuses are unchanged. This runbook does not grant a financial
+budget, a deployment action, scanner maintenance or checkout.
 The controlling product contract is
 [`CREDIT_COST_QUALITY_V1_1.md`](../requirements/CREDIT_COST_QUALITY_V1_1.md).
 
@@ -75,11 +94,20 @@ The follow-on evidence in `evidence/2026-10-28-unified-credit-release-preparatio
 separates the locally connected legacy-order recovery journey from the new
 single-credit purchase/discovery journey. Their external payment and employer
 feeds are finite synthetic fixtures. Neither is a live commercial transaction or
-an employer application. Current production deployment evidence is recorded in
-`evidence/2026-10-29-schema25-production-base.json`; paid-route qualification is
-separate. Stages 1–7 remain in progress and Stage 8 remains pending.
+an employer application. Schema25 production deployment evidence remains historical in
+`evidence/2026-10-29-schema25-production-base.json`; the current schema26 runtime
+and pending successor are recorded in `evidence/2026-11-05-runtime-status.json`.
+Paid-route qualification is separate. Stages 1–7 remain in progress and Stage 8
+remains pending.
 
 ## Safe release sequence
+
+The schema25 procedures below retain their original release scope; they are not
+instructions to replay migration or reopen the current schema26 pilot. The
+application-only schema26 successor controller is in
+`backend/scripts/schema26_app_successor.py`; its PR103 alias fix still requires
+its own qualification and fresh plan before use. The current target image remains
+9b9, and no new application build is required by this controller-only fix.
 
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial

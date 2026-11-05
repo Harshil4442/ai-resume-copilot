@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 HISTORICAL_RELEASE = "7be8cac2a332a5ad19366402013d5f385f97105b"
 HISTORICAL_FINGERPRINT = "739d9751132a9864bda0f3fda89b6f03a095f3c2c195c3f9ad9696fb5943ce86"
-APP_SHA256 = "13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"
+APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -42,12 +42,19 @@ CURRENT_PROOF_PATHS = ("backend/scripts/qualify_schema26_compatibility.py",)
 # may differ from the failed historical runner. Other execution inputs stay fixed.
 CURRENT_EXECUTION_PATHS = (
     ".github/workflows/ci.yml",
+    "backend/app/domains/candidate_accounts/production.py",
+    "backend/app/domains/candidate_accounts/retention.py",
+    "backend/app/domains/candidate_accounts/service.py",
     "backend/app/domains/credits/canary.py",
     "backend/app/domains/employer/connectors.py",
     "backend/app/domains/employer/tasks.py",
     "backend/app/domains/recovery/browser_pairing_production.py",
+    "backend/app/domains/recovery/gcp_candidate_lifetimes.py",
+    "backend/app/routers/resume.py",
+    "backend/app/schemas.py",
     "backend/scripts/document_refresh.py",
     "backend/scripts/schema25_app_release_contract_v3.py",
+    "infra/gcp/document_application_context.py",
     "infra/gcp/document_consumed_native.py",
     "infra/gcp/document_refresh_recovery.py",
     "infra/gcp/document_refresh_transition.py",
@@ -234,7 +241,7 @@ def _registry_value(raw: bytes) -> dict:
     value = json.loads(raw, object_pairs_hook=pairs)
     need(type(value) is dict and set(value) == {"version", "sources"}
          and type(value["version"]) is int and value["version"] == 1
-         and type(value["sources"]) is list and 1 <= len(value["sources"]) <= 8,
+         and type(value["sources"]) is list and 1 <= len(value["sources"]) <= 32,
          "operator_registry_shape")
     for row in value["sources"]:
         need(type(row) is dict and set(row) == {"release", "image_digest", "build_id", "ci_run_id"}

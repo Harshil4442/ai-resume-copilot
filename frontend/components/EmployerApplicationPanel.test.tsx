@@ -81,7 +81,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED", "false");
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: false,
     search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 10, sources: [] };
-  vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : application());
+  vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? catalog : application());
   vi.mocked(apiPostForm).mockResolvedValue({ resume_id: 42, source_available: true, source_format: "tex" });
   vi.mocked(accountMutationHeaders).mockResolvedValue({ "Content-Type": "application/json", "X-Hirewiz-Account-CSRF": "9".repeat(64) });
 });
@@ -90,9 +90,9 @@ afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); client
 describe("explicit browser submission wallet units", () => {
   async function showApplication(value: EmployerApplication) {
     const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 20, pricing_version: "legacy", max_search_jobs: 20, balance: 100, sources: [] };
-    vi.mocked(apiGet).mockImplementation(async path => path.endsWith("/catalog") ? catalog : value);
+    vi.mocked(apiGet).mockImplementation(async path => path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? catalog : value);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
-    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
     await screen.findByRole("heading", { name: "Engineer" });
   }
   it("shows an actual quoted three-credit unknown hold in unified units without interpreting the legacy balance", async () => {
@@ -118,7 +118,7 @@ describe("explicit browser submission wallet units", () => {
 async function upload(file: File) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
   clients.push(client);
-  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
   const input = await screen.findByLabelText("Upload a custom PDF, DOCX or TeX source");
   await act(async () => { fireEvent.change(input, { target: { files: [file] } }); });
 }
@@ -224,7 +224,7 @@ it("offers the exact Razorpay companion handoff and application ID without appro
   saved.posting.apply_url = saved.posting.canonical_url;
   vi.mocked(apiGet).mockResolvedValue(saved);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
-  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
   expect(await screen.findByRole("link", { name: "Review browser assistance" })).toHaveAttribute("href", "/browser-companion?application=app_local");
   expect(screen.getByRole("link", { name: "Open Razorpay application" })).toHaveAttribute("href", saved.posting.apply_url);
   expect(screen.getByRole("button", { name: "Copy application ID" })).toBeEnabled();
@@ -235,13 +235,12 @@ it("offers the exact Razorpay companion handoff and application ID without appro
 describe("tailoring workspace follows the chosen resume for this job", () => {
   async function openTailoring() {
     const saved = manualApplication();
-    vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/v1/resume-versions?") ? [] : path.endsWith("/catalog") ? {
+    vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/v1/resume-versions?") ? [] : path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? {
       enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20,
       pricing_version: "synthetic", max_search_jobs: 20, balance: 0, sources: [],
     } : saved);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
-    const resumes = [1, 2].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx" as const, created_at: "2026-10-16T00:00:00Z" }));
-    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={resumes} /></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
     await screen.findByRole("heading", { name: "Engineer" });
     await userEvent.selectOptions(screen.getByLabelText("Resume choice"), "tailored");
   }
@@ -289,9 +288,9 @@ function reportProjection() {
 }
 async function renderManual(read: () => EmployerApplication = manualApplication) {
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20, pricing_version: "synthetic", max_search_jobs: 20, balance: 0, sources: [] };
-  vi.mocked(apiGet).mockImplementation(async (path) => path.endsWith("/catalog") ? catalog : read());
+  vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? catalog : read());
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
-  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} resumes={[]} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
   await screen.findByRole("heading", { name: "Engineer" });
 }
 async function recordManualReport() {

@@ -63,16 +63,28 @@ class Source:
         return "us-central1-docker.pkg.dev/" + PROJECT + "/cloud-run-source-deploy/hirewiz@" + self.image_digest
 
     def validate(self):
-        need(re.fullmatch(r"[a-f0-9]{40}", self.release)
+        need(type(self.release) is str and type(self.image_digest) is str and type(self.build_id) is str
+             and re.fullmatch(r"[a-f0-9]{40}", self.release)
              and re.fullmatch(r"sha256:[a-f0-9]{64}", self.image_digest)
-             and re.fullmatch(r"[a-f0-9-]{36}", self.build_id)
+             and re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", self.build_id)
              and type(self.ci_run_id) is int and self.ci_run_id > 0, "reviewed_source_invalid")
 
 
 def sources(root):
-    value = json.loads((root / "infra/document-processing/reviewed-application-builds.json").read_bytes())
-    need(set(value) == {"version", "sources"} and value["version"] == 1
-         and 1 <= len(value["sources"]) <= 8, "reviewed_registry_invalid")
+    raw = (root / "infra/document-processing/reviewed-application-builds.json").read_bytes()
+    need(0 < len(raw) <= 16384, "reviewed_registry_invalid")
+
+    def pairs(rows):
+        need(len({name for name, _ in rows}) == len(rows), "reviewed_registry_invalid")
+        return dict(rows)
+
+    value = json.loads(raw, object_pairs_hook=pairs)
+    need(type(value) is dict and set(value) == {"version", "sources"}
+         and type(value["version"]) is int and value["version"] == 1
+         and type(value["sources"]) is list and 1 <= len(value["sources"]) <= 32,
+         "reviewed_registry_invalid")
+    need(all(type(row) is dict and set(row) == {"release", "image_digest", "build_id", "ci_run_id"}
+             for row in value["sources"]), "reviewed_registry_invalid")
     pins = tuple(Source(**row) for row in value["sources"])
     for pin in pins:
         pin.validate()

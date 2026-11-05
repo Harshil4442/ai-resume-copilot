@@ -60,7 +60,7 @@ class QualifiedRunner(BaseModel):
     qualification_contract: Literal["hirewiz_schema26_app_rolling_v3"]
     qualification_sha256: str = Field(pattern="^" + SHA + "$")
     app_files: Literal[290]
-    app_sha256: Literal["13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"]
+    app_sha256: Literal["f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"]
     entry_path: Literal["backend/scripts/native_acquisition_job.py"]
     entry_sha256: Literal["8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"]
     runtime_dependencies_sha256: str = Field(pattern="^" + SHA + "$")
