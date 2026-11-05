@@ -1,96 +1,160 @@
-# F07: consent and digest admission, inert first increment
+# F07: weekly role updates and explicit email consent
 
-Status: local contract development only. F07 is not runtime-complete. No route,
-worker, migration, native permission, provider sender or feature flag imports this
-contract. Every draft result has `runtime_authority = UNAVAILABLE`, including a
-logically consistent candidate. Caller-supplied facts are not native receipts.
-The original eight stages and 83 requirement IDs/statuses remain unchanged.
+Status: implemented and connected in the local development branch, default off.
+Targeted local verification has passed. This is not a production, provider,
+capacity or commercial acceptance record. The original eight delivery stages and
+83 requirement IDs remain authoritative; no major checkpoint is declared complete.
 
-## First code change
+## User behavior
 
-`backend/app/domains/notification_consent/contracts.py` models explicit consent
-CAS successors and consistency checks for one weekly digest. It has only standard
-library dependencies, no IO and no positive authorization output. Focused synthetic
-tests exercise restored SQL consent/credentials, opt-out/re-consent, owner/account
-substitution, old recipients, closed subjects, stale queues, cadence and unknown
-sends, optional-category capacity and preserved security headroom. These tests do not qualify native consistency, mail delivery or load.
+The Profile page exposes an explicit weekly-email preference. No account is opted
+in automatically. The control reads the current native state and sends the exact
+expected generation with an explicit confirmation. An uncertain write requires a
+manual state refresh; the browser never repeats the mutation automatically.
 
-The cadence key is stable for one native subject and ISO delivery week. Preference,
-credential, recipient, content or consent-generation changes cannot create another
-weekly slot. A native send-BEGIN consumes the slot even when provider outcome is
-unknown; SQL attempt-counter restoration must not reopen it. A digest is enqueued
-near its due time, with at most the existing 24-hour lifecycle delivery window,
-rather than reserving a provider envelope a week in advance.
+An eligible digest includes at most five distinct updates to roles the owner
+already saved or obtained through a completed search. It does not perform another
+job search, refresh employer feeds, call a model, include resume/evidence/answers,
+or create per-job email alerts. There is no customer credit charge for a digest.
 
-## Minimal runtime integration, still pending
+Only open postings from recently checked, healthy, enabled, operator-reviewed
+employer-origin sources qualify. New/updated postings are bounded to seven days;
+source/posting checks must be no older than 24 hours. Known passed owner deadlines,
+future timestamps, owner/source mismatches and invalid origin identities refuse.
+One bounded metadata query selects at most 50 candidates before deterministic
+opening-key deduplication and the five-item limit. Empty digests are skipped.
 
-1. Add a dedicated `notification_preferences` SQL projection row: user PK/FK,
-   subject/account binding, native consent generation, recipient hash, explicit
-   weekly-digest flag, policy version and next due time. Index due discovery. Native
-   consent remains authoritative; no default opt-in or adoption of a restored row.
-   Using audit/outbox rows as preferences avoids DDL but mixes retention, accounting
-   and discovery semantics and does not solve rollback. The dedicated row is preferred.
-2. Add purpose-bound native consent head/history plus closed operation kinds
-   `notification_preferences_change` and `notification_digest_send_begin`. These
-   names are proposed, not existing permissions. Include their provenance in native
-   census/closure validation; do not add untracked authority namespaces or reuse
-   browser pairing/signing commands. Native acknowledgement precedes SQL projection.
-   Missing/ambiguous native outcomes remain unavailable and are not reconstructed.
-3. Authenticated preference writes must reuse
-   `ConfiguredCandidateAccounts._invoke` and fresh `current_session` checks. A
-   worker send uses fresh `current_subject`, current SQL/native credential revision
-   equality, mailbox binding, consent head/history and exact queued generation.
-   Reuse the existing publication/configuration/witness closure fences through
-   `ScopedCandidateAuthority._run`; no positive authority cache or stored login
-   session may stand in for these checks. Credential rotation may preserve email
-   consent only when both current native and SQL revisions agree. Also retain a
-   signed, purpose-isolated, disable-only unsubscribe POST as pending: GET only
-   displays confirmation; the signed proof is submitted in the POST body and can
-   only advance consent to disabled, never enable mail or sign in. No credentials,
-   recipient address or proof belongs in the request URL. The reviewed email-to-
-   confirmation proof handoff remains pending; this increment implements no link.
-4. Extend `run_maintenance` with an isolated digest selector/delivery path. Follow
-   `notifications/privacy_erasure.py`'s dedicated type/status pattern; the generic
-   lifecycle loop otherwise claims unfamiliar pending types. Outbox selection is
-   scheduling only. Recompute current bounded digest content at delivery, bind its
-   hash and recipient to one original native send-BEGIN, then invoke
-   `mail_budget.guarded_send`. Every actual attempt needs fresh current consent and
-   account checks. Known-retryable recovery must retain the same original message,
-   provider key and admission; it must not allocate another cadence slot. Unknown
-   outcomes require reconciliation and no automatic resend.
-5. Add the SQL row to `erase_account_sql` and `erased_owner_rows_absent`. Native
-   subject/account tombstones must continue to defeat restored SQL owners and
-   outboxes. Store only recipient hashes in consent history; resolve and compare
-   the current recipient immediately before sending. There is no verified mailbox
-   change flow in the inspected source: any SQL/native mailbox mismatch must stop
-   delivery, not fall back to an older queued address. A future verified address
-   change needs an explicit native consent/recipient revision.
-6. Add migration/catalog/role and source-contract successors before integrating
-   runtime callers. The current schema26 contract does not cover a new table or
-   new native effects. An application source named Source27 is not itself database
-   migration authority. Preserve existing denied/unknown failure behavior.
+Weekly means at most one admitted message per native subject and UTC ISO week.
+Delivery depends on available optional-mail capacity. The UI discloses this limit.
+A scheduled eligibility check is not a guaranteed delivery time. Normal dashboard
+access and account/security email remain separate.
 
-## Required acceptance boundaries
+## Native consent and delivery authority
 
-Opt-out linearizes at native consent-change acknowledgement: every subsequently
-admitted send must fail for the old generation. An already admitted provider request
-can remain in flight and cannot be recalled. Session/device logout is distinct from
-email consent; native account closure and explicit email revocation deny future sends.
+The actual configured native adapter uses the existing candidate configuration,
+GCS witness and scoped authority boundaries. Four typed command kinds and four
+closed namespaces cover consent heads/history, send BEGINs and outcomes. Complete
+census validation checks their provenance, monotonic consent chain, stable weekly
+keys, immutable message binding and outcome consistency. Unknown namespaces are
+not silently adopted by older code.
 
-Reuse the existing detached mail ledger and provider idempotency. Its current
-three-unit envelope and 100 daily / 1,000 monthly units allow at most 33 daily /
-333 monthly messages before security and other traffic. Running security first
-is not a reserved security budget. Digest activation therefore also needs an
-explicit optional-mail ceiling and reserved security headroom in admission, plus
-bounded fair scheduling. No new spend, throughput promise or runtime budget
-allocation is implemented by this increment. `MailCapacityFacts` makes missing
-headroom, exhausted optional allowance and insufficient three-unit envelopes
-fail the pure check. Its values remain untrusted observations. Runtime must
-calculate the optional ceiling/security headroom and reserve the envelope under
-the existing mail-budget transaction lock; a precomputed boolean cannot replace
-that atomic admission.
+Preference changes require the current native browser session, subject, SQL/native
+credential revision and verified mailbox. Consent is independent of password
+rotation: future sends may use a fresh credential revision with the same account,
+subject, mailbox and unchanged consent. Stale requests and an in-flight retry with
+changed credentials refuse.
 
-Runtime acceptance still requires native CAS/closure/restore tests, SQL migration
-and erasure checks, outbox/revocation races, reserved-budget tests, original-send
-unknown-outcome recovery and reviewed real delivery. No claim of F07 completion,
-provider authority or successful deployment follows from the pure contract.
+Every send requires a fresh current subject/mailbox/consent check and an original
+native BEGIN acknowledgment. The original callback runs only after configuration
+and witness gates, outside SQL/native locks. The fixed message hash includes the
+actual immutable provider JSON bytes, destination, sender, endpoint and stable
+idempotency key; API credentials are excluded so rotation cannot buy a new slot.
+The encrypted queued week is checked against the server week inside native commit
+before creating a BEGIN, preventing a Sunday/Monday retargeting race.
+
+There are at most three attempts within one live original acknowledgment chain.
+A retry requires the exact acknowledged prior native known-429 outcome and the
+provider's actual bounded Retry-After. No stored row, reconstructed receipt or new
+worker can recreate that live callback ownership. Unknown provider/outcome results
+never retry. A completely unpersisted, pre-provider ambiguous BEGIN leaves no
+durable row; a fresh conditional create on the same stable key may win, while a
+late competing create cannot also win. No provider callback runs in the ambiguous
+invocation. Persisted BEGINs and all post-provider uncertainty block cold replay.
+
+## SQL projection, migration and privacy
+
+Migration `20261105_0027` adds only `notification_preferences`, linked to the owner
+with cascading erasure and a bounded due-discovery index. There is no opt-in
+backfill or default. The row stores account binding, native generation/hash,
+recipient hash, policy, enabled state and next check time. It is scheduling/cache
+metadata, never a send grant. A read of a retained native head cannot be projected
+as an original write acknowledgment.
+
+The orchestration captures SQL facts, releases owner/row locks for native IO, then
+reacquires the existing account-erasure owner fence before projecting an original
+change acknowledgment. It rechecks account revision and mailbox and refuses
+backward generations or same-generation content changes. Owner export labels the
+preference as a projection; account erasure and absence auditing cover the table.
+Downgrade refuses until native history and unresolved work have a separately
+reviewed retirement procedure; empty SQL alone cannot prove native non-use.
+
+Dedicated outbox types/statuses isolate digests from generic lifecycle workers,
+even if an old row is mislabelled pending. Subject/text, including the opt-out
+capability, are encrypted with a separate purpose-derived AEAD key and bound to
+the exact outbox ID, owner, recipient, key and metadata. Every physical request
+rechecks current SQL owner/mailbox/projection after funding, then releases locks
+before HTTP. Expired snapshots are cleared after 24 hours even while paused;
+stale processing becomes unknown, never pending. Native cadence and detached
+funding/unknown metadata remain retained independently of personal message bodies.
+
+## Unsubscribe
+
+The email link opens a public confirmation page without signing in. Its proof is
+carried in the fragment, captured in memory and removed before telemetry. A GET
+changes nothing. One explicit POST carries the proof in its body. Same-document
+link replacement invalidates the old context and requires another explicit click;
+old responses cannot update the new context. Proofs never enter DOM, persistent
+storage, query keys, request URLs or telemetry.
+
+The purpose-isolated MAC binds exact account identity, recipient hash, consent
+generation, policy, audience and bounded expiry. Verified Python-port objects also
+retain their original claims; ordinary copies cannot change them while retaining
+a verified seal. The codec creates no login/session/send authority. Native current
+state and CAS make the disable request single-use.
+
+A separate disable-only native port remains available while optional delivery is
+paused. It still requires current subject, credentials, mailbox, exact consent and
+configuration/witness checks. It cannot enable mail, send, create missing consent
+or fabricate a browser session. Both private and public HTTP bodies are bounded;
+the public frontend transport needs no auth-cookie parser. Exact-route telemetry,
+no-store, no-referrer, noindex and CSP protections cover the confirmation page/API.
+
+## Cost and provider controls
+
+Existing global funding remains 100 daily / 1,000 monthly attempt units, with
+three units reserved per admitted message. Optional lifecycle funding is further
+limited to 60 daily / 600 monthly units, and each new optional reservation must
+leave 30 daily / 300 monthly units currently unreserved for security traffic.
+These are source admission ceilings, not provider entitlements or a throughput
+promise. Existing funded envelopes retain their original period, deadline and
+unknown/no-refund accounting. Batch admission remains atomic under the real
+PostgreSQL advisory transaction lock.
+
+Digest queue funding is committed with the outbox before a native send BEGIN.
+The callback reuses the exact envelope. A known provider failure result is exposed
+to the native adapter only after the original SQL outcome commit acknowledges;
+ambiguous SQL commits do not supply a reconstructed provider receipt.
+
+The Resend adapter performs one fixed-endpoint HTTPS POST at a time, without
+proxies, redirects, automatic retries, environment CA overrides or TLS key logs.
+A total HTTP deadline covers streaming and the response has a 16 KiB bound.
+Success requires the exact valid JSON receipt; malformed, truncated, timed-out or
+uncertain responses remain unknown. No model calls or cloud QA were needed for
+this source work. The native metadata governor remains unchanged at 40/minute;
+representative capacity qualification is still required.
+
+## Local evidence and remaining release work
+
+Focused source tests cover real owned PostgreSQL locking/schema/privacy behavior,
+actual configured SDK/native transactions over intercepted transports, bounded HTTP
+streams and frontend owner/proof races. Connected tests exercise API consent to
+native authority to SQL schedule/funding to the actual intercepted provider adapter,
+including rate limits, restored queues, opt-out, erasure and mailbox changes.
+Local production build and mobile confirmation hydration passed under the actual
+strict CSP with mocked API traffic and no external requests. They do not establish
+production IAM, provider durability, live email delivery or load capacity.
+
+Before activation, the release still needs:
+
+- Schema27 catalogue/role/compatibility and controlled migration/recovery support.
+- Matched source/profile/OpenAPI qualification and genuine exact-source CI.
+- Full required regressions and rollback/old-reader denial for the new native rows.
+- Fresh scanner verification and the already-required document/quality gates.
+- Reviewed live mail delivery, representative capacity and budget/retention checks.
+- Controlled API/worker/frontend promotion and explicit enablement readback.
+
+GitHub CI is currently blocked by the account billing lock. Scanner maintenance,
+paid document QA, model calls and commercial activation remain on hold. No live
+migration, source rollout, provider message or new purchase was performed for this
+increment. The native protocol and profile successors must be qualified together;
+this branch is not eligible for blind promotion or old-image rollback after use.

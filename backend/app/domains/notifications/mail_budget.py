@@ -22,6 +22,11 @@ from ..common import utcnow
 
 ATTEMPTS = 3
 DAILY_UNITS, MONTHLY_UNITS = 100, 1000
+# Lifecycle mail is optional. New envelopes must fit its own ceiling and leave
+# unreserved shared capacity for the existing security categories. These tighter
+# source limits do not alter or refund any already funded v1 envelope.
+OPTIONAL_DAILY_UNITS, OPTIONAL_MONTHLY_UNITS = 60, 600
+SECURITY_DAILY_HEADROOM, SECURITY_MONTHLY_HEADROOM = 30, 300
 PRIVACY_DAILY, PRIVACY_MONTHLY = 20, 300
 LOCK = 7349186502119
 RESERVATION = "provider_mail_reserved_v1"
@@ -35,9 +40,20 @@ MAX_TTL = {**TTL, "lifecycle": TTL["lifecycle"] + LIFECYCLE_SCHEDULE_LIMIT}
 
 
 class MailBudgetError(RuntimeError):
-    def __init__(self, outcome: Literal["unknown", "deferred", "permanent", "known_retryable"]):
+    def __init__(self, outcome: Literal["unknown", "deferred", "permanent", "known_retryable"], *,
+                 committed_result: ProviderResult | None = None):
         super().__init__("provider_mail_" + outcome)
         self.mail_outcome = outcome
+        self._committed_result = committed_result
+
+    @property
+    def committed_result(self) -> ProviderResult | None:
+        """Exact known provider result, only after its outcome commit returns.
+
+        Missing/unknown commits and callback outcomes cannot supply a receipt.
+        Existing exceptions and reconstructed historical failures default to None.
+        """
+        return self._committed_result
 
 
 @dataclass(frozen=True)
@@ -145,6 +161,7 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
     if len(rows) > MONTHLY_UNITS:
         raise MailBudgetError("unknown")
     day_units = month_units = privacy_day = privacy_month = 0
+    optional_day_units = optional_month_units = 0
     for row in rows:
         reservation = _reservation(row, row.target_id)
         created = _stamp(row.created_at)
@@ -156,9 +173,18 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
         if reservation.category == "privacy_erasure":
             privacy_month += 1
             privacy_day += int(today)
+        elif reservation.category == "lifecycle":
+            optional_month_units += ATTEMPTS
+            optional_day_units += ATTEMPTS if today else 0
     extra = len(missing)
     if (day_units + extra * ATTEMPTS > DAILY_UNITS or month_units + extra * ATTEMPTS > MONTHLY_UNITS
             or category == "privacy_erasure" and (privacy_day + extra > PRIVACY_DAILY or privacy_month + extra > PRIVACY_MONTHLY)):
+        raise MailBudgetError("deferred")
+    if category == "lifecycle" and (
+            optional_day_units + extra * ATTEMPTS > OPTIONAL_DAILY_UNITS
+            or optional_month_units + extra * ATTEMPTS > OPTIONAL_MONTHLY_UNITS
+            or day_units + extra * ATTEMPTS > DAILY_UNITS - SECURITY_DAILY_HEADROOM
+            or month_units + extra * ATTEMPTS > MONTHLY_UNITS - SECURITY_MONTHLY_HEADROOM):
         raise MailBudgetError("deferred")
     added = []
     for message in missing:
@@ -268,5 +294,6 @@ def guarded_send(key: str, callback: Callable[[], ProviderResult], *, category: 
     except Exception:
         raise MailBudgetError("unknown") from None
     if receipt.outcome != "sent":
-        raise MailBudgetError(receipt.outcome)
+        raise MailBudgetError(receipt.outcome,
+            committed_result=receipt if receipt.outcome != "unknown" else None)
     return receipt

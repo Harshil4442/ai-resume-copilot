@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { capturePasswordResetLink } from "../lib/passwordResetLink";
 import { capturePrivacyErasureLink } from "../lib/privacyErasureLink";
+import { captureNotificationUnsubscribeLink } from "../lib/notificationUnsubscribeLink";
 import { retryRead } from "../lib/readQueryPolicy";
 
 // Keep these destinations aligned with the authentication matcher in proxy.ts.
@@ -39,14 +40,14 @@ function SessionOwnerBoundary({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   // A route exit clears proof; a same-document owner-boundary remount does not.
-  useEffect(() => { capturePasswordResetLink(); capturePrivacyErasureLink(); }, [pathname]);
+  useEffect(() => { capturePasswordResetLink(); capturePrivacyErasureLink(); captureNotificationUnsubscribeLink(); }, [pathname]);
   const privatePage = PRIVATE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   const identity = session?.user?.id || session?.user?.email;
   const owner = status === "authenticated"
     ? `owner:${identity}`
     : status;
 
-  if (status === "authenticated" && !identity) {
+  if (status === "authenticated" && !identity && pathname !== "/notifications/unsubscribe") {
     return <p role="alert">Your session could not be identified. <a href="/logout">Log in again</a> to continue.</p>;
   }
   if (privatePage && status !== "authenticated") {

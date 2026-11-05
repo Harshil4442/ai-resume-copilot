@@ -33,6 +33,9 @@ class MaintenanceSummary:
 
 def run_maintenance(db: Session) -> MaintenanceSummary:
     now = utcnow()
+    from ..notifications.digest_delivery import clear_expired_digest_payloads
+    clear_expired_digest_payloads(db, now=now)
+    db.commit()
     queued = queue_due_reminder_emails(db)
     notification_summary = deliver_pending_notifications(db).to_dict()
 
@@ -76,7 +79,7 @@ def run_maintenance(db: Session) -> MaintenanceSummary:
         models.ModelCallEvent.created_at < model_before
     ).delete(synchronize_session=False)
     notification_rows = db.query(models.NotificationOutbox).filter(
-        models.NotificationOutbox.status.in_(["sent", "failed"]),
+        models.NotificationOutbox.status.in_(["sent", "failed", "digest_sent", "digest_failed", "digest_cancelled"]),
         models.NotificationOutbox.updated_at < notification_before,
     ).delete(synchronize_session=False)
     db.commit()

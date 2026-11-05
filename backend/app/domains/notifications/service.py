@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import hashlib
-import html
-import json
 import os
-import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any
 
-import httpx
 from sqlalchemy.orm import Session
 
 from ... import models
 from ..common import public_id, utcnow
+
+if TYPE_CHECKING:
+    from .mail_budget import ProviderResult
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -142,6 +140,8 @@ class DeliverySummary:
 
 
 def _message(item: models.NotificationOutbox) -> tuple[str, str]:
+    if item.notification_type == "weekly_digest":
+        raise ValueError("Dedicated digest delivery required")
     app_url = (os.getenv("FRONTEND_URL") or "https://www.hirewizhq.com").rstrip("/")
     payload = item.payload or {}
     if item.notification_type in {"password_reset", "password_changed"}:
@@ -191,8 +191,9 @@ def _message(item: models.NotificationOutbox) -> tuple[str, str]:
     return ("HireWiz update", f"You have a HireWiz update: {app_url}/dashboard")
 
 
-def _send(item: models.NotificationOutbox) -> None:
-    from .mail_budget import MailBudgetError, ProviderResult, guarded_send
+def _send(item: models.NotificationOutbox) -> ProviderResult:
+    from .mail_budget import MailBudgetError, guarded_send
+    from .provider import ResendAttempt
 
     api_key = (os.getenv("RESEND_API_KEY") or "").strip()
     sender = (os.getenv("EMAIL_FROM") or "").strip()
@@ -202,40 +203,13 @@ def _send(item: models.NotificationOutbox) -> None:
         subject, text = _message(item)
     except Exception:
         raise MailBudgetError("permanent") from None
-    body = {
-        "from": sender,
-        "to": [item.recipient],
-        "subject": subject,
-        "text": text,
-        "html": f"<p>{html.escape(text).replace(chr(10), '<br>')}</p>",
-    }
-    def provider():
-        with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
-            response = client.post("https://api.resend.com/emails", headers={
-                "Authorization": f"Bearer {api_key}", "Idempotency-Key": item.idempotency_key}, json=body)
-        raw = response.content
-        receipt = hashlib.sha256(raw).hexdigest()
-        status = response.status_code
-        outcome: Literal["sent", "unknown", "permanent", "known_retryable"] = "unknown"
-        if 200 <= status < 300 and len(raw) <= 16384:
-            try:
-                value = json.loads(raw)
-                if (type(value) is dict and set(value) == {"id"} and type(value["id"]) is str
-                        and re.fullmatch(r"[A-Za-z0-9_-]{8,200}", value["id"]) is not None):
-                    outcome = "sent"
-            except (ValueError, TypeError, UnicodeError):
-                pass
-        elif status == 429:
-            outcome = "known_retryable"
-        elif 400 <= status < 500 and status != 408:
-            outcome = "permanent"
-        return ProviderResult(outcome, receipt, status)
-
+    provider = ResendAttempt(api_key=api_key, sender=sender, recipient=item.recipient,
+        subject=subject, text=text, idempotency_key=item.idempotency_key)
     category = ("privacy_erasure" if item.notification_type == "privacy_erasure" else
         "password_reset" if item.notification_type in {"password_reset", "password_changed"} else "lifecycle")
     expiry = (item.payload or {}).get("expires_at_ms")
     expires_at = datetime.fromtimestamp(expiry / 1000, UTC) if type(expiry) is int else None
-    guarded_send(item.idempotency_key, provider, category=category, expires_at=expires_at)
+    return guarded_send(item.idempotency_key, provider, category=category, expires_at=expires_at)
 
 
 def _send_failure(item: models.NotificationOutbox, error: Exception) -> str:
@@ -291,11 +265,14 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         return DeliverySummary(configured=reset_configured(), claimed=security_claimed,
             sent=security_sent + privacy_sent, retried=security_retried, failed=security_failed)
 
+    from .digest_delivery import MAX_OWNERS, deliver_pending_digests
+    digest = deliver_pending_digests(db, limit=min(limit, MAX_OWNERS))
+
     now = utcnow()
     stale_claim = now - timedelta(minutes=15)
     db.query(models.NotificationOutbox).filter(
         models.NotificationOutbox.status == "processing",
-        models.NotificationOutbox.notification_type != "privacy_erasure",
+        models.NotificationOutbox.notification_type.notin_(("privacy_erasure", "weekly_digest")),
         models.NotificationOutbox.claimed_at < stale_claim,
     ).update(
         {
@@ -313,7 +290,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             db.query(models.NotificationOutbox.id)
             .filter(
                 models.NotificationOutbox.status == "pending",
-                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure")),
+                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure", "weekly_digest")),
                 models.NotificationOutbox.available_at <= now,
             )
             .order_by(models.NotificationOutbox.available_at.asc())
@@ -321,14 +298,14 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
             .all()
         )
     ]
-    sent, retried, failed = security_sent, security_retried, security_failed
+    sent, retried, failed = security_sent + digest.sent, security_retried, security_failed + digest.failed
     for item_id in item_ids:
         item = (
             db.query(models.NotificationOutbox)
             .filter(
                 models.NotificationOutbox.id == item_id,
                 models.NotificationOutbox.status == "pending",
-                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure")),
+                models.NotificationOutbox.notification_type.notin_(("password_reset", "password_changed", "privacy_erasure", "weekly_digest")),
             )
             .with_for_update()
             .first()
@@ -371,7 +348,7 @@ def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySu
         sent += 1
     return DeliverySummary(
         configured=True,
-        claimed=len(item_ids) + security_claimed,
+        claimed=len(item_ids) + security_claimed + digest.claimed,
         sent=sent + privacy_sent,
         retried=retried,
         failed=failed,

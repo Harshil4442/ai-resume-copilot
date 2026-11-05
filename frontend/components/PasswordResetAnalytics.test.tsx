@@ -30,7 +30,8 @@ describe("reset surfaces never activate consented analytics", () => {
     trackEvent("essential-only-event");
     expect(posthog.capture).not.toHaveBeenCalled(); expect(window.gtag).not.toHaveBeenCalled();
   });
-  it.each(["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm"])("keeps %s free of analytics scripts, pageviews and form events despite saved consent", (path) => {
+  it.each(["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm",
+    "/notifications/unsubscribe"])("keeps %s free of analytics scripts, pageviews and form events despite saved consent", (path) => {
     state.path = path; history.replaceState(null, "", path);
     const view = render(<AnalyticsConsent {...props} />);
     expect(view.container).toBeEmptyDOMElement();
@@ -42,7 +43,7 @@ describe("reset surfaces never activate consented analytics", () => {
     trackEvent("sensitive-form-event", { value: "not-sent" });
     expect(window.gtag).not.toHaveBeenCalled(); expect(posthog.capture).not.toHaveBeenCalled();
   });
-  it("removes existing analytics components on navigation to reset while ordinary consent still works", async () => {
+  it.each(["/reset-password", "/notifications/unsubscribe"])("removes existing analytics components on navigation to %s while ordinary consent still works", async (sensitivePath) => {
     state.path = "/dashboard"; history.replaceState(null, "", state.path);
     const view = render(<AnalyticsConsent {...props} />);
     await waitFor(() => expect(posthog.capture).toHaveBeenCalledWith("$pageview", expect.objectContaining({ path: "/dashboard" })));
@@ -50,8 +51,9 @@ describe("reset surfaces never activate consented analytics", () => {
     const options = posthog.init.mock.calls[0][1] as { before_send: (event: { properties: Record<string, unknown> }) => unknown };
     expect(options.before_send({ properties: { $current_url: location.href } })).not.toBeNull();
     expect(options.before_send({ properties: { $current_url: "https://example.invalid/reset-password#token=private" } })).toBeNull();
+    expect(options.before_send({ properties: { $current_url: "https://example.invalid/notifications/unsubscribe#proof=private" } })).toBeNull();
     posthog.capture.mockClear(); posthog.opt_out_capturing.mockClear();
-    state.path = "/reset-password"; history.replaceState(null, "", state.path);
+    state.path = sensitivePath; history.replaceState(null, "", state.path);
     view.rerender(<AnalyticsConsent {...props} />);
     expect(view.queryByTestId("third-party-script")).toBeNull();
     expect(view.queryByTestId("web-vitals")).toBeNull();

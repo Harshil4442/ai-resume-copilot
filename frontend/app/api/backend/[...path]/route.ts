@@ -9,6 +9,65 @@ import { catalogTimingHeaders } from "../../../../lib/catalogTiming";
 
 const FORWARDED_HEADERS = ["accept", "content-type", "idempotency-key", "x-correlation-id"];
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const NOTIFICATION_BODY_LIMIT = 8192;
+const NOTIFICATION_READ_MS = 10_000;
+
+function notificationRoute(path: string[]) {
+  const exact = path.join("/");
+  return exact === "v1/notifications/preferences" ? "preferences"
+    : exact === "public/notifications/unsubscribe" ? "unsubscribe" : null;
+}
+
+class NotificationBodyError extends Error {
+  constructor(readonly status: number) { super("Invalid notification request"); }
+}
+
+async function notificationBody(request: NextRequest): Promise<ArrayBuffer> {
+  const length = request.headers.get("content-length");
+  if (length !== null && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)))) throw new NotificationBodyError(422);
+  if (length !== null && Number(length) > NOTIFICATION_BODY_LIMIT) throw new NotificationBodyError(413);
+  if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json"
+    || request.headers.has("content-encoding") || !request.body || request.signal.aborted) throw new NotificationBodyError(422);
+  const reader = request.body.getReader();
+  const expires = performance.now() + NOTIFICATION_READ_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort = () => {};
+  let finished = false;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new NotificationBodyError(408)), NOTIFICATION_READ_MS);
+    abort = () => reject(new NotificationBodyError(408));
+    request.signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    let reads = 0;
+    while (true) {
+      if (request.signal.aborted || performance.now() >= expires) throw new NotificationBodyError(408);
+      if (++reads > NOTIFICATION_BODY_LIMIT + 1) throw new NotificationBodyError(422);
+      const part = await Promise.race([reader.read(), deadline]);
+      if (request.signal.aborted || performance.now() >= expires) throw new NotificationBodyError(408);
+      if (part.done) { finished = true; break; }
+      size += part.value.byteLength;
+      if (size > NOTIFICATION_BODY_LIMIT) throw new NotificationBodyError(413);
+      if (part.value.byteLength) chunks.push(part.value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new NotificationBodyError(422);
+    return bytes.buffer;
+  } catch (error) {
+    throw error instanceof NotificationBodyError ? error : new NotificationBodyError(422);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    request.signal.removeEventListener("abort", abort);
+    // An untrusted stream's cancellation promise must never extend the read deadline.
+    if (!finished) { try { void reader.cancel().catch(() => {}); } catch { /* No input reflection. */ } }
+    try { reader.releaseLock(); } catch { /* A cancelled pending read owns no authority. */ }
+  }
+}
 
 function backendOrigin() {
   const configured = process.env.BACKEND_URL?.trim().replace(/\/+$/, "");
@@ -56,6 +115,17 @@ async function forward(
     return NextResponse.json({ detail: "Invalid backend path" }, { status: 400 });
   }
 
+  const notification = notificationRoute(path);
+  if (notification) {
+    const allowed = notification === "preferences" ? ["GET", "PUT"] : ["POST"];
+    if (!allowed.includes(request.method)) return NextResponse.json({ detail: "Unsupported notification request" }, {
+      status: 405, headers: { Allow: allowed.join(", "), "Cache-Control": "private, no-store" },
+    });
+    if (request.nextUrl.search) return NextResponse.json({ detail: "Invalid notification selector" }, {
+      status: 422, headers: { "Cache-Control": "private, no-store" },
+    });
+  }
+
   const canary = path[0] === "v1" && path[1] === "credits" && path[2] === "canary-enrollment";
   if (canary && (path.length !== 3 || !["GET", "POST"].includes(request.method))) {
     return NextResponse.json({ detail: "Unsupported participation request" }, { status: 405, headers: { Allow: "GET, POST", "Cache-Control": "private, no-store" } });
@@ -65,7 +135,8 @@ async function forward(
   }
   const isCatalog = request.method === "GET" && path.join("/") === "v1/employer-jobs/catalog";
   const sessionStarted = isCatalog ? performance.now() : 0;
-  const token = await getToken({ req: request, secret: candidateAuthSecret() });
+  // A purpose-isolated email proof never depends on a login cookie or its parser.
+  const token = notification === "unsubscribe" ? null : await getToken({ req: request, secret: candidateAuthSecret() });
   const sessionMs = isCatalog ? performance.now() - sessionStarted : 0;
   const accessToken = typeof token?.accessToken === "string" ? token.accessToken : null;
   if (!isPublicPath(path) && !accessToken) {
@@ -85,7 +156,15 @@ async function forward(
 
   const hasBody = !["GET", "HEAD"].includes(request.method);
   let body: ArrayBuffer | undefined;
-  if (canary && request.method === "POST") {
+  if (notification && hasBody) {
+    try { body = await notificationBody(request); }
+    catch (error) {
+      return NextResponse.json({ detail: "Invalid notification request" }, {
+        status: error instanceof NotificationBodyError ? error.status : 422,
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    }
+  } else if (canary && request.method === "POST") {
     const reader = request.body?.getReader();
     try {
       if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" || !reader) throw new Error("Invalid choice");
@@ -161,3 +240,12 @@ export const POST = forward;
 export const PUT = forward;
 export const PATCH = forward;
 export const DELETE = forward;
+// Preserve Next's prior automatic HEAD behavior on every other generic path.
+export const HEAD = forward;
+
+export async function OPTIONS(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  const { path } = await context.params;
+  if (notificationRoute(path)) return forward(request, { params: Promise.resolve({ path }) });
+  // Match the pinned Next default for this route's pre-existing method exports.
+  return new Response(null, { status: 204, headers: { Allow: "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT" } });
+}

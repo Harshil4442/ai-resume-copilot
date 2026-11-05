@@ -1,6 +1,7 @@
-/** Sensitive recovery surfaces never enter analytics or error URL collection. */
+/** Sensitive recovery and unsubscribe surfaces never enter analytics or error URL collection. */
 export function isPasswordResetPath(path: string) {
-  return ["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm"].includes(path.replace(/\/$/, ""))
+  return ["/forgot-password", "/reset-password", "/account-recovery", "/privacy-erasure", "/privacy-erasure/confirm",
+    "/notifications/unsubscribe", "/api/backend/public/notifications/unsubscribe"].includes(path.replace(/\/$/, ""))
     || /^\/api\/(?:auth\/)?(?:password-reset|privacy-erasure)(?:\/|$)/.test(path);
 }
 

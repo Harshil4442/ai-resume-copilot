@@ -672,7 +672,9 @@
       "id": "F07",
       "requirement": "Notifications. Prefer transactional account and security email plus opted-in bounded digests. Do not send unlimited per-job notifications to free users. Budget deliverability capacity rather than assuming daily free quotas will always suffice.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/requirements/F07_NATIVE_CONSENT_INCREMENT.md"
+      ]
     },
     {
       "id": "F08",
