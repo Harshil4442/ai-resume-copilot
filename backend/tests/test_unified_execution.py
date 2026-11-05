@@ -20,7 +20,7 @@ from backend.app.domains.credits.models import (
 )
 from backend.app.domains.credits.privacy import erase_owner_credit_links
 from backend.app.domains.dispatch.models import DispatchOutbox
-from backend.app.models import ModelCostLiability, User
+from backend.app.models import AnalysisRun, ModelCostLiability, User
 from backend.app.services.delivery_contracts import current_output_contract
 from backend.app.services.model_cost_policy import ModelPriceQuote
 from backend.tests.test_unified_credits import NOW, factory, grant
@@ -111,7 +111,7 @@ def quote(db, *, owner=1, source="run-one", selected=None, now=NOW):
 
 def admitted(db, *, owner=1, source="run-one", selected=None, limits=None, now=NOW):
     q = quote(db, owner=owner, source=source, selected=selected, now=now)
-    return admission.admit(
+    hold = admission.admit(
         db,
         user_id=owner,
         quote_id=q.id,
@@ -125,6 +125,16 @@ def admitted(db, *, owner=1, source="run-one", selected=None, limits=None, now=N
         dispatch_payload={"run_id": source},
         now=now,
     )
+    if (selected or route()).model_quotes and db.get(AnalysisRun, source) is None:
+        operation = (selected or route()).operation
+        db.add(AnalysisRun(id=source, user_id=owner,
+            operation={"enhanced_job_match": "job_match", "market_report": "market_analysis",
+                "resume_tailor_extended": "resume_tailor"}.get(operation, operation),
+            status="running", idempotency_key=f"execute-{source}", input_fingerprint="a" * 64,
+            input_payload={}, model_cost_group_id=hold.financial_group_id,
+            model_cost_quote={"billing_currency": "credits", "unified_hold_id": hold.id}))
+        db.flush()
+    return hold
 
 
 def claim(db, hold, *, key="claim-one", selected=None):

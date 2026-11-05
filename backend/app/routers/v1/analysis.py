@@ -110,10 +110,15 @@ def get_analysis_result(
             status_code=409,
             detail={"message": "Analysis result is not ready", "status": run.status},
         )
+    result = run.result_payload
+    if run.operation in {"curated_learning", "sync_learning_strategy", "learning_strategy"}:
+        from ...services.synchronous_contracts import learning_resource_delivery
+
+        result = learning_resource_delivery(result)
     return schemas.AnalysisRunResultResponse(
         id=run.id,
         operation=run.operation,
-        result=run.result_payload,
+        result=result,
         completed_at=run.completed_at,
     )
 

@@ -42,6 +42,21 @@ def expense_usage(db, *, start: datetime, owner: int | None = None, route: str |
     return int(query.scalar() or 0)
 
 
+def allocation_usage(db, *, funding_period_id: str) -> int:
+    """A renewed review cannot replenish its fixed funding period.
+
+    Keep every cost in that period, regardless of review/version/date/owner,
+    plus unresolved older liabilities. One OR predicate counts each row once.
+    Other settled periods remain in the common dated execution budgets.
+    """
+    if type(funding_period_id) is not str or not 0 < len(funding_period_id) <= 120:
+        raise ValueError("A reviewed funding period is required")
+    return int(db.query(func.coalesce(func.sum(amount_expression(db)), 0)).filter(or_(
+        FreeCoreReservation.funding_period_id == funding_period_id,
+        FreeCoreReservation.state != "settled",
+    )).scalar() or 0)
+
+
 def admit(db: Session, *, user_id: int, operation: Operation, source_type: str,
           source_id: str, key: str, fingerprint: str, input_bytes: int,
           attempts: int, now: datetime | None = None) -> tuple[FreeCoreRequest, bool]:
@@ -87,7 +102,7 @@ def admit(db: Session, *, user_id: int, operation: Operation, source_type: str,
                 "message": f"The {envelope.per_account_30_days}-request free allowance for this service has been used in the last 30 days. Your saved results remain available."})
         if query.count() >= policy.global_30_day_operations:
             raise FreeCoreUnavailable("The funded free-processing capacity is fully allocated. Try later or continue using saved results.")
-        if expense_usage(db, start=policy.valid_from) + envelope.reserved_minor > policy.free_allocation_minor:
+        if allocation_usage(db, funding_period_id=policy.funding_period_id) + envelope.reserved_minor > policy.free_allocation_minor:
             raise FreeCoreUnavailable("The funded free-processing allowance is fully allocated. Try later or continue using saved results.")
         admission.assert_headroom(db, user_id=user_id, route_id=envelope.route_id,
             required_minor=envelope.reserved_minor, policy=policy.financial_policy,

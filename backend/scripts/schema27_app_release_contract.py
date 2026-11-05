@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '0f0e21c8e94abfa55c8b544ecf9035ecac8abdaa8bde075086d848fadd586a6e'
+CANDIDATE_APP_SHA256 = '81eaaab9ae0d9f1bb4eaf0db57a683b0af2a3113a30930c3239f7a98888440a2'
 CANDIDATE_APP_FILES = 312
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -85,6 +85,14 @@ F07_PATHS = (
     "backend/tests/test_payment_funding_operator.py", "backend/tests/test_unified_payment_expense_admission.py",
     "backend/app/domains/career/browsing.py", "backend/tests/test_opportunity_browsing.py",
     "backend/tests/test_opportunity_browsing_postgres.py",
+    "backend/app/domains/free_core/service.py", "backend/app/domains/credits/execution.py",
+    "backend/app/domains/credits/analysis.py", "backend/app/domains/credits/reconciliation.py",
+    "backend/app/services/synchronous_contracts.py", "backend/app/routers/recommendations.py",
+    "backend/app/domains/free_core/synchronous.py", "backend/app/domains/credits/synchronous.py",
+    "backend/app/routers/v1/analysis.py", "backend/resources/courses.json",
+    "backend/tests/test_free_core_funding_period.py", "backend/tests/test_free_core_funding_period_postgres.py",
+    "backend/tests/test_unified_analysis_cancellation.py", "backend/tests/test_learning_resource_delivery.py",
+    "backend/tests/test_native_expense_reconciliation.py",
     "frontend/lib/opportunityPageClient.ts", "frontend/lib/opportunityPageClient.test.ts",
     "frontend/app/workspace/page.tsx", "frontend/app/workspace/page.test.tsx",
     "frontend/lib/generated/api.ts", "frontend/app/api/backend/[...path]/route.test.ts",

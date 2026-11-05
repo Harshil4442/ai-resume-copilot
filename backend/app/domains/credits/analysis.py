@@ -486,7 +486,10 @@ def settle_analysis(db: Session, run: models.AnalysisRun, *, delivered: bool) ->
     if not is_unified(run):
         return False
     hold = _run_hold(db, run)
-    execution.settle_delivery(db, user_id=run.user_id, hold_id=hold.id, delivered=delivered)
+    # The worker/cancel operation assigns this authoritative terminal status
+    # in the same caller-owned transaction as its refund and cost settlement.
+    execution.settle_delivery(db, user_id=run.user_id, hold_id=hold.id, delivered=delivered,
+        cancelled=run.status == "cancelled")
     run.usage_state = "committed" if delivered else "released"
     run.committed_units = run.estimated_units if delivered else 0
     attempts = db.query(CreditExecutionAttempt).filter_by(hold_id=hold.id).all()

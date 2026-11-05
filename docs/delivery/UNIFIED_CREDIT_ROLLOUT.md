@@ -1,22 +1,28 @@
 # Unified credit release runbook
 
-Status observed **5 November 2026 (IST)**: DB8 is the healthy production API and
-application-worker release on committed schema26; original schedules/coordinator
-are restored and the joined read-only proof passed. Frontend 751/Hohsg serves
-companion 0.8.9. Qualified application image 9b9 is built and source-verified,
-**not deployed**. Its independent alias-capture controller PR103/CI41898489779
-remains pending. Registry PR102 is normally merged at `deaed009`; its own
-CI41893799752 completed successfully; runtime provenance remains the separate
-9b9 source and Build.
+Candidate update **6 November 2026 (IST)**: the local successor retains spending
+across free-allocation review renewals, blocks new model admissions after
+cancellation, distinguishes cancellation from a delivery failure, and disables
+unreviewed learning-resource links on initial and saved responses. Saved plans,
+customer refunds and supplier liabilities retain their original accounting.
+These are local fixes under F02/C03/C04/C05/Q10, not completed release gates.
+See [the scoped evidence](evidence/2026-11-06-funding-cancellation-resource-guards.json).
 
-Current companion original-file review/cancel/revoke, human Reviewer 2, shadow
-accounting, 10,000-user capacity, finance/commercial gates and full R03/RTO
-qualification remain pending. Paid 80-document/nine-job native QA and ordinary
-17-case scanner maintenance are OWNER HOLD; broader native/model quality
-qualification remains pending. The retained scanner proof expires
-`2026-11-05T06:24:10Z`, with no expiry waiver. The current browser identity check
-passed with no action enabled; a fresh base-page GET found an expired website
-session, and no new Fill, upload, submission or revocation occurred.
+Draft PR109 contains the earlier `0c5e4ce` workspace successor. Its first CI run
+42085527252 failed before any job step started: GitHub reported an account
+billing lock. The additional local fixes are not pushed, qualified or deployed.
+Do not retry CI until that account condition changes, and do not substitute the
+previously built 9b9 image as qualification of the new candidate.
+
+Last verified production context remains DB8 on committed schema26 with the
+three original services and restored schedules/coordinator, and frontend
+751/Hohsg with companion 0.8.9. The owner original-file review/download,
+cancel-before-Fill and exact-device revocation portion is verified. Actual
+Fill/upload/submission, human Reviewer 2, shadow accounting, 10,000-user capacity,
+finance/commercial gates and full R03/RTO qualification remain pending.
+Paid 80-document/nine-job native QA and 17-case scanner maintenance are OWNER
+HOLD. The retained scanner proof expired `2026-11-05T06:24:10Z`; it has no waiver.
+Models, new wallet activation, checkout and final employer submission remain off.
 
 [Current runtime metadata](evidence/2026-11-05-runtime-status.json) separates serving
 releases from build-only and pending work. The eight stage rows and all 83
@@ -105,9 +111,10 @@ remains pending.
 The schema25 procedures below retain their original release scope; they are not
 instructions to replay migration or reopen the current schema26 pilot. The
 application-only schema26 successor controller is in
-`backend/scripts/schema26_app_successor.py`; its PR103 alias fix still requires
-its own qualification and fresh plan before use. The current target image remains
-9b9, and no new application build is required by this controller-only fix.
+`backend/scripts/schema26_app_successor.py`; its PR103 alias fix has a separate
+qualification and planning boundary. The historical controller-only target was
+9b9. The current Source27 candidate requires its own exact-source qualification
+and release plan; the earlier image does not contain these new application fixes.
 
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial

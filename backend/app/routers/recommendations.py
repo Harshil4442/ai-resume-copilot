@@ -10,6 +10,7 @@ from ..services.recommender import (
     get_skill_gaps_and_courses,
     resources_for_skills,
 )
+from ..services.synchronous_contracts import learning_resource_delivery
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
@@ -34,7 +35,8 @@ async def skill_gaps(
         current_skills = (latest_resume.skills if latest_resume and latest_resume.skills else [])
 
     gaps, courses = get_skill_gaps_and_courses(current_skills, target_role)
-    return {"skill_gaps": gaps, "recommended_courses": courses, "current_skills": current_skills}
+    return learning_resource_delivery({"skill_gaps": gaps, "recommended_courses": courses,
+        "current_skills": current_skills})
 
 
 def _as_list(value):
@@ -257,7 +259,7 @@ async def match_learning_strategy(
     strategy = _normalize_strategy(strategy)
     strategy = _attach_resources(strategy, skills_hint)
 
-    return {
+    return learning_resource_delivery({
         "match_id": match.id,
         "job_title": match.job_title,
         "company": match.company or "",
@@ -270,4 +272,4 @@ async def match_learning_strategy(
         "generated_by": generated_by,
         "provenance": "generated" if generated_by == "llm" else "curated",
         "warnings": warnings,
-    }
+    })

@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-05T18:32:36.685437+00:00",
+  "updated_at": "2026-11-05T19:17:21.304195+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -41,7 +41,8 @@
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
       ],
       "local_result": "Schema26 migration and original application promotion are observed; existing balances and customer obligations remain retained. Unified-wallet conversion, new payment activation, invoice and tax reconciliation remain pending. Source and CI checks do not activate billing.",
       "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
@@ -60,7 +61,8 @@
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
       ],
       "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
       "local_result": "The db8 application, including bootstrap/reuse, transcription/evidence review and Dashboard changes, is promoted; the observed owner workspace was preserved. Comprehensive supported-cohort relevance and factuality acceptance remains pending."
@@ -89,7 +91,8 @@
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
       ],
       "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
       "local_result": "The stored scanner verification expired on 2026-11-05 at 06:24:10 UTC. Scanner maintenance and paid native document QA (80 documents across nine jobs) remain on HOLD. Broader native/model quality qualification and independent human acceptance remain pending; local source checks do not qualify optimized AI, which stays closed."
@@ -449,7 +452,11 @@
       "id": "Q10",
       "requirement": "Answers and learning plans. Ground personal answers in approved facts and identify uncertainty. Learning plans must address the selected gap with actionable steps and verified or freshness-checked resource references. Dead or invented links and generic plans that ignore the selected goal fail acceptance.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local delivery projection disables resources without current catalogue/review authority while preserving saved guidance and charges. No actual URL freshness or complete goal-specific learning quality acceptance claimed; Q10 remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "Q11",
@@ -528,24 +535,33 @@
       "requirement": "Bound every attempt. Count SDK retries, validation repairs, worker retries and provider fallbacks under one persisted operation budget. One provider attempt is the default. Cancellation or a client timeout must not release money while the provider may still bill it. Stop worker processes where required; an HTTP timeout alone is not a process-kill guarantee.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local fresh run/cancellation checks prevent later admissions; already-started supplier costs remain held. Physical process termination and broader route qualification remain pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C04",
       "requirement": "Unknown costs and outcomes. Retain a conservative reservation until usage or status is reconciled. Persist provider request IDs, attempt count and estimated versus reported usage. Unknown application outcomes must not be retried as new submissions. Unknown invoices must not be treated as zero cost.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local cancellation/native-receipt controls preserve unknown liabilities and original refunds. Genuine supplier invoice reconciliation and full release proof remain pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C05",
       "requirement": "Circuit breakers. Disable the affected paid route after a confirmed critical quality error, repeated failures or insufficient funded headroom. Initial operational thresholds proposed for review are three consecutive execution failures or more than 10% failures in the last 20 attempts. Monetary admission applies even below those thresholds.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local actual worker tests distinguish voluntary cancellation from real failure; the original failure thresholds and monetary limits are retained. Production circuit acceptance remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C06",
@@ -639,8 +655,11 @@
       "requirement": "Funded acquisition allowance. Free server processing and promotional credits require a fixed funded allowance inside the approved shared or acquisition budget. A per-user quota alone is insufficient; enforce global admission as well. When exhausted, stop new optional free processing with an honest message or waitlist. Do not remove existing data or skip security checks.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local fixed-period spending now survives review renewal; actual owned PostgreSQL races passed. Real funded-policy/production acceptance remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "F03",

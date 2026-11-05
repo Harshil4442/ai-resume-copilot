@@ -223,11 +223,8 @@ def _replay(run, fingerprint):
 
 
 def _delivery_view(run, *, reused: bool) -> dict:
-    result = dict(run.result_payload)
-    if reused and run.operation == "sync_learning_strategy":
-        skills = [item["skill"] for item in result.get("learning_priorities", [])]
-        if not any(contracts.reviewed_learning_resources(skills).values()):
-            result["warnings"] = [*result.get("warnings", []), "This saved plan's resource freshness review has expired. Recheck the resources before using them."]
+    result = (contracts.learning_resource_delivery(run.result_payload) if run.operation == "sync_learning_strategy"
+              else dict(run.result_payload))
     return {**result, "credit_execution": {"run_id": run.id,
         "billing_currency": "credits", "committed_credits": run.committed_units,
         "charged_this_request": 0 if reused else run.committed_units, "reused": reused}}
