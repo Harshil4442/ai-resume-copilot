@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-05T16:53:32.435381+00:00",
+  "updated_at": "2026-11-05T17:56:41.958931+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -343,11 +343,12 @@
       "requirement": "Shared official job ingestion. Use the verified employer registry, documented feeds or permitted adapters. Fetch once for many users using conditional requests and changes since the last successful scan. Deduplicate by source ID, requisition, canonical URL and content revision. Record freshness and coverage limits.",
       "status": "pending",
       "evidence": [
-        "Source candidate only: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py implement optional metadata-only revalidation for the current reviewed population of nine Greenhouse, ten Ashby and one SmartRecruiters sources. This is not deployment or all-source conditional acceptance evidence.",
+        "Source implementation: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py support optional metadata-only revalidation for the reviewed 9 Greenhouse, 10 Ashby and 1 SmartRecruiters sources. All 20 origins passed bounded public complete-scan acceptance on 2026-11-05; this is not deployment, SQL publication or conditional HTTP 304 acceptance across all sources.",
         "Greenhouse and Ashby use a whole-collection validator only when it is bound to the exact successful SQL checkpoint, canonical posting set, source configuration and versioned normalization/skills pipeline. SmartRecruiters always reads both complete current listing passes and every detail, conditionally reusing only an individually validated unchanged detail; mixed 200/304 results must still form a complete scan. No raw response bodies are cached.",
         "Redis is optional non-authorizing metadata: one bounded 64 KiB record per source, 24-hour maximum age, bounded I/O and no retries. Missing, expired, unsupported, oversized or mismatched metadata causes ordinary full reads. Anonymous request identity, no-store/Vary restrictions, the original 240-second public-read budget, source lease, publication dates and complete-scan closure remain enforced. Opaque weak ETags are validators, not content digests.",
         "Validators publish only after a successful SQL commit and owned lease/configuration/checkpoint/posting-snapshot fences. Unchanged descriptions avoid repeated skill extraction only under the same proven pipeline revision. A 304 refreshes the exact retained SQL snapshot and never means an empty board or closes jobs. Cache publication failure loses efficiency without changing a genuinely completed scan.",
-        "Focused offline HTTP, metadata and SQLite lifecycle controls: 224 passed with socket connections/DNS denied and author-root imports verified. Four real PostgreSQL race controls are prepared for the existing mandatory owned CI database; they are not locally qualified when that URL is absent. Fresh backend and employer-worker release verification plus scoped read-only acceptance of all three current platforms remain pending; vendor support and savings are not assumed for every source. Paid native document QA remains on HOLD."
+        "Focused offline HTTP, metadata and SQLite lifecycle controls previously passed 224 cases. Four actual owned PostgreSQL 17 concurrency cases also passed on 2026-11-04: source configuration, posting date and lease-owner changes cannot commit or publish an old snapshot; a competing refresh observes the existing lease without another GET. Current finite source, test and lockfile hashes and original RESULT, JUnit, source-manifest and import-origin integrity match that retained proof. No PG tests were repeated for this readback.",
+        "Public origin acceptance on 2026-11-05: 20/20 complete sources, 1,375 normalized openings, 145 GETs (all HTTP 200) in 122.916 seconds, with zero failed or retried GETs. Freshworks required 122 detail reads and two complete 2-page listing passes; the other 19 sources needed one GET each. Scans used baseline=None; live conditional reuse, serving freshness/SLA and fresh backend/employer-worker release qualification remain pending. No SQL/Redis publication or application authorization was performed. docs/delivery/evidence/2026-11-05-employer-source-acceptance.json"
       ]
     },
     {
@@ -551,7 +552,8 @@
       "requirement": "Refund expense separation. Restoring a customer balance does not erase Gemini or worker expense. Charge failed attempts to the funded incident allowance, rate-limit abusive repetitions and keep customer-facing explanations accurate. Refund and chargeback obligations take priority over withdrawing profit.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
       ]
     },
     {
@@ -607,7 +609,9 @@
       "id": "I01",
       "requirement": "No double counting. Exclude Gemini and incremental paid-worker execution here because they are already funded by execution allowances. Allocate actual provider bills once, using service and operation labels. Shared database and API costs must have an explicit allocation rule.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
+      ]
     },
     {
       "id": "I02",
@@ -731,7 +735,9 @@
       "id": "G05",
       "requirement": "Protect customers when headroom falls. Stop new optional free work, unnecessary refreshes and uncommitted expansion first. Pause new paid admission before exhausting reserved obligations. Preserve already accepted work, access, export and security. Scaling down must respect persistent storage, retention and recovery commitments.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
+      ]
     },
     {
       "id": "G06",

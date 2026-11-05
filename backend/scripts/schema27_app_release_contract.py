@@ -1,6 +1,6 @@
 """Distinct reviewed Source27 application contract; never native QA authority.
 
-45b3 is the genuinely qualified retained26 source. Current309 application
+45b3 is the genuinely qualified retained26 source. Current311 application
 bytes and optional digest wire are a NEW family; old v3 fingerprints, producer
 receipts, private runtime proofs and qualification commands remain disjoint.
 """
@@ -20,8 +20,8 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'eab9c268ea4c563d2b10a8d354130b12eb5d6ccc6a9826a3b625741d774ee6e5'
-CANDIDATE_APP_FILES = 309
+CANDIDATE_APP_SHA256 = '77cae81f1ce59466e86d32ecbdf24a504d33b159c6a8bff88144cfe300c5d1e4'
+CANDIDATE_APP_FILES = 311
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
 RETAINED_STEP = "Qualify schema26 app v3 compatibility"
@@ -76,6 +76,10 @@ F07_PATHS = (
     "backend/tests/test_schema27_app_compatibility_postgres.py",
     "backend/tests/test_interview_input_guards.py", "backend/tests/test_interview_input_postgres.py",
     "backend/tests/test_credit_release_margin_gate.py",
+    "backend/app/domains/credits/payment_expenses.py", "backend/app/domains/credits/payment_funding.py",
+    "infra/gcp/payment_funding_operator.py", "backend/tests/test_payment_expenses.py",
+    "backend/tests/test_payment_funding.py", "backend/tests/test_payment_funding_postgres.py",
+    "backend/tests/test_payment_funding_operator.py", "backend/tests/test_unified_payment_expense_admission.py",
     "backend/tests/fixtures/schema26_notification_reader/PROVENANCE.json",
     "backend/tests/fixtures/schema26_notification_reader/gcp_partitioned_contracts.py.snapshot",
     "frontend/components/WeeklyDigestPreference.tsx", "frontend/components/WeeklyDigestPreference.test.tsx",

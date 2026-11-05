@@ -52,7 +52,7 @@ def current27_database(request):
 def actual_app_roots(tmp_path):
     prior = release.initial.prior_app_files(ROOT, PRIOR_SOURCE)
     assert len(prior) == 290 and release.initial.prior_app_digest(prior) == PRIOR_APP_SHA256
-    # The new family binds current309 app + additive HTTP + every owned proof
+    # The new family binds current311 app + additive HTTP + every owned proof
     # helper. The old immutable family is deliberately not widened to current27.
     old_anchor = release.initial.prior_app_files(ROOT, current.PRIOR_RELEASE)
     assert current.source_fingerprint(ROOT, old_anchor)

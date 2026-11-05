@@ -29,6 +29,7 @@ from .models import (
     CreditGrant,
     CreditServiceQuote,
 )
+from .payment_expenses import assert_new_exposure_funded
 from .service_quotes import QualifiedRoute, require_route
 
 Positive = Annotated[int, Field(strict=True, gt=0, le=10**12)]
@@ -354,6 +355,9 @@ def admit(
             raise finance.FundingUnavailable("The canary runtime changed; review a new quote")
         canary_proof = canary.accept(db, user_id=user_id, runtime=configured,
             operation=route.operation, source_id=source_id, input_fingerprint=input_fingerprint, now=stamp)
+    # Complete audience/native qualification before taking money locks. The
+    # exact accepted-hold branch above is recovery, not a new reservation.
+    assert_new_exposure_funded(db, policy=policy, now=stamp)
     assert_headroom(
         db,
         user_id=user_id,
