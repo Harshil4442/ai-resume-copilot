@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,19 @@ log = logging.getLogger("hirewiz.billing")
 UNCERTAIN_ORDER_STATUSES = {"initializing", "creation_unknown", "create_failed"}
 OPEN_ORDER_STATUSES = UNCERTAIN_ORDER_STATUSES | {"created", "client_confirmed", "payment_failed"}
 MAX_WEBHOOK_BYTES = 1_000_000
+
+
+def _blocks_new_purchase(*, hold_unbound_paid: bool = False):
+    # Only legacy status discovery already included unbound paid rows. Keep
+    # that support path without widening unified purchase admission.
+    unbound_statuses = UNCERTAIN_ORDER_STATUSES | ({"paid_unfulfilled"} if hold_unbound_paid else set())
+    bound = PaymentOrder.provider_order_id.is_not(None)
+    if not hold_unbound_paid:
+        bound = and_(bound, PaymentOrder.provider_order_id != "")
+    return or_(
+        PaymentOrder.status.in_(unbound_statuses),
+        and_(PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"}), bound),
+    )
 
 
 def _utcnow() -> datetime:
@@ -453,15 +466,19 @@ def get_recent_order(
 ) -> dict | None:
     _no_store(response)
     cutoff = _utcnow() - timedelta(hours=24)
+    blocks_purchase = _blocks_new_purchase(hold_unbound_paid=True)
     order = (
         db.query(PaymentOrder)
         .filter(
             PaymentOrder.user_id == current_user.id,
             PaymentOrder.provider == "razorpay",
-            PaymentOrder.created_at >= cutoff,
             PaymentOrder.entitlement_kind != "credit_pass",
+            or_(blocks_purchase, PaymentOrder.created_at >= cutoff),
         )
-        .order_by(PaymentOrder.created_at.desc())
+        .order_by(
+            blocks_purchase.desc(), case((blocks_purchase, PaymentOrder.created_at)).asc(),
+            PaymentOrder.created_at.desc(), PaymentOrder.id.asc(),
+        )
         .first()
     )
     if order is None:

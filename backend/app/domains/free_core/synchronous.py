@@ -7,23 +7,51 @@ from fastapi import HTTPException
 
 from ... import models
 from ...services.result_commit import begin_result_commit
+from ...services.synchronous_contracts import learning_resource_delivery
 from ..common import payload_fingerprint, public_id, utcnow
 from ..credits import service as credits
 from ..employer.admissions import lock_application_set
 from . import policy, service
 
 
+def curated_learning_context(match, resume) -> dict:
+    """Keep creation and saved reads on the original curated-learning-v1 inputs."""
+    fields = ("id", "job_title", "company", "job_description", "match_score", "true_gaps",
+              "partial_matches", "improvement_tips", "required_skills")
+    return {"match": {name: getattr(match, name) for name in fields},
+            "resume_skills": resume.skills if resume is not None and resume.skills else [],
+            "experience_years": float(resume.experience_years or 0.0) if resume is not None else 0.0}
+
+
+def _curated_fingerprint(context: dict) -> str:
+    return payload_fingerprint({"contract": "curated-learning-v1", "context": context})
+
+
+def saved_curated_learning(db, *, user_id: int, context: dict) -> dict | None:
+    """Read an exact saved plan without funding, generation, admission or writes."""
+    with db.no_autoflush:
+        prior = db.query(models.AnalysisRun).filter_by(user_id=user_id,
+            operation="curated_learning", input_fingerprint=_curated_fingerprint(context),
+            status="succeeded", result_purged_at=None).filter(
+                models.AnalysisRun.result_payload.is_not(None),
+                models.AnalysisRun.cancel_requested.is_(False),
+            ).order_by(models.AnalysisRun.created_at.desc(), models.AnalysisRun.id.desc()).first()
+    return learning_resource_delivery(prior.result_payload) if (
+        prior is not None and isinstance(prior.result_payload, dict)
+    ) else None
+
+
 def curated_learning(db, *, user_id: int, context: dict, create):
     if not policy.enabled():
-        return create()
-    fingerprint = payload_fingerprint({"contract": "curated-learning-v1", "context": context})
+        return learning_resource_delivery(create())
+    fingerprint = _curated_fingerprint(context)
     lock_application_set(db, user_id)
     credits._lock_owner(db, user_id)
     prior = db.query(models.AnalysisRun).filter_by(user_id=user_id,
         operation="curated_learning", input_fingerprint=fingerprint, result_purged_at=None).order_by(models.AnalysisRun.created_at.desc()).first()
     if prior is not None:
         if prior.status == "succeeded" and prior.result_payload is not None:
-            return prior.result_payload
+            return learning_resource_delivery(prior.result_payload)
         if prior.status == "running":
             raise HTTPException(409, "This curated plan is already being prepared; check its status before retrying")
     stamp = utcnow()
@@ -50,7 +78,7 @@ def curated_learning(db, *, user_id: int, context: dict, create):
         current.completed_at = current.updated_at = utcnow()
         service.complete(db, user_id=user_id, source_type="analysis_run", source_id=identity, result_id=identity)
         db.commit()
-        return result
+        return learning_resource_delivery(result)
     except Exception:
         db.rollback()
         # Cost is still held. A failed local render does not prove zero expense.

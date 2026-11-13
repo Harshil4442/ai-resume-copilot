@@ -16,10 +16,26 @@ Minor = Annotated[int, Field(strict=True, ge=0)]
 Positive = Annotated[int, Field(strict=True, gt=0)]
 Bps = Annotated[int, Field(strict=True, ge=0, le=10_000)]
 POLICY_VERSION = "unified-credit-economics-2026-10-27-v1"
+MINIMUM_COMMERCIAL_MARGIN_BPS = 1500
+TARGET_COMMERCIAL_MARGIN_BPS = 2000
 
 
 class FundingUnavailable(ValueError):
     """No new work may be admitted under an unqualified financial envelope."""
+
+
+class CreditServiceInputUnsupported(FundingUnavailable):
+    """A known owned-input refusal, with finite public text rather than raw errors."""
+
+    def __init__(self, reason: Literal["scope", "format", "context", "source", "evidence"]):
+        self.public_message = {
+            "scope": "This resume or job exceeds the service's supported limits. Choose a supported input; no work was started.",
+            "format": "This resume format is not supported by this service. Upload a supported editable source or use your original resume.",
+            "context": "The complete resume, job and evidence do not fit this service's supported context. Nothing was shortened; choose a supported input.",
+            "source": "This resume cannot be safely prepared while preserving its layout. Use the original resume or upload editable DOCX or supported LaTeX source.",
+            "evidence": "Approve at least one relevant resume fact before requesting this service. No work was started.",
+        }[reason]
+        super().__init__(self.public_message)
 
 
 class Closed(BaseModel):
@@ -65,7 +81,18 @@ def require_current_policy(
         raise FundingUnavailable("The financial policy needs a current review")
     if commercial and policy.provenance != "invoice_reconciled":
         raise FundingUnavailable("Paid activation requires reconciled expense evidence")
+    if commercial:
+        require_commercial_margins(policy)
     return policy
+
+
+def require_commercial_margins(policy: FinancialPolicy) -> None:
+    """Launch/execution floor only; historical parsing and what-if remain valid."""
+    if (policy.minimum_net_margin_bps < MINIMUM_COMMERCIAL_MARGIN_BPS
+            or policy.target_net_margin_bps < TARGET_COMMERCIAL_MARGIN_BPS):
+        raise FundingUnavailable(
+            "Commercial activation requires at least 15% minimum margin and 20% target margin"
+        )
 
 
 def _nonnegative(value: int, name: str) -> int:

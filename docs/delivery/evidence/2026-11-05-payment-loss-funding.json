@@ -1,0 +1,90 @@
+{
+  "observed_at": "2026-11-05T17:56:41.958931+00:00",
+  "state": "LOCAL_IMPLEMENTED_REVIEWED_NOT_DEPLOYED_OR_BANK_VERIFIED",
+  "parent_commit": "3741e934cac49af063f9473d678e4c21aabc14f5",
+  "requirements": [
+    "C06",
+    "I01",
+    "G05"
+  ],
+  "implementation": {
+    "expense_snapshot": "One bounded SQL UNION statement reads retained live payment/refund/conflict facts and original accepted economics without joining User. Refund principal is not booked as supplier expense. Razorpay inclusive fee is counted once; tax component is not added twice. Unknown/native/refunded-work and tax obligations retain explicit conservative capital envelopes. Distinct unlinked calls add to whole linked-attempt holds, using original accepted FX/tax; linked IDs are excluded and source multiplicity is counted once. Unresolved facts deny new exposure.",
+    "funding": "Detached original audit identities record an explicit privileged operator declaration of available INR after existing obligations and an exact review of retained loss facts. Original external reference cannot reset or increase capital; all historical positive allocations consume original capacity permanently even after review expiry. Changed facts require a reviewed zero/delta acknowledgement. The existing global money lock serializes competing allocations. These are declarations and capital envelopes, not software verification of bank cash, invoices or profit.",
+    "admission": "New purchase catalog/quote, new provider-order intent and new paid hold admission use a fresh retained-cost coverage guard after product/audience/route qualification. Exact accepted original order/hold recovery bypasses only this new-admission circuit; existing product/authentication/route guards remain. Capture/refund callbacks and accepted obligations continue unchanged; unknown provider intents are not resent.",
+    "operator": "A functional privileged prepare/apply/reconcile command uses the existing exact all-off Schema27 bridge, same-transaction migration receipt, original journal, physical database identity and normal manager. It requires private evidence and current invoice-policy/commercial floors. Durable intent precedes a single funding SQL transaction; uncertain commit permits read-only same-plan reconciliation only. Wall-clock review is refreshed after native gates and waiting money locks. No new table, provider endpoint or candidate-accessible funding registration endpoint.",
+    "source": "Current311 application pin77cae81f1ce59466e86d32ecbdf24a504d33b159c6a8bff88144cfe300c5d1e4. Five new public suites and17 mandatory case groups join the existing Schema27 compatibility phase. Separate current application/operator role remains source-only and native-runner ineligible; historical retained/producer contracts unchanged."
+  },
+  "verification": {
+    "core": "47 distinct local controls including3 actual owned PostgreSQL17 snapshot/allocation-race cases; final original-policy/unlinked-call delta checked. Owned clusters stopped. Ruff5/Mypy2 PASS.",
+    "operator": "19 original plus3 clock controls PASS; Ruff2/Mypy1 PASS; finite independent V2 peer PASS. Native transport is an explicit synthetic fixture, not actual native qualification.",
+    "admission": "11 new plus7 existing capture/refund/replay/atomicity controls PASS;3 expected before-fix counterexamples and transient fixture failures retained. Actual synthetic HTTP payment/domain-declaration/new-checkout path verified. Ruff3/Mypy2 PASS; Root finite V2 review PASS.",
+    "source_integration": "123 owned profile/contract/runner controls PASS1.02s; Ruff8/Mypy4 PASS. Collection-only477 nodes in26 suites and all36 required groups match; no test bodies or fixtures executed by collection.",
+    "OpenAPI": "Exported after source changes and byte-identical79f165139af563e75e6bde3beb49675b877f1fa89b75e3e882b859addcee0a2b; no frontend contract/build change.",
+    "source_peer": "Independent exact eight-leaf current-pin peer PASS; app-only311/77cae81f digest and bootstrap match,12 historical function hashes and exact production-source reversal to prior pins verified without actual-root qualification or test repeats."
+  },
+  "source_files": {
+    "backend/app/domains/credits/payment_expenses.py": "0694c421268a649fbbcf661199315991f13b2d740c66709c4faa772a74a0e935",
+    "backend/app/domains/credits/payment_funding.py": "2e3ff4cb5125be5d6f7a543388d190aec5dd9e422a7b53a5849d622947a0df63",
+    "backend/app/domains/credits/admission.py": "4f26152a470346386a1196dfd427e01a3457c0bac303cf3c4d5d6b6b187ccae4",
+    "backend/app/routers/credits.py": "2c276ad3bda847c6fea576468bbc3af45bc9a9f324d9bb6dd1ea146f5da6053f",
+    "infra/gcp/payment_funding_operator.py": "521095b2e7322fe53f65bde30f2c074e2fde64fc386748bd7101ba71c1a0b456",
+    "backend/tests/test_payment_expenses.py": "0b95e41b35f9783d06de70e5c17322c6ef1277155c333754d13ba432a99443a0",
+    "backend/tests/test_payment_funding.py": "485e4a9362056aa6930a6dd76f46811010bd0cc781544f2ac1cefcef7e071289",
+    "backend/tests/test_payment_funding_postgres.py": "5a164728808754351ae2da70c35d2220e0e611087c2ba36152950c945574ee8c",
+    "backend/tests/test_payment_funding_operator.py": "8432bc3941099eee13ed6549df4d5d958a8182064a91d8ebc12a8725d14736a7",
+    "backend/tests/test_unified_payment_expense_admission.py": "ff96a1d166f96bb66a57408e30d0de1f8304694d4f61e9ee886d2ab39e9536ac",
+    "backend/scripts/qualify_native_quality_acquisition.py": "698f75511bc574887e46013640e4eef9afbbaf9d16c180d7d209a89e023092e8",
+    "backend/evaluation/native_acquisition_v2/qualification.py": "ce82daa0624c675be1b01590cb6fbc591012a71d4228c8e3bf0e82e03af5a056",
+    "backend/scripts/schema27_app_release_contract.py": "92617e5f195e64bd39523124b4a091b4bc7ffa13315de5bab73683a6b9a390b8",
+    "backend/scripts/qualify_schema27.py": "422b1545962fee98db89bc185bdd4a7d597bf7438b278de148df79ec741b5438",
+    "backend/tests/test_schema27_app_release_contract.py": "b71db8b4ddd916c3d8faae53a6cff1f3f7e9a7197b2a8f4d41b3febefaee6da5",
+    "backend/tests/test_source27_current_application_profile.py": "7ff8f534c386efde999cd33e7e43bf6a1e05b6431f746033c911cb32fa57ef42",
+    "backend/tests/test_qualify_schema27.py": "70f8ba287aaaeee8ded1c336e37da41791dc814326eb0905acb45381dc89d281",
+    "backend/tests/test_schema27_app_compatibility_postgres.py": "014a26bd96242af35cdc395c391eee2284c6566369c03b41850b03514b1f5f26"
+  },
+  "evidence": {
+    "core": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-loss-core-local-20261105/MANIFEST_V2.json",
+      "sha256": "bedda0f45b28076aca9d1c4647083ed6b7b39ea6ff6053838c52070590c97c34"
+    },
+    "core_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-loss-core-local-20261105/PEER_REVIEW_V2.json",
+      "sha256": "6d426efdd74743bd4ae20ccd4a19264ff2509de41ec29c73ba86c4d8bb0611e1"
+    },
+    "operator": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-funding-operator-5se_8qu7/MANIFEST_V2.json",
+      "sha256": "99fc783c499fb416ffe13de227a16a5376334995a7a4f6e3e1ada42c450bc0c9"
+    },
+    "operator_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-funding-operator-5se_8qu7/PEER_REVIEW_V2.json",
+      "sha256": "881f80ade65bd4bd2dcf9b3adf92f01e9d47a9bf7ba9c4980b469b509ea90157"
+    },
+    "admission": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-expense-admission-wiring-q5n4ev2p/MANIFEST_V2.json",
+      "sha256": "673df45d60e7f1931dd7da7cdafb95a7f9e08714a16850e224463ac2a36eb247"
+    },
+    "root_finite_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-funding-root-finite-peer.json",
+      "sha256": "c9c480ea1720523dc2570e92717fa8eb17ba0d89d648ee3c30a5c24d5fe275a1"
+    },
+    "profile_runner_tests": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-funding-source-integration-junit.xml",
+      "sha256": "136cd8a65e8d10d70ef80161a2d98fd371f1943eefe58d2311d067270db49f5d"
+    },
+    "public_collection": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/payment-funding-source-node-collection.json",
+      "sha256": "ff80265c4c6a20e983e2ba98530da495a532f6232779397e67f514e393667c09"
+    },
+    "current_pin_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/source27-payment-pin-peer-swug7xvb/PEER_REVIEW.json",
+      "sha256": "772710f48ee10395d1c2321a95f447a221e026424a67bc2dc06173a7df13ce96"
+    }
+  },
+  "limitations": [
+    "No actual bank funding, invoice acceptance, production declaration/allocation, payment/provider call, model call, cloud action, actual-root checker or new CI qualification was performed.",
+    "No prices, commercial flags, customer balances or serving deployment changed. Native80 QA, scanner17 maintenance, models and commercial activation remain on hold.",
+    "This does not complete C06/I01/G05 or any original stage. Invoice allocation completeness, real cash evidence, restore/rollout qualification, seven-day funded shadow, capacity and human quality review remain pending.",
+    "The bounded SQL projection/audit history caps fail closed. Representative scale and long-history capacity remain unqualified; current SQL is not an independent restore-proof treasury."
+  ],
+  "scope_preservation": "Original8 stages/83 requirement identifiers and statuses unchanged; no new checkpoint."
+}

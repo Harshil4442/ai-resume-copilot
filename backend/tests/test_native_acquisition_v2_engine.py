@@ -30,6 +30,14 @@ from scripts import native_acquisition_channel as original_channel
 from scripts import native_acquisition_job as original_job
 from scripts import qualify_native_quality_acquisition as source
 from scripts import schema25_app_release_contract_v3 as contract
+from tests.fixtures.retained_native_source import (
+    ENGINE,
+    FROZEN_APP_FILES,
+    FROZEN_APP_SHA256,
+)
+from tests.fixtures.retained_native_source import (
+    frozen_runtime_layout as frozen_runtime_layout,  # noqa: F401
+)
 
 
 def private_write(root, name, value):
@@ -57,7 +65,12 @@ def toy_source(kind, identity):
 
 
 @pytest.fixture
-def reviewed_toys(tmp_path, monkeypatch):
+def reviewed_toys(tmp_path, monkeypatch, frozen_runtime_layout):
+    # The engine bytes are identical. Its runtime contract lookups must see
+    # the immutable producer source layout, independently of the current app.
+    archived_engine = frozen_runtime_layout / ENGINE
+    assert archived_engine.read_bytes() == Path(e.__file__).read_bytes()
+    monkeypatch.setattr(e, "__file__", str(archived_engine))
     root = tmp_path / "authority"
     root.mkdir(mode=0o700)
     kinds = {}
@@ -185,7 +198,7 @@ def reviewed_toys(tmp_path, monkeypatch):
         "repository": "https://github.com/Harshil4442/ai-resume-copilot.git", "release": release,
         "ci_run_id": 1, "build_id": build_id, "image": image,
         "qualification_contract": "hirewiz_schema26_app_rolling_v3", "qualification_sha256": "1" * 64,
-        "app_files": contract.CANDIDATE_APP_FILES, "app_sha256": source.APP_SHA256, "entry_path": source.ENTRY,
+        "app_files": FROZEN_APP_FILES, "app_sha256": FROZEN_APP_SHA256, "entry_path": source.ENTRY,
         "entry_sha256": source.ENTRY_SHA256, "runtime_dependencies_sha256": "2" * 64,
         "observed_at": start.isoformat(), "ci_metadata_sha256": source.digest(ci),
         "build_metadata_sha256": source.digest(build)})
@@ -322,9 +335,10 @@ def test_complete_toy_protocol_never_claims_native_or_processing_approval(review
     assert reviewed_toys.selections and set(reviewed_toys.selections) == {"development"}
 
 
-@pytest.mark.parametrize("field,value", [("app_files", 289),
-    ("app_sha256", "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e")])
-def test_old_application_receipt_cannot_be_reused_for_current_source(reviewed_toys, field, value):
+@pytest.mark.parametrize("field,value", [("app_files", 289), ("app_files", source.CURRENT_APPLICATION_APP_FILES),
+    ("app_sha256", "9eca9ce7c267fab5789b292a4937bf7eab7c12cf37140209223702636edd677e"),
+    ("app_sha256", source.CURRENT_APPLICATION_APP_SHA256)])
+def test_retained_receipt_refuses_a_different_application(reviewed_toys, field, value):
     t = reviewed_toys
     runner = json.loads((t.root / t.lock["runner_receipt"]["path"]).read_bytes())
     runner[field] = value

@@ -1,8 +1,10 @@
 """Synthetic provider transport; real HTTP, quote, capture and refund state machines."""
+import json
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
-from backend.app.billing.razorpay import RazorpayAdapter, RazorpayProviderError
+from backend.app.billing.razorpay import RAZORPAY_ORDERS_URL, RazorpayAdapter, RazorpayProviderError
 from backend.app.billing.reconciliation import OriginalOrder
 from backend.app.domains.credits import canary, release, service
 from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavailable
@@ -21,6 +23,8 @@ from test_razorpay_billing import client as client
 from test_razorpay_billing import enabled_checkout as enabled_checkout
 from test_razorpay_billing import session_factory as session_factory
 from test_unified_execution import budgets, route
+
+CREATE_RAZORPAY_ORDER = RazorpayAdapter.create_order
 
 
 def review_payload():
@@ -272,6 +276,52 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
     assert status["fulfilled"] and status["status"] == "paid" and status["pass_expires_at"]
 
 
+def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed_order(unified, session_factory):
+    client, calls = unified
+    identities = []
+    for index in range(3):
+        _, _, result = start(client, key=f"fixture-recovery-pass-{index}")
+        assert result.status_code == 200, result.text
+        identity = result.json()["order_id"]
+        identities.append(identity)
+        # Earlier compatible modes can retain independent active attempts. Use
+        # the real checkout only for immutable fixture terms and provider IDs.
+        with session_factory() as db:
+            row = db.query(PaymentOrder).filter_by(public_id=identity).one()
+            if index < 2:
+                row.status = "refunded"
+                row.active_attempt_key = None
+                db.commit()
+            else:
+                latest_capture = _capture_payload(row)
+    assert _post_event(client, "evt_latest_unified_paid", latest_capture).status_code == 200
+    oldest, next_order, latest = identities
+    with session_factory() as db:
+        rows = {row.public_id: row for row in db.query(PaymentOrder)}
+        now = datetime.now(UTC)
+        rows[oldest].status = "payment_failed"
+        rows[oldest].created_at = now - timedelta(days=3)
+        rows[next_order].status = "created"
+        rows[next_order].created_at = now - timedelta(days=2)
+        original_capture = _capture_payload(rows[oldest])
+        next_capture = _capture_payload(rows[next_order])
+        original_capture["payload"]["payment"]["entity"]["id"] = "pay_recovered_oldest"
+        next_capture["payload"]["payment"]["entity"]["id"] = "pay_recovered_next"
+        db.commit()
+
+    first = client.get("/api/v1/credits/recent-order")
+    assert first.status_code == 200
+    assert first.json()["order_id"] == oldest and first.json()["payment_status"] == "payment_failed"
+    assert not first.json()["checkout_available"] and "no-store" in first.headers["cache-control"]
+    _, _, blocked = start(client, key="fixture-blocked-recovery-pass")
+    assert blocked.status_code == 409 and blocked.json()["detail"]["order_id"] == oldest
+    assert _post_event(client, "evt_oldest_unified_paid", original_capture).status_code == 200
+    assert client.get("/api/v1/credits/recent-order").json()["order_id"] == next_order
+    assert _post_event(client, "evt_next_unified_paid", next_capture).status_code == 200
+    assert client.get("/api/v1/credits/recent-order").json()["order_id"] == latest
+    assert len(calls) == 3
+
+
 def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified, session_factory):
     client, _ = unified
     _, _, result = start(client)
@@ -318,6 +368,33 @@ def test_unknown_provider_outcome_blocks_any_second_order(unified, monkeypatch):
     assert second.status_code == 409
     assert attempts == [1]
     assert client.get("/api/v1/credits/recent-order").json()["payment_status"] == "creation_unknown"
+
+
+@pytest.mark.parametrize("body", [None, [], {"entity": "order"}], ids=["null", "list", "incomplete-order"])
+def test_malformed_provider_response_preserves_original_order(unified, monkeypatch, body):
+    client, _ = unified
+    attempts = []
+
+    def post(url, **kwargs):
+        assert url == RAZORPAY_ORDERS_URL
+        attempts.append(kwargs["json"]["notes"]["hirewiz_order_id"])
+        return httpx.Response(200, content=json.dumps(body), request=httpx.Request("POST", url))
+
+    # Keep the adapter's actual decoding and validation, with only its HTTP call stubbed.
+    monkeypatch.setattr(RazorpayAdapter, "create_order", CREATE_RAZORPAY_ORDER)
+    monkeypatch.setattr("backend.app.billing.razorpay.httpx.post", post)
+    _, payload, first = start(client)
+    assert first.status_code == 409, first.text
+    detail = first.json()["detail"]
+    assert detail["code"] == "billing_order_requires_status"
+    original = client.get(f"/api/v1/credits/orders/{detail['order_id']}").json()
+    assert original["payment_status"] == "creation_unknown"
+    assert not original["checkout_available"] and not original["fulfilled"]
+    assert client.post("/api/v1/credits/orders", json=payload).json()["detail"]["order_id"] == detail["order_id"]
+    _, _, second = start(client, key="another-purchase")
+    assert second.status_code == 409
+    assert second.json()["detail"]["order_id"] == detail["order_id"]
+    assert attempts == [detail["order_id"]]
 
 
 @pytest.mark.parametrize("transport_unknown", [False, True])

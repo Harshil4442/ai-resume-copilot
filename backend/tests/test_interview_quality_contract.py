@@ -572,7 +572,7 @@ def test_changed_inputs_before_worker_release_without_model_call(database, monke
     assert tasks.process_analysis_run(run_id) == "failed"
     with database() as db:
         run = db.get(AnalysisRun, run_id)
-        assert run.error_code == "InterviewInputsChanged" and run.usage_state == "released"
+        assert run.error_code == "SourceTranscriptionChanged" and run.usage_state == "released"
         assert run.result_payload is None and db.get(User, 1).ai_credits == 100
         assert db.query(ModelCallEvent).count() == 0
 

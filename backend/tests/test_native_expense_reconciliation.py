@@ -105,6 +105,47 @@ def test_detached_native_expense_can_settle_but_unknown_provider_cost_remains_he
         assert admission._hold_usage(db, start=NOW + timedelta(days=40)) == hold.reserved_minor
 
 
+@pytest.mark.parametrize("native_state", ["completed", "failed"])
+def test_cancelled_product_still_needs_independent_terminal_native_receipt(factory, native_state):
+    from backend.app.domains.credits import analysis
+    from backend.app.models import AnalysisRun
+
+    with factory() as db:
+        grant(db)
+        hold = admitted(db)
+        binding, _ = claim(db, hold)
+        execution.finish_attempt(db, binding=binding, error=TimeoutError(), now=NOW)
+        run = db.get(AnalysisRun, "run-one")
+        run.status = "cancelled"
+        assert analysis.settle_analysis(db, run, delivered=False)
+        db.commit()
+        assert hold.delivery_state == "cancelled" and hold.native_settled_minor is None
+        observed = receipt(hold.id, work_state=native_state)
+        for pending in ("pending", "unknown"):
+            hold.delivery_state = pending
+            db.flush()
+            with pytest.raises(reconciliation.ReconciliationDenied, match="native_work_not_terminal"):
+                plan(db, observed)
+            assert hold.native_settled_minor is None
+        hold.delivery_state = "cancelled"
+        db.flush()
+        with pytest.raises(reconciliation.ReconciliationDenied, match="correlation_mismatch"):
+            reconciliation.capture(db, receipt=observed,
+                terminal=terminal(db, observed, financial_group_id="foreign-group"),
+                actor=ACTOR, nonce="c" * 32, now=STAMP)
+        with pytest.raises(ValueError):
+            receipt(hold.id, work_state="unknown")
+        db.commit()
+        reviewed = plan(db, observed)
+        reconciliation.apply(db, plan=reviewed, now=STAMP)
+        db.commit()
+        assert hold.native_settled_minor == 9 and hold.delivery_state == "cancelled"
+        assert hold.state == "outcome_unknown"
+        assert db.get(ModelCostLiability, binding.liability_id).cost_state == "outcome_unknown"
+        assert service.wallet(db, user_id=1, now=NOW).available_credits == 40
+        assert reconciliation.apply(db, plan=reviewed, now=STAMP)["status"] == "already_reconciled"
+
+
 def test_free_receipt_settles_once_and_survives_owner_erasure(factory):
     with factory() as db:
         row = free(db)

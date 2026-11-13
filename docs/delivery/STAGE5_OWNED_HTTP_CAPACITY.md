@@ -42,16 +42,19 @@ accounts and one 500-opportunity account. The eight sampled actors include free,
 buyer and heavy accounts. Heavy traffic is intentionally oversampled, not a claim
 about actual customer behavior.
 
-Only five real owned GETs are used: common bootstrap, resume list, opportunities
-page, skill ROI and wallet. The complete shipping FastAPI app/middleware is used;
-only this finite path set is offered by the workload. Missing-bearer and foreign
-resume controls must first return 401/404 through the real boundary. Measured SQL
-connections inherit server-side read-only transactions. Counts, response contracts
-and balances are checked; a 200 with wrong ownership or content is a failed result.
+The `stage5-owned-http-v2` report measures five real owned GETs: Dashboard,
+resume metadata page, opportunity metadata page, skill ROI and wallet. Dashboard
+uses the consolidated account read. The metadata pages use the same first-page
+size of 20 as the frontend. The complete shipping FastAPI app and middleware run
+for every request. Before measurement, bootstrap must return 401 without a bearer
+and a valid owned response with one. The foreign resume must return 404. Measured
+SQL connections inherit server-side read-only transactions. Counts, response
+contracts and balances are checked. A 200 with wrong ownership or content fails.
 Synthetic addresses use reserved `example.com` and the real public profile email
-validator, without DNS or email delivery. Opportunity ownership is checked against
-the exact seeded public-ID page and each item's resume ID, including offsets;
-the public response intentionally does not expose its private SQL `user_id`.
+validator, without DNS or email delivery. The metadata oracle checks the exact
+seeded public IDs, totals and response fields. The 500-role account must receive a
+continuation cursor. This workload measures first-page reads. Later pages and
+search remain covered by their separate API and browser tests.
 No order, upload, search, application, email, employer, model or native cloud call
 is generated. ADC, external requests/httpx, native TLS channels and non-owned
 Python socket connections deny before send. The emulator's Docker network has no
@@ -91,6 +94,18 @@ share one project counter/window, without reset, hidden retry, refund, budget
 increase or per-phase namespace. Later phases can therefore be correctly refused;
 they are not comparable successful-throughput samples when the budget is spent.
 Unpaced Get throughput cannot justify activating the governor or bypassing it.
+
+For a separate latency diagnostic, dispatch the workflow with `fresh_window`
+enabled or add `--fresh-window` to the local command. After the usual three
+controls, the runner uses only the governed List path. Each of the three phases
+offers 16 reads together with a concurrency cap of 1, 10, or 25. The runner waits
+at least 61 seconds before each batch, including the first. The existing shared
+Redis window ages naturally, with no reset, separate key, or retry. These waits
+count toward the existing measurement deadline. The total is at most 51 HTTP
+requests including controls. All 16 reads and exactly 32 intercepted List calls
+must succeed in each batch. Any capacity refusal fails this diagnostic. The report
+records actual peak in-flight requests and cooldown durations. A batch of 16
+cannot saturate the 25-connection cap or establish sustained throughput.
 
 The default run has at most 300 workload GETs plus three controls. Validated plans
 allow at most 2,997 total HTTP requests including controls and 600 seconds of
@@ -226,6 +241,24 @@ middleware/helper response. Those failed reports remain retained; the bounded
 semantic-header correction still requires a fresh actual Linux result.
 A later Mac Docker image-inspect
 probe timed out before any resource creation and was not repeated.
+
+The [13 November Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43410352917)
+measured the current Dashboard, résumé metadata and Workspace metadata routes
+alongside Skill ROI and wallet. Each synthetic buyer cohort offered 300 reads,
+with 170 valid HTTP 200 responses, 130 validated HTTP 429 refusals, zero
+contract failures and zero provider calls. Ownership controls and cleanup passed.
+In each cohort, the unpaced diagnostic accounted for 150 successful reads.
+The first governed phase admitted 20 reads using 40 metadata calls. The two
+later governed phases admitted zero because they shared that same minute's
+allowance. The run therefore measures the limiter's behavior under a shared
+burst.
+
+In the [fresh-window follow-up](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43412081101),
+each cohort completed all 48 governed reads with no refusals or contract
+failures. Each 16-read batch used 32 intercepted metadata calls after at least
+61 seconds of natural cooldown. Actual peak concurrent requests were 1, 10 and
+16. Cleanup was verified, and the run made no provider calls. Sustained hosted
+throughput and concurrency above 16 remain unmeasured.
 
 ## Original acceptance remains open
 

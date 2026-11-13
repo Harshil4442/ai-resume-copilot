@@ -31,6 +31,13 @@ from evaluation import development40_qualification_v2 as control
 from evaluation import development40_transport_v2 as runtime
 from scripts import native_acquisition_channel as old_channel
 from scripts import native_acquisition_job as old_job
+from tests.fixtures.retained_native_source import (
+    FROZEN_APP_FILES,
+    FROZEN_APP_SHA256,
+    FROZEN_SOURCE,
+    HELPER,
+    frozen_archive,
+)
 
 TOY_NAMESPACE = "gs://owned-toy-private-bucket/quality-development/owned-toy-exp/"
 TOY_BODY = b"{}"
@@ -488,7 +495,7 @@ def _receipt(**changes):
         "build_id": "11111111-1111-1111-1111-111111111111",
         "image": control.original.RUNNER_REPOSITORY + "@sha256:" + "e" * 64,
         "qualification_sha256": "a" * 64, "app_compatibility_sha256": "b" * 64,
-        "app_sha256": control.q.APP_SHA256, "app_files": 290, "entry_path": control.ENTRY,
+        "app_sha256": FROZEN_APP_SHA256, "app_files": FROZEN_APP_FILES, "entry_path": control.ENTRY,
         "entry_sha256": "f" * 64, "semantic_entry_path": control.SEMANTIC_ENTRY,
         "semantic_entry_sha256": control.SEMANTIC_SHA256, "channel_sha256": control.CHANNEL_SHA256,
         "runtime_dependencies_sha256": "1" * 64, "component_sha256": "2" * 64,
@@ -660,14 +667,11 @@ def _git(directory, *argv):
 def _owned_code_checkout(directory):
     """Copy only code/proof/lock bytes, never evaluation data or case selection."""
     root = Path(control.__file__).resolve().parents[2]
-    tracked = set(_git(root, "ls-tree", "-r", "--name-only", "HEAD").decode().splitlines())
+    tracked = set(_git(root, "ls-tree", "-r", "--name-only", FROZEN_SOURCE).decode().splitlines())
     names = {n for n in tracked if n.startswith(control.CODE_ROOTS) and Path(n).suffix in {".py", ".json"}}
     names |= set(control.FIXED) | set(control.COMPONENTS)
     directory.mkdir(mode=0o700)
-    for name in sorted(names):
-        path = directory / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes((root / name).read_bytes())
+    frozen_archive(directory, sorted(names))
     _git(directory, "init", "-q")
     _git(directory, "add", ".")
     _git(directory, "-c", "user.name=Owned source test", "-c", "user.email=owned@example.invalid", "commit", "-qm", "owned code only")
@@ -802,6 +806,17 @@ def test_committed_bootstrap_helper_successor_requires_explicit_new_binding(tmp_
     _git(root, "-c", "user.name=Owned source test", "-c", "user.email=owned@example.invalid", "commit", "-qm", "owned helper successor")
     result = _source_cli(root, root)
     assert result.returncode != 0 and not marker.exists()
+
+
+def test_current_qualifier_helper_is_refused_before_frozen_child_executes(tmp_path):
+    root = _owned_code_checkout(tmp_path / "owned")
+    helper = Path(control.q.__file__).resolve()
+    (root / HELPER).write_bytes(helper.read_bytes())
+    _git(root, "add", HELPER)
+    _git(root, "-c", "user.name=Owned source test", "-c", "user.email=owned@example.invalid", "commit", "-qm", "current helper")
+    result = _source_cli(root, root)
+    assert result.returncode != 0 and b"development_source_bootstrap_helper_changed" in result.stderr
+    assert not result.stdout
 
 
 def test_runner_source_resolves_private_temp_alias_before_cache_and_HOME(runtime_offline, monkeypatch, tmp_path):

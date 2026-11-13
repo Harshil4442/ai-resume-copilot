@@ -16,7 +16,13 @@ from backend.app.domains.credits import admission, reconciliation
 from backend.app.domains.credits.models import CreditExecutionHold
 from backend.app.domains.credits.privacy import erase_owner_credit_links
 from backend.app.domains.free_core.models import FreeCoreRequest, FreeCoreReservation
-from backend.app.models import AdminAuditEvent, ModelCostLiability, User
+from backend.app.models import (
+    AdminAuditEvent,
+    AnalysisRun,
+    ModelCallEvent,
+    ModelCostLiability,
+    User,
+)
 from backend.tests.test_employer_admissions_postgres import pg_engine as ci_pg_engine
 from backend.tests.test_native_expense_reconciliation import (
     STAMP,
@@ -175,6 +181,9 @@ def test_detached_unknown_provider_liability_stays_funded_after_native_receipt(f
         hold, binding = paid(db, native=False)
         reviewed = plan(db, receipt(hold.id, work_state="failed"))
         erase_owner_credit_links(db, user_id=1)
+        # Mirror the remaining account-erasure order for this financial fixture.
+        db.query(ModelCallEvent).filter_by(user_id=1).delete(synchronize_session=False)
+        db.query(AnalysisRun).filter_by(user_id=1).delete(synchronize_session=False)
         db.delete(db.get(User, 1))
         db.commit()
     assert _run(factory, reviewed) == "native_expense_reconciled"

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ... import models
 from ...database import get_db
-from ...domains.career import schemas, service, transcription_review
+from ...domains.career import browsing, schemas, service, transcription_review, workspace
 from ...feature_flags import decide_feature
 from ...security import get_current_user
 from ...services.resume_artifacts import ResumeArtifactError, render_resume_version
@@ -76,13 +76,29 @@ def list_applications(
     return schemas.OpportunityListResponse(items=applications, total=len(applications))
 
 
+@router.get("/opportunities/page", response_model=schemas.OpportunityPageResponse)
+def page_opportunities(
+    response: Response,
+    stage: str | None = Query(default=None, max_length=32),
+    search: str | None = Query(default=None, max_length=200),
+    include_archived: bool = False,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=1024),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return browsing.page(db, current_user.id, stage=stage, search=search,
+        include_archived=include_archived, limit=limit, cursor=cursor)
+
+
 @router.get("/opportunities/{opportunity_id}", response_model=schemas.OpportunityDetailResponse)
 def get_opportunity(
     opportunity_id: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return service.opportunity_detail(db, current_user.id, opportunity_id)
+    return workspace.legacy_opportunity_detail(db, current_user.id, opportunity_id)
 
 
 @router.get(
@@ -109,10 +125,11 @@ def export_opportunity(
 )
 def get_opportunity_match(
     opportunity_id: str,
+    resume_id: int | None = Query(default=None, gt=0, lt=2**63),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return service.latest_opportunity_match(db, current_user.id, opportunity_id)
+    return service.latest_opportunity_match(db, current_user.id, opportunity_id, resume_id=resume_id)
 
 
 @router.patch("/opportunities/{opportunity_id}", response_model=schemas.OpportunityResponse)
@@ -199,7 +216,7 @@ def list_evidence(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return service.list_evidence(
+    return workspace.legacy_evidence(
         db,
         current_user.id,
         resume_id=resume_id,
@@ -276,7 +293,7 @@ def list_resume_versions(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return service.list_resume_versions(
+    return workspace.legacy_versions(
         db,
         current_user.id,
         resume_id=resume_id,
@@ -358,7 +375,7 @@ def list_reminders(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    return service.list_reminders(db, current_user.id, status=status)
+    return workspace.legacy_reminders(db, current_user.id, status=status)
 
 
 @router.patch("/reminders/{reminder_id}", response_model=schemas.ReminderResponse)
@@ -421,3 +438,73 @@ def get_usage_history(
     )
     db.refresh(current_user)
     return schemas.UsageHistoryResponse(balance=int(current_user.ai_credits or 0), items=items)
+
+
+@router.get("/opportunities/{opportunity_id}/workspace", response_model=schemas.WorkspaceResponse)
+def get_workspace(
+    opportunity_id: str, response: Response,
+    tab: schemas.WorkspaceTab = "overview",
+    limit: int = Query(default=20, ge=1, le=50),
+    selected_version_id: str | None = Query(default=None, min_length=1, max_length=64),
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return workspace.bootstrap(db, current_user.id, opportunity_id, tab=tab, limit=limit, selected_version_id=selected_version_id)
+
+
+@router.get("/opportunities/{opportunity_id}/workspace/body", response_model=schemas.OpportunityBody)
+def get_workspace_body(
+    opportunity_id: str, response: Response,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return workspace.body(db, current_user.id, opportunity_id)
+
+
+@router.post("/opportunities/{opportunity_id}/workspace/source-snapshot", response_model=schemas.ResumeVersionResponse, status_code=201)
+def create_workspace_source_snapshot(
+    opportunity_id: str, response: Response,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return workspace.source_snapshot(db, current_user.id, opportunity_id)
+
+
+@router.get("/opportunities/{opportunity_id}/workspace/{collection}", response_model=schemas.WorkspacePageResponse)
+def get_workspace_page(
+    opportunity_id: str, collection: schemas.WorkspaceCollection, response: Response,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=1024),
+    state: str | None = Query(default=None, max_length=24),
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    opportunity = workspace.header(db, current_user.id, opportunity_id)
+    return workspace.collection_page(db, current_user.id, opportunity, collection, limit=limit, cursor=cursor, state=state)
+
+
+@router.get("/opportunities/{opportunity_id}/workspace/{collection}/{item_id}", response_model=schemas.WorkspaceItemResponse)
+def get_workspace_item(
+    opportunity_id: str, collection: schemas.WorkspaceCollection, item_id: str, response: Response,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    opportunity = workspace.header(db, current_user.id, opportunity_id)
+    if collection == "evidence":
+        return workspace.evidence_detail(db, current_user.id, opportunity, item_id)
+    return workspace.item_detail(db, current_user.id, opportunity, collection, item_id)
+
+
+@router.get("/resume-versions/page", response_model=schemas.ResumeVersionPageResponse)
+def get_resume_version_page(
+    response: Response,
+    resume_id: int = Query(gt=0, lt=2**63),
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=1024),
+    approval_state: str | None = Query(default=None, max_length=24),
+    current_id: str | None = Query(default=None, min_length=1, max_length=64),
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return workspace.resume_version_page(db, current_user.id, resume_id, limit=limit, cursor=cursor,
+        approval_state=approval_state, current_id=current_id)

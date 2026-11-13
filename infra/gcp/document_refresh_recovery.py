@@ -13,6 +13,7 @@ import os
 import re
 import stat
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -25,6 +26,41 @@ FILES = ("build-started.json", "source-upload-acknowledged.json", "build-create-
 PRE_NATIVE_FILES = FILES[:5]
 FAILED_BUILD_FILES = FILES[:4]
 JOB = re.compile(r"hirewiz-doc-six-[a-f0-9]{12}\Z")
+# Run 41603613130 ended before acceptance/transition markers, after both V4
+# executions finished. Only this complete immutable artifact has that history.
+EXPIRED_SOURCE_ARTIFACT = "13215934494"
+EXPIRED_SOURCE_MANIFEST = "af0f7798e650c5e4c83055bd9b8436e64d620c0cbe32fc93339d76e322699ec0"
+EXPIRED_SOURCE_FILES = (
+    *FILES[:7],
+    *(f"native-proof/{mode}.{phase}.{state}.json" for mode in ("inventory", "corpus")
+      for phase in ("create", "run") for state in ("started", "acknowledged")),
+)
+EXPIRED_SOURCE_PARENT = "sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36"
+# Only nonsecret native identifiers and digests from the exact archived run.
+# These let stock maintenance re-read its evidence after GitHub artifact expiry.
+EXPIRED_SOURCE_BUILD = "94b2dd9a-fc67-4e09-bc6c-e47486feaf81"
+EXPIRED_SOURCE_NONCE = "3aa979140eff45ba9c439e570652e3c4"
+EXPIRED_SOURCE_IMAGE = "sha256:167e0a559f68f2140cbaae0f4cc865057e9b738a8163895252ab4c20435ca384"
+EXPIRED_SOURCE_BUILD_IDENTITY = "79aff75bbfd6601c351d205a8da2d29c72f4a89aea919faed8d0895a75a77036"
+EXPIRED_SOURCE_NATIVE = {
+    "inventory": {
+        "create": "3025fd3b-7c2b-40d8-8db1-e3b43e70ebf7",
+        "run": "a59464a9-400a-47b3-accd-5c04d50b1e8b",
+        "request": "8e4dc03a8cb3239b5e1f73a13594ef61cf1d8dbc5c0fe6fcddbac3bc1c8763a5",
+        "job_uid": "67128984-2268-4283-9c91-9af6ce7eea97",
+        "execution_uid": "9f27da71-d108-4e8d-b196-2ccbe8661af0",
+        "receipt": "ebc8a725365edd5966dc94d9c84f4f0a24a6e3deffcef7d67c330f08df712bf7",
+    },
+    "corpus": {
+        "create": "e48b02be-57d6-447f-9bc0-189e8a016eef",
+        "run": "52ca3579-a707-4f3b-bf8c-de1879950692",
+        "request": "af4de20d2db6c2cec0dbc7999d71ad27b56d57d04df8bdc1e2e82142600a9fe7",
+        "job_uid": "8c94709f-b7f2-4cd6-9757-cfdffec2843e",
+        "execution_uid": "93218e5f-a4db-4acc-b818-ba2260448eb4",
+        "receipt": "f9f2a69d60ea1e62f1092f9ee4f9073d7cc8ea997dda295c33474de5cd0e34ad",
+    },
+}
+EXPIRED_SOURCE_DEFINITIONS_ISSUED = datetime(2026, 11, 3, 6, 27, 52, tzinfo=UTC)
 
 
 def canonical(value: Any) -> bytes:
@@ -70,6 +106,87 @@ def snapshot(path: Path, build: Any) -> dict[str, bytes]:
 
 def manifest(files: dict[str, bytes]) -> str:
     return sha(canonical({name: sha(raw) for name, raw in files.items()}))
+
+
+def expired_source_snapshot(path: Path, build: Any) -> dict[str, bytes]:
+    private(path, build)
+    native = path / "native-proof"
+    private(native, build)
+    build.need({entry.name for entry in path.iterdir()} ==
+        {name.split("/")[0] for name in EXPIRED_SOURCE_FILES}
+        and {entry.name for entry in native.iterdir()} ==
+        {name.split("/")[1] for name in EXPIRED_SOURCE_FILES if name.startswith("native-proof/")},
+        "document_refresh_expired_source_history_changed")
+    files = {name: read(path / name, build) for name in EXPIRED_SOURCE_FILES}
+    build.need(manifest(files) == EXPIRED_SOURCE_MANIFEST, "document_refresh_expired_source_history_changed")
+    return files
+
+
+def verify_expired_source_history(files: dict[str, bytes] | None, clients: Any, probe: Any,
+                                  build: Any) -> tuple[str, set[str]]:
+    """Re-read completed, expired synthetic work. It cannot be accepted or replayed."""
+    read_only_release = getattr(clients, "read_only_release", False)
+    if files is None:
+        image = build.REPOSITORY + "@" + EXPIRED_SOURCE_IMAGE
+        verify = build.verify_current_build_release if read_only_release else build.verify_current_build
+        identity = verify(EXPIRED_SOURCE_BUILD, EXPIRED_SOURCE_NONCE, image)
+        build.need(sha(canonical(identity)) == EXPIRED_SOURCE_BUILD_IDENTITY,
+                   "document_refresh_expired_source_history_binding_changed")
+    else:
+        build.need(manifest(files) == EXPIRED_SOURCE_MANIFEST, "document_refresh_expired_source_history_changed")
+        binding = build.decode(files["native-proof/binding.json"])
+        identity, image = binding["build_identity"], binding["image"]
+        build.need(binding == {"version": 4, "image": image, "build_identity": identity}
+            and identity["immutable_image"] == image
+            and identity["local_native_proof_sha256"] == sha(files["local-native-proof.json"]),
+            "document_refresh_expired_source_history_binding_changed")
+    source = build.infra("document_source_release").SourceProbe(
+        identity, root=build.ROOT, serving_read=True, read_only_release=read_only_release)
+    if files is not None:
+        source.build_identity(read_only_release=read_only_release, build_id=identity["build_id"],
+                              nonce=identity["nonce"], image=image)
+    observed = {}
+    for mode, handle in source.handles(identity).items():
+        prefix = f"native-proof/{mode}"
+        pin = EXPIRED_SOURCE_NATIVE[mode]
+        acknowledgments = ({phase: {"name": probe.PARENT + "/operations/" + pin[phase]} for phase in ("create", "run")}
+            if files is None else {phase: build.decode(files[f"{prefix}.{phase}.acknowledged.json"])
+                                   for phase in ("create", "run")})
+        created = probe.operation_result(clients, acknowledgments["create"], "Job")
+        started = probe.operation_result(clients, acknowledgments["run"], "Execution")
+        build.need(created is not None and started is not None, "document_refresh_expired_source_history_pending")
+        wanted = source.desired(image, handle["nonce"], mode)
+        job = clients.job(wanted["name"])
+        plan = {"image": image, "job_nonce": handle["nonce"], "mode": mode}
+        source.validate_job(job, plan)
+        execution = clients.execution(probe.execution_reference(job, job["latestCreatedExecution"]["name"]))
+        source.validate_execution(execution, job, plan)
+        request_hash = sha(canonical(wanted))
+        if files is None:
+            build.need(request_hash == pin["request"] and job["uid"] == pin["job_uid"]
+                and execution["uid"] == pin["execution_uid"], "document_refresh_expired_source_history_native_changed")
+        else:
+            run = build.decode(files[prefix + ".run.started.json"])
+            build.need(build.decode(files[prefix + ".create.started.json"]) == {
+                "body_sha256": request_hash, "automatic_replay": False}
+                and run == {"name": job["name"], "uid": job["uid"], "etag": run["etag"], "automatic_replay": False},
+                "document_refresh_expired_source_history_native_changed")
+        build.need(created.get("name") == job["name"] and created.get("uid") == job["uid"]
+            and started.get("name") == execution["name"] and started.get("uid") == execution["uid"],
+            "document_refresh_expired_source_history_native_changed")
+        observed[mode] = job
+    # The existing V4 receipt parser validates exact synthetic events and all 17
+    # cases. Unlike current acceptance, this check requires historical expiry.
+    _, _, inventory, receipt, stamp = source._verified_evidence(clients)
+    build.need(datetime.now(UTC) - stamp >= build.AGE_LIMIT
+        and all(clients.job(job["name"]) == job for job in observed.values()),
+        "document_refresh_expired_source_history_native_changed")
+    if files is None:
+        build.need(stamp == EXPIRED_SOURCE_DEFINITIONS_ISSUED
+            and source.sha(inventory) == EXPIRED_SOURCE_NATIVE["inventory"]["receipt"]
+            and source.sha(receipt) == EXPIRED_SOURCE_NATIVE["corpus"]["receipt"],
+            "document_refresh_expired_source_history_receipts_changed")
+    return image, {job["name"].rsplit("/", 1)[-1] for job in observed.values()}
 
 
 def retain(files: dict[str, bytes], target: Path) -> None:
@@ -631,7 +748,7 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
            unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False,
            rescue_expired_v2: bool = False, application_context: Any = None,
-           recover_expired_source: bool = False) -> None:
+           recover_expired_source: bool = False, expired_source_files: dict[str, bytes] | None = None) -> None:
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
                and not (retire_expired_v2 and rescue_expired_v2),
                "document_refresh_recovery_mode_invalid")
@@ -641,6 +758,10 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
+    if expired_source_files is not None or (recover_expired_source and image.endswith("@" + EXPIRED_SOURCE_PARENT)):
+        historical_image, jobs = verify_expired_source_history(expired_source_files, clients, probe, build)
+        build.need(image != historical_image and service.get("labels", {}).get("hirewiz-refresh-job") not in jobs,
+                   "document_refresh_expired_source_history_serving")
     build.need(image not in (unaccepted_images or set()), "document_refresh_pre_native_candidate_serving")
     policy = probe.policy_for_serving(service, image)
     build.need(service.get("labels", {}).get("hirewiz-refresh-job") not in failed_jobs,
@@ -715,7 +836,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                    and not (rescue_expired_v2 or retire_expired_v2 or resuming_original),
                    "document_refresh_consumed_history_audit_required")
     if history is None:
-        build.need(selected is None and not rescue_expired_v2, "document_refresh_recovery_history_required")
+        build.need(selected is None and not rescue_expired_v2 and not recover_expired_source,
+                   "document_refresh_recovery_history_required")
         return None
     build.need(history.is_absolute() and history.is_dir() and not history.is_symlink(), "document_refresh_prior_history_refused")
     if rescue_expired_v2:
@@ -738,12 +860,16 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     consumed = None
     known_partials = 0
     completed_count = 0
+    expired_source_files = None
     rescue_probe = build.infra("document_refresh_probe") if rescue_expired_v2 else None
     for run in runs:
         build.need(run.is_dir() and not run.is_symlink(), "document_refresh_prior_unknown_reconcile_only")
         root = run / "terminal-recoveries"
         if root.exists():
             record_roots.append(root)
+        if run.name == EXPIRED_SOURCE_ARTIFACT:
+            expired_source_files = expired_source_snapshot(run, build)
+            continue
         result = run / "result.json"
         if consumed_history is not None and consumed_history.matches(run):
             # This exact artifact was already consumed by three spent claims
@@ -838,7 +964,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     for job, files, _ in pending:
         build.need(job == selected or job in records and records[job][0] == files,
                    "document_refresh_prior_unknown_reconcile_only")
-    if not records and selected is None and not pre_native and not pre_native_receipts:
+    if not (recover_expired_source or expired_source_files or records or selected or pre_native or pre_native_receipts):
         return None
     probe = build.infra("document_refresh_probe")
     clients = probe.Clients()
@@ -873,6 +999,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             mode["application_context"] = application_context
         if recover_expired_source:
             mode["recover_expired_source"] = True
+        if expired_source_files is not None:
+            mode["expired_source_files"] = expired_source_files
         if verified_pre_native:
             failed_jobs.update(job.rsplit("/", 1)[-1] for fact in verified_pre_native
                 for job in fact.get("absent_native_jobs", [fact["absent_native_job"]] if "absent_native_job" in fact else []))

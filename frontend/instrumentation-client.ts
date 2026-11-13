@@ -1,10 +1,12 @@
 import * as Sentry from "@sentry/nextjs";
 import { capturePasswordResetLink } from "./lib/passwordResetLink";
 import { capturePrivacyErasureLink } from "./lib/privacyErasureLink";
+import { captureNotificationUnsubscribeLink } from "./lib/notificationUnsubscribeLink";
 import { isPasswordResetPath, isPasswordResetUrl, resetTelemetry, setResetGoogleExclusion } from "./lib/passwordResetPrivacy";
 
 capturePasswordResetLink();
 capturePrivacyErasureLink();
+captureNotificationUnsubscribeLink();
 setResetGoogleExclusion(isPasswordResetPath(window.location.pathname));
 
 Sentry.init({

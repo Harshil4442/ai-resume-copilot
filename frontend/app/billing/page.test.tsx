@@ -184,6 +184,84 @@ describe("unified purchase review and payment", () => {
     render(<BillingPage />); fireEvent.click(await screen.findByRole("button", { name: "Reconcile original payment" })); await screen.findByText("Original payment unresolved");
     await confirmIndia(); expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled(); noCheckout();
   });
+  it.each(["Reconcile original payment", "Check payment status"])("holds a provider-bound failed pass through %s and the next original lookup", async (action) => {
+    const failed = order({ status: "failed", payment_status: "payment_failed", checkout_available: false });
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    const next = order({ order_id: "order_unified_next", provider_order_id: null, payment_status: "creation_unknown", checkout_available: false });
+    let recentReads = 0;
+    let finishLookup!: (value: unknown) => void;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/v1/credits/recent-order") return ++recentReads === 1 ? Promise.resolve(failed) : new Promise((resolve) => { finishLookup = resolve; });
+      if (url === "/v1/credits/orders/order_unified") return Promise.resolve(settled);
+      return read(url);
+    });
+    state.post.mockResolvedValue({ resolution: "settled", message: "Original payment recorded." });
+    render(<BillingPage />);
+    const button = await screen.findByRole("button", { name: action });
+    const reviewButton = screen.getByRole("button", { name: "Review Starter pass" });
+    expect(reviewButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(finishLookup).toBeDefined());
+    expect(reviewButton).toBeDisabled();
+    await act(async () => { finishLookup(next); });
+    await screen.findByText("Order reference: order_unified_next");
+    expect(reviewButton).toBeDisabled();
+    if (action === "Reconcile original payment") expect(state.post).toHaveBeenCalledExactlyOnceWith("/billing/orders/order_unified/reconcile", undefined);
+    else expect(state.post).not.toHaveBeenCalled();
+    noCheckout();
+  });
+  it("leaves purchase paused after a settled pass until a failed next lookup is retried", async () => {
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    let reads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/v1/credits/recent-order") {
+        reads += 1;
+        return reads === 1 ? Promise.resolve(order()) : reads === 2 ? Promise.reject(new Error("Previous purchase unavailable")) : Promise.resolve(null);
+      }
+      return url === "/v1/credits/orders/order_unified" ? Promise.resolve(settled) : read(url);
+    });
+    render(<BillingPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Check payment status" }));
+    const retry = await screen.findByRole("button", { name: "Check recent purchase" });
+    const reviewButton = screen.getByRole("button", { name: "Review Starter pass" });
+    expect(reviewButton).toBeDisabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(reviewButton).toBeEnabled());
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
+  it("checks for other held orders before releasing a purchase that settled before checkout", async () => {
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    const next = order({ order_id: "order_previous", checkout_available: false });
+    let recentReads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/v1/credits/recent-order") return Promise.resolve(++recentReads === 1 ? null : next);
+      return url === "/v1/credits/orders/order_unified" ? Promise.resolve(settled) : read(url);
+    });
+    const pay = await review(); await confirmIndia(); fireEvent.click(pay);
+    await screen.findByText("Order reference: order_previous");
+    expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+    noCheckout();
+  });
+  it("checks a synchronous unified checkout callback once without marking payment from the callback", async () => {
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    let finish!: (value: unknown) => void;
+    let orderReads = 0;
+    state.get.mockImplementation((url: string) => url === "/v1/credits/orders/order_unified"
+      ? ++orderReads === 1 ? Promise.resolve(order()) : new Promise((resolve) => { finish = resolve; }) : read(url));
+    const callback = { razorpay_order_id: "provider_unified", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    hostedCheckout.mockImplementationOnce(function (options: RazorpayOptions) {
+      return { open: vi.fn(() => { options.handler?.(callback); options.handler?.(callback); }), on: vi.fn() };
+    });
+    const pay = await review(); await confirmIndia(); fireEvent.click(pay);
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(screen.queryByRole("heading", { name: "Credit payment confirmed" })).not.toBeInTheDocument();
+    await act(async () => { finish(settled); });
+    await screen.findByRole("heading", { name: "Credit payment confirmed" });
+    expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
+    expect(orderReads).toBe(2);
+  });
 });
 
 describe("legacy payment recovery", () => {
@@ -205,11 +283,33 @@ describe("legacy payment recovery", () => {
     render(<BillingPage />); const resume = await screen.findByRole("button", { name: "Resume original checkout" }); await confirmIndia(); fireEvent.click(resume); await screen.findByRole("alert"); noCheckout();
   });
   it("recovers a captured legacy order during resume without opening another checkout", async () => {
-    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder())
-      : url === "/billing/orders/order_legacy" ? Promise.resolve(legacyOrder({ status: "paid", fulfilled: true, checkout_available: false })) : read(url));
+    let resolved = false;
+    const settled = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false });
+    state.get.mockImplementation((url: string) => {
+      if (url === "/billing/recent-order") return Promise.resolve(resolved ? settled : legacyOrder());
+      if (url === "/billing/orders/order_legacy") { resolved = true; return Promise.resolve(settled); }
+      return read(url);
+    });
     state.post.mockRejectedValue(new ApiError("Check original payment", 409, { detail: { code: "billing_order_requires_status", order_id: "order_legacy" } }));
     render(<BillingPage />); const resume = await screen.findByRole("button", { name: "Resume original checkout" }); await confirmIndia(); fireEvent.click(resume);
     await screen.findByRole("heading", { name: "Payment confirmed" }); expect(state.post).toHaveBeenCalledOnce(); noCheckout();
+  });
+  it("checks a legacy payment when hosted checkout confirms inside open", async () => {
+    const settled = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false });
+    let confirmed = false;
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(confirmed ? settled : legacyOrder())
+      : url === "/billing/orders/order_legacy" ? Promise.resolve(settled) : read(url));
+    const callback = { razorpay_order_id: "provider_legacy", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    hostedCheckout.mockImplementationOnce(function (options: RazorpayOptions) {
+      return { open: vi.fn(() => { confirmed = true; options.handler?.(callback); options.handler?.(callback); }), on: vi.fn() };
+    });
+    state.post.mockResolvedValueOnce(legacyCheckout).mockResolvedValueOnce({ accepted: true });
+    render(<BillingPage />);
+    const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+    await confirmIndia(); fireEvent.click(resume);
+    await screen.findByRole("heading", { name: "Payment confirmed" });
+    expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(1);
   });
   it("requires fresh acceptance after reconciliation restores original checkout", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ provider_order_id: null, checkout_available: false })) : read(url));
@@ -226,10 +326,74 @@ describe("legacy payment recovery", () => {
     expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled(); expect(state.post).toHaveBeenCalledTimes(1); noCheckout();
   });
   it("confirms settled legacy payments through reconciliation without opening checkout", async () => {
-    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder()) : read(url));
+    let pending = true;
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(pending ? legacyOrder() : null) : read(url));
     state.post.mockResolvedValue({ resolution: "settled", message: "Original purchase delivered", order: legacyOrder({ status: "paid", fulfilled: true, checkout_available: false }) });
-    render(<BillingPage />); fireEvent.click(await screen.findByRole("button", { name: "Reconcile original payment" })); await screen.findByRole("heading", { name: "Payment confirmed" });
+    render(<BillingPage />); const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" }); pending = false;
+    fireEvent.click(reconcile); await screen.findByRole("heading", { name: "Payment confirmed" });
     await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled()); noCheckout();
+  });
+  it.each(["Reconcile original payment", "Check payment status"])("keeps new purchases held during and after the next original lookup from %s", async (label) => {
+    const settled = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false });
+    const next = legacyOrder({ order_id: "order_legacy_next", provider_order_id: null, checkout_available: false });
+    let finishLookup: (value: typeof next) => void = () => { throw new Error("Original lookup has not started"); };
+    let recentReads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/billing/recent-order") {
+        return ++recentReads === 1 ? Promise.resolve(legacyOrder()) : new Promise<typeof next>((resolve) => { finishLookup = resolve; });
+      }
+      return url === "/billing/orders/order_legacy" ? Promise.resolve(settled) : read(url);
+    });
+    state.post.mockResolvedValue({ resolution: "settled", message: "Original purchase delivered", order: settled });
+    render(<BillingPage />);
+    const action = await screen.findByRole("button", { name: label });
+    act(() => { fireEvent.click(action); fireEvent.click(action); });
+    await waitFor(() => expect(recentReads).toBe(2));
+    const review = screen.getByRole("button", { name: "Review Starter pass" });
+    expect(review).toBeDisabled();
+    await act(async () => { finishLookup(next); });
+    await screen.findByText("Order reference: order_legacy_next");
+    expect(review).toBeDisabled();
+    expect(state.post).toHaveBeenCalledTimes(label === "Reconcile original payment" ? 1 : 0);
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(label === "Check payment status" ? 1 : 0);
+    noCheckout();
+  });
+  it("keeps the purchase hold and settled receipt when the next-order lookup fails", async () => {
+    let resolved = false;
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? resolved ? Promise.reject(new Error("Could not read recent orders")) : Promise.resolve(legacyOrder())
+      : read(url));
+    state.post.mockResolvedValue({ resolution: "settled", message: "Original purchase delivered",
+      order: legacyOrder({ status: "paid", fulfilled: true, checkout_available: false }) });
+    render(<BillingPage />);
+    const reconcile = await screen.findByRole("button", { name: "Reconcile original payment" });
+    resolved = true;
+    fireEvent.click(reconcile);
+    await screen.findByRole("button", { name: "Check previous purchases" });
+    expect(screen.getByRole("heading", { name: "Payment confirmed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(state.post).toHaveBeenCalledOnce(); noCheckout();
+  });
+  it("reconciles a failed provider payment without reopening checkout", async () => {
+    const failed = legacyOrder({ status: "failed", payment_reference: "pay_original", checkout_available: false });
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(failed) : read(url));
+    state.post.mockResolvedValue({ resolution: "unresolved", message: "Original payment is still unresolved", order: failed });
+    render(<BillingPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reconcile original payment" }));
+    await screen.findByText("Original payment is still unresolved");
+    expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Resume original checkout" })).not.toBeInTheDocument();
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/recent-order")).toHaveLength(1);
+    expect(state.post.mock.calls).toEqual([["/billing/orders/order_legacy/reconcile", undefined]]); noCheckout();
+  });
+  it("keeps an ordinary failed display without a payment reference out of reconciliation", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve(legacyOrder({ status: "failed", provider_order_id: null, checkout_available: false })) : read(url));
+    render(<BillingPage />);
+    await screen.findByText("Order reference: order_legacy");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Reconcile original payment" })).not.toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
   });
   it("retains older premium purchase status without inventing credit conversion", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ sku: "premium_30d", status: "paid", fulfilled: true, accepted_quote: null, checkout_available: false })) : read(url));

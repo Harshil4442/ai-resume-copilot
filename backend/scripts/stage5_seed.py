@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.domains.career.evidence_write_fence import evidence_write_scope
 
 
 def synthetic_email(user_id: int) -> str:
@@ -24,6 +27,8 @@ def seed(engine, plan, *, enrolled: int = 8) -> dict:
         raise ValueError("Eight genuinely enrolled actors are required")
     divisor = 5 if plan.buyers_percent == 20 else 4
     with engine.begin() as connection:
+        if tuple(connection.execute(text("SELECT current_database(), current_schema()")).one()) != ("stage5_owned", "stage5_owned"):
+            raise RuntimeError("Stage5 seed requires the owned database and schema")
         connection.exec_driver_sql("SET LOCAL statement_timeout=120000")
         assert connection.execute(text("SELECT count(*) FROM candidate_password_accounts WHERE state='ACTIVE'")).scalar_one() == enrolled
         connection.exec_driver_sql("""INSERT INTO users(id,email,password_hash,credential_epoch,tier,ai_credits,job_service_credits)
@@ -41,9 +46,12 @@ def seed(engine, plan, *, enrolled: int = 8) -> dict:
             SELECT 'capacity-opp-'||id,user_id,resume_id,id,job_title,company,'Bengaluru','manual',job_description,
             '{"required_skills":["Python","PostgreSQL","REST","Distributed systems"]}','saved','medium','',now(),now()-id*interval '1 second'
             FROM job_matches""")
-        connection.exec_driver_sql("""INSERT INTO evidence_items(id,user_id,resume_id,category,title,evidence_text,metrics,skills,provenance,approval_state,confidence,created_at,updated_at)
-            SELECT 'capacity-evidence-'||i||'-'||j,i,i,'experience','Synthetic engineering','Built a fictional Python service.','{}','["Python","PostgreSQL"]','user','approved','user_provided',now(),now()
-            FROM generate_series(1,10000)i CROSS JOIN generate_series(1,3)j""")
+        # Use the same transaction-local fence as the application for this bulk fixture insert.
+        with Session(bind=connection, autoflush=False, join_transaction_mode="rollback_only") as db:
+            with evidence_write_scope(db):
+                db.execute(text("""INSERT INTO evidence_items(id,user_id,resume_id,category,title,evidence_text,metrics,skills,provenance,approval_state,confidence,created_at,updated_at)
+                    SELECT 'capacity-evidence-'||i||'-'||j,i,i,'experience','Synthetic engineering','Built a fictional Python service.','{}','["Python","PostgreSQL"]','user','approved','user_provided',now(),now()
+                    FROM generate_series(1,10000)i CROSS JOIN generate_series(1,3)j"""))
         # Existing synthetic lots are data-volume inputs, never actual payments,
         # receipts, funded model allowances or permission to enable sales.
         connection.exec_driver_sql("INSERT INTO credit_accounts(user_id,debt_credits,created_at) SELECT i,0,now() FROM generate_series(1,10000)i WHERE mod(i," + str(divisor) + ")=0")

@@ -8,20 +8,24 @@ wide enforcement still requires proof every historical sender is retired or fenc
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ...models import AdminAuditEvent
 from ..common import utcnow
+from .mail_contracts import MailBudgetError, ProviderResult, _result
 
 ATTEMPTS = 3
 DAILY_UNITS, MONTHLY_UNITS = 100, 1000
+# Lifecycle mail is optional. New envelopes must fit its own ceiling and leave
+# unreserved shared capacity for the existing security categories. These tighter
+# source limits do not alter or refund any already funded v1 envelope.
+OPTIONAL_DAILY_UNITS, OPTIONAL_MONTHLY_UNITS = 60, 600
+SECURITY_DAILY_HEADROOM, SECURITY_MONTHLY_HEADROOM = 30, 300
 PRIVACY_DAILY, PRIVACY_MONTHLY = 20, 300
 LOCK = 7349186502119
 RESERVATION = "provider_mail_reserved_v1"
@@ -32,19 +36,6 @@ TTL = {"privacy_erasure": timedelta(minutes=10), "password_reset": timedelta(min
     "lifecycle": timedelta(hours=24)}
 LIFECYCLE_SCHEDULE_LIMIT = timedelta(hours=24)
 MAX_TTL = {**TTL, "lifecycle": TTL["lifecycle"] + LIFECYCLE_SCHEDULE_LIMIT}
-
-
-class MailBudgetError(RuntimeError):
-    def __init__(self, outcome: Literal["unknown", "deferred", "permanent", "known_retryable"]):
-        super().__init__("provider_mail_" + outcome)
-        self.mail_outcome = outcome
-
-
-@dataclass(frozen=True)
-class ProviderResult:
-    outcome: Literal["sent", "unknown", "permanent", "known_retryable"]
-    receipt_sha256: str
-    status_code: int | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +136,7 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
     if len(rows) > MONTHLY_UNITS:
         raise MailBudgetError("unknown")
     day_units = month_units = privacy_day = privacy_month = 0
+    optional_day_units = optional_month_units = 0
     for row in rows:
         reservation = _reservation(row, row.target_id)
         created = _stamp(row.created_at)
@@ -156,9 +148,18 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
         if reservation.category == "privacy_erasure":
             privacy_month += 1
             privacy_day += int(today)
+        elif reservation.category == "lifecycle":
+            optional_month_units += ATTEMPTS
+            optional_day_units += ATTEMPTS if today else 0
     extra = len(missing)
     if (day_units + extra * ATTEMPTS > DAILY_UNITS or month_units + extra * ATTEMPTS > MONTHLY_UNITS
             or category == "privacy_erasure" and (privacy_day + extra > PRIVACY_DAILY or privacy_month + extra > PRIVACY_MONTHLY)):
+        raise MailBudgetError("deferred")
+    if category == "lifecycle" and (
+            optional_day_units + extra * ATTEMPTS > OPTIONAL_DAILY_UNITS
+            or optional_month_units + extra * ATTEMPTS > OPTIONAL_MONTHLY_UNITS
+            or day_units + extra * ATTEMPTS > DAILY_UNITS - SECURITY_DAILY_HEADROOM
+            or month_units + extra * ATTEMPTS > MONTHLY_UNITS - SECURITY_MONTHLY_HEADROOM):
         raise MailBudgetError("deferred")
     added = []
     for message in missing:
@@ -169,19 +170,6 @@ def reserve_messages(db: Session, keys: list[str], *, category: str,
         found[message] = Reservation(message, category, deadline)
     db.flush(added)
     return [found[_digest(key)] for key in keys]
-
-
-def _result(value) -> ProviderResult:
-    if (type(value) is not ProviderResult or value.outcome not in {"sent", "unknown", "permanent", "known_retryable"}
-            or re.fullmatch(r"[a-f0-9]{64}", value.receipt_sha256) is None
-            or value.status_code is not None and (type(value.status_code) is not int or not 100 <= value.status_code <= 599)):
-        raise MailBudgetError("unknown")
-    if (value.outcome == "sent" and (value.status_code is None or not 200 <= value.status_code < 300)
-            or value.outcome == "known_retryable" and value.status_code != 429
-            or value.outcome == "permanent" and (value.status_code is None or not 400 <= value.status_code < 500
-                or value.status_code in {408, 429})):
-        raise MailBudgetError("unknown")
-    return value
 
 
 def _attempt(db, reservation: Reservation, now: datetime):
@@ -268,5 +256,6 @@ def guarded_send(key: str, callback: Callable[[], ProviderResult], *, category: 
     except Exception:
         raise MailBudgetError("unknown") from None
     if receipt.outcome != "sent":
-        raise MailBudgetError(receipt.outcome)
+        raise MailBudgetError(receipt.outcome,
+            committed_result=receipt if receipt.outcome != "unknown" else None)
     return receipt

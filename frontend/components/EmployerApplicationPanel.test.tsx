@@ -11,6 +11,7 @@ import { accountMutationHeaders } from "../lib/accountTransportClient";
 import EmployerApplicationPanel from "./EmployerApplicationPanel";
 import submissionVector from "../../backend/tests/fixtures/browser_submission_v5.json";
 
+vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: "employer-fixture-owner" } } }) }));
 vi.mock("../lib/api", () => ({
   apiGet: vi.fn(), apiPostForm: vi.fn(), apiPostJson: vi.fn(), apiPutJson: vi.fn(),
   apiBlob: vi.fn(), apiDownload: vi.fn(),
@@ -235,7 +236,7 @@ it("offers the exact Razorpay companion handoff and application ID without appro
 describe("tailoring workspace follows the chosen resume for this job", () => {
   async function openTailoring() {
     const saved = manualApplication();
-    vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/v1/resume-versions?") ? [] : path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? {
+    vi.mocked(apiGet).mockImplementation(async (path) => path.startsWith("/v1/resume-versions/page?") ? { items: [], next_cursor: null, selected_version: null } : path.startsWith("/resume/page?") ? { resumes: [1, 2, 42].map((id) => ({ id, filename: `synthetic-${id}.docx`, source_available: true, source_format: "docx", created_at: "2026-10-16T00:00:00Z" })) } : path.endsWith("/catalog") ? {
       enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20,
       pricing_version: "synthetic", max_search_jobs: 20, balance: 0, sources: [],
     } : saved);
@@ -346,5 +347,54 @@ describe("truthful candidate-reported manual application outcome", () => {
     const send = vi.fn().mockResolvedValue(Response.json(reply)); vi.stubGlobal("fetch", send); await renderManual(); await recordManualReport();
     expect(await screen.findByText(/The outcome needs a status check/)).toBeVisible(); expect(screen.queryByRole("heading", { name: "Submission reported by you" })).toBeNull(); expect(screen.queryByRole("heading", { name: "Employer submission confirmed" })).toBeNull();
     expect(screen.getByRole("button", { name: "Record my manual submission" })).toBeDisabled(); expect(screen.getByLabelText("Resume choice")).toBeDisabled(); expect(send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("bounded approved version selection", () => {
+  const stamp = "2026-11-05T00:00:00Z";
+  function version(id: string, edits = true) {
+    return { id, resume_id: 1, opportunity_id: "owned-role", version_number: 1, label: id, approval_state: "approved", source_preserving_edits: edits, created_at: stamp, submitted_at: null };
+  }
+  async function open(respond: (url: URL) => unknown) {
+    const saved = { ...manualApplication(), resume_choice: "tailored" as const, resume_version_id: "saved-off-page" };
+    vi.mocked(apiGet).mockImplementation(async (path) => {
+      if (path.startsWith("/v1/resume-versions/page?")) return respond(new URL(path, "https://owned.invalid"));
+      if (path.startsWith("/resume/page?")) return { resumes: [{ id: 1, filename: "owned.docx", source_available: true, source_format: "docx", created_at: stamp }] };
+      if (path.endsWith("/catalog")) return { enabled: true, auto_submit_enabled: false, search_credits_per_job: 1, apply_credits_per_job: 20, pricing_version: "owned", max_search_jobs: 20, balance: 0, sources: [] };
+      return saved;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); clients.push(client);
+    render(<QueryClientProvider client={client}><EmployerApplicationPanel id="app_local" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
+    await screen.findByRole("heading", { name: "Engineer" });
+  }
+  it("keeps the exact saved off-page version while browsing metadata and excludes source snapshots without fetching bodies", async () => {
+    await open((url) => ({ items: [version(url.searchParams.has("cursor") ? "older-approved" : "new-approved"), version("unchanged-snapshot", false)], selected_version: version("saved-off-page"), next_cursor: url.searchParams.has("cursor") ? null : "opaque" }));
+    const selector = await screen.findByLabelText("Approved version");
+    await waitFor(() => expect(selector).toHaveValue("saved-off-page"));
+    expect(screen.queryByRole("option", { name: /unchanged-snapshot/ })).toBeNull();
+    expect(vi.mocked(apiGet).mock.calls.filter(([path]) => path.startsWith("/v1/resume-versions/page?"))).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Older approved versions" }));
+    await screen.findByRole("option", { name: "Version 1: older-approved" });
+    expect(selector).toHaveValue("saved-off-page");
+    expect(screen.queryByRole("option", { name: "Version 1: new-approved" })).toBeNull();
+    expect(vi.mocked(apiGet).mock.calls.filter(([path]) => path.startsWith("/v1/resume-versions/page?"))).toHaveLength(2);
+    expect(vi.mocked(apiGet).mock.calls.some(([path]) => /^\/v1\/resume-versions\//.test(path) && !path.includes("/page?"))).toBe(false);
+    expect(apiPutJson).not.toHaveBeenCalled(); expect(apiPostJson).not.toHaveBeenCalled();
+  });
+  it("keeps a missing saved ID visible and requires an explicit clear before selecting another version", async () => {
+    await open((url) => {
+      if (url.searchParams.has("current_id")) throw { status: 404 };
+      return { items: [version("new-approved")], selected_version: null, next_cursor: null };
+    });
+    await screen.findByText(/Could not verify the requested versions/);
+    const selector = screen.getByLabelText("Approved version");
+    expect(selector).toHaveValue("saved-off-page");
+    expect(selector).toBeDisabled();
+    expect(apiPutJson).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Clear unavailable version choice" }));
+    await screen.findByRole("option", { name: "Version 1: new-approved" });
+    expect(selector).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Save and refresh review" })).toBeDisabled();
+    expect(apiPutJson).not.toHaveBeenCalled(); expect(apiPostJson).not.toHaveBeenCalled();
   });
 });

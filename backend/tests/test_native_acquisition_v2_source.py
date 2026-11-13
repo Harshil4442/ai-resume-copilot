@@ -20,6 +20,9 @@ from evaluation.native_acquisition_v2 import engine as e
 from evaluation.native_acquisition_v2 import isolation as i
 from evaluation.native_acquisition_v2 import job as j
 from evaluation.native_acquisition_v2 import qualification as q
+from tests.fixtures.retained_native_source import (
+    frozen_runtime_layout as frozen_runtime_layout,  # noqa: F401
+)
 
 
 @pytest.fixture

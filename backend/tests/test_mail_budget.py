@@ -192,14 +192,15 @@ def test_atomic_reset_pair_reserves_six_units_and_same_transaction_reuses_pendin
 def test_shared_daily_attempt_cap_defers_new_work_and_never_revokes_existing_envelope():
     store = Store()
     with store.session() as db:
-        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
-            budget.reserve_messages(db, [f"synthetic-{i}" for i in range(start, start+size)], category="lifecycle", now=NOW)
+        budget.reserve_messages(db, ["already-funded-optional"], category="lifecycle")
+        for start, size in ((0, 10), (10, 10), (20, 10), (30, 2)):
+            budget.reserve_messages(db, [f"synthetic-{i}" for i in range(start, start+size)], category="password_reset", now=NOW)
         db.commit()
         assert sum(row.after_state["units"] for row in reservations(store)) == 99
         with pytest.raises(budget.MailBudgetError) as error:
             budget.reserve_messages(db, ["new-work"], category="password_reset")
         assert error.value.mail_outcome == "deferred"
-        existing = budget.reserve_messages(db, ["synthetic-0"], category="lifecycle")
+        existing = budget.reserve_messages(db, ["already-funded-optional"], category="lifecycle")
         assert existing[0].expires_at == NOW+timedelta(hours=24) and len(reservations(store)) == 33
 
 
@@ -208,7 +209,7 @@ def test_optional_production_enqueue_at_cap_preserves_caller_transaction_without
     store = Store()
     monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
     with store.session() as db:
-        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+        for start, size in ((0, 10), (10, 10)):
             budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
         db.commit()
         pending_business = EntitlementLedger(user_id=1, source_order_id=12, status="active")
@@ -219,7 +220,7 @@ def test_optional_production_enqueue_at_cap_preserves_caller_transaction_without
         assert db.new == [pending_business] and not store.outbox
         db.commit()
     assert store.business == [pending_business]
-    assert len(reservations(store)) == 33 and sum(row.after_state["units"] for row in reservations(store)) == 99
+    assert len(reservations(store)) == 20 and sum(row.after_state["units"] for row in reservations(store)) == 60
 
 
 def test_paid_entitlement_actual_grant_finishes_when_optional_receipt_cannot_be_funded(monkeypatch):
@@ -228,7 +229,7 @@ def test_paid_entitlement_actual_grant_finishes_when_optional_receipt_cannot_be_
     store.user.ai_credits = 7
     monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
     with store.session() as db:
-        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+        for start, size in ((0, 10), (10, 10)):
             budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
         db.commit()
         order = PaymentOrder(id=12, public_id="synthetic-captured-order", user_id=1, provider="synthetic",
@@ -240,7 +241,7 @@ def test_paid_entitlement_actual_grant_finishes_when_optional_receipt_cannot_be_
     assert store.user.ai_credits == 10 and order.status == "paid"
     assert len(store.business) == 1 and store.business[0].source_order_id == order.id
     assert store.business[0].status == "active" and store.business[0].quantity == 3
-    assert not store.outbox and len(reservations(store)) == 33
+    assert not store.outbox and len(reservations(store)) == 20
 
 
 def test_optional_cap_preserves_previously_accepted_unfunded_outbox_without_adopting_it(monkeypatch):
@@ -250,14 +251,14 @@ def test_optional_cap_preserves_previously_accepted_unfunded_outbox_without_adop
         idempotency_key="accepted-legacy-unfunded", payload={"synthetic": "retained obligation"}, status="pending")
     store.outbox.append(old)
     with store.session() as db:
-        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+        for start, size in ((0, 10), (10, 10)):
             budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
         db.commit()
         assert service.enqueue_notification(db, user_id=1, notification_type="welcome", recipient=store.user.email,
             payload={}, idempotency_key=old.idempotency_key) is None
         assert db.new == [] and store.outbox == [old]
         assert old.status == "pending" and old.payload == {"synthetic": "retained obligation"}
-        assert len(reservations(store)) == 33
+        assert len(reservations(store)) == 20
 
 
 @pytest.mark.parametrize("outcome", ["unknown", "permanent"])
@@ -364,7 +365,7 @@ def test_existing_accepted_day_one_outbox_is_preserved_even_when_original_window
 def test_final_send_defers_unfunded_legacy_work_but_uses_original_accepted_envelope():
     store, calls = Store(), []
     with store.session() as db:
-        for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
+        for start, size in ((0, 10), (10, 10)):
             budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+size)], category="lifecycle")
         db.commit()
 
@@ -376,15 +377,15 @@ def test_final_send_defers_unfunded_legacy_work_but_uses_original_accepted_envel
         budget.guarded_send("accepted-legacy-unfunded", provider, category="lifecycle", session_factory=store.session)
     assert error.value.mail_outcome == "deferred" and not calls
     assert budget.guarded_send("funded-0", provider, category="lifecycle", session_factory=store.session).outcome == "sent"
-    assert calls == ["provider"] and len(reservations(store)) == 33
+    assert calls == ["provider"] and len(reservations(store)) == 20
 
 
 def test_rejected_reset_pair_does_not_partially_reserve_remaining_daily_capacity():
     store = Store()
     with store.session() as db:
         for start in (0, 10, 20):
-            budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+10)], category="lifecycle")
-        budget.reserve_messages(db, ["funded-30", "funded-31"], category="lifecycle")
+            budget.reserve_messages(db, [f"funded-{i}" for i in range(start, start+10)], category="password_reset")
+        budget.reserve_messages(db, ["funded-30", "funded-31"], category="password_reset")
         db.commit()
         with pytest.raises(budget.MailBudgetError) as error:
             budget.reserve_messages(db, ["new-reset", "new-changed"], category="password_reset")
@@ -395,7 +396,7 @@ def test_rejected_reset_pair_does_not_partially_reserve_remaining_daily_capacity
 @pytest.mark.parametrize("privacy", [False, True])
 def test_monthly_cap_charges_attempt_units_and_privacy_intents_separately(privacy):
     store = Store()
-    category, total, per_day = ("privacy_erasure", 300, 20) if privacy else ("lifecycle", 333, 33)
+    category, total, per_day = ("privacy_erasure", 300, 20) if privacy else ("password_reset", 333, 33)
     with store.session() as db:
         for index in range(total):
             stamp = NOW.replace(day=1) + timedelta(days=index//per_day)
@@ -421,6 +422,137 @@ def test_privacy_daily_subset_cannot_use_remaining_shared_capacity():
         budget.reserve_messages(db, ["lifecycle-remaining"], category="lifecycle")
         db.commit()
     assert len(reservations(store)) == 21
+
+
+def test_optional_daily_ceiling_counts_pending_envelopes_and_keeps_security_admission():
+    store = Store()
+    with store.session() as db:
+        for start in (0, 10):
+            budget.reserve_messages(db, [f"optional-{i}" for i in range(start, start+10)], category="lifecycle")
+        original = list(db.new)
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["optional-over-cap"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == original
+        budget.reserve_messages(db, ["security-reset", "security-changed"], category="password_reset")
+        db.commit()
+    rows = reservations(store)
+    assert sum(row.after_state["units"] for row in rows if row.after_state["category"] == "lifecycle") == 60
+    assert sum(row.after_state["units"] for row in rows) == 66
+
+
+def test_optional_daily_headroom_uses_all_categories_without_partial_batch_reservation():
+    store = Store()
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 10), (20, 2)):
+            budget.reserve_messages(db, [f"security-{i}" for i in range(start, start+size)], category="password_reset")
+        db.commit()
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["optional-first", "optional-second"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == []
+        accepted = budget.reserve_messages(db, ["optional-first"], category="lifecycle")
+        db.commit()
+        assert sum(row.after_state["units"] for row in reservations(store)) == 69
+        # Security retains the global ceiling, rather than being limited by the
+        # optional ceiling or required to preserve its own reserved headroom.
+        budget.reserve_messages(db, [f"remaining-security-{i}" for i in range(10)], category="password_reset")
+        db.commit()
+        before = {row.id: dict(row.after_state) for row in reservations(store)}
+        assert budget.reserve_messages(db, ["optional-first"], category="lifecycle") == accepted
+        assert before == {row.id: row.after_state for row in reservations(store)}
+        assert len(reservations(store)) == 33 and db.new == []
+
+
+def test_optional_mixed_existing_and_new_batch_is_all_or_none_at_daily_ceiling():
+    store = Store()
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 9)):
+            budget.reserve_messages(db, [f"optional-{i}" for i in range(start, start+size)], category="lifecycle")
+        original = list(db.new)
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["optional-0", "optional-19", "optional-20"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == original
+        result = budget.reserve_messages(db, ["optional-0", "optional-19"], category="lifecycle")
+        assert len(result) == 2 and len(db.new) == 20
+        db.commit()
+    assert len(reservations(store)) == 20
+
+
+def test_optional_monthly_ceiling_counts_prior_days_without_refunding_expired_work():
+    store = Store()
+    with store.session() as db:
+        for day in range(1, 11):
+            for offset in (0, 10):
+                budget.reserve_messages(db, [f"optional-{day}-{i}" for i in range(offset, offset+10)],
+                    category="lifecycle", now=NOW.replace(day=day))
+        db.commit()
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["optional-month-over-cap"], category="lifecycle", now=NOW)
+        assert error.value.mail_outcome == "deferred" and db.new == []
+        budget.reserve_messages(db, ["month-security-reset"], category="password_reset", now=NOW)
+        db.commit()
+    assert len(reservations(store)) == 201
+    assert sum(row.after_state["units"] for row in reservations(store)) == 603
+
+
+def test_optional_monthly_headroom_counts_security_and_defers_whole_batch():
+    store = Store()
+    with store.session() as db:
+        for index in range(232):
+            budget.reserve_messages(db, [f"month-security-{index}"], category="password_reset",
+                now=NOW.replace(day=1)+timedelta(days=index//30))
+        db.commit()
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["month-optional-1", "month-optional-2"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == []
+        budget.reserve_messages(db, ["month-optional-1"], category="lifecycle")
+        db.commit()
+        assert sum(row.after_state["units"] for row in reservations(store)) == 699
+        budget.reserve_messages(db, ["month-security-after-headroom"], category="privacy_erasure")
+        db.commit()
+    assert sum(row.after_state["units"] for row in reservations(store)) == 702
+
+
+def test_original_v1_optional_envelopes_above_tighter_limits_remain_unchanged_and_reusable():
+    store = Store()
+    # Historical v1 funding is data, not new admission under today's tighter
+    # source policy. Its original fields, key and expiry are preserved exactly.
+    with store.session() as db:
+        for index in range(33):
+            message = budget._digest(f"historically-funded-{index}")
+            budget._record(db, identity=budget._id("reservation", message), action=budget.RESERVATION,
+                message=message, value={"version": budget.VERSION, "message_sha256": message,
+                    "category": "lifecycle", "units": 3, "funding_day": NOW.date().isoformat(),
+                    "funding_month": NOW.strftime("%Y-%m"), "expires_at": (NOW+timedelta(hours=24)).isoformat()}, now=NOW)
+        db.commit()
+        before = {row.id: dict(row.after_state) for row in reservations(store)}
+        original = budget.reserve_messages(db, ["historically-funded-0"], category="lifecycle")[0]
+        assert original.expires_at == NOW+timedelta(hours=24) and db.new == []
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["historically-funded-0", "new-optional"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == []
+        assert before == {row.id: row.after_state for row in reservations(store)}
+
+
+def test_unknown_optional_attempt_never_refunds_optional_admission_or_replays_callback():
+    store, calls = Store(), []
+    with store.session() as db:
+        for start, size in ((0, 10), (10, 9)):
+            budget.reserve_messages(db, [f"optional-{i}" for i in range(start, start+size)], category="lifecycle")
+        db.commit()
+
+    def unknown_provider():
+        calls.append("attempt")
+        return budget.ProviderResult("unknown", RECEIPT, 503)
+
+    for _ in range(2):
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.guarded_send("optional-unknown", unknown_provider, category="lifecycle", session_factory=store.session)
+        assert error.value.mail_outcome == "unknown"
+    with store.session() as db:
+        with pytest.raises(budget.MailBudgetError) as error:
+            budget.reserve_messages(db, ["no-refund"], category="lifecycle")
+        assert error.value.mail_outcome == "deferred" and db.new == []
+    assert calls == ["attempt"] and len(reservations(store)) == 20
 
 
 def test_calendar_boundary_keeps_original_funding_and_expiry_without_refund(monkeypatch):
@@ -450,7 +582,7 @@ def test_default_clock_is_refreshed_after_advisory_lock_crosses_funding_boundary
         with store.session() as db:
             for start, size in ((0, 10), (10, 10), (20, 10), (30, 3)):
                 budget.reserve_messages(db, [f"prior-period-{i}" for i in range(start, start+size)],
-                    category="lifecycle", now=before)
+                    category="password_reset", now=before)
             db.commit()
 
     def acquire_after_boundary(self, statement, params=None):
@@ -539,6 +671,66 @@ def test_known_retryable_envelope_allows_only_three_explicit_attempts():
     assert error.value.mail_outcome == "permanent" and len(calls) == 3
     assert len([row for row in store.rows.values() if row.action == budget.BEGIN]) == 3
     assert sum(row.after_state["units"] for row in reservations(store)) == 3
+
+
+@pytest.mark.parametrize("outcome,status", [("known_retryable", 429), ("permanent", 400)])
+def test_known_provider_failure_exposes_exact_read_only_result_only_after_acknowledged_outcome_commit(outcome, status):
+    store = Store()
+    result = budget.ProviderResult(outcome, RECEIPT, status)
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send("known-failure", lambda: result, category="lifecycle", session_factory=store.session)
+    assert store.commits == 2 and error.value.committed_result is result
+    assert error.value.mail_outcome == outcome and str(error.value) == "provider_mail_"+outcome
+    recorded = [row for row in store.rows.values() if row.action == budget.OUTCOME]
+    assert len(recorded) == 1 and recorded[0].after_state["receipt_sha256"] == result.receipt_sha256
+    with pytest.raises(AttributeError):
+        error.value.committed_result = None
+
+
+@pytest.mark.parametrize("outcome,status", [("known_retryable", 429), ("permanent", 400)])
+def test_unknown_outcome_commit_never_exposes_even_a_known_provider_result(outcome, status):
+    store = Store()
+    store.fail_commit = 2
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send("unknown-outcome-commit", lambda: budget.ProviderResult(outcome, RECEIPT, status),
+            category="lifecycle", session_factory=store.session)
+    # This fixture retains the row before raising an unknown commit outcome.
+    # Its presence alone cannot become an acknowledged native/provider receipt.
+    assert any(row.action == budget.OUTCOME for row in store.rows.values())
+    assert error.value.mail_outcome == "unknown" and error.value.committed_result is None
+
+
+@pytest.mark.parametrize("callback_raises", [False, True])
+def test_unknown_or_synthesized_callback_outcome_never_exposes_committed_result(callback_raises):
+    store = Store()
+
+    def callback():
+        if callback_raises:
+            raise TimeoutError("Synthetic ambiguous provider failure")
+        return budget.ProviderResult("unknown", RECEIPT, 503)
+
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send("unknown-callback", callback, category="lifecycle", session_factory=store.session)
+    assert store.commits == 2
+    assert error.value.mail_outcome == "unknown" and error.value.committed_result is None
+
+
+def test_begin_commit_failure_and_historical_failure_never_expose_a_new_committed_result():
+    store = Store()
+    store.fail_commit = 1
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send("unknown-begin", lambda: pytest.fail("Unacknowledged begin must not send"),
+            category="lifecycle", session_factory=store.session)
+    assert error.value.mail_outcome == "unknown" and error.value.committed_result is None
+    store.fail_commit = None
+    with pytest.raises(budget.MailBudgetError):
+        budget.guarded_send("historical-permanent", lambda: budget.ProviderResult("permanent", RECEIPT, 400),
+            category="lifecycle", session_factory=store.session)
+    with pytest.raises(budget.MailBudgetError) as error:
+        budget.guarded_send("historical-permanent", lambda: pytest.fail("Permanent failure cannot resend"),
+            category="lifecycle", session_factory=store.session)
+    assert error.value.mail_outcome == "permanent" and error.value.committed_result is None
+    assert budget.MailBudgetError("deferred").committed_result is None
 
 
 @pytest.mark.parametrize("failure", ["exception", "unknown_receipt", "begin_commit_unknown"])
@@ -686,10 +878,12 @@ def test_worker_never_rewinds_stale_send_and_explicitly_excludes_privacy_from_ge
     assert all(values[NotificationOutbox.status] == "mail_unknown" for values in updates)
     selectors = [str(condition.compile(compile_kwargs={"literal_binds": True}))
         for entry in store.trace if isinstance(entry, tuple) and entry[0] == "filter" for condition in entry[1]]
-    assert any("NOT IN ('password_reset', 'password_changed', 'privacy_erasure')" in value for value in selectors)
+    assert any("NOT IN ('password_reset', 'password_changed', 'privacy_erasure', 'weekly_digest')"
+               in value for value in selectors)
 
 
 def test_central_send_wraps_actual_provider_callback_with_original_key_and_no_open_sql_session(monkeypatch):
+    from app.domains.notifications import provider as mail_provider
     store, calls = Store(), []
     original = budget.guarded_send
     monkeypatch.setenv("RESEND_API_KEY", "synthetic-provider-key")
@@ -697,26 +891,20 @@ def test_central_send_wraps_actual_provider_callback_with_original_key_and_no_op
     monkeypatch.setattr(budget, "guarded_send", lambda key, callback, **kwargs:
         original(key, callback, session_factory=store.session, **kwargs))
 
-    class Client:
-        def __init__(self, **kwargs):
-            pass
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'{"id":"synthetic-provider-receipt"}'
 
-        def __enter__(self):
-            return self
+    def provider_request(request):
+        assert store.active == 0
+        calls.append((str(request.url), dict(request.headers), json.loads(request.content)))
+        return httpx.Response(200, headers={"Content-Type": "application/json"}, stream=Body())
 
-        def __exit__(self, *args):
-            pass
-
-        def post(self, url, *, headers, json):
-            assert store.active == 0
-            calls.append((url, headers, json))
-            return httpx.Response(200, content=b'{"id":"synthetic-provider-receipt"}')
-
-    monkeypatch.setattr(service.httpx, "Client", Client)
+    monkeypatch.setattr(mail_provider.httpx, "AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(provider_request))
     item = NotificationOutbox(notification_type="welcome", recipient=store.user.email, payload={}, idempotency_key="original-provider-key")
-    service._send(item)
-    service._send(item)
-    assert len(calls) == 1 and calls[0][1]["Idempotency-Key"] == "original-provider-key"
+    result = service._send(item)
+    assert service._send(item) == result and result.outcome == "sent"
+    assert len(calls) == 1 and calls[0][1]["idempotency-key"] == "original-provider-key"
     assert calls[0][0] == "https://api.resend.com/emails"
     serialized = json.dumps([row.after_state for row in store.rows.values()])
     assert store.user.email not in serialized and "original-provider-key" not in serialized and "synthetic-provider-key" not in serialized

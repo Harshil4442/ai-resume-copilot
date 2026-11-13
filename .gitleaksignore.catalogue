@@ -9,3 +9,12 @@
 249432d9c7bb15fd4d7d7b7ba19f16b74ecc91d2:infra/gcp/document_refresh_transition.py:generic-api-key:46
 # Public application source digest qualified by the schema25 rollback rehearsal.
 fda08df9dce4b24fabaa59234101468b084e9d9e:infra/gcp/unified_credit_schema25_release.py:generic-api-key:53
+# Public OpenAPI and generated client SHA-256 values in release evidence.
+8ab77311dee9c7e8d32b7df0b420be6db270213a:docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json:generic-api-key:34
+8ab77311dee9c7e8d32b7df0b420be6db270213a:docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json:generic-api-key:45
+8ab77311dee9c7e8d32b7df0b420be6db270213a:docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json:generic-api-key:56
+0c5e4ce3383c4f5226c2b88768fdf3ae1ba84680:docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json:generic-api-key:43
+0c5e4ce3383c4f5226c2b88768fdf3ae1ba84680:docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json:generic-api-key:58
+# Verified Git commit and fixture source SHA-256.
+e040049077fbbf330e7c51adeac7e9ad1c312511:docs/delivery/evidence/2026-11-05-employer-source-acceptance.json:sourcegraph-access-token:316
+87fae57662a80e061ad380b133478f834d56179e:backend/tests/fixtures/schema26_notification_reader/PROVENANCE.json:generic-api-key:16

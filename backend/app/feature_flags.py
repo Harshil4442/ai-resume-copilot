@@ -10,6 +10,7 @@ FEATURE_DEFAULTS: dict[str, tuple[bool, int]] = {
     "evidence_tailoring": (True, 100),
     "async_analysis": (True, 100),
     "referral_credit": (False, 0),
+    "weekly_digest": (False, 0),
 }
 
 
@@ -65,13 +66,22 @@ def decide_feature(
 ) -> FeatureDecision:
     if key not in FEATURE_DEFAULTS:
         raise KeyError(f"Unknown feature: {key}")
+    digest = hashlib.sha256(f"hirewiz:{key}:{user_id}".encode()).digest()
+    bucket = int.from_bytes(digest[:4], "big") % 100
+    if key == "weekly_digest":
+        from .domains.notifications.native import require_digest_enabled
+        from .domains.recovery.store import GuardUnavailable
+
+        try:
+            require_digest_enabled()
+            return FeatureDecision(key, True, "on", 100, bucket, "percentage")
+        except GuardUnavailable:
+            return FeatureDecision(key, False, "off", 0, bucket, "kill_switch")
+
     default_enabled, default_percent = _runtime_defaults(key)
     prefix = f"FEATURE_{key.upper()}"
     globally_enabled = _env_bool(f"{prefix}_ENABLED", default_enabled)
     rollout_percent = _env_percent(f"{prefix}_ROLLOUT_PERCENT", default_percent)
-    digest = hashlib.sha256(f"hirewiz:{key}:{user_id}".encode()).digest()
-    bucket = int.from_bytes(digest[:4], "big") % 100
-
     internal_emails = _csv("FEATURE_INTERNAL_EMAILS")
     invited_ids = _csv(f"{prefix}_USER_IDS")
     if not globally_enabled:

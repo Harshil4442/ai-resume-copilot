@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "scope": "Aggregate production shadow baseline for Stage 6 and R02",
+  "observed_at": "2026-11-13T12:07:43.561683+00:00",
+  "report_source": "8b8f8cfd6844493413a0f1a50915bbe2da67728e",
+  "observation_sha256": "9bfe35775ed4c49ed49aced25b721b99d02e64bb971545d71ca7d6c88a4027df",
+  "observation_window_utc": {
+    "start_inclusive": "2026-11-06T00:00:00+00:00",
+    "end_exclusive": "2026-11-13T00:00:00+00:00"
+  },
+  "production_database_identity_verified": true,
+  "transaction_read_only": true,
+  "qualifying_operations": 0,
+  "discovery_batches": 0,
+  "retained_provider_liability_counts": {
+    "outcome_unknown": 2,
+    "settled": 3
+  },
+  "cost_basis": "Reviewed estimates",
+  "sql_mutations": 0,
+  "model_calls": 0,
+  "supplier_invoices_verified": false,
+  "representative_release_evidence": false,
+  "release_qualified": false
+}

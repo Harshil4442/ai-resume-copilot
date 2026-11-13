@@ -18,7 +18,9 @@ import { loadHostedCheckout } from "./hostedCheckout";
 import { fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
-const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pending" || (order?.status === "paid" && !order.fulfilled);
+const failedButPayable = (order: UnifiedCreditOrder | null) => order?.status === "failed"
+  && order.payment_status === "payment_failed" && Boolean(order.provider_order_id);
+const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pending" || (order?.status === "paid" && !order.fulfilled) || failedButPayable(order);
 
 export function UnifiedBillingPanel({ legacyPending, requestedSku, participationRevision = 0 }: { legacyPending: boolean; requestedSku: string | null; participationRevision?: number }) {
   const client = useQueryClient();
@@ -26,6 +28,8 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
   const statusBudgets = useRef(new Map<string, StatusReadBudget>());
   const mounted = useRef(true), actionPending = useRef(false), pollId = useRef(0);
   const catalogRead = useRef(0);
+  const recentReadId = useRef(0);
+  const currentOrder = useRef<UnifiedCreditOrder | null>(null);
   const quoteIntent = useRef<{ sku: UnifiedPassSku; key: string } | null>(null);
   const orderIntent = useRef<{ quoteId: string; key: string } | null>(null);
   const [catalog, setCatalog] = useState<UnifiedCreditCatalog | null>(null), [catalogLoading, setCatalogLoading] = useState(true);
@@ -59,6 +63,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     .finally(() => { if (mounted.current) setHistoryBusy(false); }), []);
   const acceptStatus = useCallback(async (value: UnifiedCreditOrder) => {
     if (!mounted.current) return;
+    currentOrder.current = value;
     setOrder(value); setKnownOrderId(value.order_id); setUnknownAttempt(false);
     if (value.status === "paid" && value.fulfilled) {
       setError(null); setMessage("Payment confirmed. Your purchased credits have been delivered."); setReconciliationHeld(false);
@@ -69,37 +74,51 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was refunded. Review the refund and balance in your history."); setReconciliationHeld(false);
       await Promise.allSettled([refreshWallet(true), refreshHistory()]);
-    } else if (value.status === "failed") {
+    } else if (value.status === "failed" && !failedButPayable(value)) {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was not completed. Review a fresh quote before a new purchase."); setReconciliationHeld(false);
     }
   }, [refreshHistory, refreshWallet]);
-  const readOrder = useCallback(async (identity: string, signal?: AbortSignal) => {
+  const readRecent = useCallback((afterResolution = false) => {
+    const read = ++recentReadId.current;
+    return apiGet<unknown>("/v1/credits/recent-order").then(async (result) => {
+      const value = result === null ? null : parseUnifiedCreditOrder(result);
+      if (result !== null && !value) throw new Error("Payment status could not be verified.");
+      if (!mounted.current || recentReadId.current !== read) return;
+      if (value && (!afterResolution || unsettled(value))) await acceptStatus(value);
+      if (mounted.current && recentReadId.current === read) setRecentRead("ready");
+    }).catch(() => { if (mounted.current && recentReadId.current === read) setRecentRead("failed"); });
+  }, [acceptStatus]);
+  const readOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
     const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`, signal));
     signal?.throwIfAborted();
     if (!mounted.current) throw new DOMException("Status check stopped", "AbortError");
     if (!value || value.order_id !== identity) throw new Error("The original payment status could not be verified.");
-    await acceptStatus(value); return value;
-  }, [acceptStatus]);
-  const readRecent = useCallback(() => apiGet<unknown>("/v1/credits/recent-order").then(async (result) => {
-    const value = result === null ? null : parseUnifiedCreditOrder(result);
-    if (result !== null && !value) throw new Error("Payment status could not be verified.");
-    if (!mounted.current) return;
-    if (value) await acceptStatus(value);
-    if (mounted.current) setRecentRead("ready");
-  }).catch(() => { if (mounted.current) setRecentRead("failed"); }), [acceptStatus]);
+    const previous = currentOrder.current;
+    const expected = originalTerms ?? (previous?.order_id === identity ? previous.accepted_quote : undefined);
+    if (expected && !sameUnifiedPurchaseQuote(value.accepted_quote, expected)) throw new Error("The original order terms changed. Checkout remains paused.");
+    const refresh = !unsettled(value) && (previous?.order_id !== identity || unsettled(previous));
+    if (refresh) {
+      recentReadId.current += 1;
+      setRecentRead("loading");
+      setIndiaConfirmed(false);
+    }
+    await acceptStatus(value);
+    if (refresh && mounted.current && !signal?.aborted) await readRecent(true);
+    return value;
+  }, [acceptStatus, readRecent]);
 
   useEffect(() => {
     mounted.current = true;
     void Promise.allSettled([refreshWallet(), refreshHistory(), readRecent()]);
-    return () => { mounted.current = false; pollId.current += 1; statusWork.current?.abort(); };
+    return () => { mounted.current = false; pollId.current += 1; recentReadId.current += 1; statusWork.current?.abort(); statusWork.current = null; };
   }, [readRecent, refreshHistory, refreshWallet]);
   useEffect(() => { void refreshCatalog(); }, [refreshCatalog, participationRevision]);
   useEffect(() => { if (quote) quoteSection.current?.focus(); }, [quote]);
 
   const purchaseHeld = legacyPending || recentRead !== "ready" || unsettled(order) || unknownAttempt;
   async function prepareQuote(sku: UnifiedPassSku, fresh = false) {
-    if (purchaseHeld || actionPending.current || busy || catalog?.checkout_enabled !== true
+    if (purchaseHeld || actionPending.current || statusWork.current || busy || catalog?.checkout_enabled !== true
       || !catalog.products.some((product) => product.sku === sku && product.purchase_enabled)) return;
     actionPending.current = true; setReviewingSku(sku); setError(null); setIndiaConfirmed(false);
     if (fresh || quoteIntent.current?.sku !== sku) quoteIntent.current = { sku, key: crypto.randomUUID() };
@@ -111,8 +130,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     finally { actionPending.current = false; if (mounted.current) setReviewingSku(null); }
   }
   const checkStatus = useCallback(async (identity: string, automatic = false) => {
-    if (!mounted.current) return;
-    statusWork.current?.abort();
+    if (!mounted.current || statusWork.current || (!automatic && actionPending.current)) return;
     const work = new AbortController(); statusWork.current = work;
     const run = ++pollId.current;
     const budget = statusBudgets.current.get(identity) ?? newStatusReadBudget();
@@ -123,11 +141,14 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
         read: (signal) => readOrder(identity, signal), active: (value) => Boolean(unsettled(value)) });
       if (mounted.current && run === pollId.current && outcome !== "settled") setMessage("Payment confirmation is pending. Automatic checks are paused; use Check payment status for one fresh read. If you were charged, do not pay again.");
     } catch (failure) { if (mounted.current && run === pollId.current && !work.signal.aborted) setError(messageOf(failure, "Could not verify payment.")); }
-    finally { if (mounted.current && run === pollId.current) setBusy(false); }
+    finally {
+      if (statusWork.current === work) statusWork.current = null;
+      if (mounted.current && run === pollId.current) setBusy(false);
+    }
   }, [readOrder]);
 
   async function startPayment(accepted: UnifiedPurchaseQuote, resumeOrder?: UnifiedCreditOrder) {
-    if (actionPending.current || busy || legacyPending || recentRead !== "ready" || catalog?.checkout_enabled !== true
+    if (actionPending.current || statusWork.current || busy || legacyPending || recentRead !== "ready" || catalog?.checkout_enabled !== true
       || !indiaConfirmed || accepted.eligible_services.length === 0
       || (resumeOrder ? !resumeOrder.checkout_available || reconciliationHeld : unsettled(order))) return;
     actionPending.current = true; setBusy(true); setError(null);
@@ -139,8 +160,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       if (!checkout || (resumeOrder && (checkout.order_id !== resumeOrder.order_id || checkout.provider_order_id !== resumeOrder.provider_order_id))) throw new Error("Checkout terms could not be verified. Check the original payment before another attempt.");
       if (!mounted.current) return;
       setKnownOrderId(checkout.order_id);
-      const current = await readOrder(checkout.order_id);
-      if (!sameUnifiedPurchaseQuote(current.accepted_quote, accepted)) throw new Error("The original order terms changed. Checkout remains paused.");
+      const current = await readOrder(checkout.order_id, undefined, accepted);
       if (current.status === "paid" && current.fulfilled) { setBusy(false); return; }
       if (!current.checkout_available || current.provider_order_id !== checkout.provider_order_id) throw new Error("The original payment needs reconciliation before checkout can resume.");
       await loadHostedCheckout();
@@ -179,14 +199,15 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     } finally { actionPending.current = false; }
   }
   async function reconcile() {
-    if (!order || !unsettled(order) || actionPending.current || busy) return;
+    if (!order || !unsettled(order) || actionPending.current || statusWork.current || busy) return;
     actionPending.current = true; setBusy(true); setIndiaConfirmed(false); setReconciliationHeld(true); setError(null);
     try {
       const result = await apiPostJson<{ resolution: string; message: string }>(`/billing/orders/${encodeURIComponent(order.order_id)}/reconcile`, undefined);
       if (!["unresolved", "checkout_ready", "settled"].includes(result.resolution)) throw new Error("Payment reconciliation could not be verified.");
-      const refreshed = await readOrder(order.order_id);
-      if (!sameUnifiedPurchaseQuote(refreshed.accepted_quote, order.accepted_quote)) throw new Error("The original terms need billing support review.");
-      if (mounted.current) { setReconciliationHeld(result.resolution === "unresolved"); setMessage(result.message); }
+      await readOrder(order.order_id, undefined, order.accepted_quote);
+      if (mounted.current && currentOrder.current?.order_id === order.order_id) {
+        setReconciliationHeld(result.resolution === "unresolved"); setMessage(result.message);
+      }
     } catch (failure) { if (mounted.current) setError(messageOf(failure, "Could not reconcile the original payment.")); }
     finally { actionPending.current = false; if (mounted.current) setBusy(false); }
   }

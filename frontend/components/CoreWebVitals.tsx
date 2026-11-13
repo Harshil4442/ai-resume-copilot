@@ -1,8 +1,9 @@
 "use client";
 
 import { useReportWebVitals } from "next/web-vitals";
+import { isPasswordResetPath, isPasswordResetUrl } from "../lib/passwordResetPrivacy";
 
-type Vital = { name: string; value: number; id: string; rating: string };
+type Vital = { name: string; value: number; id: string; rating: string; navigationURL?: string };
 
 // Keep identifiers, query strings and candidate content out of performance events.
 export function vitalProperties(metric: Vital, pathname: string, width: number, connection?: string) {
@@ -28,12 +29,15 @@ function consentStillGranted() {
 }
 
 function report(metric: Vital) {
-  if (!consentStillGranted() || !window.gtag) return;
+  const { pathname, origin } = window.location;
+  // The observer can report after navigation, even after this component unmounts.
+  if (isPasswordResetPath(pathname) || isPasswordResetUrl(metric.navigationURL)
+    || !consentStillGranted() || !window.gtag) return;
   const connection = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection?.effectiveType;
-  const properties = vitalProperties(metric, window.location.pathname, window.innerWidth, connection);
+  const properties = vitalProperties(metric, pathname, window.innerWidth, connection);
   if (properties) window.gtag("event", "web_vital", {
     ...properties,
-    page_location: window.location.origin + "/" + properties.route_group,
+    page_location: origin + "/" + properties.route_group,
     page_referrer: "", page_title: "HireWiz performance",
   });
 }

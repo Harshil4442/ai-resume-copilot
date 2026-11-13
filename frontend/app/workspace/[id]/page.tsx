@@ -34,6 +34,7 @@ import {
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 
 import { ResumeBulletSuggestions } from "../../../components/career/ResumeBulletSuggestions";
 import { MatchQuestionPanel } from "../../../components/career/MatchQuestionPanel";
@@ -52,8 +53,9 @@ import {
   type AnalysisRun,
   type EvidenceImport,
   type EvidenceItem,
-  type TranscriptionReview,
-  type OpportunityDetail,
+  type WorkspaceEvidenceDetail,
+  type ApplicationEvent,
+  type Opportunity,
   type OpportunityMatch,
   type Reminder,
   type ResumeVersion,
@@ -68,11 +70,14 @@ import { trackEvent } from "../../../lib/analytics";
 import { retryRead } from "../../../lib/readQueryPolicy";
 import { useProgressQuery } from "../../../lib/useProgressQuery";
 import type { ResumeSourceFormat } from "../../../lib/types";
-import { useResumeOptions } from "../../../lib/resumeOptions";
+import { useWorkspace, useWorkspacePage, useWorkspaceResumes, workspaceKey, workspaceConnectionKey, type PendingWorkspaceConnection } from "../../../lib/workspacePages";
+import { WorkspaceItemDetails, WorkspacePageControls, WorkspaceRoleBody, WorkspaceVersionDetails } from "../../../components/career/WorkspaceHistory";
 import { ResumeSelector, ResumeVersionMetadata } from "../../../components/ResumeSelector";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
 type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" | "unknown_metadata" | "confirmed_absent" | "ready";
+type MatchScope = { ownerKey: string; opportunityId: string; resumeId: number };
+type ScopedMatchRun = { runId: string; scope: MatchScope };
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
 type InterviewResult = {
   mode?: "curated" | "enhanced";
@@ -139,11 +144,11 @@ function RunStatusCheck({ query, label }: { query: ReturnType<typeof useRun>; la
   return <div role="status" className="mt-4 space-y-3 text-sm"><p>Automatic progress checks are paused. The existing request may still be running; checking status does not start it again.</p><Button variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>Check {label} status</Button></div>;
 }
 
-function useRunResult(run: AnalysisRun | undefined) {
+function useRunResult(run: AnalysisRun | undefined, enabled = true) {
   return useQuery({
     queryKey: ["analysis-result", run?.id],
-    queryFn: () => apiGet<AnalysisResult>(`/v1/analysis-runs/${run!.id}/result`),
-    enabled: run?.status === "succeeded",
+    queryFn: ({ signal }) => apiGet<AnalysisResult>(`/v1/analysis-runs/${run!.id}/result`, signal),
+    enabled: enabled && run?.status === "succeeded",
   });
 }
 
@@ -177,7 +182,7 @@ function MatchSummary({ match }: { match: OpportunityMatch }) {
   );
 }
 
-function OpportunityContent() {
+function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; authenticated: boolean }) {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const opportunityId = params.id;
@@ -186,9 +191,12 @@ function OpportunityContent() {
   const [matchMode, setMatchMode] = useState<"basic" | "enhanced">("basic");
   const [tailoringScope, setTailoringScope] = useState<"standard" | "extended">("standard");
   const [interviewMode, setInterviewMode] = useState<"curated" | "enhanced">("curated");
-  const [matchRunId, setMatchRunId] = useState<string | null>(null);
+  const [scopedMatchRun, setScopedMatchRun] = useState<ScopedMatchRun | null>(null);
+  const matchRunId = scopedMatchRun?.runId ?? null;
+  const quotedMatchScope = useRef<MatchScope | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
+  const [learningMatchOpened, setLearningMatchOpened] = useState(false);
   const [reminderMessage, setReminderMessage] = useState("");
   const [reminderDate, setReminderDate] = useState("");
   const [contactName, setContactName] = useState("");
@@ -197,6 +205,7 @@ function OpportunityContent() {
   const [stageError, setStageError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome>("offer_accepted");
   const [outcomeNotes, setOutcomeNotes] = useState("");
+  const [openedEvidence, setOpenedEvidence] = useState<{ source: number; id: string } | null>(null);
   const [editingEvidenceId, setEditingEvidenceId] = useState<string | null>(null);
   const [editingEvidenceVersion, setEditingEvidenceVersion] = useState<string | null>(null);
   const [evidenceDraft, setEvidenceDraft] = useState("");
@@ -210,11 +219,32 @@ function OpportunityContent() {
   const resumeSelectRef = useRef<HTMLSelectElement>(null);
   const tailoringIntent = useRef<TailoringIntent | null>(null);
 
-  const opportunity = useQuery({
-    queryKey: ["opportunity", opportunityId],
-    queryFn: () => apiGet<OpportunityDetail>(`/v1/opportunities/${opportunityId}`),
+  const workspace = useWorkspace(ownerKey, opportunityId, tab, authenticated, submittedVersionId || undefined);
+  const pendingConnection = queryClient.getQueryData<PendingWorkspaceConnection>(workspaceConnectionKey(ownerKey, opportunityId));
+  const prefix = workspaceKey(ownerKey, opportunityId);
+  const opportunity = { ...workspace, data: workspace.data?.opportunity };
+  const pageArgs = { owner: ownerKey, opportunity: opportunityId, tab, source: opportunity.data?.resume_id,
+    enabled: workspace.isSuccess && !workspace.isError, refreshing: workspace.isFetching, refresh: () => workspace.refetch() };
+  const versionPage = useWorkspacePage({ ...pageArgs, collection: "resume_versions", seed: workspace.data?.pages.resume_versions });
+  const contactPage = useWorkspacePage({ ...pageArgs, collection: "contacts", seed: workspace.data?.pages.contacts, enabled: pageArgs.enabled && tab === "overview" });
+  const reminderPage = useWorkspacePage({ ...pageArgs, collection: "reminders", seed: workspace.data?.pages.reminders, enabled: pageArgs.enabled && tab === "overview" });
+  const evidencePage = useWorkspacePage({ ...pageArgs, collection: "evidence", seed: workspace.data?.pages.evidence, enabled: pageArgs.enabled && tab === "resume" });
+  const activityPage = useWorkspacePage({ ...pageArgs, collection: "activity", seed: workspace.data?.pages.activity, enabled: pageArgs.enabled && tab === "activity" });
+  const resumes = useWorkspaceResumes({ owner: ownerKey, opportunity: opportunityId, seed: workspace.data?.resumes,
+    loading: workspace.isPending, fetching: workspace.isFetching, error: workspace.error, refresh: () => workspace.refetch() });
+  const openedEvidenceId = openedEvidence?.source === opportunity.data?.resume_id ? openedEvidence?.id : undefined;
+  const evidenceDetail = useQuery({
+    queryKey: [...prefix, "detail", opportunity.data?.resume_id, "evidence", openedEvidenceId],
+    queryFn: async ({ signal }) => {
+      const detail = await apiGet<WorkspaceEvidenceDetail>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/workspace/evidence/${encodeURIComponent(openedEvidenceId!)}`, signal);
+      if (detail.evidence.id !== openedEvidenceId || detail.evidence.resume_id !== opportunity.data?.resume_id) {
+        throw new Error("The requested evidence could not be verified.");
+      }
+      return detail;
+    },
+    enabled: authenticated && tab === "resume" && workspace.isSuccess && Boolean(openedEvidenceId),
+    retry: retryRead, refetchOnWindowFocus: false, refetchOnReconnect: false,
   });
-  const resumes = useResumeOptions({ selectedId: opportunity.data?.resume_id });
   const creditAvailability = useQuery(creditAvailabilityOptions());
   const pricingKnown = creditAvailability.isSuccess && creditAvailability.data !== null;
   const unifiedServices = Boolean(creditAvailability.data?.catalog_enabled || creditAvailability.data?.execution_enabled);
@@ -245,50 +275,53 @@ function OpportunityContent() {
     retry: false,
     refetchOnWindowFocus: false,
   });
-  const match = useQuery({
-    queryKey: ["opportunity-match", opportunityId],
-    queryFn: () => apiGet<OpportunityMatch>(`/v1/opportunities/${opportunityId}/match`),
-    enabled: Boolean(opportunity.data?.latest_match_id),
-    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && retryRead(count, error),
-  });
-  const evidence = useQuery({
-    queryKey: ["evidence", opportunity.data?.resume_id],
-    queryFn: () => apiGet<EvidenceItem[]>(`/v1/evidence-items?resume_id=${opportunity.data!.resume_id}`),
-    enabled: Boolean(opportunity.data?.resume_id) && tab === "resume",
-  });
-  const transcription = useQuery({
-    queryKey: ["transcription-review", opportunity.data?.resume_id],
-    queryFn: () => apiGet<TranscriptionReview>(`/v1/evidence-items/transcription-review/${opportunity.data!.resume_id}`),
-    enabled: Boolean(opportunity.data?.resume_id) && tab === "resume" && sourceReady,
-  });
+  const matchSourceState = workspace.data?.match_source_state ?? "unavailable";
+  const match = { data: matchSourceState === "current" ? workspace.data?.match : undefined };
+  const evidence = { ...evidencePage, data: evidencePage.items, isError: workspace.isError || evidencePage.isError, isSuccess: workspace.isSuccess && !evidencePage.isError,
+    refetch: evidencePage.retry, isLoading: evidencePage.isLoading };
+  const transcriptionData = evidenceDetail.isSuccess ? evidenceDetail.data.transcription : null;
+  const transcription = { isError: evidenceDetail.isError || Boolean(evidenceDetail.data?.transcription_unavailable),
+    isFetching: evidenceDetail.isFetching, refetch: () => evidenceDetail.refetch(),
+    data: transcriptionData ? { ...transcriptionData, sections: transcriptionData.section ? [transcriptionData.section] : [] } : null };
   function refreshEvidenceReview() {
-    return Promise.all([queryClient.invalidateQueries({ queryKey: ["evidence", opportunity.data?.resume_id] }),
-      queryClient.invalidateQueries({ queryKey: ["transcription-review", opportunity.data?.resume_id] })]);
+    return queryClient.invalidateQueries({ queryKey: prefix });
   }
   const skillRoi = useQuery({
-    queryKey: ["skill-roi"],
-    queryFn: () => apiGet<SkillRoi>("/v1/skill-roi"),
+    queryKey: ["skill-roi", ownerKey],
+    queryFn: ({ signal }) => apiGet<SkillRoi>("/v1/skill-roi", signal),
     enabled: tab === "learning",
   });
+  const learningMatch = useQuery({
+    queryKey: [...prefix, "learning-match", opportunity.data?.resume_id, opportunity.data?.latest_match_id],
+    queryFn: ({ signal }) => apiGet<OpportunityMatch>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/match?resume_id=${opportunity.data!.resume_id}`, signal),
+    enabled: tab === "learning" && learningMatchOpened && workspace.isSuccess && matchSourceState === "current" && Boolean(opportunity.data?.resume_id),
+    retry: retryRead, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  });
+  const matchRunCurrent = Boolean(scopedMatchRun && workspace.isSuccess
+    && scopedMatchRun.scope.ownerKey === ownerKey && scopedMatchRun.scope.opportunityId === opportunityId
+    && scopedMatchRun.scope.resumeId === opportunity.data?.resume_id);
   const matchRun = useRun(matchRunId);
-  const matchRunResult = useRunResult(matchRun.data);
+  const matchRunResult = useRunResult(matchRun.data, matchRunCurrent);
   const interviewRun = useRun(interviewRunId);
   const interviewResult = useRunResult(interviewRun.data);
   const tailorRun = useRun(tailorRunId);
   const tailorResult = useRunResult(tailorRun.data);
 
   useEffect(() => {
+    if (workspace.isSuccess) queryClient.removeQueries({ queryKey: workspaceConnectionKey(ownerKey, opportunityId), exact: true });
+  }, [opportunityId, ownerKey, queryClient, workspace.isSuccess]);
+
+  useEffect(() => {
     if (matchRun.data?.status === "succeeded") {
-      void queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] });
-      void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      void queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     }
-  }, [matchRun.data?.status, opportunityId, queryClient]);
+  }, [matchRun.data?.status, opportunityId, ownerKey, queryClient]);
 
   useEffect(() => {
     if (tailorRun.data?.status === "succeeded") {
-      void queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      void queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     }
-  }, [opportunityId, queryClient, tailorRun.data?.status]);
+  }, [opportunityId, ownerKey, queryClient, tailorRun.data?.status]);
 
   useEffect(() => {
     let refreshAccount = false;
@@ -311,25 +344,25 @@ function OpportunityContent() {
 
   const transition = useMutation({
     mutationFn: ({ stage, resumeVersionId }: { stage: string; resumeVersionId?: string }) =>
-      apiPostJson<OpportunityDetail>(`/v1/opportunities/${opportunityId}/stage`, {
+      apiPostJson<Opportunity>(`/v1/opportunities/${opportunityId}/stage`, {
         stage,
         resume_version_id: resumeVersionId || null,
       }),
     onSuccess: async (_, variables) => {
       setStageError(null);
       trackEvent("opportunity_stage_changed", { stage: variables.stage });
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
       await queryClient.invalidateQueries({ queryKey: ["opportunities"] });
     },
   });
   const recordOutcome = useMutation({
-    mutationFn: () => apiPostJson<OpportunityDetail>(`/v1/opportunities/${opportunityId}/outcome`, {
+    mutationFn: () => apiPostJson<Opportunity>(`/v1/opportunities/${opportunityId}/outcome`, {
       outcome,
       notes: outcomeNotes.trim() || null,
     }),
     onSuccess: async (updated) => {
       trackEvent("opportunity_outcome_recorded", { outcome: updated.outcome || outcome });
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
       await queryClient.invalidateQueries({ queryKey: ["opportunities"] });
     },
   });
@@ -343,8 +376,10 @@ function OpportunityContent() {
   const connectResume = useMutation({
     mutationFn: (resumeId: string) => apiPatchJson(`/v1/opportunities/${opportunityId}`, { resume_id: resumeId ? Number(resumeId) : null }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
-      await queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] });
+      setSubmittedVersionId(""); setOpenedEvidence(null); setEditingEvidenceId(null); setEditingEvidenceVersion(null);
+      setEvidenceDraft(""); setOpenedTranscription(null); setComparedTranscription(false); setReviewedVersionIds({});
+      setScopedMatchRun(null); setTailorRunId(null); setInterviewRunId(null);
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     },
   });
   const reviewContext = {
@@ -354,9 +389,18 @@ function OpportunityContent() {
   const selectionIdentity = JSON.stringify({ opportunity: opportunity.data, evidence: evidence.data });
   const matchAction = useQuotedAnalysis({
     request: { operation: "job_match", opportunity_id: opportunityId, input: { resume_id: opportunity.data?.resume_id, mode: "enhanced" } },
-    context: reviewContext, selectionKey: `${selectionIdentity}:${matchMode}`, availability: creditAvailability.data,
-    onRun: (run) => setMatchRunId(run.id),
+    context: reviewContext, selectionKey: JSON.stringify([ownerKey, opportunityId, opportunity.data?.resume_id, selectionIdentity, matchMode]), availability: creditAvailability.data,
+    onRun: (run) => {
+      const scope = quotedMatchScope.current;
+      if (scope && run.operation === "job_match" && run.opportunity_id === scope.opportunityId) setScopedMatchRun({ runId: run.id, scope });
+    },
   });
+  function requestQuotedMatch(action: "requestQuote" | "loadSaved") {
+    if (matchAction.pending || matchAction.attempted || !opportunity.data?.resume_id) return;
+    quotedMatchScope.current = { ownerKey, opportunityId, resumeId: opportunity.data.resume_id };
+    matchAction[action]();
+  }
+  const matchReviewAction = { ...matchAction, requestQuote: () => requestQuotedMatch("requestQuote"), loadSaved: () => requestQuotedMatch("loadSaved") };
   const interviewAction = useQuotedAnalysis({
     request: { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: "enhanced" } },
     context: reviewContext, selectionKey: `${selectionIdentity}:${interviewMode}`, availability: creditAvailability.data,
@@ -369,20 +413,18 @@ function OpportunityContent() {
     onRun: (run) => setTailorRunId(run.id),
   });
   const startMatch = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!opportunity.data?.resume_id) throw new Error("Connect a resume before running a match.");
-      return apiPostJson<AnalysisRun>(
+      const scope: MatchScope = { ownerKey, opportunityId, resumeId: opportunity.data.resume_id };
+      const run = await apiPostJson<AnalysisRun>(
         "/v1/analysis-runs",
-        {
-          operation: "job_match",
-          opportunity_id: opportunityId,
-          input: { resume_id: opportunity.data.resume_id, mode: matchMode },
-        },
+        { operation: "job_match", opportunity_id: scope.opportunityId, input: { resume_id: scope.resumeId, mode: matchMode } },
         { "Idempotency-Key": crypto.randomUUID() },
       );
+      return { run, scope };
     },
-    onSuccess: (run) => {
-      setMatchRunId(run.id);
+    onSuccess: ({ run, scope }) => {
+      if (run.operation === "job_match" && run.opportunity_id === scope.opportunityId) setScopedMatchRun({ runId: run.id, scope });
       trackEvent("analysis_run_created", { operation: "job_match", estimated_units: run.estimated_units });
     },
   });
@@ -400,7 +442,7 @@ function OpportunityContent() {
   const startTailoring = useMutation({
     mutationFn: (intent: TailoringIntent) => {
       if (!sourceReady) throw new Error("Check the original file status beside the tailoring actions before generating a version.");
-      if (!evidence.isSuccess || !(evidence.data || []).some((entry) => entry.approval_state === "approved")) throw new Error("Import and approve relevant evidence for the selected resume before tailoring.");
+      if (!evidence.isSuccess || !workspace.data?.approved_evidence_count) throw new Error("Import and approve relevant evidence for the selected resume before tailoring.");
       if (intent.opportunityId !== opportunityId || intent.resumeId !== opportunity.data?.resume_id) throw new Error("Review the tailoring price for the selected resume before generating a version.");
       return apiPostJson<AnalysisRun>(
         "/v1/analysis-runs",
@@ -510,7 +552,7 @@ function OpportunityContent() {
       apiPatchJson<ResumeVersion>(`/v1/resume-versions/${id}`, { approval_state: state }),
     onSuccess: async (_, variables) => {
       trackEvent("resume_version_reviewed", { approval_state: variables.state });
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     },
   });
   const downloadVersion = useMutation({
@@ -536,18 +578,11 @@ function OpportunityContent() {
   const createVersion = useMutation({
     mutationFn: () => {
       if (!opportunity.data?.resume_id || !sourceReady || !sourceResume?.source_format) throw new Error("Connect a resume with its original file first.");
-      const evidenceIds = (evidence.data || []).filter((item) => item.approval_state === "approved").map((item) => item.id);
-      return apiPostJson<ResumeVersion>("/v1/resume-versions", {
-        resume_id: opportunity.data.resume_id,
-        opportunity_id: opportunityId,
-        label: `${opportunity.data.company || opportunity.data.title} source snapshot`,
-        structured_content: { format_preservation: "source", source_format: sourceResume.source_format, source_edits: [] },
-        evidence_ids: evidenceIds,
-      });
+      return apiPostJson<ResumeVersion>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/workspace/source-snapshot`, {});
     },
     onSuccess: async () => {
       trackEvent("resume_version_created", { opportunity_id: opportunityId });
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     },
   });
   const createReminder = useMutation({
@@ -560,39 +595,45 @@ function OpportunityContent() {
     onSuccess: async () => {
       setReminderMessage("");
       setReminderDate("");
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     },
   });
   const completeReminder = useMutation({
     mutationFn: (id: string) => apiPatchJson<Reminder>(`/v1/reminders/${id}`, { status: "completed" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) }),
   });
   const createContact = useMutation({
     mutationFn: () => apiPostJson(`/v1/opportunities/${opportunityId}/contacts`, { name: contactName, role: contactRole || null }),
     onSuccess: async () => {
       setContactName("");
       setContactRole("");
-      await queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] });
+      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     },
   });
 
   const latestMatch = useMemo(() => {
-    if (matchRunResult.data?.result) return matchRunResult.data.result as unknown as OpportunityMatch;
-    return match.data;
-  }, [match.data, matchRunResult.data?.result]);
+    if (matchRunCurrent && matchRunResult.data?.result) return matchRunResult.data.result as unknown as OpportunityMatch;
+    return match.data || (matchSourceState === "current" && learningMatch.isSuccess ? learningMatch.data : undefined);
+  }, [learningMatch.data, learningMatch.isSuccess, match.data, matchRunCurrent, matchRunResult.data?.result, matchSourceState]);
 
-  if (opportunity.isLoading) return <main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>;
-  if (opportunity.isError || !opportunity.data) {
+  if (opportunity.isLoading) return <main className="app-page"><div className="page-container">{pendingConnection ? <div className="mb-6 space-y-3"><h1 className="font-display text-3xl">{pendingConnection.title}</h1><p role="status">Connected resume #{pendingConnection.resumeId}. Checking this workspace before further actions.</p></div> : null}<LoadingBlock rows={7} /></div></main>;
+  if (!opportunity.data) {
     return (
       <main className="app-page"><div className="page-container"><EmptyState icon={BriefcaseBusiness} title="Opportunity unavailable" description={opportunity.error instanceof Error ? opportunity.error.message : "This workspace could not be loaded."} action={<Button asChild variant="secondary"><Link href="/workspace"><ArrowLeft size={16} /> Back to workspace</Link></Button>} /></div></main>
     );
   }
 
   const item = opportunity.data;
-  const effectiveSubmittedVersionId = submittedVersionId || item.activity.find(
-    (event) => event.to_stage === "applied" && event.resume_version_id,
-  )?.resume_version_id || item.resume_versions[0]?.id || "";
-  const approvedCount = (evidence.data || []).filter((entry) => entry.approval_state === "approved").length;
+  const effectiveSubmittedVersionId = submittedVersionId || workspace.data?.submitted_resume_version_id || "";
+  const versionsById = new Map(versionPage.items.map((version) => [version.id, version]));
+  for (const version of [workspace.data?.submitted_resume_version, workspace.data?.selected_resume_version]) {
+    if (version) versionsById.set(version.id, version);
+  }
+  const versionOptions = Array.from(versionsById.values());
+  const approvedCount = workspace.data?.approved_evidence_count ?? 0;
+  const evidenceRows = [...evidencePage.items];
+  if (openedEvidenceId && evidenceDetail.data && evidenceDetail.data.evidence.id === openedEvidenceId
+      && !evidenceRows.some((entry) => entry.id === openedEvidenceId)) evidenceRows.push(evidenceDetail.data.evidence);
   const sourceUploadHref = `/resume?opportunity=${encodeURIComponent(opportunityId)}`;
   const sourceIssue = sourceState === "no_selection" ? "Choose a resume above before generating a tailored version or saving a source snapshot."
     : sourceState === "loading" ? "Checking whether the selected resume has its original file. Please wait."
@@ -627,12 +668,14 @@ function OpportunityContent() {
   }
 
   function refreshSourceDetails() {
-    void Promise.all([opportunity.refetch(), resumes.refetch()]);
+    void workspace.refetch();
   }
 
   return (
     <main className="app-page">
       <div className="page-container">
+        {workspace.isError ? <div role="alert" className="mb-5 space-y-3"><p>The workspace could not be refreshed. Your visible drafts are retained; refresh before making changes.</p><Button variant="secondary" onClick={() => void workspace.refetch()}>Refresh workspace</Button></div> : null}
+        <fieldset className="m-0 min-w-0 border-0 p-0" disabled={workspace.isError}>
         <Link href="/workspace" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /> Opportunities</Link>
         <header className="mt-5 space-y-6 border-b border-border pb-7">
           <div className="min-w-0">
@@ -643,7 +686,7 @@ function OpportunityContent() {
             <h1 className="font-display mt-3 max-w-4xl break-words text-4xl font-normal leading-tight text-foreground sm:text-5xl">{item.title}</h1>
             <p className="mt-2 text-sm font-semibold text-muted-foreground">{item.company || "Company not set"}{item.location ? ` · ${item.location}` : ""}</p>
           </div>
-          <div className={`grid gap-4 rounded-xl border border-border bg-surface/60 p-4 sm:grid-cols-2 sm:p-5 ${item.resume_versions.length ? "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"}`}>
+          <div className={`grid gap-4 rounded-xl border border-border bg-surface/60 p-4 sm:grid-cols-2 sm:p-5 ${versionOptions.length ? "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]" : "xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"}`}>
             <ResumeSelector catalog={resumes} selectRef={resumeSelectRef} value={item.resume_id || ""} emptyLabel="Not connected" disabled={connectResume.isPending} onChange={(value) => connectResume.mutate(value)} format={(resume) => `${resume.filename} · #${resume.id} · ${resume.source_available === false ? "needs upload" : resume.source_available === true && ["pdf", "docx", "tex", "texzip"].includes(resume.source_format || "") ? `${(resume.source_format || "").toUpperCase()} original saved` : "source status unknown"}`} />
             <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
               Application stage
@@ -652,7 +695,7 @@ function OpportunityContent() {
                 value={item.stage}
                 onChange={(event) => {
                   const nextStage = event.target.value;
-                  if (nextStage === "applied" && !effectiveSubmittedVersionId) {
+                  if (nextStage === "applied" && (!effectiveSubmittedVersionId || !versionsById.has(effectiveSubmittedVersionId))) {
                     setStageError("Create and select the exact resume version you submitted.");
                     return;
                   }
@@ -666,16 +709,19 @@ function OpportunityContent() {
                 {stages.map((value) => <option key={value} value={value}>{stageLabels[value]}</option>)}
               </select>
             </label>
-            {item.resume_versions.length ? (
-              <label className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
-                Submitted version
-                <select className="field-control min-w-0 truncate pr-8" title={item.resume_versions.find((version) => version.id === effectiveSubmittedVersionId)?.label} value={effectiveSubmittedVersionId} onChange={(event) => setSubmittedVersionId(event.target.value)}>
-                  {item.resume_versions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}
+            {versionOptions.length || effectiveSubmittedVersionId ? (
+              <div className="grid min-w-0 gap-2 text-xs font-bold text-muted-foreground">
+                <label htmlFor="submitted-resume-version">Submitted version</label>
+                <select id="submitted-resume-version" className="field-control min-w-0 truncate pr-8" title={versionOptions.find((version) => version.id === effectiveSubmittedVersionId)?.label} value={effectiveSubmittedVersionId} onChange={(event) => setSubmittedVersionId(event.target.value)}>
+                  <option value="">Choose the exact submitted version</option>
+                  {effectiveSubmittedVersionId && !versionsById.has(effectiveSubmittedVersionId) ? <option value={effectiveSubmittedVersionId} disabled>Selected version unavailable · {effectiveSubmittedVersionId}</option> : null}
+                  {versionOptions.map((version) => <option key={version.id} value={version.id}>Version {version.version_number}: {version.label}</option>)}
                 </select>
-              </label>
+                <WorkspacePageControls page={versionPage} label="versions" />
+              </div>
             ) : null}
             <div className="grid gap-2 sm:col-span-2 xl:col-span-1"><label className="grid gap-2 text-xs font-bold text-muted-foreground">Match mode{matchMode === "basic" && basicAllowance ? " · 0 credits" : !unifiedServices && pricingKnown ? " · 1 analysis unit" : ""}<select className="field-control" value={matchMode} onChange={(event) => setMatchMode(event.target.value as "basic" | "enhanced")} disabled={startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}><option value="basic">Basic skill comparison · no generative AI</option><option value="enhanced" disabled={unifiedServices && !matchAction.available}>{unifiedServices ? "Enhanced assessment · review AI credit charge" : "Enhanced assessment · uses AI"}</option></select></label><div className="flex items-end gap-2">
-              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => unifiedServices && matchMode === "enhanced" ? matchAction.requestQuote() : startMatch.mutate()} disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}>
+              <Button className="min-h-11 flex-1 whitespace-nowrap xl:flex-none" onClick={() => unifiedServices && matchMode === "enhanced" ? matchReviewAction.requestQuote() : startMatch.mutate()} disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))}>
                 {matchRun.data && !terminal.has(matchRun.data.status) ? <LoaderCircle size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {latestMatch ? "Refresh match" : "Run match"}
               </Button>
@@ -688,9 +734,11 @@ function OpportunityContent() {
 
         {!pricingKnown ? <div role="status" className="mt-4 space-y-2 text-sm text-muted-foreground"><p>{creditAvailability.isFetching ? "Checking current service availability…" : "Could not verify the current service charges. Refresh availability to continue."}</p>{!creditAvailability.isFetching ? <Button variant="secondary" size="sm" onClick={() => void creditAvailability.refetch()}>Refresh service availability</Button> : null}</div> : null}
         {matchMode === "basic" && basicAllowance ? <p className="mt-3 text-xs text-muted-foreground">Basic comparison allowance: up to {basicAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved results remain accessible.</p> : null}
-        {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={matchAction} /></div> : null}
-        {(startMatch.isError || matchRun.data) ? <AnalysisRunFeedback run={matchRun.data} /> : null}
+        {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={matchReviewAction} /></div> : null}
+        {(startMatch.isError || (matchRunCurrent && matchRun.data)) ? <AnalysisRunFeedback run={matchRunCurrent ? matchRun.data : undefined} /> : null}
         <RunStatusCheck query={matchRun} label="match" />
+        {matchSourceState === "different_resume" ? <p role="status" className="mt-4 text-sm text-muted-foreground">The saved match belongs to a different resume. Run a match for the currently connected resume when you are ready; previous results remain in your history.</p> : matchSourceState === "unavailable" ? <p role="status" className="mt-4 text-sm text-muted-foreground">The saved match could not be verified for this resume. Refresh this workspace before using its score.</p> : null}
+        {scopedMatchRun && !matchRunCurrent ? <p role="status" className="mt-3 text-sm text-muted-foreground">Your earlier match request belongs to another resume selection. Its result is kept with that request and is not shown as this resume&apos;s assessment.</p> : null}
         {startMatch.isError ? <p className="mt-3 text-sm text-coral">{startMatch.error instanceof Error ? startMatch.error.message : "Could not start analysis."}</p> : null}
         {stageError || transition.isError ? <p className="mt-3 text-sm text-coral">{stageError || (transition.error instanceof Error ? transition.error.message : "Could not update application stage.")}</p> : null}
         {exportOpportunity.isError ? <p className="mt-3 text-sm text-coral">{exportOpportunity.error instanceof Error ? exportOpportunity.error.message : "Could not export this opportunity."}</p> : null}
@@ -709,7 +757,7 @@ function OpportunityContent() {
             <div className="grid gap-10 xl:grid-cols-[1fr_340px]">
               <section className="min-w-0">
                 {latestMatch ? <MatchSummary match={latestMatch} /> : (
-                  <EmptyState icon={Gauge} title="No match analysis yet" description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || !item.resume_id || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))} onClick={() => unifiedServices && matchMode === "enhanced" ? matchAction.requestQuote() : startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
+                  <EmptyState icon={Gauge} title={matchSourceState === "different_resume" ? "No match for this resume" : matchSourceState === "unavailable" ? "Saved match unavailable" : "No match analysis yet"} description="Connect a resume and run a match to compare this role with your approved career evidence." action={<Button disabled={!pricingKnown || matchAction.pending || Boolean(matchAction.review) || (unifiedServices && matchMode === "enhanced" && !matchAction.available) || startMatch.isPending || !item.resume_id || Boolean(matchRunId && (!matchRun.data || !terminal.has(matchRun.data.status)))} onClick={() => unifiedServices && matchMode === "enhanced" ? matchReviewAction.requestQuote() : startMatch.mutate()}><Sparkles size={16} /> Run match</Button>} />
                 )}
                 {latestMatch?.improvement_tips.length ? (
                   <div className="mt-10 border-t border-border pt-7">
@@ -722,7 +770,7 @@ function OpportunityContent() {
                 {unifiedServices && sourceResume && latestMatch ? <MatchQuestionPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
                 <div className="mt-10 border-t border-border pt-7">
                   <h2 className="font-display text-lg font-normal text-foreground">Role snapshot</h2>
-                  <p className="mt-3 max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{item.job_description}</p>
+                  <WorkspaceRoleBody owner={ownerKey} opportunity={opportunityId} />
                 </div>
               </section>
 
@@ -730,15 +778,16 @@ function OpportunityContent() {
                 <section>
                   <div className="flex items-center justify-between"><h2 className="font-display text-base font-normal">Reminders</h2><CalendarPlus size={17} className="text-primary" /></div>
                   <div className="mt-4 space-y-2">
-                    {item.reminders.filter((reminder) => reminder.status === "scheduled").map((reminder) => (
+                    {reminderPage.items.filter((reminder) => reminder.status === "scheduled").map((reminder) => (
                       <div key={reminder.id} className="surface-soft flex gap-3 p-3 text-sm">
                         <Clock3 size={15} className="mt-0.5 shrink-0 text-primary" />
                         <div className="min-w-0 flex-1"><p className="font-semibold text-foreground">{reminder.message}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(reminder.due_at).toLocaleString("en-IN")}</p></div>
                         <button type="button" onClick={() => completeReminder.mutate(reminder.id)} className="text-muted-foreground hover:text-primary" aria-label="Complete reminder"><Check size={16} /></button>
                       </div>
                     ))}
-                    {!item.reminders.some((reminder) => reminder.status === "scheduled") ? <p className="text-sm text-muted-foreground">No upcoming reminders.</p> : null}
+                    {!reminderPage.isError && !reminderPage.isLoading && !reminderPage.items.some((reminder) => reminder.status === "scheduled") ? <p className="text-sm text-muted-foreground">No upcoming reminders on this page.</p> : null}
                   </div>
+                  <WorkspacePageControls page={reminderPage} label="reminders" />
                   <div className="mt-4 grid gap-2">
                     <input className="field-control" value={reminderMessage} onChange={(event) => setReminderMessage(event.target.value)} placeholder="Follow-up reminder" />
                     <input className="field-control" type="datetime-local" value={reminderDate} onChange={(event) => setReminderDate(event.target.value)} aria-label="Reminder date and time" />
@@ -749,9 +798,10 @@ function OpportunityContent() {
                 <section className="border-t border-border pt-7">
                   <div className="flex items-center justify-between"><h2 className="font-display text-base font-normal">Contacts</h2><UserPlus size={17} className="text-primary" /></div>
                   <div className="mt-4 space-y-2">
-                    {item.contacts.map((contact) => <div key={contact.id} className="surface-soft p-3"><p className="text-sm font-bold text-foreground">{contact.name}</p><p className="mt-1 text-xs text-muted-foreground">{contact.role || "Contact"}</p></div>)}
-                    {!item.contacts.length ? <p className="text-sm text-muted-foreground">No recruiter or referral contacts yet.</p> : null}
+                    {contactPage.items.map((contact) => <div key={contact.id} className="surface-soft p-3"><p className="text-sm font-bold text-foreground">{contact.name}</p><p className="mt-1 text-xs text-muted-foreground">{contact.role || "Contact"}</p><WorkspaceItemDetails<{ id: string; email?: string | null; profile_url?: string | null; notes?: string | null }> owner={ownerKey} opportunity={opportunityId} collection="contacts" id={contact.id} label={`View ${contact.name} details`}>{(detail) => <div className="mt-2 space-y-2 break-words text-sm"><p>{detail.email || "No email saved."}</p><p>{detail.profile_url || "No profile saved."}</p><p className="whitespace-pre-wrap">{detail.notes || "No notes saved."}</p></div>}</WorkspaceItemDetails></div>)}
+                    {!contactPage.isError && !contactPage.isLoading && !contactPage.items.length ? <p className="text-sm text-muted-foreground">No contacts on this page.</p> : null}
                   </div>
+                  <WorkspacePageControls page={contactPage} label="contacts" />
                   <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                     <input className="field-control" value={contactName} onChange={(event) => setContactName(event.target.value)} placeholder="Contact name" />
                     <input className="field-control" value={contactRole} onChange={(event) => setContactRole(event.target.value)} placeholder="Role or relationship" />
@@ -785,7 +835,7 @@ function OpportunityContent() {
               <section>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                   <div><p className="eyebrow">Evidence Graph</p><h2 className="font-display mt-2 text-2xl font-normal">Approved facts for this resume</h2><p className="mt-2 text-sm text-muted-foreground">{approvedCount} approved evidence {approvedCount === 1 ? "item" : "items"}.</p></div>
-                  <Button variant="secondary" onClick={() => importEvidence.mutate()} disabled={!item.resume_id || importEvidence.isPending}><RefreshCw size={15} /> Import from resume</Button>
+                  <Button variant="secondary" onClick={() => importEvidence.mutate()} disabled={!item.resume_id || connectResume.isPending || workspace.isFetching || importEvidence.isPending}><RefreshCw size={15} /> Import from resume</Button>
                 </div>
                 {!item.resume_id ? <EmptyState icon={FilePlus2} title="Connect a resume first" description="Edit this opportunity and choose a parsed resume before building evidence." /> : null}
                 {evidence.isLoading ? <div className="mt-6"><LoadingBlock rows={4} /></div> : null}
@@ -793,13 +843,15 @@ function OpportunityContent() {
                 {evidenceReviewError ? <p className="mt-4 text-sm text-coral" role="alert">{evidenceReviewError}</p> : null}
                 {sourceReady && transcription.isError ? <div className="mt-4"><p className="text-sm text-coral" role="alert">Could not check the extracted transcription. Ordinary fact approval does not complete a transcription review.</p><Button size="sm" variant="secondary" disabled={transcription.isFetching} onClick={() => void transcription.refetch()}>Refresh transcription for review</Button></div> : null}
                 {transcription.data?.status === "needs_review" ? <p className="mt-4 text-sm leading-6 text-muted-foreground">Some line-end text is ambiguous. Open its evidence editor, compare the complete section with your original file, then explicitly correct it or confirm the visible text. Ordinary fact approval does not complete this review.</p> : null}
-                {transcription.data?.status === "editable_source_required" ? <div className="mt-4 space-y-3"><p className="text-sm leading-6 text-muted-foreground">This extraction cannot map every ambiguous section exactly. Keep your original file and upload a compatible editable source for review. No text has been joined or removed.</p><Link href={sourceUploadHref} className="text-sm font-semibold text-primary">Upload an editable source</Link><pre className="whitespace-pre-wrap break-words text-sm">{transcription.data.unmapped_text}</pre></div> : null}
+                {transcription.data?.status === "editable_source_required" ? <div className="mt-4 space-y-3"><p className="text-sm leading-6 text-muted-foreground">This extraction cannot map every ambiguous section exactly. Keep your original file and upload a compatible editable source for review. No text has been joined or removed.</p><Link href={sourceUploadHref} className="text-sm font-semibold text-primary">Upload an editable source</Link></div> : null}
                 {item.resume_id && evidence.isSuccess && !(evidence.data || []).length ? <EmptyState icon={ShieldCheck} title="No evidence imported" description="Import the resume sections, then approve only the facts you want HireWiz to reuse." action={<Button onClick={() => importEvidence.mutate()}><FilePlus2 size={16} /> Import evidence</Button>} /> : null}
                 <div className="mt-6 divide-y divide-border border-t border-border">
-                  {(evidence.data || []).map((entry) => {
+                  {evidenceRows.map((metadata) => {
+                    const entry = evidenceDetail.data && evidenceDetail.data.evidence.id === metadata.id ? evidenceDetail.data.evidence : null;
+                    if (!entry) return <article key={metadata.id} className="space-y-3 py-5"><div className="flex flex-wrap gap-2"><h3 className="font-semibold">{metadata.title}</h3><StatusBadge>{metadata.approval_state}</StatusBadge></div><Button variant="secondary" size="sm" disabled={evidenceDetail.isFetching || Boolean(editingEvidenceId)} onClick={() => setOpenedEvidence({ source: item.resume_id!, id: metadata.id })}>Open {metadata.title} for review</Button>{openedEvidenceId === metadata.id && evidenceDetail.isFetching ? <p role="status">Loading this evidence…</p> : null}{openedEvidenceId === metadata.id && evidenceDetail.isError ? <div role="alert"><p>Could not load this evidence. No approval is available.</p><Button size="sm" onClick={() => void evidenceDetail.refetch()}>Retry evidence detail</Button></div> : null}</article>;
                     const fingerprint = evidenceVersion(entry);
                     const editing = editingEvidenceId === entry.id;
-                    const blocked = !fingerprint || evidence.isFetching || evidence.isError || editEvidence.isPending || approveEvidence.isPending || approveTranscription.isPending;
+                    const blocked = !fingerprint || evidenceDetail.isFetching || evidenceDetail.isError || evidence.isFetching || evidence.isError || editEvidence.isPending || approveEvidence.isPending || approveTranscription.isPending;
                     return (
                       <article key={entry.id} className="grid gap-4 py-5 sm:grid-cols-[1fr_auto]">
                         <div className="min-w-0">
@@ -867,8 +919,9 @@ function OpportunityContent() {
                     );
                   })}
                 </div>
+                <WorkspacePageControls page={evidencePage} label="evidence" />
               </section>
-              {unifiedServices && sourceResume ? <ResumeBulletSuggestions resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined, description: item.job_description }} availability={creditAvailability.data} approvedEvidence={evidence.isSuccess && approvedCount > 0} /> : null}
+              {unifiedServices && sourceResume ? <WorkspaceRoleBody owner={ownerKey} opportunity={opportunityId} label="Open role-specific wording suggestions">{(body) => <ResumeBulletSuggestions resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined, description: body.job_description }} availability={creditAvailability.data} approvedEvidence={evidence.isSuccess && approvedCount > 0} />}</WorkspaceRoleBody> : null}
               <section aria-labelledby="resume-versions-heading" className="border-t border-border pt-8">
                 <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                   <div className="max-w-2xl">
@@ -910,7 +963,7 @@ function OpportunityContent() {
                 {downloadVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{downloadVersion.error instanceof Error ? downloadVersion.error.message : "Could not download this resume version."}</p> : null}
                 {updateVersion.isError ? <p className="mt-3 text-sm text-coral" role="alert">{updateVersion.error instanceof Error ? updateVersion.error.message : "Could not update version approval."}</p> : null}
                 <div className="mt-6 space-y-5">
-                  {item.resume_versions.map((version) => {
+                  {versionPage.items.map((metadata) => <WorkspaceVersionDetails key={metadata.id} owner={ownerKey} opportunity={opportunityId} version={metadata}>{(version) => {
                     const content = getSourcePreservingContent(version.structured_content);
                     return <ResumeVersionMetadata key={version.id} resumeId={version.resume_id} required={Boolean(content)} known={resumes.data?.resumes.find((resume) => resume.id === version.resume_id)}>{(versionResume, versionSourceState) => {
                     const nativeFormat = content && versionResume?.source_available && versionResume.source_format === content.source_format ? content.source_format : null;
@@ -972,9 +1025,10 @@ function OpportunityContent() {
                       </article>
                     );
                     }}</ResumeVersionMetadata>;
-                  })}
-                  {!item.resume_versions.length ? <p className="text-sm leading-6 text-muted-foreground">No version saved yet. Generate a tailored version or save your unchanged source snapshot.</p> : null}
+                  }}</WorkspaceVersionDetails>)}
+                  {!versionPage.items.length && !versionPage.isError && !versionPage.isLoading ? <p className="text-sm leading-6 text-muted-foreground">No versions on this page. Generate a tailored version, save a source snapshot or return to newest versions.</p> : null}
                 </div>
+                <WorkspacePageControls page={versionPage} label="saved versions" />
               </section>
             </div>
           ) : null}
@@ -982,6 +1036,7 @@ function OpportunityContent() {
           {tab === "learning" ? (
             <section>
               <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
+              {unifiedServices && sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
               {unifiedServices && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
               {skillRoi.isLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
               {!skillRoi.isLoading && !skillRoi.data?.items.length ? <EmptyState icon={BookOpenCheck} title="Skill ROI needs match data" description="Run matches for active opportunities to see which skill investment has the strongest return." /> : null}
@@ -1072,7 +1127,7 @@ function OpportunityContent() {
                   <div className="mt-7 border-l-2 border-primary pl-5">
                     <p className="data-label">Recorded outcome</p>
                     <p className="mt-2 text-lg font-semibold text-foreground">{item.outcome.replaceAll("_", " ")}</p>
-                    {item.outcome_notes ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.outcome_notes}</p> : null}
+                    <WorkspaceRoleBody owner={ownerKey} opportunity={opportunityId} outcome />
                     {item.outcome_at ? <p className="mt-2 text-xs text-muted-foreground">{new Date(item.outcome_at).toLocaleString("en-IN")}</p> : null}
                   </div>
                 ) : (
@@ -1105,18 +1160,27 @@ function OpportunityContent() {
             <section className="max-w-3xl">
               <p className="eyebrow">History</p><h2 className="font-display mt-2 text-2xl font-normal">Application activity</h2>
               <ol className="mt-7 border-l border-border pl-6">
-                {item.activity.map((event) => (
-                  <li key={event.id} className="relative pb-7"><span className="absolute -left-[29px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" /><p className="text-sm font-bold text-foreground">{event.event_type === "stage_changed" ? `${stageLabels[event.from_stage || "saved"]} to ${stageLabels[event.to_stage || "saved"]}` : event.event_type === "outcome_recorded" ? "Outcome recorded" : "Opportunity created"}</p>{event.note ? <p className="mt-1 text-sm text-muted-foreground">{event.note}</p> : null}<p className="mt-1 text-xs text-muted-foreground">{new Date(event.occurred_at).toLocaleString("en-IN")}</p></li>
+                {activityPage.items.map((event) => (
+                  <li key={event.id} className="relative pb-7"><span className="absolute -left-[29px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-background bg-primary" /><p className="text-sm font-bold text-foreground">{event.event_type === "stage_changed" ? `${stageLabels[event.from_stage || "saved"]} to ${stageLabels[event.to_stage || "saved"]}` : event.event_type === "outcome_recorded" ? "Outcome recorded" : "Opportunity created"}</p><WorkspaceItemDetails<ApplicationEvent> owner={ownerKey} opportunity={opportunityId} collection="activity" id={event.id} label="View activity details">{(detail) => <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{detail.note || "No note recorded."}</p>}</WorkspaceItemDetails><p className="mt-1 text-xs text-muted-foreground">{new Date(event.occurred_at).toLocaleString("en-IN")}</p></li>
                 ))}
               </ol>
+              <WorkspacePageControls page={activityPage} label="activity" />
             </section>
           ) : null}
         </div>
+        </fieldset>
       </div>
     </main>
   );
 }
 
+function OwnedOpportunityContent() {
+  const { data: session, status } = useSession();
+  const params = useParams<{ id: string }>();
+  const ownerKey = `${status}:${session?.user?.id || ""}`;
+  return <OpportunityContent key={JSON.stringify([ownerKey, params.id])} ownerKey={ownerKey} authenticated={status === "authenticated" && Boolean(session?.user?.id)} />;
+}
+
 export default function OpportunityPage() {
-  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>}><OpportunityContent /></Suspense>;
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={7} /></div></main>}><OwnedOpportunityContent /></Suspense>;
 }

@@ -398,12 +398,126 @@ class ScopedPairedRevocation(PartitionedContract):
         return self
 
 
+class DigestConsentHead(PartitionedContract):
+    version: Literal[1] = 1
+    subject: ScopedSubject
+    generation: PositiveInteger
+    enabled: Annotated[bool, Field(strict=True)]
+    email_sha256: Digest
+    policy_version: Annotated[str, Field(pattern=r"^[A-Za-z0-9._:-]{1,80}$")]
+    operation_id: UUID
+
+
+class ScopedDigestConsentChange(PartitionedContract):
+    kind: Literal["scoped_digest_consent_change"] = "scoped_digest_consent_change"
+    subject: ScopedSubject
+    session: ScopedSession
+    previous: DigestConsentHead | None
+    generation: PositiveInteger
+    enabled: Annotated[bool, Field(strict=True)]
+    email_sha256: Digest
+    policy_version: Annotated[str, Field(pattern=r"^[A-Za-z0-9._:-]{1,80}$")]
+
+    @model_validator(mode="after")
+    def exact(self):
+        if (self.subject.subject_uuid != self.session.subject_uuid
+                or self.subject.account_binding_id != self.session.account_binding_id
+                or self.subject.auth_generation != self.session.auth_generation
+                or self.subject.credential_sha256 != self.session.credential_sha256
+                or self.subject.principal_sha256 != self.session.principal_sha256
+                or self.generation != (self.previous.generation + 1 if self.previous else 1)
+                or self.previous is not None and (
+                    self.previous.subject.subject_uuid != self.subject.subject_uuid
+                    or self.previous.subject.account_binding_id != self.subject.account_binding_id
+                    or self.previous.subject.candidate_id != self.subject.candidate_id
+                    or self.previous.subject.enrollment_operation != self.subject.enrollment_operation
+                    or self.previous.email_sha256 != self.email_sha256)):
+            raise ValueError("Digest consent requires exact current ownership and one generation advance")
+        return self
+
+
+class ScopedDigestEmailDisable(PartitionedContract):
+    """A distinctly disable-only command; proof verification belongs to its original issuer."""
+    kind: Literal["scoped_digest_email_disable"] = "scoped_digest_email_disable"
+    subject: ScopedSubject
+    previous: DigestConsentHead
+    proof_sha256: Digest
+
+    @model_validator(mode="after")
+    def exact(self):
+        if (self.previous.subject.subject_uuid != self.subject.subject_uuid
+                or self.previous.subject.account_binding_id != self.subject.account_binding_id
+                or self.previous.subject.candidate_id != self.subject.candidate_id
+                or self.previous.subject.enrollment_operation != self.subject.enrollment_operation
+                or self.previous.generation >= 2**53 - 1):
+            raise ValueError("Digest email disable requires exact retained consent ownership")
+        return self
+
+
+class DigestSendOutcome(PartitionedContract):
+    record_operation: UUID
+    operation_id: UUID
+    intent_sha256: Digest
+    outcome: Literal["sent", "unknown", "permanent", "known_retryable"]
+    receipt_sha256: Digest
+    status_code: Annotated[int, Field(strict=True, ge=100, le=599)] | None = None
+    recorded_at_ms: Timestamp
+
+    @model_validator(mode="after")
+    def exact(self):
+        if (self.outcome == "sent" and (self.status_code is None or not 200 <= self.status_code < 300)
+                or self.outcome == "known_retryable" and self.status_code != 429
+                or self.outcome == "permanent" and (self.status_code is None
+                    or not 400 <= self.status_code < 500 or self.status_code in {408, 429})):
+            raise ValueError("Digest outcome must preserve the exact typed provider result")
+        return self
+
+
+class ScopedDigestSendBegin(PartitionedContract):
+    kind: Literal["scoped_digest_send_begin"] = "scoped_digest_send_begin"
+    subject: ScopedSubject
+    consent: DigestConsentHead
+    iso_week: Annotated[str, Field(pattern=r"^[0-9]{4}-W(?:0[1-9]|[1-4][0-9]|5[0-3])$")]
+    ordinal: Annotated[int, Field(strict=True, ge=1, le=3)]
+    message_sha256: Digest
+    previous_outcome: DigestSendOutcome | None = None
+
+    @model_validator(mode="after")
+    def exact(self):
+        if (self.consent.subject.model_dump(exclude={"auth_generation", "credential_sha256"})
+                != self.subject.model_dump(exclude={"auth_generation", "credential_sha256"})
+                or not self.consent.enabled
+                or (self.ordinal == 1) != (self.previous_outcome is None)
+                or self.previous_outcome is not None and (
+                    self.previous_outcome.outcome != "known_retryable"
+                    or self.previous_outcome.status_code != 429)):
+            raise ValueError("Digest send requires active exact consent and only a known 429 retry")
+        return self
+
+
+class ScopedDigestSendOutcome(PartitionedContract):
+    kind: Literal["scoped_digest_send_outcome"] = "scoped_digest_send_outcome"
+    subject: ScopedSubject
+    begin_intent: dict
+    result: DigestSendOutcome
+
+    @model_validator(mode="after")
+    def exact(self):
+        begin = ScopedJournalIntent.model_validate(self.begin_intent)
+        if (not isinstance(begin.command, ScopedDigestSendBegin)
+                or begin.command.subject != self.subject or self.result.operation_id != begin.operation_id
+                or self.result.intent_sha256 != fingerprint(self.begin_intent)
+                or self.result.recorded_at_ms < begin.created_at_ms):
+            raise ValueError("Digest outcome requires its complete exact original BEGIN")
+        return self
+
+
 class ScopedJournalIntent(PartitionedContract):
     version: Literal[3] = 3
     kind: Literal["scoped_admission"] = "scoped_admission"
     operation_id: UUID
     pin: RegistryPin
-    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin | ScopedSubmitDeviceEnrollment | ScopedSubmitBegin | ScopedPairedDeviceActivation | ScopedPairedDeviceDenial | ScopedPairedRevocation, Field(discriminator="kind")]
+    command: Annotated[ScopedDenial | ScopedPasswordReset | ScopedBegin | ScopedSubmitDeviceEnrollment | ScopedSubmitBegin | ScopedPairedDeviceActivation | ScopedPairedDeviceDenial | ScopedPairedRevocation | ScopedDigestConsentChange | ScopedDigestEmailDisable | ScopedDigestSendBegin | ScopedDigestSendOutcome, Field(discriminator="kind")]
     created_at_ms: Timestamp
     deadline_ms: Timestamp
 
@@ -411,6 +525,12 @@ class ScopedJournalIntent(PartitionedContract):
     def exact(self) -> ScopedJournalIntent:
         if not self.created_at_ms < self.deadline_ms <= self.created_at_ms + 60_000:
             raise ValueError("Scoped protected admission requires a bounded interval")
+        if isinstance(self.command, ScopedDigestSendOutcome) and (
+                self.command.result.record_operation != self.operation_id
+                or self.command.result.operation_id == self.operation_id
+                or self.command.result.recorded_at_ms != self.created_at_ms
+                or ScopedJournalIntent.model_validate(self.command.begin_intent).pin != self.pin):
+            raise ValueError("Digest outcome must retain its own distinct exact closed operation")
         if isinstance(self.command, ScopedPasswordReset):
             cmd = self.command
             if (len({self.operation_id, cmd.request_id, cmd.event_id}) != 3

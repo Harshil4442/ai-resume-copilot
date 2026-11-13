@@ -218,7 +218,10 @@ def _terminal(db: Session, row, receipt: NativeExpenseReceipt, terminal: Termina
         _need(terminal.financial_group_id == row.financial_group_id
               and terminal.reservation_id == row.reservation_id, "native_execution_correlation_mismatch")
         expected = "delivered" if receipt.work_state == "completed" else "failed"
-        _need(row.delivery_state == expected, "native_work_not_terminal")
+        # Customer cancellation says nothing about physical native completion.
+        # The independently reviewed, matching terminal evidence remains
+        # mandatory whether that native work completed or failed.
+        _need(row.delivery_state in {expected, "cancelled"}, "native_work_not_terminal")
     else:
         _need(terminal.financial_group_id is None and terminal.reservation_id == row.id,
               "native_execution_correlation_mismatch")

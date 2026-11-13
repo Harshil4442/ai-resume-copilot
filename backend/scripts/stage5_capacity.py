@@ -8,10 +8,17 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
-VERSION = "stage5-owned-http-v1"
+VERSION = "stage5-owned-http-v2"
+FRESH_WINDOW_MODE = "list_governed_fresh_window_40"
+FRESH_WINDOW_READS = 16
+FRESH_WINDOW_COOLDOWN_SECONDS = 61
 _RETAINED_NATIVE_CONTEXTS: list = []
+BOOTSTRAP_PATH = "/api/auth/bootstrap"
+DASHBOARD_PATH = "/api/auth/dashboard"
+RESUME_PAGE_PATH = "/api/resume/page?limit=20"
+OPPORTUNITY_PAGE_PATH = "/api/v1/opportunities/page?limit=20"
 PATHS = (
-    "/api/auth/bootstrap", "/api/resume/list", "/api/v1/opportunities?limit=50",
+    DASHBOARD_PATH, RESUME_PAGE_PATH, OPPORTUNITY_PAGE_PATH,
     "/api/v1/skill-roi", "/api/v1/credits/wallet",
 )
 
@@ -58,15 +65,26 @@ def percentile(values: list[float], quantile: float) -> float | None:
     return sorted(values)[max(0, math.ceil(len(values) * quantile) - 1)] if values else None
 
 
-async def scheduled_phase(*, count: int, concurrency: int, arrivals_per_second: int,
+async def wait_for_fresh_window(*, deadline: float, clock=time.perf_counter, sleep=asyncio.sleep) -> float | None:
+    """Wait for the existing Redis window to age out with no resets or reads."""
+    started = clock()
+    ready = started + FRESH_WINDOW_COOLDOWN_SECONDS
+    if ready >= deadline:
+        return None
+    while clock() < ready:
+        await sleep(max(0, ready - clock()))
+    return clock() - started if clock() < deadline else None
+
+
+async def scheduled_phase(*, count: int, concurrency: int, arrivals_per_second: int | None,
                           deadline: float, request, clock=time.perf_counter,
                           sleep=asyncio.sleep) -> list[dict]:
-    """Latency begins at planned arrival, before semaphore admission (no omission)."""
+    """Latency begins at planned arrival; a batch with no rate arrives together."""
     origin = clock()
     semaphore = asyncio.Semaphore(concurrency)
 
     async def one(index):
-        scheduled = origin + index / arrivals_per_second
+        scheduled = origin if arrivals_per_second is None else origin + index / arrivals_per_second
         await sleep(max(0, min(scheduled, deadline) - clock()))
         async with semaphore:
             sent = clock()
@@ -105,7 +123,7 @@ def summarize(rows: list[dict]) -> dict:
 def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> bool:
     cache = headers.get("cache-control")
     directives = cache.split(",") if type(cache) is str else []
-    return (mode == "list_governed_40" and status == 429
+    return (mode in {"list_governed_40", FRESH_WINDOW_MODE} and status == 429
         and body == {"detail": {"code": "NATIVE_METADATA_CAPACITY",
             "message": "Request capacity is temporarily allocated. Please try again later."}}
         and headers.get("retry-after") == "60"
@@ -114,10 +132,14 @@ def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> 
         and headers.get("pragma") == "no-cache")
 
 
-def workload_validation(results: list[dict], *, requests_per_phase: int, preflight: dict) -> dict:
+def workload_validation(results: list[dict], *, requests_per_phase: int, preflight: dict,
+                        fresh_window: bool = False) -> dict:
     failures: Counter[str] = Counter()
-    expected = {(mode, concurrency) for mode in ("get_unpaced_diagnostic", "list_governed_40")
+    modes = (FRESH_WINDOW_MODE,) if fresh_window else ("get_unpaced_diagnostic", "list_governed_40")
+    expected = {(mode, concurrency) for mode in modes
                 for concurrency in (1, 10, 25)}
+    if fresh_window:
+        requests_per_phase = FRESH_WINDOW_READS
     actual = [(row.get("mode"), row.get("concurrency")) for row in results]
     if set(actual) != expected or len(actual) != len(expected):
         failures["missing_or_duplicate_phase"] += 1
@@ -134,10 +156,22 @@ def workload_validation(results: list[dict], *, requests_per_phase: int, preflig
         if (any(type(index) is not int for index in indices)
                 or sorted(indices) != list(range(requests_per_phase))):
             failures["request_indices"] += 1
+        if fresh_window and phase.get("state") != "not_started_deadline":
+            cooldown = phase.get("cooldown_seconds_before_phase")
+            if type(cooldown) not in (int, float) or not math.isfinite(cooldown) or cooldown < FRESH_WINDOW_COOLDOWN_SECONDS:
+                failures["fresh_window_cooldown"] += 1
+            peak = phase.get("actual_peak_inflight_http")
+            cap = phase.get("concurrency")
+            if type(cap) is not int or type(peak) is not int or not 1 <= peak <= min(cap, FRESH_WINDOW_READS):
+                failures["fresh_window_peak_concurrency"] += 1
+            if phase.get("wire_and_sql", {}).get("synthetic_admin_list_databases") != 2 * FRESH_WINDOW_READS:
+                failures["fresh_window_list_calls"] += 1
         for row in rows:
             if row["status"] == 200:
                 if row.get("contract_valid") is not True:
                     failures["owned_response_contract"] += 1
+            elif fresh_window and row["status"] == 429 and row.get("capacity_refusal_valid") is True:
+                failures["fresh_window_capacity_refusal"] += 1
             elif (row["status"] != 429 or phase["mode"] != "list_governed_40"
                     or row.get("capacity_refusal_valid") is not True):
                 failures["unexpected_status_or_error"] += 1

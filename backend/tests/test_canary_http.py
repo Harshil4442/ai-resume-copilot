@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from backend.app.database import get_db
-from backend.app.domains.credits import canary, service
+from backend.app.domains.credits import canary, service, synchronous
 from backend.app.domains.credits.models import CreditReservation, CreditServiceQuote
 from backend.app.models import AdminAuditEvent, ModelCallEvent, User
 from backend.app.routers import credits
@@ -11,14 +11,24 @@ from backend.app.security import get_current_user
 from backend.tests import test_unified_synchronous as synchronous_checks
 from backend.tests.test_canary_admission import prepare
 from backend.tests.test_unified_credit_http import factory
+from backend.tests.test_unified_credits import NOW
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
 
 assert factory
 
 
+def use_canary_fixture_clock(monkeypatch):
+    # The synthetic review and its consent history are tied to NOW.
+    stamp = canary.stamp
+    monkeypatch.setattr(canary, "stamp", lambda now=None: stamp(NOW if now is None else now))
+    monkeypatch.setattr(service, "utcnow", lambda: NOW)
+    monkeypatch.setattr(synchronous, "utcnow", lambda: NOW)
+
+
 @pytest.fixture
 def api(factory, monkeypatch):
+    use_canary_fixture_clock(monkeypatch)
     synchronous_checks.setup.__wrapped__(factory, monkeypatch)
     config = synchronous_checks.configure(monkeypatch, "enhanced_qa")
     with factory() as db:

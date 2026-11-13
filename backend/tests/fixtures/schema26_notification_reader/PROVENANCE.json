@@ -1,0 +1,25 @@
+{
+  "source_commit": "db8a25adefaf3bc2e00a61f7543f8a1862597adf",
+  "contract": {
+    "original_path": "backend/app/domains/recovery/gcp_partitioned_contracts.py",
+    "fixture": "gcp_partitioned_contracts.py.snapshot",
+    "sha256": "dabaddb6a8f3e889b86ae0b7b736225982001fe5036f68f15e8931fbfd5759d5"
+  },
+  "reused_decoder": {
+    "path": "backend/app/domains/recovery/gcp_partitioned_publication.py",
+    "sha256": "9fcaf231b89854d936c6be82446971c9fcacae03ebc887748d31a767d0f43c49"
+  },
+  "shared_source_sha256": {
+    "backend/app/domains/recovery/contracts.py": "3cff31bd4181e51ac0a8ed7313cbc486ad643225bc65afcdeccdc18b7ed0449e",
+    "backend/app/domains/recovery/gcp_contracts.py": "e3c65edefebe272f15dc04a56592d09a654404478ed47f2729082ad4d10d4231",
+    "backend/app/domains/recovery/gcp_paired_device_contracts.py": "ecc12ba2a82c51f00ab48bb939981449f183a5957228109250e40cb9fd858d86",
+    "backend/app/domains/recovery/gcp_password_contracts.py": "729d980ca2f382c93eab42e3fc3f38151d976916f92a647ad5c6fb5645a85312",
+    "backend/app/domains/recovery/gcp_password_lifetime_contracts.py": "635883596fb78faa886de942c34207ada3cdbf7f6223e5906e19a19f5edb576f",
+    "backend/app/domains/recovery/gcp_publication_contracts.py": "986443b17e02088bd19d24740d4c1e38a0fe463fccbaf14f592f819acab20603",
+    "backend/app/domains/recovery/gcp_submit_contracts.py": "58ca4412f00b70f075d8fec090cef55579e96c18935baae58eca01d9231db93e",
+    "backend/app/domains/recovery/pairing_contracts.py": "85835df7ca5c76f6894a7f77bd8f572c1c0f38922ea0819ca84e95c95cf042a1",
+    "backend/app/domains/recovery/gcp_publication.py": "2bc29eddb93748052beac811fd4f307ec6474679f473cee2c21cd5d2094bf591",
+    "backend/app/domains/recovery/store.py": "f2905cff9210bade17dfaf3ced0277c0f2b61890ca79eaa88a400b28160ecdf2"
+  },
+  "scope": "Owned decoder compatibility test only; no provider, production receipt, census/RTO or rollback authorization claim."
+}

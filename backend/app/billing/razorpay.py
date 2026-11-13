@@ -147,7 +147,7 @@ class RazorpayAdapter:
             "receipt": receipt,
             "status": "created",
         }
-        if any(data.get(key) != value for key, value in expected.items()):
+        if not isinstance(data, dict) or any(data.get(key) != value for key, value in expected.items()):
             raise RazorpayProviderError("Razorpay returned an unexpected order")
         if data.get("partial_payment") not in (False, None):
             raise RazorpayProviderError("Razorpay unexpectedly enabled partial payment")

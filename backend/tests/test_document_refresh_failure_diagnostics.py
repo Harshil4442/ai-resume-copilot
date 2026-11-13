@@ -1,6 +1,7 @@
 """Failure diagnostics are sanitized, bounded and never operation authority."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -16,6 +17,22 @@ import yaml
 from scripts import document_refresh as refresh
 
 SECRET = "private-token-do-not-retain"
+
+
+def diagnostic_exception(monkeypatch, source, name):
+    # Load the real class from this checkout even after synthetic scanner tests
+    # have imported another copy of the module under its ordinary package name.
+    root = Path(__file__).resolve().parents[2]
+    monkeypatch.setattr(refresh, "ROOT", root)
+    path = root / "infra/gcp" / (source + ".py")
+    monkeypatch.syspath_prepend(str(path.parent))
+    module_name = "diagnostic_fixture_" + source
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    spec.loader.exec_module(module)
+    return getattr(module, name)
 
 
 def cli_failure(monkeypatch, capsys, output, error, *, mode="full-source-refresh", equals=False):
@@ -76,8 +93,7 @@ def test_source_owned_literal_codes_remain_unchanged(monkeypatch, capsys, tmp_pa
 
 
 def test_current_application_code_is_literal_bound_not_just_prefix_matched(monkeypatch):
-    monkeypatch.syspath_prepend(str(refresh.ROOT / "infra/gcp"))
-    from infra.gcp.document_application_context import ApplicationDenied
+    ApplicationDenied = diagnostic_exception(monkeypatch, "document_application_context", "ApplicationDenied")
     valid = refresh._failure_diagnostics(ApplicationDenied("document_application_caller_uid_changed"))
     invalid = refresh._failure_diagnostics(ApplicationDenied("document_application_" + SECRET))
     assert valid["nodes"][0]["fixed_code"] == "document_application_caller_uid_changed"
@@ -87,8 +103,7 @@ def test_current_application_code_is_literal_bound_not_just_prefix_matched(monke
 
 @pytest.mark.parametrize("suffix", ["cloudbuild_metadata_read_denied", "run_metadata_read_denied"])
 def test_native_audit_conditional_permission_codes_are_source_reviewed(monkeypatch, suffix):
-    monkeypatch.syspath_prepend(str(refresh.ROOT / "infra/gcp"))
-    from infra.gcp.document_consumed_history import HistoryDenied
+    HistoryDenied = diagnostic_exception(monkeypatch, "document_consumed_history", "HistoryDenied")
     code = "document_consumed_history_" + suffix
     value = refresh._failure_diagnostics(HistoryDenied(code))
     assert value["nodes"][0]["kind"] == "HistoryDenied"

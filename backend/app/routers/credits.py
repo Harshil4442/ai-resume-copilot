@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -23,8 +23,9 @@ from ..domains.credits.discovery_schemas import (
     DiscoveryCreate,
     DiscoveryRequest,
 )
-from ..domains.credits.finance import FundingUnavailable
+from ..domains.credits.finance import CreditServiceInputUnsupported, FundingUnavailable
 from ..domains.credits.models import CreditEvent, CreditGrant
+from ..domains.credits.payment_expenses import assert_new_exposure_funded
 from ..domains.credits.schemas import (
     CreditAvailabilityView,
     CreditCatalogView,
@@ -41,8 +42,8 @@ from ..models import EntitlementLedger, PaymentOrder, User
 from ..rate_limiter import limiter
 from ..security import get_current_user
 from .billing import (
-    OPEN_ORDER_STATUSES,
     UNCERTAIN_ORDER_STATUSES,
+    _blocks_new_purchase,
     _normalized_order_status,
     _order_status_required,
 )
@@ -82,6 +83,29 @@ class CanaryChoiceView(BaseModel):
     sequence: int
     review_sha256: str
     idempotency_key: str
+
+
+def _unsupported_quote_error(db: Session, current_user: User, operation: str, input_payload: dict,
+                             error: CreditServiceInputUnsupported) -> HTTPException:
+    """Keep genuine product/qualification pauses ahead of input-change advice.
+
+    This runs only after the original quote preparation refused a known input.
+    Resolve the same configured operation without re-inspecting its source or
+    inventing a fallback route; no quote or provider request is created.
+    """
+    from ..domains.credits.runtime import current_runtime
+    from ..domains.credits.service_quotes import require_route
+
+    try:
+        configured = current_runtime(current_user.id, db=db)
+        route = configured.resolve_route(operation, input_payload)
+        require_route(route, configured.policy, now=service._stamp(None))
+        if not _route_available(route, current_user.id, current_user.email):
+            raise FundingUnavailable("This service is temporarily paused")
+    except FundingUnavailable:
+        return HTTPException(503, "This service is not ready for a new paid request.")
+    return HTTPException(422, {"code": "credit_service_input_unsupported",
+        "message": error.public_message, "run_created": False})
 
 
 @router.get("/canary-enrollment", response_model=CanaryEnrollmentView, response_model_exclude_none=True)
@@ -135,7 +159,8 @@ def _headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, private"
 
 
-def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Session | None = None) -> bool:
+def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Session | None = None,
+                      check_payment_funding: bool = True) -> bool:
     if not release.checkout_ready():
         return False
     if user_id is None and os.getenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary").strip().lower() != "reviewed_public":
@@ -148,7 +173,14 @@ def _purchase_enabled(user_id: int | None = None, email: str = "", *, db: Sessio
         from ..domains.credits.service_quotes import require_route
         for route in config.routes:
             require_route(route, config.policy, now=datetime.now(UTC))
-        return bool(_service_offers(user_id, email, db=db))
+        if not _service_offers(user_id, email, db=db):
+            return False
+        # Complete audience/route qualification before taking money locks.
+        if check_payment_funding:
+            if db is None:
+                return False
+            assert_new_exposure_funded(db, policy=config.policy, now=datetime.now(UTC))
+        return True
     except FundingUnavailable:
         return False
 
@@ -178,9 +210,10 @@ def _catalog(db: Session, user_id: int | None = None, email: str = "") -> Credit
     if not release.rollout_enabled():
         raise HTTPException(404, "Unified credits are not available yet.")
     try:
+        offers = _service_offers(user_id, email, db=db)
         result = pricing.public_catalog(campaign=service.configured_campaign(db), now=datetime.now(UTC),
                                         checkout_enabled=_purchase_enabled(user_id, email, db=db))
-        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": _service_offers(user_id, email, db=db)})
+        return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": offers})
     except pricing.CreditContractError:
         raise HTTPException(503, "Credit pricing is temporarily unavailable.") from None
 
@@ -202,12 +235,13 @@ def catalog(response: Response, db: Session = Depends(get_db), current_user: Use
 def purchase_quote(payload: PurchaseQuoteRequest, request: Request, response: Response,
                    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email, db=db):
+    if not _purchase_enabled(current_user.id, current_user.email, db=db, check_payment_funding=False):
         raise HTTPException(503, "Credit purchases are not available yet.")
     try:
         offers = _service_offers(current_user.id, current_user.email, db=db)
         if not offers:
             raise FundingUnavailable("No qualified service is available for this pass.")
+        assert_new_exposure_funded(db, policy=release.current_review().policy, now=datetime.now(UTC))
         quote = service.issue_purchase_quote(db, user_id=current_user.id, sku=payload.sku,
                                              idempotency_key=payload.idempotency_key, checkout_enabled=True,
                                              eligible_services=offers)
@@ -263,6 +297,9 @@ def analysis_quote(payload: AnalysisRunCreate, request: Request, response: Respo
         result = quote_view(quote)
         db.commit()
         return result
+    except CreditServiceInputUnsupported as exc:
+        db.rollback()
+        raise _unsupported_quote_error(db, current_user, payload.operation, payload.input, exc) from None
     except FundingUnavailable:
         db.rollback()
         raise HTTPException(503, "This service is not ready for a new paid request.") from None
@@ -366,6 +403,9 @@ def synchronous_quote(payload: SynchronousServiceRequest, request: Request, resp
         result = quote_view(quote)
         db.commit()
         return result
+    except CreditServiceInputUnsupported as exc:
+        db.rollback()
+        raise _unsupported_quote_error(db, current_user, payload.operation, payload.input, exc) from None
     except FundingUnavailable:
         db.rollback()
         raise HTTPException(503, "This service is not ready for a new paid request.") from None
@@ -468,7 +508,7 @@ def _status(db: Session, order: PaymentOrder, email: str) -> dict:
     return {"schema_version": "unified-credits-v1", "order_id": order.public_id,
             "provider_order_id": order.provider_order_id, "status": _normalized_order_status(order),
             "payment_status": order.status, "fulfilled": bool(grant and entitlement),
-            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db) and order.status == "created"
+            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db, check_payment_funding=False) and order.status == "created"
                 and order.provider_order_id and _offers_remain_available(view, order.user_id, email, db=db)),
             "amount_minor": order.gross_amount_minor, "refunded_amount_minor": order.refunded_amount_minor,
             "currency": order.currency, "sku": order.sku, "created_at": pricing.aware(order.created_at),
@@ -480,7 +520,10 @@ def _status(db: Session, order: PaymentOrder, email: str) -> dict:
 @router.get("/recent-order", response_model=CreditOrderStatusView | None)
 def recent_order(response: Response, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    order = db.query(PaymentOrder).filter_by(user_id=current_user.id, entitlement_kind="credit_pass").order_by(PaymentOrder.created_at.desc()).first()
+    blocks_purchase = _blocks_new_purchase()
+    order = (db.query(PaymentOrder).filter_by(user_id=current_user.id, entitlement_kind="credit_pass")
+        .order_by(blocks_purchase.desc(), case((blocks_purchase, PaymentOrder.created_at)).asc(),
+                  PaymentOrder.created_at.desc(), PaymentOrder.id.asc()).first())
     return _status(db, order, current_user.email) if order else None
 
 
@@ -506,7 +549,9 @@ def _checkout(order: PaymentOrder, user: User, settings: RazorpaySettings) -> di
 def create_order(payload: CreateCreditOrder, request: Request, response: Response,
                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    if not _purchase_enabled(current_user.id, current_user.email, db=db):
+    # Existing payable identities must remain recoverable after this new-loss
+    # circuit pauses admission. Product/authentication kill switches still apply.
+    if not _purchase_enabled(current_user.id, current_user.email, db=db, check_payment_funding=False):
         raise HTTPException(503, "Credit purchases are not available yet.")
     settings = RazorpaySettings.from_env()
     identity = payload.order_reference or purchase_request_id(current_user.id, "unified:" + payload.idempotency_key)
@@ -526,17 +571,17 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
             return _checkout(original, current_user, settings)
         user = db.query(User).filter_by(id=current_user.id).with_for_update().one()
         # Prevent a second payable attempt, including an unknown legacy order.
-        pending = db.query(PaymentOrder).filter(PaymentOrder.user_id == user.id,
-            PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"})).with_for_update(nowait=True).all()
-        for order in pending:
-            if order.provider_order_id or order.status in UNCERTAIN_ORDER_STATUSES:
-                raise _order_status_required(order)
+        pending = (db.query(PaymentOrder).filter(PaymentOrder.user_id == user.id, _blocks_new_purchase())
+            .order_by(PaymentOrder.created_at.asc(), PaymentOrder.id.asc()).with_for_update(nowait=True).first())
+        if pending:
+            raise _order_status_required(pending)
         review = release.current_review()
         quote = service.accept_purchase_quote(db, user_id=user.id, quote_id=payload.quote_id, order_id=identity)
         view = service.quote_response(quote)
         if not _offers_remain_available(view, current_user.id, current_user.email, db=db):
             raise pricing.CreditContractError("Supported services changed. Review a fresh purchase quote.")
         now = datetime.now(UTC)
+        assert_new_exposure_funded(db, policy=review.policy, now=now)
         order = PaymentOrder(public_id=identity, user_id=user.id, provider="razorpay", provider_mode=settings.mode,
             provider_key_id=settings.key_id, sku=view.sku, catalog_version=view.catalog_version,
             cost_policy_snapshot={"unified_purchase_quote": dict(quote.snapshot), "release_review": review.model_dump(mode="json")},

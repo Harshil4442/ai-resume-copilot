@@ -15,13 +15,13 @@ import re
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ...models import AdminAuditEvent, CandidatePasswordAccount, PasswordResetToken, User
 from ...security import JWT_SECRET
 from ..career.evidence_write_fence import require_installed
 from ..common import public_id, utcnow
+from ..notification_consent.schema_compat import projection_available
 from ..notifications import privacy_erasure as mail
 from . import deletion_provenance as native
 from .account_erasure import erase_account_sql, lock_account_erasure
@@ -78,9 +78,11 @@ def valid_token(row, token):
 def _schema26(db):
     if db.get_bind().dialect.name != "postgresql":
         raise ErasureUnavailable()
-    if list(db.execute(text("SELECT version_num FROM public.alembic_version")).scalars()) != ["20261031_0026"]:
-        raise ErasureUnavailable()
-    require_installed(db.connection(), "public")
+    try:
+        projection_available(db, namespace="public")
+        require_installed(db.connection(), "public")
+    except Exception:
+        raise ErasureUnavailable() from None
 
 
 def _binding(owner, account):

@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-03T23:37:55.247448+00:00",
+  "updated_at": "2026-11-13T12:07:43.561683+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -22,8 +22,8 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The db8 application is promoted on schema26 and its three original services are healthy. Original schedules and coordinator restoration passed the joined final read and own narrow IAM cleanup. Complete owner review/cancel/revoke acceptance, representative workload measurements and invoice allocation remain pending.",
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
+      "local_result": "The db8 application is last verified on schema26 with its three original services and restored schedules/coordinator. The owner original-file review, cancellation before Fill and exact-device revocation portion is now verified; representative workload measurements, broader acceptance and invoice allocation remain pending.",
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00"
     },
     {
       "number": 2,
@@ -41,7 +41,8 @@
         "docs/delivery/evidence/2026-10-29-cost-quality-release-candidate.json",
         "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
       ],
       "local_result": "Schema26 migration and original application promotion are observed; existing balances and customer obligations remain retained. Unified-wallet conversion, new payment activation, invoice and tax reconciliation remain pending. Source and CI checks do not activate billing.",
       "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
@@ -60,7 +61,9 @@
         "docs/delivery/evidence/2026-10-28-calibration-and-format-corrections.json",
         "docs/delivery/evidence/2026-10-30-baseline-and-candidate-status.json",
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
       "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
       "local_result": "The db8 application, including bootstrap/reuse, transcription/evidence review and Dashboard changes, is promoted; the observed owner workspace was preserved. Comprehensive supported-cohort relevance and factuality acceptance remains pending."
@@ -89,10 +92,12 @@
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "The previously recorded scanner proof remains historical evidence. Paid native document QA (80 documents across nine jobs) is on HOLD; broader native/model quality qualification and independent human acceptance remain pending. Source, inert and operating repairs do not qualify optimized AI; optimized AI stays closed."
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
+      "local_result": "The stored scanner verification expired on 2026-11-05 at 06:24:10 UTC. Scanner maintenance and paid native document QA (80 documents across nine jobs) remain on HOLD. Broader native/model quality qualification and independent human acceptance remain pending; local source checks do not qualify optimized AI, which stays closed."
     },
     {
       "number": 5,
@@ -112,10 +117,11 @@
         "docs/delivery/evidence/2026-10-31-pilot-deployment-status.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "The shared native metadata admission remains 40/minute. Repaired production login returned HTTP 200 and explicit local companion recovery verified the retained identity. Original-file review/cancel and exact-device revocation remain pending because browser tool control is blocked. Capacity, representative responsive workloads and invoice-backed forecasts remain unqualified."
+      "status_observed_at": "2026-11-05T14:19:50.050546+00:00",
+      "local_result": "The shared native metadata admission remains 40/minute. The owner reviewed/downloaded the original file, cancelled before Fill and revoked the exact companion device; a read-only exact-ID SQL check confirmed the recorded cancellation/revocation state and no linked fill/submission work. This does not qualify real Fill/upload/submit, representative capacity or broad responsive workloads. Invoice-backed forecasts remain pending."
     },
     {
       "number": 6,
@@ -136,10 +142,11 @@
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks; own narrow IAM additions were removed and verified. Full R03/RTO qualification, funded seven-day shadow accounting and finance reconciliation remain pending."
+      "status_observed_at": "2026-11-13T12:07:43.561683+00:00",
+      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks. The temporary IAM additions were removed and verified. The production shadow baseline for 6–13 November UTC completed read-only with zero qualifying operations or discovery batches. Representative funded shadow accounting, finance reconciliation and full R03/RTO qualification remain pending."
     },
     {
       "number": 7,
@@ -165,8 +172,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "The db8 immutable application is promoted and healthy, and the PR97 frontend login repair is deployed. Reviewed companion 0.8.9 succeeded locally with the same retained identity; PR99 head 554 is a preview with CI last observed in progress, while public companion 0.8.8 remains unchanged. Paid canary/commercial acceptance, optimized AI, wallet conversion, new payments and final submission remain closed.",
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00"
+      "local_result": "Last verified public frontend source 751319 includes companion 0.8.9. The db8 API and workers serve schema 26. The owner reviewed and downloaded the original résumé, cancelled before Fill and revoked the exact device. GitHub Support cleared the billing lock, and release verification resumed on GitHub Free. F07 notifications are default off. Fresh scanner verification remains on hold. Controlled production promotion, paid canary, commercial acceptance, optimized AI, wallet conversion, payments and final submission remain pending.",
+      "status_observed_at": "2026-11-13T10:38:00+00:00"
     },
     {
       "number": 8,
@@ -343,11 +350,12 @@
       "requirement": "Shared official job ingestion. Use the verified employer registry, documented feeds or permitted adapters. Fetch once for many users using conditional requests and changes since the last successful scan. Deduplicate by source ID, requisition, canonical URL and content revision. Record freshness and coverage limits.",
       "status": "pending",
       "evidence": [
-        "Source candidate only: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py implement optional metadata-only revalidation for the current reviewed population of nine Greenhouse, ten Ashby and one SmartRecruiters sources. This is not deployment or all-source conditional acceptance evidence.",
+        "Source implementation: backend/app/domains/employer/source_revalidation.py, connectors.py and tasks.py support optional metadata-only revalidation for the reviewed 9 Greenhouse, 10 Ashby and 1 SmartRecruiters sources. All 20 origins passed bounded public complete-scan acceptance on 2026-11-05; this is not deployment, SQL publication or conditional HTTP 304 acceptance across all sources.",
         "Greenhouse and Ashby use a whole-collection validator only when it is bound to the exact successful SQL checkpoint, canonical posting set, source configuration and versioned normalization/skills pipeline. SmartRecruiters always reads both complete current listing passes and every detail, conditionally reusing only an individually validated unchanged detail; mixed 200/304 results must still form a complete scan. No raw response bodies are cached.",
         "Redis is optional non-authorizing metadata: one bounded 64 KiB record per source, 24-hour maximum age, bounded I/O and no retries. Missing, expired, unsupported, oversized or mismatched metadata causes ordinary full reads. Anonymous request identity, no-store/Vary restrictions, the original 240-second public-read budget, source lease, publication dates and complete-scan closure remain enforced. Opaque weak ETags are validators, not content digests.",
         "Validators publish only after a successful SQL commit and owned lease/configuration/checkpoint/posting-snapshot fences. Unchanged descriptions avoid repeated skill extraction only under the same proven pipeline revision. A 304 refreshes the exact retained SQL snapshot and never means an empty board or closes jobs. Cache publication failure loses efficiency without changing a genuinely completed scan.",
-        "Focused offline HTTP, metadata and SQLite lifecycle controls: 224 passed with socket connections/DNS denied and author-root imports verified. Four real PostgreSQL race controls are prepared for the existing mandatory owned CI database; they are not locally qualified when that URL is absent. Fresh backend and employer-worker release verification plus scoped read-only acceptance of all three current platforms remain pending; vendor support and savings are not assumed for every source. Paid native document QA remains on HOLD."
+        "Focused offline HTTP, metadata and SQLite lifecycle controls previously passed 224 cases. Four actual owned PostgreSQL 17 concurrency cases also passed on 2026-11-04: source configuration, posting date and lease-owner changes cannot commit or publish an old snapshot; a competing refresh observes the existing lease without another GET. Current finite source, test and lockfile hashes and original RESULT, JUnit, source-manifest and import-origin integrity match that retained proof. No PG tests were repeated for this readback.",
+        "Public origin acceptance on 2026-11-05: 20/20 complete sources, 1,375 normalized openings, 145 GETs (all HTTP 200) in 122.916 seconds, with zero failed or retried GETs. Freshworks required 122 detail reads and two complete 2-page listing passes; the other 19 sources needed one GET each. Scans used baseline=None; live conditional reuse, serving freshness/SLA and fresh backend/employer-worker release qualification remain pending. No SQL/Redis publication or application authorization was performed. docs/delivery/evidence/2026-11-05-employer-source-acceptance.json"
       ]
     },
     {
@@ -366,13 +374,19 @@
       "id": "E05",
       "requirement": "Context selection. Send relevant approved evidence, the exact job revision and requested edits. Limit unrelated history and duplicate source text. Validate that evidence selection did not omit a fact needed to meet the promised deliverable before admitting the model call.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "E06",
       "requirement": "Correct reuse. Private cache keys include owner, source hash, approved evidence and correction versions, job revision, preferences, prompt, model, schema and validator versions. Share only public job data. Invalidate meaningful changes and coalesce identical active work. Cached results never bypass fresh authorization or job-availability checks.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "The saved-curated GET reuses exact owner/current curated-learning-v1 context without new admission, mutation or charge; the historical fingerprint is preserved. Broader cache/relevance criteria remain pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "E07",
@@ -426,13 +440,19 @@
       "id": "Q07",
       "requirement": "Unsupported inputs. Detect encrypted, scanned, corrupted, unusually complex or unsupported-language inputs before generation where possible. Request a suitable source, offer a clearly described alternative or decline without charging. Do not truncate relevant content silently to stay within budget.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Known qualified scope/source/context refusals are distinguished before paid work or reservation; no silent truncation. Broader native input envelope/language/render acceptance remains pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "Q08",
       "requirement": "Interview completeness. A paid eight-question set must contain eight distinct, role-relevant questions with actionable preparation guidance. Limited personal evidence may produce job-based questions marked as needing evidence, but must never produce invented personal answers or a one-question deliverable billed as eight.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "Q09",
@@ -444,7 +464,11 @@
       "id": "Q10",
       "requirement": "Answers and learning plans. Ground personal answers in approved facts and identify uncertainty. Learning plans must address the selected gap with actionable steps and verified or freshness-checked resource references. Dead or invented links and generic plans that ignore the selected goal fail acceptance.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local delivery projection disables resources without current catalogue/review authority while preserving saved guidance and charges. No actual URL freshness or complete goal-specific learning quality acceptance claimed; Q10 remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "Q11",
@@ -523,31 +547,41 @@
       "requirement": "Bound every attempt. Count SDK retries, validation repairs, worker retries and provider fallbacks under one persisted operation budget. One provider attempt is the default. Cancellation or a client timeout must not release money while the provider may still bill it. Stop worker processes where required; an HTTP timeout alone is not a process-kill guarantee.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local fresh run/cancellation checks prevent later admissions; already-started supplier costs remain held. Physical process termination and broader route qualification remain pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C04",
       "requirement": "Unknown costs and outcomes. Retain a conservative reservation until usage or status is reconciled. Persist provider request IDs, attempt count and estimated versus reported usage. Unknown application outcomes must not be retried as new submissions. Unknown invoices must not be treated as zero cost.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local cancellation/native-receipt controls preserve unknown liabilities and original refunds. Genuine supplier invoice reconciliation and full release proof remain pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C05",
       "requirement": "Circuit breakers. Disable the affected paid route after a confirmed critical quality error, repeated failures or insufficient funded headroom. Initial operational thresholds proposed for review are three consecutive execution failures or more than 10% failures in the last 20 attempts. Monetary admission applies even below those thresholds.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local actual worker tests distinguish voluntary cancellation from real failure; the original failure thresholds and monetary limits are retained. Production circuit acceptance remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "C06",
       "requirement": "Refund expense separation. Restoring a customer balance does not erase Gemini or worker expense. Charge failed attempts to the funded incident allowance, rate-limit abusive repetitions and keep customer-facing explanations accurate. Refund and chargeback obligations take priority over withdrawing profit.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
       ]
     },
     {
@@ -588,8 +622,12 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
-      ]
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "New authenticated private no-store saved-curated GET and explicit unsupported-input refusal are source-bound and generated types synchronized. Current CI/deployment remain blocked.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "A04",
@@ -603,13 +641,19 @@
       "id": "I01",
       "requirement": "No double counting. Exclude Gemini and incremental paid-worker execution here because they are already funded by execution allowances. Allocate actual provider bills once, using service and operation labels. Shared database and API costs must have an explicit allocation rule.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
+      ]
     },
     {
       "id": "I02",
       "requirement": "Load assumptions. Benchmark roughly one million authenticated API requests per month plus separately tested peaks; 0.5 to 0.75 average active database compute units; 2 to 4 million Redis commands; and 20 to 50 GB active document storage. These are workload assumptions, not unrestricted entitlements. [2][3][5]",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/STAGE5_OWNED_HTTP_CAPACITY.md"
+      ],
+      "local_result": "Both Linux cohorts recorded 170 valid reads and 130 governed refusals out of 300 requests in the shared burst. Each fresh-window cohort then completed 48 governed reads with zero refusals, 32 metadata calls per batch and actual concurrency peaks of 1, 10 and 16. Cleanup passed. Sustained hosted capacity remains unmeasured.",
+      "status_observed_at": "2026-11-13T10:57:00+00:00"
     },
     {
       "id": "I03",
@@ -630,23 +674,31 @@
       "requirement": "Funded acquisition allowance. Free server processing and promotional credits require a fixed funded allowance inside the approved shared or acquisition budget. A per-user quota alone is insufficient; enforce global admission as well. When exhausted, stop new optional free processing with an honest message or waitlist. Do not remove existing data or skip security checks.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-funding-cancellation-resource-guards.json"
+      ],
+      "local_result": "Local fixed-period spending now survives review renewal; actual owned PostgreSQL races passed. Real funded-policy/production acceptance remains pending.",
+      "status_observed_at": "2026-11-05T19:17:21.304195+00:00"
     },
     {
       "id": "F03",
       "requirement": "Fair paid experience. Existing saved results remain readable under the disclosed retention policy. New paid work must have sufficient reserved capacity before acceptance. Never silently degrade quality, throttle beyond the promised delivery window or delete files to make a spreadsheet budget fit.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
-      ]
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Exact saved curated guidance now has a read-only UI/API path during processing pauses; paid/curated modes remain distinct. Serving and full retention/quality acceptance remain pending.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "F04",
       "requirement": "Responsive performance. Keep common interactions usable on mobile and desktop. Proposed acceptance targets are p75 LCP at most 2.5 seconds, INP at most 200 ms and CLS at most 0.1 on the agreed test profile, and p95 common authenticated reads at most one second under the approved load excluding external identity-provider time. Record device, region, network and test conditions; do not assert these targets are already met.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json"
+        "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
       ]
     },
     {
@@ -654,7 +706,9 @@
       "requirement": "Efficient delivery. Cache eligible public pages and static assets, lazy-load secondary UI, paginate lists, reduce duplicate polling and serve signed authorized downloads directly. Reuse validated previews. A cache must not expose private resumes or bypass expired access rights.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/WORKSPACE_PAGINATION_2026-11-05.md",
+        "docs/delivery/evidence/2026-11-05-workspace-metadata-pages.json"
       ]
     },
     {
@@ -670,7 +724,9 @@
       "id": "F07",
       "requirement": "Notifications. Prefer transactional account and security email plus opted-in bounded digests. Do not send unlimited per-job notifications to free users. Budget deliverability capacity rather than assuming daily free quotas will always suffice.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/requirements/F07_NATIVE_CONSENT_INCREMENT.md"
+      ]
     },
     {
       "id": "F08",
@@ -678,8 +734,11 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
-      ]
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/evidence/2026-11-06-saved-guidance-input-feedback.json"
+      ],
+      "local_result": "Known unsupported source/scope/context refusals now have safe actionable422 guidance; genuine readiness/funding/processing outages retain503. Local evidence only, not launch acceptance.",
+      "status_observed_at": "2026-11-05T20:11:24.533761+00:00"
     },
     {
       "id": "M01",
@@ -703,7 +762,9 @@
       "id": "G02",
       "requirement": "Margin gates. Use 20% monthly conversion, all-Starter offer purchases and \u20b935,000 overhead as the approved adverse scenario. It leaves \u20b914,370 after reserves. Require at least 15% of defined net receipts after all budgeted costs; seek 20% in normal operation. At 2,000 buyers, overhead must be at most \u20b935,141 for 15% and \u20b930,399 for 20%. Include omitted costs before testing either gate.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-interview-margin-guards.json"
+      ]
     },
     {
       "id": "G03",
@@ -721,7 +782,9 @@
       "id": "G05",
       "requirement": "Protect customers when headroom falls. Stop new optional free work, unnecessary refreshes and uncommitted expansion first. Pause new paid admission before exhausting reserved obligations. Preserve already accepted work, access, export and security. Scaling down must respect persistent storage, retention and recovery commitments.",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/evidence/2026-11-05-payment-loss-funding.json"
+      ]
     },
     {
       "id": "G06",
@@ -742,7 +805,8 @@
       "requirement": "Shadow and canary. Propose at least seven days of representative shadow accounting and an initial opted-in cohort no larger than 5% of eligible traffic. Require at least 200 successful paid-equivalent operations across supported cohorts before widening; continue longer if coverage or statistical evidence is inadequate. Shadow calls and human review require a funded testing budget.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json"
       ]
     },
     {
@@ -757,8 +821,12 @@
     {
       "id": "R04",
       "requirement": "Stop conditions. Stop the affected optimized route for any confirmed fabrication, privacy leak, original-file corruption or unauthorized application action. Pause new optional execution on budget shortfall, stale supplier policy, sustained failure or a breached quality gate. Investigate before resuming.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/UNIFIED_CREDIT_ROLLOUT.md"
+      ],
+      "local_result": "Accepted model work checks the existing route failure and expense pause before sending a token-count request and before claiming generation. Local tests covered credit restoration, terminal duplicate delivery, an unaffected route and retained unknown supplier costs. Critical-incident and production recovery evidence remain pending.",
+      "status_observed_at": "2026-11-13T10:38:00+00:00"
     },
     {
       "id": "R05",

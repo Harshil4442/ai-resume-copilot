@@ -23,11 +23,13 @@ from backend.app import models
 from backend.app.domains.credits import canary, finance, service
 from backend.app.domains.credits.models import CreditExecutionHold, CreditReservation
 from backend.tests.test_canary_admission import accept, baseline, consent, prepare, source
+from backend.tests.test_canary_http import use_canary_fixture_clock
 from backend.tests.test_unified_credits import NOW
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from tests.test_development_runner import calibration as calibration
+from tests.test_development_runner import common_canary_funding as common_canary_funding
 
 
 @pytest.fixture(scope="module")
@@ -166,6 +168,7 @@ def test_same_owner_consent_race_forms_one_valid_monotonic_chain(factory, monkey
 @pytest.mark.parametrize("invalid_output", [False, True])
 def test_actual_canary_endpoint_settlement_refund_and_saved_reads_survive_revocation(factory, monkeypatch, invalid_output):
     from backend.tests import test_unified_synchronous as checks
+    use_canary_fixture_clock(monkeypatch)
     checks.setup.__wrapped__(factory, monkeypatch)
     config = checks.configure(monkeypatch, "enhanced_qa")
     with factory() as db:
@@ -260,6 +263,7 @@ def test_locked_census_identity_cannot_leave_stale_acceptance_or_partial_wallet_
     from backend.tests import test_unified_synchronous as checks
     from fastapi import HTTPException
 
+    use_canary_fixture_clock(monkeypatch)
     checks.setup.__wrapped__(factory, monkeypatch)
     config = checks.configure(monkeypatch, "enhanced_qa")
     with factory() as db:
@@ -291,7 +295,9 @@ def test_locked_census_identity_cannot_leave_stale_acceptance_or_partial_wallet_
         assert db.query(CreditReservation).count() == 0
 
 
-def test_exact_validated_local_internal_runner_remains_separate_from_public_canary(owned_cluster, calibration, monkeypatch):
+def test_exact_validated_local_internal_runner_remains_separate_from_public_canary(
+    owned_cluster, calibration, common_canary_funding, monkeypatch,
+):
     from sqlalchemy.engine import make_url
 
     from app.domains.analysis import development_runner as runner
@@ -304,6 +310,14 @@ def test_exact_validated_local_internal_runner_remains_separate_from_public_cana
         pytest.skip("Both existing runner-approved local ports are busy; no external listener is borrowed")
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+    # The internal authorization uses a live clock, unlike the retail fixtures.
+    now = datetime.now(UTC)
+    validity = {"valid_from": now - timedelta(days=1), "expires_at": now + timedelta(days=1)}
+    funding = common_canary_funding.model_copy(update={
+        "policy": common_canary_funding.policy.model_copy(update=validity),
+        "budgets": common_canary_funding.budgets.model_copy(update=validity),
+    })
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", funding.model_dump_json())
     local = runner.local_factory(url, calibration["authorization"])
     try:
         runner.prepare(local, **calibration)

@@ -1,122 +1,43 @@
-# Razorpay Go-Live Checklist
+# Razorpay go-live checklist
 
-Checkout must remain disabled until the account is activated for the exact
-HireWiz business model. Completing this checklist improves review readiness but
-does not guarantee approval by Razorpay or its banking partners.
+The launch product is the unified credit pass in the [current requirements](requirements/CREDIT_COST_QUALITY_V1_1.md) and [release runbook](delivery/UNIFIED_CREDIT_ROLLOUT.md). Keep production checkout closed until the exact product, serving release, financial evidence and commercial hosting are approved. Completing this checklist does not constitute provider approval or activate payments.
 
-## 1. Identity and website facts
+## 1. Verify the business and purchase terms
 
-- [ ] Select the true KYC form: unregistered individual or sole proprietor.
-- [ ] Legal operator name, PAN identity, bank-account holder and website
-      operator wording match.
-- [ ] Publish a complete legitimate correspondence address matching acceptable
-      KYC evidence.
-- [ ] Confirm the published phone number works and the stated support hours are
-      realistic.
-- [ ] Confirm GST status and invoice/tax treatment with an Indian CA; do not
-      publish a GSTIN or non-registration claim without evidence.
-- [ ] Verify `work@hirewizhq.com` receives mail and configure SPF, DKIM and
-      DMARC for `hirewizhq.com`.
-- [ ] Check all public pages in a signed-out/incognito session: `/`, `/pricing`,
-      `/about`, `/digital-delivery`, `/terms`, `/privacy`, `/refund`, `/cookies`,
-      `/contact`, and `/subprocessors`.
-- [ ] Confirm the deployed site—not only the repository—contains no unsupported
-      testimonials, outcome guarantees, recruitment/placement claims, virtual
-      currency framing, legacy brand, or inactive provider claims.
+- [ ] Use the existing merchant account and choose the true KYC form. Verify that the legal operator, PAN identity, settlement account holder and website operator wording agree. Confirm a legitimate correspondence address, working contact channels and support hours.
+- [ ] Confirm Indian tax and invoicing treatment with a qualified adviser. Verify the monitored support inbox and its domain authentication. Review the signed-out home, pricing, contact, legal, privacy, digital-delivery and refund pages against the approved terms.
+- [ ] Obtain written Razorpay approval for the actual self-service software and credit-pass model. Verify the merchant category, enabled domestic INR payment methods, statement descriptor, settlement account and website branding. Resolve any existing activation restriction in the original account.
+- [ ] Present these proposed introductory packs for review. Each purchase is a one-time 30-day pass for a finite number of HireWiz service credits, without automatic renewal. Credits cannot be transferred, resold or withdrawn as cash. Show the exact payable amount, validity, supported services and refund terms before accepting payment.
 
-## 2. Razorpay manual review
+| Pass | Introductory price | Credits |
+| --- | ---: | ---: |
+| Starter (`starter_pass`) | ₹59 | 40 |
+| Growth (`growth_pass`) | ₹179 | 130 |
+| Scale (`scale_pass`) | ₹449 | 360 |
 
-- [ ] Use the existing merchant account; do not create a duplicate account to
-      bypass a prior decision.
-- [ ] Request written confirmation of the exact accepted category and
-      sub-category for self-service AI-assisted resume-analysis SaaS.
-- [ ] Ask whether `it_and_software / saas` is the correct classification.
-- [ ] Ask Razorpay to unlock or correct the original activation form.
-- [ ] Supply public policy/pricing URLs and a sanitised reviewer account or
-      product walkthrough.
-- [ ] State clearly that the initial product is a ₹999 one-time 30-day software
-      pass with no automatic renewal, wallet, stored value, transfer, resale, or
-      cash withdrawal.
-- [ ] Obtain separate written approval before enabling standalone analysis-unit
-      packs or automatic recurring payments.
+- [ ] Approve actual start and end dates for the introductory campaign separately from each purchased pass's validity. Use an introductory-price label until same-pack reference-price evidence is approved. The catalog and immutable quote control the payable price, services and expiry terms.
+- [ ] Preserve the original Premium, job-service, analysis-unit and dual-balance orders and entitlements. Historical ₹999 Premium and ₹499 service SKUs remain available for original-order fulfillment. New legacy bundle sales are disabled while `UNIFIED_CREDITS_ENABLED=true`. Leave the existing balances on their recorded terms.
 
-## 3. Dashboard configuration
+## 2. Verify the checkout and webhook configuration
 
-- [ ] Generate separate Test and Live API keys. Use Live keys only after
-      activation.
-- [ ] Configure automatic capture for the intended payment flow.
-- [ ] Keep the initial lane domestic: enable only the approved INR payment
-      methods and keep international payments disabled until tax/FEMA review.
-- [ ] Create the webhook URL:
-      `https://<BACKEND_HOST>/api/billing/webhooks/razorpay`.
-- [ ] Set a strong, unique webhook secret. It is different from the API key
-      secret.
-- [ ] Subscribe at minimum to `payment.captured`, `payment.failed`, and
-      `refund.processed` events supported by the implementation.
-- [ ] Set `work@hirewizhq.com` or another monitored mailbox as the webhook alert
-      address.
-- [ ] Configure the approved `https://www.hirewizhq.com` website and checkout
-      branding. Do not display an approval badge unless Razorpay authorises it.
-- [ ] Ensure settlement bank details and customer-facing statement descriptor
-      match the approved legal/trade identity.
+- [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
+- [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
+- [ ] Subscribe to `payment.captured`, `order.paid`, `payment.failed` and `refund.processed`. Verify the signature on the raw request body and the provider event identifier. Confirm that duplicate deliveries and both capture event types for the same payment settle at most once. Unmatched events require reconciliation. See [Razorpay webhook validation and testing](https://razorpay.com/docs/webhooks/validate-test/).
+- [ ] Keep `RAZORPAY_CHECKOUT_ENABLED` false until provider approval, the go-live review and the rollout are ready. The provider gate also requires `RAZORPAY_ACCOUNT_APPROVED`, `PAYMENTS_GO_LIVE_REVIEW_COMPLETE`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`.
+- [ ] Check the unified release review in `UNIFIED_CREDIT_RELEASE_REVIEW_JSON` and the execution review in `UNIFIED_CREDIT_RUNTIME_REVIEW_JSON`. Checkout additionally depends on `UNIFIED_CREDITS_ENABLED`, `UNIFIED_CREDIT_EXECUTION_ENABLED`, an approved `UNIFIED_CREDIT_EXECUTION_AUDIENCE`, the exact current policy, qualified services and funded payment exposure. The `canary` audience requires its stored review ID and SHA-256 through `UNIFIED_CREDIT_CANARY_REVIEW_ID` and `UNIFIED_CREDIT_CANARY_REVIEW_SHA256`. The `reviewed_public` audience requires the reviewed widening decision.
+- [ ] Retain current evidence for delivery quality, legacy rights, commercial hosting, invoices, security, shadow accounting and eligible routes. Reconcile at least seven representative days of shadow accounting and at least 200 successful paid-equivalent operations before widening. Verify the adverse margin test and a funded operating month. Use the [release runbook](delivery/UNIFIED_CREDIT_ROLLOUT.md) for the complete canary and rollout sequence.
 
-## 4. Backend configuration
+## 3. Verify Test-mode purchase and recovery
 
-Store these in the production platform's secret/environment configuration. Use
-the exact names implemented by the backend and verify them against the current
-deployment documentation before enabling checkout:
+- [ ] Confirm the public catalog at `GET /api/public/credits/catalog` and the eligible signed-in catalog at `GET /api/v1/credits/catalog` reflect their audience and the checkout state. Both return 404 while the unified rollout is off. The legacy `GET /api/public/billing/catalog` should show checkout closed. During a canary, the signed-out unified catalog must keep checkout closed. Create the owned quote through `POST /api/v1/credits/purchase-quotes` with its SKU and idempotency key. Create the order through `POST /api/v1/credits/orders` with its quote ID, `billing_country=IN` and idempotency key. The server fixes the INR total and eligible services. Verify a valid 15-minute quote across the campaign cutoff and refusal of an expired, foreign or changed quote.
+- [ ] Use `GET /api/v1/credits/recent-order` and `GET /api/v1/credits/orders/{reference}` to recover the owned original. Replaying an interrupted order creation must keep the same attempt. Test an ambiguous or malformed provider response and confirm it blocks a second payable order until the first is reconciled.
+- [ ] A successful browser return to `POST /api/billing/orders/{order_reference}/checkout-result` records confirmation. Credits are granted only after verified capture through the shared webhook or an authoritative provider read through `POST /api/billing/orders/{order_reference}/reconcile`. Verify exactly one credit lot, the quoted credits, actual expiry and matching order and wallet entries. The actual expiry must be at least the quoted expiry and at least 30 days after both verified capture and fulfillment. Retry capture and reconciliation to verify idempotency.
+- [ ] Verify that invalid signatures, missing event identifiers, incorrect amounts or currency, foreign orders and failed payments cannot grant credits. Confirm another account cannot see the order or wallet. Check that diagnostic output omits credentials, raw webhook payloads and payment instrument data.
+- [ ] Verify partial and full `refund.processed` events against the original credit lot. Confirm proportional revocation, debt accounting for spent refunded credits and no effect on unrelated lots. Replaying a processed refund or receiving a late capture must preserve the reconciled state. Verify original legacy callbacks and original-order recovery separately.
 
-```text
-RAZORPAY_MODE=live
-RAZORPAY_KEY_ID=rzp_live_...
-RAZORPAY_KEY_SECRET=...
-RAZORPAY_WEBHOOK_SECRET=...
-RAZORPAY_WEBHOOK_SECRET_PREVIOUS=...  # only during a controlled rotation
-RAZORPAY_ACCOUNT_APPROVED=true
-PAYMENTS_GO_LIVE_REVIEW_COMPLETE=true
-RAZORPAY_CHECKOUT_ENABLED=true
-```
+## 4. Activate and verify the authorized rollout
 
-Set `PAYMENTS_GO_LIVE_REVIEW_COMPLETE=true` only after every applicable item
-in sections 1–5 is evidenced and signed off. It prevents provider approval
-alone from bypassing unresolved identity, tax, support, or staging work.
-
-During webhook-secret rotation, place the old secret in
-`RAZORPAY_WEBHOOK_SECRET_PREVIOUS` until Razorpay's retry window has elapsed,
-then remove it. Never reuse either secret elsewhere.
-
-Also verify `APP_ENV=production`, production `DATABASE_URL`, a strong stable
-`JWT_SECRET`, the matching Google client ID if Google login is enabled,
-restricted `FRONTEND_ORIGINS`, and the corresponding NextAuth/Vercel secrets.
-Never use a default authentication secret in production.
-
-## 5. Test-mode verification
-
-- [ ] Checkout is unavailable when any required secret or enable flag is absent.
-- [ ] The frontend submits only the SKU; changing browser amount/currency has no
-      effect.
-- [ ] A successful browser return does not grant Premium before the webhook.
-- [ ] A correctly signed captured-payment webhook grants exactly 30 days once.
-- [ ] Replaying the same event id does not extend access again.
-- [ ] A bad signature, wrong amount, wrong currency, wrong order id, missing
-      event id, or payment for another user grants nothing.
-- [ ] Failed payments grant nothing.
-- [ ] A full refund revokes only the refunded order's entitlement.
-- [ ] A customer can see `pending`, `paid`, `failed`, or `refunded` status only
-      for their own order.
-- [ ] Logs contain correlation/order ids but no API secrets, raw resumes, card
-      data, UPI PINs, or full webhook bodies.
-
-## 6. Controlled live launch
-
-- [ ] Deploy with checkout disabled and verify public pages first.
-- [ ] Enable checkout only after written activation and Live-key verification.
-- [ ] Make one low-risk real purchase using the published SKU and verify the
-      Razorpay dashboard, webhook event, local order, entitlement, receipt and
-      settlement record.
-- [ ] Test the documented refund process.
-- [ ] Monitor webhook failures, unmatched payments, duplicate events, disputes,
-      refund failures and settlement reconciliation daily during the initial
-      launch.
-- [ ] Keep a rollback switch: setting `RAZORPAY_CHECKOUT_ENABLED=false` must
-      immediately stop new checkouts without damaging existing records.
+- [ ] Deploy the matched frontend, API and workers with checkout closed. Verify approved public terms, signed-in routes, retained wallet balances, old orders and callback reachability. Run the isolated Test-mode checklist before presenting the activation decision.
+- [ ] Obtain separate paid-activation approval and verify the merchant approval, commercial hosting, funding, canary and current release evidence. Enable only the approved audience and services.
+- [ ] With authorization for the transaction, reconcile one controlled purchase and the approved refund against Razorpay, the webhook, the owned order, the credit lot, the receipt and the settlement ledger. Monitor payment failures, unmatched events, replay, disputes and refund errors during rollout.
+- [ ] To pause sales, turn off `RAZORPAY_CHECKOUT_ENABLED` before changing unified rollout flags. Confirm new orders are closed on both catalogs. Keep the signed webhook, original quote, status and reconciliation paths available for accepted payments. Reconcile outstanding orders before rotating the merchant API key, since browser confirmation and provider reconciliation bind to the original mode and key ID. Preserve funded delivery and refund obligations through rollback.

@@ -505,7 +505,7 @@ def execute_interview_questions(
         contract_versions,
         load_approved_evidence,
     )
-    from .service import ensure_interview_inputs_current
+    from .service import ensure_interview_inputs_current, lock_interview_inputs_current
 
     ensure_interview_inputs_current(db, run, payload)
     opportunity = get_opportunity(
@@ -523,6 +523,7 @@ def execute_interview_questions(
             num_questions=max(3, min(int(payload.get("num_questions", 8)), 12)),
             approved_evidence=evidence_payload,
         )
+        lock_interview_inputs_current(db, run, payload)
         return {
             "opportunity_id": opportunity.id, "questions": questions,
             "mode": "curated", "provenance": "curated", "catalog_version": CATALOG_VERSION,
@@ -560,8 +561,7 @@ def execute_interview_questions(
             error_code=type(exc).__name__,
         )
         raise
-    begin_result_commit(db, user_id, run.id)
-    ensure_interview_inputs_current(db, run, payload)
+    lock_interview_inputs_current(db, run, payload)
     _record_model_call(
         db,
         run=run,
@@ -991,13 +991,17 @@ def execute_resume_tailor(
 
 def execute_operation(db: Session, run: models.AnalysisRun) -> dict[str, Any]:
     payload = dict(run.input_payload or {})
-    if run.operation == "resume_tailor" or (run.operation == "job_match" and payload.get("mode") == "enhanced"):
+    if run.operation == "resume_tailor" or (
+        run.operation in {"job_match", "interview_questions"} and payload.get("mode") == "enhanced"
+    ):
         from .service import guard_analysis_inputs
 
         complete = (run.model_cost_quote or {}).get("billing_currency") == "credits" or run.id.startswith("qev2_")
         with guard_analysis_inputs(db, run, paid_context=complete) as check:
             if run.operation == "resume_tailor":
                 result = execute_resume_tailor(db, user_id=run.user_id, payload=payload, run=run)
+            elif run.operation == "interview_questions":
+                result = execute_interview_questions(db, user_id=run.user_id, payload=payload, run=run)
             else:
                 result = execute_job_match(db, user_id=run.user_id, payload=payload, run=run)
             check()

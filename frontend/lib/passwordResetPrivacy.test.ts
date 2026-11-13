@@ -7,7 +7,9 @@ afterEach(() => { history.replaceState(null, "", "/"); vi.unstubAllEnvs(); vi.re
 
 describe("reset telemetry exclusion before hydration", () => {
   it.each(["/forgot-password", "/reset-password/", "/account-recovery", "/api/password-reset/request", "/api/auth/password-reset/confirm",
-    "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/request", "/api/auth/privacy-erasure/confirm"])("excludes exact sensitive surface %s", (path) => {
+    "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/request", "/api/auth/privacy-erasure/confirm",
+    "/notifications/unsubscribe", "/notifications/unsubscribe/", "/api/backend/public/notifications/unsubscribe",
+    "/api/backend/public/notifications/unsubscribe/"])("excludes exact sensitive surface %s", (path) => {
     expect(isPasswordResetPath(path)).toBe(true);
     expect(isPasswordResetUrl(`https://www.example.invalid${path}#token=private`)).toBe(true);
     expect(isPasswordResetUrl(`POST ${path}`)).toBe(true);
@@ -16,8 +18,13 @@ describe("reset telemetry exclusion before hydration", () => {
     expect(resetTelemetry({ request: { url: "https://www.example.invalid/dashboard" } })).toBe(false);
     expect(resetTelemetry({ request: { url: "https://www.example.invalid/api/password-reset/confirm" } })).toBe(true);
     expect(resetTelemetry({ transaction: "POST /api/auth/password-reset/request" })).toBe(true);
+    expect(resetTelemetry({ transaction: "POST /api/backend/public/notifications/unsubscribe" })).toBe(true);
     expect(resetTelemetry({ breadcrumbs: [{ data: { from: "/reset-password#token=private", to: "/login" } }] })).toBe(true);
+    expect(resetTelemetry({ breadcrumbs: [{ data: { from: "/notifications/unsubscribe#proof=private", to: "/login" } }] })).toBe(true);
     expect(isPasswordResetPath("/reset-password-example")).toBe(false);
+    expect(isPasswordResetPath("/notifications/unsubscribe-example")).toBe(false);
+    expect(isPasswordResetPath("/notifications/unsubscribe/extra")).toBe(false);
+    expect(isPasswordResetPath("/api/backend/public/notifications/unsubscribe-extra")).toBe(false);
   });
   it("strips link proof before Sentry initialization and suppresses reset navigation hooks and events", async () => {
     vi.resetModules(); sentry.init.mockReset(); sentry.captureRouterTransitionStart.mockReset();
@@ -48,7 +55,8 @@ describe("reset telemetry exclusion before hydration", () => {
     const { default: config } = await import(modulePath);
     const all = await config.headers();
     for (const source of ["/forgot-password", "/reset-password", "/account-recovery", "/api/password-reset/:path*",
-      "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/:path*"]) {
+      "/privacy-erasure", "/privacy-erasure/confirm", "/api/privacy-erasure/:path*",
+      "/notifications/unsubscribe", "/api/backend/public/notifications/unsubscribe"]) {
       const rule = all.find((row: { source: string }) => row.source === source);
       const headers = Object.fromEntries(rule.headers.map((row: { key: string; value: string }) => [row.key, row.value]));
       expect(headers["Referrer-Policy"]).toBe("no-referrer");
@@ -72,5 +80,25 @@ describe("reset telemetry exclusion before hydration", () => {
     expect(erasure.readPrivacyErasureLink().token).toBe(token);
     const reset = await import("./passwordResetLink");
     expect(reset.readPasswordResetToken()).toBeNull();
+  });
+  it("captures unsubscribe proof before Sentry initialization without adopting it as reset or erasure proof", async () => {
+    vi.resetModules(); sentry.init.mockReset();
+    const token = `hwdu1.eyJ2ZXJzaW9uIjoxfQ.${"A".repeat(43)}`;
+    history.replaceState(null, "", `/notifications/unsubscribe#token=${token}`);
+    sentry.init.mockImplementationOnce(() => {
+      expect(location.hash).toBe("");
+      expect(location.search).toBe("");
+    });
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_DSN", "https://synthetic.invalid/123");
+    await import("../instrumentation-client");
+    expect(sentry.init).toHaveBeenCalledOnce();
+    expect(sentry.init.mock.calls[0][0].enabled).toBe(false);
+    const unsubscribe = await import("./notificationUnsubscribeLink");
+    expect(unsubscribe.readNotificationUnsubscribeLink().token).toBe(token);
+    const reset = await import("./passwordResetLink");
+    const erasure = await import("./privacyErasureLink");
+    expect(reset.readPasswordResetToken()).toBeNull();
+    expect(erasure.readPrivacyErasureLink().token).toBeNull();
+    expect(unsubscribe.readNotificationUnsubscribeLink().token).toBe(token);
   });
 });

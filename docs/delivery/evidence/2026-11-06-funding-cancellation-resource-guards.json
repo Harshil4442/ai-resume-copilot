@@ -1,0 +1,109 @@
+{
+  "observed_at": "2026-11-05T19:17:21.304195+00:00",
+  "state": "LOCAL_IMPLEMENTED_PEER_REVIEWED_COMMIT_READY_NOT_PUSHED_OR_DEPLOYED",
+  "parent_commit": "0c5e4ce3383c4f5226c2b88768fdf3ae1ba84680",
+  "requirements": [
+    "F02",
+    "C03",
+    "C04",
+    "C05",
+    "Q10"
+  ],
+  "implementation": {
+    "F02": "The same funding period retains all settled spending across policy version/date renewal, plus unresolved costs from any period counted once. Shared money limits and rolling account/global quotas remain. A new reviewed period is not software proof of new cash.",
+    "C03_C04": "Fresh exact AnalysisRun binding/cancellation is checked at budget entry, every preflight and atomic claim even if callers omit run ID. Exact PostgreSQL55P03 NOWAIT refusal preserves existing owner/hold ordering. Claims won before cancellation retain measured or unknown supplier expense; customer cancellation refunds credits and never asserts process termination.",
+    "C05": "Same-transaction cancelled run settlement records cancelled delivery rather than failed. The existing delivered/failed circuit ignores cancellations without treating them as successes; three real failures still pause admission. Cancelled costs remain in incident money usage. Native reconciliation still requires independent exact matching completed/failed terminal evidence; cancellation is no native-cost or process-kill proof.",
+    "Q10": "A pure deep-copied current catalogue/review projection covers initial, fallback, funded free/paid replay, legacy/current learning result GET and compatibility gaps. Unreviewed/expired/withdrawn/mismatched/unsafe old resource URLs become null, preserving titles, prose, stored result, identities, receipt and charge. No replacement URL is added; existing warnings explain unavailable links. Compatibility gaps adds warnings only.",
+    "source": "Current application remains312 files with SHA81eaaab9ae0d9f1bb4eaf0db57a683b0af2a3113a30930c3239f7a98888440a2. Existing Source27 runner now binds33 suites and76 mandatory groups plus unchanged public courses catalogue. Retained45b3/290/f277 and producer/native authority remain unchanged."
+  },
+  "verification": {
+    "F02": "16 distinct controls:10 new SQLite,2 actual owned PostgreSQL races,4 existing replay/reuse/overrun/shared controls. Before-fix renewal defect retained. Owned cluster stopped/removed. Ruff3/Mypy1 PASS; finite Root review PASS.",
+    "C03_C04_C05": "93 distinct controls across initial88 and5 genuinely new delta cases;7 affected delta passes include2 changed in-flight assertions. Actual create_run/process_analysis_run confirms three cancellations allow later admission and three failures stop it.2 actual PostgreSQL races from initial packet retained without repeat. Synthetic independent native receipts test completed/failed and pending/unknown/mismatch refusal. Ruff5/Mypy3 PASS; final independent V2 review PASS.",
+    "Q10": "19 distinct focused controls across actual owned HTTP, funded free cache, paid saved replay, generic/legacy result GET, alias/replacement and malformed review boundaries. Actual before-fix HTTP red retained; corrected fixture expectation is recorded. Ruff6/Mypy5 PASS; independent review PASS. No actual resource URL fetched or new freshness review issued.",
+    "integration": "123 owned synthetic current-profile/contract/runner controls PASS in0.99s; Ruff5/Mypy4 PASS. Collection-only581 nodes across33 suites includes every76 required group at exact multiplicity; no test body/fixture executed by collection. Independent finite integration peer confirms all68 top-level functions and retained/producer boundaries unchanged.",
+    "OpenAPI": "Exported once after HTTP product changes; byte-identical bb908fb53e30cbb55b6a2176fb0ef2f65f7adb5cbbaee2546e9686b81a2aa33d. No frontend code, dependency, generated types or build changes needed."
+  },
+  "source_files": {
+    "backend/app/domains/credits/analysis.py": "b57f48ac69636bbcd2500f5958723aade9123888a5b752bfe8f926922c6d8988",
+    "backend/app/domains/credits/execution.py": "5e132a002dbf223ca4edc16b5bb44b587d51aa08f12cf045b51e487fc353e776",
+    "backend/app/domains/credits/reconciliation.py": "656d08393e1de95591a52d6b1483a20ae36bde8837fe3e1a0bb3091966fa5a37",
+    "backend/app/domains/credits/synchronous.py": "8e7bfa18cb0eabee2fc688c982a203c49dd9ba904e14e7f3bfaab4ed8b4f3f6e",
+    "backend/app/domains/free_core/service.py": "0f5a66f37d8e80af42a85ac18127dc9df5c7f294d2237585e0fe7f04cee584bb",
+    "backend/app/domains/free_core/synchronous.py": "d2315ca5f74eb4f67e2c85ff734e9e59036be726fb92d1b715f1c5a340340c59",
+    "backend/app/routers/recommendations.py": "c82d203822557e30f58ab111ab1d153453d923af2c168137951fc0628463486b",
+    "backend/app/routers/v1/analysis.py": "fe3a97fe668e95cc7be80a09259e1c5e05492df242abbfbaf9f15d5c95e20ea4",
+    "backend/app/services/synchronous_contracts.py": "49ef1b9e6f5fe4c54ee5d6a35f24a5af26d514377ec80d10291d250191f1e36e",
+    "backend/evaluation/native_acquisition_v2/qualification.py": "6dd526b1f60247151f41a5a1eda82cf89725dd7bf2338c2c180026d063c5b385",
+    "backend/scripts/qualify_native_quality_acquisition.py": "e12d1b6cd7b8327960c59e227514c71b5c1d968adfc5aa66ba197949758c0f32",
+    "backend/scripts/qualify_schema27.py": "2f4808068fa160a04b8f39a7c0a7e90ee310b066236ab2a19cf9476e2868fa0e",
+    "backend/scripts/schema27_app_release_contract.py": "07f39e147ab4a5f4264028ec4d01cdc9aa3e859c6def692a21522a38859ce8de",
+    "backend/tests/test_free_core_funding_period.py": "337771a95ec17e5403e9ea0bd7d86acc5da9a22029f5339f4142283bb7eedbd4",
+    "backend/tests/test_free_core_funding_period_postgres.py": "c7d11800d9283381ccf8bf11831a0d434b430cc9ccf73a00e23bf58ce348b5dc",
+    "backend/tests/test_learning_resource_delivery.py": "9f30573338b5a2598ed5a94ee42f69d07548d8c75dc952502f1c87a436741ae7",
+    "backend/tests/test_native_expense_reconciliation.py": "f12991d2c8c5d8f9d0ae613638cf0ca9b3e8859dbfc61c090b00b6b0f4b517c7",
+    "backend/tests/test_schema27_app_release_contract.py": "d1eaccccd985b6817f930486dfa07dfa0d4d4cec661ae21de9342cb8c6a39d4b",
+    "backend/tests/test_unified_analysis_cancellation.py": "df8705c3e2c42bd01bb11d00d445ba6c600591b85d01a697025b06c159bcd778",
+    "backend/tests/test_unified_execution.py": "61d20eb0d236b9544013b58f264092f7677b893b387e5827401d7e0081f85a85"
+  },
+  "evidence": {
+    "free": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/free-core-period-2u8dv6rf/MANIFEST.json",
+      "sha256": "4f910af99c9fde6ba3370c7dd6b5f5150d689f29f84f5629b330edeac241c19b"
+    },
+    "free_root_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/free-core-period-2u8dv6rf/ROOT_PEER_REVIEW.json",
+      "sha256": "372b3f8dac243c02d5283a05e286fdf5e16c27de2ad88901eb6403be53bd5a9a"
+    },
+    "cancellation_prior": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/unified-cancellation-local-20261106/MANIFEST.json",
+      "sha256": "3216f50adfc57c06258a6e4fbb821d9646544bf39d638bcc0bff486d2a0b0615"
+    },
+    "cancellation_final": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/unified-cancellation-local-20261106/MANIFEST_V2.json",
+      "sha256": "f970602466bbe74ae50fda053dc854977d99f497dfac6cefec08d73058a720cc"
+    },
+    "cancellation_final_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/unified-cancellation-local-20261106/PEER_REVIEW_V2.json",
+      "sha256": "2e7457c569005fe8c891742c8113d7de9f3ddac3ebc9bf650251bd9db2961656"
+    },
+    "worker_circuit_finding": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261105/unified-cancellation-local-20261106/WORKER_CIRCUIT_PEER_ADDENDUM.json",
+      "sha256": "789e3b155827bf115a3e3172a7b14f5bde26877be10119195f74e7cdd38d5a26"
+    },
+    "learning": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/learning-resource-delivery-local/MANIFEST.json",
+      "sha256": "97544b5016e0ea7ebd1649b812e68d6a59a68967832fb27680826384492463c3"
+    },
+    "learning_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/learning-resource-delivery-local/PEER_REVIEW.json",
+      "sha256": "9ffc96d680ea2609441e89afaf3ef3bc586df66ac3d1ca0a2bd06373f2a91f38"
+    },
+    "integration_junit": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/workflow-guards-source-7goeenfx/junit.xml",
+      "sha256": "64a20cf61431c030a0ad3854ff208561b0d099cd01594e80efe4bcd62dbfc05c"
+    },
+    "collection_only": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/workflow-guards-source-7goeenfx/collection.json",
+      "sha256": "c74d695c1097db0f2e56838ebb940fc2dd7a87ad69e5aa17d9828c0016b5ccb1"
+    },
+    "ruff": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/workflow-guards-source-7goeenfx/ruff.json",
+      "sha256": "87ce4808438677a189ba6a0705bc76a8f9de6f962e6969bccfde5ed4ed34bc3b"
+    },
+    "mypy": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/workflow-guards-source-7goeenfx/mypy.json",
+      "sha256": "13fc013a8327f1d12b231e8209c13ca1802a098d7709356a487601e381364448"
+    },
+    "integration_peer": {
+      "path": "/Users/harshil/.codex/hirewiz-evidence/20261106/current-source27-integration-peer-final.json",
+      "sha256": "2a2b6f8cc24988a1e53344e238a15736a98118b1638787dae2a9c976a7ec9916"
+    }
+  },
+  "limits": [
+    "Local source and owned synthetic/SQLite/PostgreSQL evidence only. No model/provider/cloud/native QA/paid service call, full actual-root qualification, held-data read, DDL or deployment.",
+    "No production policy, wallet, credit pack, price, spending cap, bank funding or commercial activation changed. Saved output response filtering does not certify actual URL reachability or whole Q10 quality.",
+    "Current remote PR109 remains0c5e4ce. Its first run42085527252 failed all five jobs before steps with account billing lock; these later local changes are not pushed and have no source-CI qualification. Do not retry without account-state change.",
+    "Scanner17 maintenance and Native80 QA remain OWNER HOLD; scanner verification expired2026-11-05T06:24:10Z. Models, sales/checkout and final submission stay closed. Human review, capacity, finance, shadow and full restore/rollout acceptance remain pending.",
+    "No requirement/stage completion is claimed. Original eight stages,83 identifiers and statuses remain unchanged."
+  ]
+}

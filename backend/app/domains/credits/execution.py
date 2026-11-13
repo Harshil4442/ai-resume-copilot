@@ -12,14 +12,15 @@ from datetime import datetime
 from fractions import Fraction
 from typing import Any
 
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from ...models import ModelCostLiability
+from ...models import AnalysisRun, ModelCostLiability
 from ...services.generation_budget import _usage
 from ...services.model_cost_policy import input_token_estimate, quoted_cost
 from ..employer.admissions import lock_application_set
 from . import finance, pricing, service
-from .admission import lock_money
+from .admission import lock_money, require_route_open
 from .models import CreditExecutionAttempt, CreditExecutionHold, CreditReservation
 from .service_quotes import QualifiedRoute, require_route
 
@@ -33,6 +34,70 @@ class CompletionBinding:
     claim_key: str
     ordinal: int
     owner_id: int
+
+
+# These model services persist their execution source in AnalysisRun, including
+# inline services. A caller cannot turn one into non-run work by omitting an ID.
+_RUN_OPERATIONS = {
+    "enhanced_job_match": "job_match", "interview_questions": "interview_questions",
+    "resume_tailor": "resume_tailor", "resume_tailor_extended": "resume_tailor",
+    "market_report": "market_analysis", "resume_enrichment": "sync_resume_enrichment",
+    "bullet_rewrite": "sync_bullet_rewrite", "enhanced_qa": "sync_enhanced_qa",
+    "learning_strategy": "sync_learning_strategy",
+}
+
+
+def _active_run_source(
+    db: Session, hold: CreditExecutionHold, *, analysis_run_id: str | None = None,
+    lock: bool = False,
+) -> str | None:
+    """Fresh source checks; only an atomic claim retains a NOWAIT run lock.
+
+    Claims already hold owner then hold. Queued cancellation starts with the
+    run row and subsequently settles under the owner lock. Never wait for that
+    inverted row: roll back exactly PostgreSQL lock_not_available instead.
+    No network work occurs in this transaction, and completion is unaffected.
+    """
+    with db.no_autoflush:
+        reservation = db.query(
+            CreditReservation.user_id, CreditReservation.source_id,
+            CreditReservation.operation, CreditReservation.input_fingerprint,
+        ).filter_by(id=hold.reservation_id).one_or_none()
+        if (reservation is None or reservation.user_id != hold.user_id
+                or not isinstance(hold.snapshot, dict)
+                or not isinstance(hold.snapshot.get("route"), dict)
+                or hold.snapshot["route"].get("operation") != reservation.operation):
+            raise pricing.CreditContractError("The execution source is unavailable")
+        expected_operation = _RUN_OPERATIONS.get(reservation.operation)
+        if analysis_run_id is not None and analysis_run_id != reservation.source_id:
+            raise pricing.CreditContractError("The generation budget does not belong to this analysis")
+        query = db.query(
+            AnalysisRun.id, AnalysisRun.user_id, AnalysisRun.operation, AnalysisRun.status,
+            AnalysisRun.cancel_requested, AnalysisRun.model_cost_group_id,
+            AnalysisRun.model_cost_quote, AnalysisRun.input_fingerprint,
+        ).filter(AnalysisRun.id == reservation.source_id)
+        try:
+            row = (query.with_for_update(nowait=True) if lock else query).one_or_none()
+        except DBAPIError as exc:
+            if db.get_bind().dialect.name == "postgresql" and getattr(exc.orig, "sqlstate", None) == "55P03":
+                db.rollback()
+                raise finance.FundingUnavailable("The analysis is being cancelled or updated; no request was admitted") from None
+            raise
+        if row is None and expected_operation is None and analysis_run_id is None:
+            return None
+        if (
+            row is None or expected_operation is None or row.user_id != hold.user_id
+            or row.model_cost_group_id != hold.financial_group_id
+            or row.operation != expected_operation
+            or row.input_fingerprint != reservation.input_fingerprint
+            or not isinstance(row.model_cost_quote, dict)
+            or row.model_cost_quote.get("billing_currency") != "credits"
+            or row.model_cost_quote.get("unified_hold_id") != hold.id
+        ):
+            raise pricing.CreditContractError("The generation budget does not belong to this analysis")
+        if row.cancel_requested or row.status not in {"queued", "running"}:
+            raise finance.FundingUnavailable("The analysis is no longer active or was cancelled")
+        return row.id
 
 
 def _owned_hold(db: Session, *, user_id: int, hold_id: str) -> CreditExecutionHold:
@@ -63,10 +128,12 @@ def claim_attempt(
     route: QualifiedRoute,
     policy: finance.FinancialPolicy,
     now: datetime | None = None,
+    analysis_run_id: str | None = None,
 ) -> tuple[CompletionBinding, dict]:
     stamp = service._stamp(now)
     service._key(claim_key, 64)
     hold = _owned_hold(db, user_id=user_id, hold_id=hold_id)
+    _active_run_source(db, hold, analysis_run_id=analysis_run_id, lock=True)
     lock_money(db)
     from .canary import require_accepted_hold
     require_accepted_hold(db, hold)
@@ -93,6 +160,7 @@ def claim_attempt(
         raise finance.FundingUnavailable(
             "A previous provider attempt needs reconciliation; do not retry it"
         )
+    require_route_open(db, route_id=hold.route_id)
     attempt = next((a for a in attempts if a.state == "planned"), None)
     if attempt is None:
         raise finance.FundingUnavailable("The complete operation attempt allowance is exhausted")
@@ -274,15 +342,16 @@ def record_native_cost(
 
 
 def settle_delivery(
-    db: Session, *, user_id: int, hold_id: str, delivered: bool, now: datetime | None = None
+    db: Session, *, user_id: int, hold_id: str, delivered: bool, now: datetime | None = None,
+    cancelled: bool = False,
 ) -> None:
-    """A fully validated delivery charges once; failure refunds without erasing cost."""
-    if type(delivered) is not bool:
+    """Validated delivery charges once; failure/cancellation refund, retaining costs."""
+    if type(delivered) is not bool or type(cancelled) is not bool or (delivered and cancelled):
         raise pricing.CreditContractError("An explicit validated delivery outcome is required")
     stamp = service._stamp(now)
     hold = _owned_hold(db, user_id=user_id, hold_id=hold_id)
     lock_money(db)
-    outcome = "delivered" if delivered else "failed"
+    outcome = "cancelled" if cancelled else "delivered" if delivered else "failed"
     if hold.delivery_state != "pending":
         if hold.delivery_state != outcome:
             raise pricing.CreditContractError("The delivery already has a different final outcome")
@@ -343,40 +412,14 @@ def persistent_execution_budget(
     def context():
         # An alternate same-operation budget cannot bypass output qualification.
         require_route(route, policy, now=service._stamp(None))
-        identity = analysis_run_id or f"unified:{hold_id}"
-        current = current_budget()
-        if current is not None:
-            if current.run_id != identity:
-                raise finance.FundingUnavailable(
-                    "A generation budget cannot fund another operation"
-                )
-            yield current
-            return
         with factory() as db:
             hold = (
                 db.query(CreditExecutionHold).filter_by(id=hold_id, user_id=user_id).one_or_none()
             )
             if hold is None:
                 raise pricing.CreditContractError("Execution not found")
-            if analysis_run_id is not None:
-                from ...models import AnalysisRun
-
-                bound = (
-                    db.query(AnalysisRun)
-                    .filter_by(
-                        id=analysis_run_id,
-                        user_id=user_id,
-                        model_cost_group_id=hold.financial_group_id,
-                    )
-                    .one_or_none()
-                )
-                if (
-                    bound is None
-                    or (bound.model_cost_quote or {}).get("unified_hold_id") != hold.id
-                ):
-                    raise pricing.CreditContractError(
-                        "The generation budget does not belong to this analysis"
-                    )
+            run_id = _active_run_source(db, hold, analysis_run_id=analysis_run_id)
+            identity = run_id or f"unified:{hold_id}"
             used = (
                 db.query(CreditExecutionAttempt)
                 .filter(
@@ -385,6 +428,12 @@ def persistent_execution_budget(
                 )
                 .count()
             )
+        current = current_budget()
+        if current is not None:
+            if current.run_id != identity:
+                raise finance.FundingUnavailable("A generation budget cannot fund another operation")
+            yield current
+            return
         budget = GenerationBudget(limit=len(route.model_quotes), used=used, run_id=identity)
         bindings: dict[str, CompletionBinding] = {}
 
@@ -395,6 +444,7 @@ def persistent_execution_budget(
                     "overrun", "outcome_unknown", "settled",
                 }:
                     raise finance.FundingUnavailable("This operation cannot dispatch another model request")
+                _active_run_source(db, hold, analysis_run_id=run_id)
                 from .canary import require_accepted_hold
                 require_accepted_hold(db, hold)
                 if (
@@ -403,14 +453,15 @@ def persistent_execution_budget(
                     or hold.snapshot.get("policy") != policy.model_dump(mode="json")
                 ):
                     raise finance.FundingUnavailable("The funded route authorization changed")
-                # CountTokens receives the user's prompt. Recheck the accepted
-                # route and provider price before sending even that free request.
+                # CountTokens receives the user's prompt. Recheck qualification
+                # and the route circuit before sending even that free request.
                 require_route(route, policy, now=service._stamp(None))
                 attempts = db.query(CreditExecutionAttempt).filter_by(hold_id=hold_id).order_by(
                     CreditExecutionAttempt.ordinal
                 ).all()
                 if any(a.state in {"started", "outcome_unknown", "usage_unavailable", "overrun"} for a in attempts):
                     raise finance.FundingUnavailable("A previous provider attempt needs reconciliation")
+                require_route_open(db, route_id=hold.route_id)
                 next_attempt = next((a for a in attempts if a.state == "planned"), None)
             if next_attempt is None or budget.used >= budget.limit:
                 raise finance.FundingUnavailable("The complete operation attempt allowance is exhausted")
@@ -435,6 +486,7 @@ def persistent_execution_budget(
                     api_base=api_base,
                     route=route,
                     policy=policy,
+                    analysis_run_id=run_id,
                 )
                 db.commit()
                 bindings[binding.attempt_id] = binding

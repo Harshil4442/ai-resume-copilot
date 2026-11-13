@@ -5,7 +5,9 @@ import json
 import os
 import re
 from collections import Counter
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
@@ -43,6 +45,85 @@ def reviewed_learning_resources(skills: list[str], *, allow_expired: bool = Fals
         return {skill: [item for item in rows if item.get("url") in digests] for skill, rows in found.items()}
     except (ValueError, TypeError, KeyError):
         return {}
+
+
+RESOURCE_REVIEW_WARNING = (
+    "Resource links without a current review are unavailable (missing, expired or withdrawn). "
+    "Their titles are shown without a link; the guidance text is unchanged."
+)
+
+
+def _resource_skill(value: object) -> str:
+    from .market.skill_taxonomy import canonical_skill
+
+    return canonical_skill(value).casefold() if isinstance(value, str) else ""
+
+
+def _safe_resource_url(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        url = urlsplit(value)
+        return bool(url.scheme == "https" and url.hostname and url.username is None
+                    and url.password is None and (url.port is None or 0 < url.port <= 65535))
+    except ValueError:
+        return False
+
+
+def _project_learning_resource_links(result: dict, current_resources: dict[str, list[dict]]) -> dict:
+    """Pure non-authorizing view; never mutate history or replace an old URL."""
+    view = deepcopy(result)
+    unavailable = False
+
+    def project(resource: dict, skill: str) -> None:
+        nonlocal unavailable
+        url = resource.get("url")
+        allowed = {row.get("url") for row in current_resources.get(skill, [])
+                   if isinstance(row, dict) and _safe_resource_url(row.get("url"))}
+        if (not skill or _resource_skill(resource.get("skill")) != skill
+                or not _safe_resource_url(url) or url not in allowed):
+            resource["url"] = None
+            unavailable = True
+
+    priorities = view.get("learning_priorities")
+    if isinstance(priorities, list):
+        for priority in priorities:
+            if not isinstance(priority, dict):
+                continue
+            resources = priority.get("resources")
+            if not isinstance(resources, list) or not resources:
+                unavailable = True
+                continue
+            for resource in resources:
+                if isinstance(resource, dict):
+                    project(resource, _resource_skill(priority.get("skill")))
+    courses = view.get("recommended_courses")
+    if isinstance(courses, list):
+        if not courses and view.get("skill_gaps"):
+            unavailable = True
+        for resource in courses:
+            if isinstance(resource, dict):
+                project(resource, _resource_skill(resource.get("skill")))
+    if unavailable:
+        warnings = view.get("warnings")
+        warnings = list(warnings) if isinstance(warnings, list) else []
+        if RESOURCE_REVIEW_WARNING not in warnings:
+            warnings.append(RESOURCE_REVIEW_WARNING)
+        view["warnings"] = warnings
+    return view
+
+
+def learning_resource_delivery(result: dict) -> dict:
+    """Fresh catalogue/review projection only; no fetch, generation or charge.
+
+    Keep stored plan prose, references, receipt bindings and accounting intact.
+    A renewed review may expose the same saved URL again; a different catalogue
+    URL is never substituted into an old result.
+    """
+    skills = [item.get("skill", "") for item in result.get("learning_priorities", []) if isinstance(item, dict)]
+    skills += [item.get("skill", "") for item in result.get("recommended_courses", []) if isinstance(item, dict)]
+    return _project_learning_resource_links(result, reviewed_learning_resources(
+        [skill for skill in skills if isinstance(skill, str)]))
 
 
 def messages(operation: str, context: dict) -> list[dict]:

@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from backend.app.billing.catalog import CATALOG_VERSION, PRODUCTS
@@ -340,6 +340,117 @@ def test_recent_order_returns_null_when_checkout_has_not_started(client):
     assert response.status_code == 200
     assert response.json() is None
     assert response.headers["cache-control"] == "no-store, private"
+
+
+@pytest.mark.parametrize("status", ["creation_unknown", "create_failed", "paid_unfulfilled", "created", "payment_failed"])
+def test_recent_order_prioritizes_oldest_owned_legacy_payment_hold(client, session_factory, status):
+    oldest = _service_order(client)
+    same_time = _service_order(client)
+    latest_paid = _service_order(client)
+    detached = _service_order(client)
+    foreign = _service_order(client)
+    unified = _service_order(client)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        rows = {row.public_id: row for row in db.query(PaymentOrder)}
+        first = rows[oldest["order_id"]]
+        first.status = status
+        first.created_at = now - timedelta(hours=26)
+        if status in {"creation_unknown", "create_failed", "paid_unfulfilled"}:
+            first.provider_order_id = None
+        rows[same_time["order_id"]].created_at = first.created_at
+        rows[latest_paid["order_id"]].status = "paid"
+        rows[latest_paid["order_id"]].created_at = now - timedelta(hours=1)
+        rows[detached["order_id"]].user_id = None
+        rows[detached["order_id"]].created_at = now - timedelta(hours=30)
+        other = User(email="other-buyer@example.test")
+        db.add(other)
+        db.flush()
+        rows[foreign["order_id"]].user_id = other.id
+        rows[foreign["order_id"]].created_at = now - timedelta(hours=31)
+        rows[unified["order_id"]].entitlement_kind = "credit_pass"
+        rows[unified["order_id"]].created_at = now - timedelta(hours=32)
+        db.commit()
+
+    response = client.get("/api/billing/recent-order")
+    assert response.status_code == 200
+    assert response.json()["order_id"] == oldest["order_id"]
+    assert response.json()["status"] == ("failed" if status == "payment_failed" else "pending")
+    assert response.headers["cache-control"] == "no-store, private"
+
+
+def test_recent_order_retains_the_terminal_display_window(client, session_factory):
+    older = _service_order(client)
+    newer = _service_order(client)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        rows = {row.public_id: row for row in db.query(PaymentOrder)}
+        rows[older["order_id"]].status = "refunded"
+        rows[older["order_id"]].created_at = now - timedelta(hours=30)
+        rows[newer["order_id"]].status = "paid"
+        rows[newer["order_id"]].created_at = now - timedelta(hours=23)
+        db.commit()
+
+    assert client.get("/api/billing/recent-order").json()["order_id"] == newer["order_id"]
+    with session_factory() as db:
+        db.query(PaymentOrder).filter_by(public_id=newer["order_id"]).one().created_at = now - timedelta(hours=25)
+        db.commit()
+    assert client.get("/api/billing/recent-order").json() is None
+    assert client.get(f"/api/billing/orders/{older['order_id']}").json()["status"] == "refunded"
+
+
+@pytest.mark.parametrize("rollout_enabled", ["false", "true"])
+def test_paused_checkout_reconciles_old_legacy_order_without_another_order(
+    client, enabled_checkout, monkeypatch, session_factory, rollout_enabled,
+):
+    monkeypatch.setenv("UNIFIED_CREDITS_ENABLED", "false")
+    original = _create_order(client)
+    with session_factory() as db:
+        row = db.query(PaymentOrder).one()
+        original_quote = billing.order_quote(row).model_dump()
+        row.provider_order_id = "order_original"
+        remote_order = _capture_payload(row, event="order.paid")["payload"]["order"]["entity"] | {"attempts": 1}
+        remote_payment = _payment_entity(row) | {"id": "pay_original", "amount_refunded": 0}
+        row.created_at = datetime.now(UTC) - timedelta(hours=26)
+        row.status = "creation_unknown"
+        row.provider_order_id = None
+        db.commit()
+
+    provider_id = remote_order["id"]
+    payment_id = remote_payment["id"]
+
+    def collection(entity):
+        return {"entity": "collection", "count": 1, "items": [entity]}
+
+    replies = {
+        "orders": collection(remote_order), f"orders/{provider_id}": remote_order,
+        f"orders/{provider_id}/payments": collection(remote_payment), f"payments/{payment_id}": remote_payment,
+    }
+    reads = []
+
+    def read(settings, path, params, timeout):
+        assert not settings.checkout_enabled
+        reads.append(path)
+        return replies[path]
+
+    monkeypatch.setattr("backend.app.billing.reconciliation._provider_json", read)
+    monkeypatch.setenv("UNIFIED_CREDITS_ENABLED", rollout_enabled)
+    monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "false")
+    recent = client.get("/api/billing/recent-order").json()
+    assert recent["order_id"] == original["order_id"] and recent["accepted_quote"] == original_quote
+    assert recent["status"] == "pending" and not recent["checkout_available"]
+    assert client.post("/api/billing/orders", json=_purchase_payload()).status_code == 503
+    reconcile_path = f"/api/billing/orders/{recent['order_id']}/reconcile"
+    settled = client.post(reconcile_path).json()
+    assert settled["resolution"] == "settled"
+    assert settled["order"]["status"] == "paid" and settled["order"]["fulfilled"]
+    assert settled["order"]["accepted_quote"] == original_quote
+    assert client.post(reconcile_path).json()["resolution"] == "settled"
+    assert reads == list(replies)
+    assert enabled_checkout == [original["order_id"]]
+    with session_factory() as db:
+        assert db.query(PaymentOrder).count() == 1
+        assert db.query(EntitlementLedger).count() == 1
 
 
 def test_production_never_enables_test_mode(client, monkeypatch):

@@ -1,22 +1,34 @@
 # Unified credit release runbook
 
-Status observed **5 November 2026 (IST)**: DB8 is the healthy production API and
-application-worker release on committed schema26; original schedules/coordinator
-are restored and the joined read-only proof passed. Frontend 751/Hohsg serves
-companion 0.8.9. Qualified application image 9b9 is built and source-verified,
-**not deployed**. Its independent alias-capture controller PR103/CI41898489779
-remains pending. Registry PR102 is normally merged at `deaed009`; its own
-CI41893799752 completed successfully; runtime provenance remains the separate
-9b9 source and Build.
+Candidate update **6 November 2026 (IST)**: the local successor retains spending
+across free-allocation review renewals, blocks new model admissions after
+cancellation, distinguishes cancellation from a delivery failure, and disables
+unreviewed learning-resource links on initial and saved responses. Saved plans,
+customer refunds and supplier liabilities retain their original accounting.
+These are local fixes under F02/C03/C04/C05/Q10, not completed release gates.
+See [the scoped evidence](evidence/2026-11-06-funding-cancellation-resource-guards.json).
 
-Current companion original-file review/cancel/revoke, human Reviewer 2, shadow
-accounting, 10,000-user capacity, finance/commercial gates and full R03/RTO
-qualification remain pending. Paid 80-document/nine-job native QA and ordinary
-17-case scanner maintenance are OWNER HOLD; broader native/model quality
-qualification remains pending. The retained scanner proof expires
-`2026-11-05T06:24:10Z`, with no expiry waiver. The current browser identity check
-passed with no action enabled; a fresh base-page GET found an expired website
-session, and no new Fill, upload, submission or revocation occurred.
+The next local increment adds a read-only saved-curated-plan lookup that remains
+available when new processing pauses, and fixed unsupported-input guidance on
+paid quote requests. New generation remains gated. Funding, qualification and
+processing outages retain their unavailable response rather than being described
+as a user input problem. See [the workflow evidence](evidence/2026-11-06-saved-guidance-input-feedback.json).
+
+GitHub Support reset the account billing state on 6 November 2026. The next
+[CI run for draft PR109](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43404674109)
+started all five jobs on 13 November after the additional fixes were pushed.
+Release qualification still requires passing CI and a verified build for the
+final candidate commit.
+
+Last verified production context remains DB8 on committed schema26 with the
+three original services and restored schedules/coordinator, and frontend
+751/Hohsg with companion 0.8.9. The owner original-file review/download,
+cancel-before-Fill and exact-device revocation portion is verified. Actual
+Fill/upload/submission, human Reviewer 2, representative shadow accounting, 10,000-user capacity,
+finance/commercial gates and full R03/RTO qualification remain pending.
+Paid 80-document/nine-job native QA and 17-case scanner maintenance are OWNER
+HOLD. The retained scanner proof expired `2026-11-05T06:24:10Z`; it has no waiver.
+Models, new wallet activation, checkout and final employer submission remain off.
 
 [Current runtime metadata](evidence/2026-11-05-runtime-status.json) separates serving
 releases from build-only and pending work. The eight stage rows and all 83
@@ -81,7 +93,7 @@ The future application-submission tariff does not enable final submission.
 | 3. Deterministic processing and reuse | Basic/curated paths, owned saved-result reuse and employer-origin batch discovery | Complete application journeys with real supported sources; no unsupported coverage claim |
 | 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts and 200 materialized synthetic native inputs | Actual funded model outputs, complete native runtime/render receipts, blinded human comparison and statistical evidence |
 | 5. Capacity privacy and responsive experience | Account export/erasure, funded free limits, responsive review screens | Representative load/performance measurements and integrated privacy/security review |
-| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and freshly observed; retained data, financial digests and ACL preserved; captured resources restored | Representative seven-day/200-operation shadow accounting |
+| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and observed; retained data, financial digests and ACL preserved; captured resources restored. Read-only production baseline observation completed for 6–13 November UTC. | Representative seven-day/200-operation shadow accounting |
 | 7. Controlled deployment and commercial decision | PR57 merged; tested immutable API/workers promoted; frontend canonical production alias promoted; separate pilot reopening checked | Current account/companion acceptance after lifecycle repair, qualified optimized-route canary, commercial hosting and payment gates |
 | 8. Ongoing quality and economics | Stop conditions and accounting signals defined | Operational alert ownership, regular invoice/quality review and measured ongoing evidence |
 
@@ -105,9 +117,10 @@ remains pending.
 The schema25 procedures below retain their original release scope; they are not
 instructions to replay migration or reopen the current schema26 pilot. The
 application-only schema26 successor controller is in
-`backend/scripts/schema26_app_successor.py`; its PR103 alias fix still requires
-its own qualification and fresh plan before use. The current target image remains
-9b9, and no new application build is required by this controller-only fix.
+`backend/scripts/schema26_app_successor.py`; its PR103 alias fix has a separate
+qualification and planning boundary. The historical controller-only target was
+9b9. The current Source27 candidate requires its own exact-source qualification
+and release plan; the earlier image does not contain these new application fixes.
 
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial
@@ -364,12 +377,28 @@ reused to discard obligations. Revision names alone do not prove source identity
 ## Shadow report
 
 `backend/scripts/credit_shadow_report.py` reads aggregate operation and ledger
-data using a read-only database transaction. Provide a reviewed nonsecret runtime
-configuration and a completed timezone-aware window of at most 31 days. It
-reports hypothetical tariffs, explicit discovery batch totals, retained provider
-liabilities, protected execution exposure, unspent credits and accepted holds.
+data using a read-only database transaction. Provide a completed timezone-aware
+window of at most 31 days using `--start` and `--end`. Use `--runtime-review`
+with an existing reviewed runtime configuration or `--reporting-review` with
+current reviewed cost assumptions when paid routes are closed. The reporting
+JSON uses `schema_version: credit-shadow-reporting-review-v1`, a reviewed
+`policy` (the existing `FinancialPolicy`), and `costs` with the review's
+`version`, `evidence_sha256`, `valid_from`, `expires_at`,
+`legacy_search_cost_minor`, `legacy_application_cost_minor`,
+`legacy_preparation_minor`, and `legacy_provider_attempt_overhead_minor`.
+Supply reviewed nonsecret amounts, which may be documented estimates. The
+existing `funding_policy_version` report field identifies the cost review used
+in reporting mode. The report shows hypothetical tariffs, explicit discovery
+batch totals, retained provider liabilities, protected execution exposure,
+unspent credits and accepted holds.
 It always reports `release_qualified: false`; it cannot debit a wallet, create a
 provider call, prove human quality, or reconcile an invoice.
+
+The 6–13 November UTC production observation found zero qualifying operations
+and discovery batches, and retained two unknown and three settled provider
+liabilities. The report used reviewed estimates and ran without SQL mutations or
+model calls. The representative window and 200 successful paid-equivalent
+operations required by R02 remain pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
 The report does not replace provider invoices or resource metering. Do not
 release native expense holds just because the customer received a result.
@@ -406,3 +435,11 @@ An unknown model, payment or submission response is a reconciliation state, not
 permission to repeat a POST. Roll back code only to a compatible tested version;
 retain all populated accounting tables and do not restore an expensive route
 without sufficient reserved funding.
+
+Accepted model work checks the route's sustained-failure and expense-overrun
+pause before sending a prompt for token counting and again when claiming a
+generation attempt. If the pause stops that claim, the worker ends the run and
+restores its credits. An attempt already authorized before the pause can still
+reach the provider. Reconcile its result or unknown cost using the original
+attempt record. Confirmed critical incidents still require the reviewed
+route-specific stop and investigation process.

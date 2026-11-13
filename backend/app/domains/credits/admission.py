@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from fractions import Fraction
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from pydantic import Field, model_validator
 from sqlalchemy import Integer, case, cast, func, or_, text
@@ -29,6 +29,7 @@ from .models import (
     CreditGrant,
     CreditServiceQuote,
 )
+from .payment_expenses import assert_new_exposure_funded
 from .service_quotes import QualifiedRoute, require_route
 
 Positive = Annotated[int, Field(strict=True, gt=0, le=10**12)]
@@ -66,6 +67,20 @@ class ExecutionBudgetPolicy(finance.Closed):
         ):
             raise ValueError("Funded sub-budgets cannot exceed the global monthly budget")
         return self
+
+
+class LegacyCostInputs(Protocol):
+    @property
+    def legacy_search_cost_minor(self) -> int: ...
+
+    @property
+    def legacy_application_cost_minor(self) -> int: ...
+
+    @property
+    def legacy_preparation_minor(self) -> int: ...
+
+    @property
+    def legacy_provider_attempt_overhead_minor(self) -> int: ...
 
 
 def lock_money(db: Session) -> None:
@@ -138,7 +153,7 @@ def _legacy_usage(
     *,
     start: datetime,
     policy: finance.FinancialPolicy,
-    budgets: ExecutionBudgetPolicy,
+    budgets: LegacyCostInputs,
     exclude_service_reservation_id: str | None = None,
 ) -> int:
     # New attempts already belong to whole-operation holds. Count legacy
@@ -202,6 +217,29 @@ def _legacy_usage(
     return provider + int(services or 0)
 
 
+def require_route_open(db: Session, *, route_id: str) -> None:
+    """Read the route circuit. Claim and admission callers hold the money locks."""
+    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
+        raise finance.FundingUnavailable(
+            "This route is paused while its actual expense overrun is reviewed"
+        )
+    outcomes = [
+        row[0]
+        for row in db.query(CreditExecutionHold.delivery_state)
+        .filter(
+            CreditExecutionHold.route_id == route_id,
+            CreditExecutionHold.delivery_state.in_(["delivered", "failed"]),
+        )
+        .order_by(CreditExecutionHold.created_at.desc(), CreditExecutionHold.id.desc())
+        .limit(20)
+        .all()
+    ]
+    if (len(outcomes) >= 3 and all(value == "failed" for value in outcomes[:3])) or (
+        len(outcomes) == 20 and outcomes.count("failed") > 2
+    ):
+        raise finance.FundingUnavailable("This route is paused for repeated delivery failures")
+
+
 def assert_headroom(
     db: Session,
     *,
@@ -222,25 +260,7 @@ def assert_headroom(
     if route_id not in budgets.monthly_route_minor:
         raise finance.FundingUnavailable("This route has no funded execution budget")
     lock_money(db)
-    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
-        raise finance.FundingUnavailable(
-            "This route is paused while its actual expense overrun is reviewed"
-        )
-    outcomes = [
-        row[0]
-        for row in db.query(CreditExecutionHold.delivery_state)
-        .filter(
-            CreditExecutionHold.route_id == route_id,
-            CreditExecutionHold.delivery_state.in_(["delivered", "failed"]),
-        )
-        .order_by(CreditExecutionHold.created_at.desc(), CreditExecutionHold.id.desc())
-        .limit(20)
-        .all()
-    ]
-    if (len(outcomes) >= 3 and all(value == "failed" for value in outcomes[:3])) or (
-        len(outcomes) == 20 and outcomes.count("failed") > 2
-    ):
-        raise finance.FundingUnavailable("This route is paused for repeated delivery failures")
+    require_route_open(db, route_id=route_id)
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month = day.replace(day=1)
     for start, ceiling in (
@@ -354,6 +374,9 @@ def admit(
             raise finance.FundingUnavailable("The canary runtime changed; review a new quote")
         canary_proof = canary.accept(db, user_id=user_id, runtime=configured,
             operation=route.operation, source_id=source_id, input_fingerprint=input_fingerprint, now=stamp)
+    # Complete audience/native qualification before taking money locks. The
+    # exact accepted-hold branch above is recovery, not a new reservation.
+    assert_new_exposure_funded(db, policy=policy, now=stamp)
     assert_headroom(
         db,
         user_id=user_id,

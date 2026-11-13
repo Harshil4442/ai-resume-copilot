@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { getToken } = vi.hoisted(() => ({ getToken: vi.fn() }));
 vi.mock("next-auth/jwt", () => ({ getToken }));
 
-import { DELETE, GET, PATCH, POST, PUT, maxDuration } from "./route";
+import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, maxDuration } from "./route";
 
 const site = "https://www.hirewizhq.com";
 const fetchBackend = vi.fn();
@@ -98,6 +98,33 @@ describe("BFF mutation request origin", () => {
   });
 });
 
+describe("saved curated plan read-only transport", () => {
+  const savedContext = () => context(["recommendations", "match_strategy", "saved"]);
+  const savedRequest = (query = "?match_id=5", method = "GET") => new NextRequest(`${site}/api/backend/recommendations/match_strategy/saved${query}`, { method, headers: { origin: site } });
+  it("forwards the exact authenticated GET selector without a body or cache", async () => {
+    const response = await GET(savedRequest(), savedContext());
+    expect(response.status).toBe(200); expect(fetchBackend).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchBackend.mock.calls[0];
+    expect(String(url)).toBe("https://backend.example.test/api/recommendations/match_strategy/saved?match_id=5");
+    expect(options.method).toBe("GET"); expect(options.body).toBeUndefined(); expect(options.cache).toBe("no-store");
+    expect(options.headers.get("Authorization")).toBe("Bearer fixture-backend-token");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+  it("refuses a saved lookup without the current authenticated bearer", async () => {
+    getToken.mockResolvedValueOnce(null);
+    expect((await GET(savedRequest(), savedContext())).status).toBe(401); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each(["", "?match_id=0", "?match_id=-1", "?match_id=1.5", "?match_id=NaN", "?match_id=9007199254740992", "?match_id=5&match_id=6", "?match_id=5&owner_id=2", "?id=5"])("rejects invalid or additional selectors %s before auth/backend access", async (query) => {
+    expect((await GET(savedRequest(query), savedContext())).status).toBe(422);
+    expect(getToken).not.toHaveBeenCalled(); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+  it.each([["POST", POST], ["PUT", PUT], ["PATCH", PATCH], ["DELETE", DELETE], ["HEAD", HEAD], ["OPTIONS", OPTIONS]] as const)("does not route %s as a saved-plan lookup", async (method, handler) => {
+    const response = await handler(savedRequest("?match_id=5", method), savedContext());
+    expect(response.status).toBe(405); expect(response.headers.get("allow")).toBe("GET");
+    expect(getToken).not.toHaveBeenCalled(); expect(fetchBackend).not.toHaveBeenCalled();
+  });
+});
+
 describe("catalog-only latency propagation", () => {
   const catalogContext = () => context(["v1", "employer-jobs", "catalog"]);
 
@@ -168,6 +195,53 @@ describe("catalog-only latency propagation", () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ detail: "Not authenticated" });
     expect(fetchBackend).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace page cancellation", () => {
+  const pageContext = () => context(["v1", "opportunities", "page"]);
+  const pageRequest = (signal: AbortSignal) => new NextRequest(
+    `${site}/api/backend/v1/opportunities/page?limit=20&search=designer`, { signal },
+  );
+
+  it("propagates an abandoned search to its upstream read signal", async () => {
+    const controller = new AbortController();
+    const response = await GET(pageRequest(controller.signal), pageContext());
+    expect(response.status).toBe(200);
+    const [target, options] = fetchBackend.mock.calls[0];
+    expect(String(target)).toBe("https://backend.example.test/api/v1/opportunities/page?limit=20&search=designer");
+    expect(options.signal.aborted).toBe(false);
+    controller.abort();
+    expect(options.signal.aborted).toBe(true);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
+    expect(options.cache).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store, max-age=0");
+  });
+
+  it("retains the upstream deadline when the browser remains connected", async () => {
+    const timeout = new AbortController();
+    const spy = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeout.signal);
+    try {
+      await GET(pageRequest(new AbortController().signal), pageContext());
+      const signal = fetchBackend.mock.calls[0][1].signal;
+      expect(spy).toHaveBeenCalledWith(65_000);
+      expect(signal.aborted).toBe(false);
+      timeout.abort(new DOMException("Synthetic deadline", "TimeoutError"));
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason.name).toBe("TimeoutError");
+    } finally { spy.mockRestore(); }
+  });
+
+  it("does not reinterpret a browser cancellation as authority to cancel a mutation", async () => {
+    const controller = new AbortController();
+    const incoming = new NextRequest(`${site}/api/backend/v1/opportunities`, {
+      method: "POST", signal: controller.signal, headers: { origin: site, "content-type": "application/json" }, body: "{}",
+    });
+    expect((await POST(incoming, context(["v1", "opportunities"]))).status).toBe(200);
+    const signal = fetchBackend.mock.calls[0][1].signal;
+    controller.abort();
+    expect(signal.aborted).toBe(false);
+    expect(fetchBackend).toHaveBeenCalledTimes(1);
   });
 });
 
