@@ -280,6 +280,44 @@ describe("unified purchase review and payment", () => {
     expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
     expect(orderReads).toBe(2);
   });
+
+  it("keeps a failed hosted checkout active and checks the original order after dismissal", async () => {
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    let latest = order();
+    let paymentFailed: () => void = () => { throw new Error("Checkout has not opened"); };
+    state.get.mockImplementation((url: string) => url === "/v1/credits/orders/order_unified" ? Promise.resolve(latest) : read(url));
+    hostedCheckout.mockImplementationOnce(function () {
+      return { open: openCheckout, on: vi.fn((_event, callback) => { paymentFailed = () => callback({}); }) };
+    });
+    const pay = await review(); await confirmIndia(); fireEvent.click(pay);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+
+    act(() => paymentFailed());
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeDisabled();
+
+    act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Credit payment confirmed" })).not.toBeInTheDocument();
+
+    const callback = { razorpay_order_id: "provider_unified", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    const original = hostedCheckout.mock.calls[0][0];
+    const statusReadCount = state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified").length;
+    act(() => { original.handler(callback); original.handler(callback); });
+    expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result")))
+      .toEqual([["/billing/orders/order_unified/checkout-result", callback]]);
+    expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified")).toHaveLength(statusReadCount);
+    expect(resume).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Credit payment confirmed" })).not.toBeInTheDocument();
+
+    latest = settled;
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    await screen.findByRole("heading", { name: "Credit payment confirmed" });
+    expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+    expect(openCheckout).toHaveBeenCalledOnce();
+  });
 });
 
 describe("legacy payment recovery", () => {
@@ -328,6 +366,37 @@ describe("legacy payment recovery", () => {
     await screen.findByRole("heading", { name: "Payment confirmed" });
     expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
     expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(1);
+  });
+
+  it("requires a fresh original status and consent to reopen dismissed legacy checkout", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder()) : read(url));
+    state.post.mockResolvedValue(legacyCheckout);
+    render(<BillingPage />);
+    const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+    await confirmIndia(); fireEvent.click(resume);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+
+    act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+    await confirmIndia();
+    expect(resume).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    await waitFor(() => expect(resume).toBeEnabled());
+    fireEvent.click(resume);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(2));
+    expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+
+    const callback = { razorpay_order_id: "provider_legacy", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    const original = hostedCheckout.mock.calls[0][0];
+    const statusReadCount = state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy").length;
+    act(() => { original.handler(callback); original.handler(callback); });
+    expect(state.post.mock.calls.slice(2)).toEqual([["/billing/orders/order_legacy/checkout-result", callback]]);
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(statusReadCount);
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Payment confirmed" })).not.toBeInTheDocument();
   });
   it("requires fresh acceptance after reconciliation restores original checkout", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ provider_order_id: null, checkout_available: false })) : read(url));

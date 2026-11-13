@@ -54,6 +54,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const [recentRead, setRecentRead] = useState<"loading" | "ready" | "failed">("loading");
   const [busy, setBusy] = useState(false), [indiaConfirmed, setIndiaConfirmed] = useState(false);
   const [reconciliationHeld, setReconciliationHeld] = useState(false);
+  const [checkoutStatusRequired, setCheckoutStatusRequired] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null), [message, setMessage] = useState<string | null>(null);
   const pending = recentRead !== "ready" || (order !== null && blocksNewPurchase(order));
   useEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
@@ -127,8 +128,13 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
           const value = await apiGet<LegacyOrder>(`/billing/orders/${encodeURIComponent(orderId)}`, signal);
           signal.throwIfAborted();
           if (!mounted.current || pollId.current !== run) throw new DOMException("Status check stopped", "AbortError");
-          if (value.order_id !== orderId || typeof value.sku !== "string" || isUnifiedPassSku(value.sku)) throw new Error("The original order could not be verified.");
-          await acceptRecoveryStatus(original, value); return value;
+          if (value.order_id !== orderId || value.sku !== original.sku
+            || (original.accepted_quote && !sameQuote(value.accepted_quote, original.accepted_quote))) throw new Error("The original order could not be verified.");
+          await acceptRecoveryStatus(original, value);
+          if (!automatic && mounted.current && !signal.aborted) {
+            setCheckoutStatusRequired((heldOrder) => heldOrder === orderId ? null : heldOrder);
+          }
+          return value;
         }, active: blocksNewPurchase });
       if (mounted.current && pollId.current === run && outcome !== "settled") setMessage("Payment is still pending. Automatic checks are paused; use Check payment status for one fresh read. If you were charged, do not pay again.");
     } catch (failure) { if (mounted.current && pollId.current === run && !work.signal.aborted) setError(errorText(failure, "Could not check the original payment.")); }
@@ -150,6 +156,9 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
         || (result.resolution === "checkout_ready" && (result.order.status !== "pending" || !result.order.provider_order_id || !result.order.accepted_quote || result.order.checkout_available !== true))
         || (result.resolution === "settled" && !["paid", "refunded"].includes(result.order.status))) throw new Error("The original payment could not be verified. Checkout remains paused.");
       await acceptRecoveryStatus(order, result.order);
+      if (result.resolution !== "unresolved") {
+        setCheckoutStatusRequired((heldOrder) => heldOrder === order.order_id ? null : heldOrder);
+      }
       setReconciliationHeld(result.resolution === "unresolved"); setMessage(result.message);
     } catch (failure) { if (mounted.current) setError(errorText(failure, "Could not reconcile the original payment.")); }
     finally { actionPending.current = false; if (mounted.current) setBusy(false); }
@@ -157,7 +166,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
 
   async function resume() {
     if (!order || !isFiniteBundleSku(order.sku) || order.status !== "pending" || !order.accepted_quote || !order.provider_order_id || order.checkout_available !== true
-      || !indiaConfirmed || busy || reconciliationHeld || actionPending.current || statusWork.current) return;
+      || !indiaConfirmed || busy || reconciliationHeld || checkoutStatusRequired === order.order_id || actionPending.current || statusWork.current) return;
     actionPending.current = true; setBusy(true); setError(null);
     const accepted = order.accepted_quote;
     if (intent.current?.orderId !== order.order_id) intent.current = { orderId: order.order_id, key: crypto.randomUUID() };
@@ -171,19 +180,26 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       await loadHostedCheckout();
       if (!mounted.current || !window.Razorpay) return;
       let callbackReceived = false;
+      let checkoutDismissed = false;
       const checkout = new window.Razorpay({ key: result.key_id, amount: result.amount_minor, currency: result.currency,
         name: result.name, description: result.description, order_id: result.provider_order_id, prefill: result.prefill,
         handler: (callback) => {
           if (callbackReceived || !mounted.current) return;
           callbackReceived = true;
           void apiPostJson(`/billing/orders/${encodeURIComponent(order.order_id)}/checkout-result`, callback).catch(() => {});
-          void checkStatus(order, true);
+          if (!checkoutDismissed) void checkStatus(order, true);
         },
-        modal: { confirm_close: true, ondismiss: () => { if (!callbackReceived && mounted.current) {
+        modal: { confirm_close: true, ondismiss: () => {
+          if (callbackReceived || checkoutDismissed || !mounted.current) return;
+          checkoutDismissed = true;
+          setCheckoutStatusRequired(order.order_id);
+          setIndiaConfirmed(false);
           setBusy(false); setMessage("Checkout closed. No payment is assumed. Check the original payment status before trying again.");
-        } } }, retry: { enabled: true }, theme: { color: "#485c11" },
+        } }, retry: { enabled: true }, theme: { color: "#485c11" },
       });
-      checkout.on("payment.failed", () => { if (mounted.current) { setBusy(false); setMessage("The attempt was not completed. Check the original payment before retrying."); } });
+      checkout.on("payment.failed", () => {
+        if (!callbackReceived && !checkoutDismissed && mounted.current) setMessage("The payment attempt was not completed. You can retry in checkout or close it to check the original payment.");
+      });
       checkout.open();
     } catch (failure) {
       if (!mounted.current) return;
@@ -225,7 +241,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       <div className="flex flex-wrap gap-3">
         <Button variant="secondary" disabled={busy} onClick={() => void checkStatus(order)}>Check payment status</Button>
         {canReconcile(order) ? <Button variant="secondary" disabled={busy} onClick={() => void reconcile()}>Reconcile original payment</Button> : null}
-        {order.status === "pending" ? <Button disabled={busy || reconciliationHeld || !indiaConfirmed || !isFiniteBundleSku(order.sku) || !order.accepted_quote || !order.provider_order_id || order.checkout_available !== true} onClick={() => void resume()}>Resume original checkout</Button> : null}
+        {order.status === "pending" ? <Button disabled={busy || reconciliationHeld || checkoutStatusRequired === order.order_id || !indiaConfirmed || !isFiniteBundleSku(order.sku) || !order.accepted_quote || !order.provider_order_id || order.checkout_available !== true} onClick={() => void resume()}>Resume original checkout</Button> : null}
         <Link href="/contact" className="inline-flex min-h-11 items-center text-sm underline">Billing support</Link>
       </div>
     </section> : null}
