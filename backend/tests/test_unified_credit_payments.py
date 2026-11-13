@@ -11,7 +11,7 @@ from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavaila
 from backend.app.domains.credits.models import CreditCampaign, CreditGrant, CreditPurchaseQuote
 from backend.app.domains.credits.pricing import CATALOG_VERSION
 from backend.app.domains.credits.runtime import RuntimeConfig
-from backend.app.models import EntitlementLedger, PaymentOrder, User
+from backend.app.models import EntitlementLedger, PaymentOrder, PaymentRefund, User
 from backend.app.routers import credits
 from backend.app.services.delivery_contracts import current_output_contract
 from test_razorpay_billing import (  # Reuse verified-signature test transport only.
@@ -340,6 +340,44 @@ def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified
     with session_factory() as db:
         assert db.query(EntitlementLedger).one().status == "refunded"
         assert db.get(User, 1).ai_credits == 20
+
+
+def test_verified_refunds_after_spend_create_exact_debt_and_preserve_quote(unified, session_factory):
+    client, calls = unified
+    _, _, result = start(client)
+    assert result.status_code == 200
+    created = result.json()
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        capture = _capture_payload(order)
+        half = _refund_payload(order, "rfnd_spent_half", 2950)
+        rest = _refund_payload(order, "rfnd_spent_rest", 2950)
+    assert _post_event(client, "evt_spent_capture", capture).status_code == 200
+    with session_factory() as db:
+        reservation = service.reserve_credits(db, user_id=1, operation="job_discovery_batch",
+            source_id="refund-test-search", idempotency_key="refund-test-spend", credits=1,
+            input_fingerprint="a" * 64, quote_snapshot={"credits": 1}, execution_allowance_minor=13)
+        service.settle_reservation(db, user_id=1, reservation_id=reservation.id, committed_credits=1)
+        db.commit()
+    for event, body, expected_balance, expected_debt in (
+        ("evt_spent_half", half, 19, 0), ("evt_spent_rest", rest, 0, 1),
+    ):
+        for status in ("processed", "duplicate"):
+            response = _post_event(client, event, body)
+            assert response.status_code == 200 and response.json()["status"] == status
+            wallet = client.get("/api/v1/credits/wallet").json()
+            assert (wallet["available_credits"], wallet["reserved_credits"], wallet["debt_credits"]) == (
+                expected_balance, 0, expected_debt)
+    refunded = client.get(f"/api/v1/credits/orders/{created['order_id']}").json()
+    assert (refunded["status"], refunded["refunded_amount_minor"], refunded["fulfilled"], refunded["checkout_available"]) == (
+        "refunded", 5900, False, False)
+    assert {k: v for k, v in refunded["accepted_quote"].items() if k != "server_time"} == {
+        k: v for k, v in created["accepted_quote"].items() if k != "server_time"}
+    with session_factory() as db:
+        assert db.query(PaymentRefund).count() == 2
+        assert db.query(CreditGrant).one().remaining_credits == 0
+        assert db.get(User, 1).ai_credits == 20
+    assert len(calls) == 1
 
 
 def test_refund_before_capture_and_late_capture_do_not_regrant(unified, session_factory):
