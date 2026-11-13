@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from pathlib import Path
 from threading import Event, local
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from backend.app import models
 from backend.app.domains.employer import admissions
 from backend.app.services import generation_budget
@@ -32,20 +36,6 @@ def pg_engine():
 @pytest.fixture
 def factory(pg_engine):
     return _factory_at_revision(pg_engine, "head")
-
-
-@pytest.fixture
-def factory25_with_current_evidence_fence(pg_engine):
-    # Mixed-purpose fixture: exact25 monetary history plus the real current
-    # evidence trigger needed by current erasure. This is not pristine25 catalog
-    # or native schema26 qualification; the Alembic marker remains exactly25.
-    result = _factory_at_revision(pg_engine, "20261028_0025")
-    from backend.app.domains.career.evidence_fence_definition import install
-
-    with pg_engine.begin() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "20261028_0025"
-        install(db, db.scalar(text("SELECT current_schema()")))
-    return result
 
 
 def _factory_at_revision(pg_engine, revision):
@@ -200,16 +190,21 @@ def test_postgres_parallel_duplicate_current_call_settlement_after_erasure_is_ex
         assert row.cost_state == "settled" and db.query(models.User).count() == 0
 
 
-def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factory25_with_current_evidence_fence, pg_engine):
-    factory = factory25_with_current_evidence_fence
+def test_postgres_retained_unknown_liability_refuses_downgrade_atomically(factory, pg_engine):
     with persistent_run_budget(factory, "private_run_1") as budget:
         record = admit(budget)
         budget.finish(record, latency_ms=1, error=TimeoutError("synthetic unknown"))
     erase(factory)
     with pg_engine.connect() as db:
         original_revision = db.scalar(text("SELECT version_num FROM alembic_version"))
-    with pytest.raises(RuntimeError, match="retained model-cost liabilities without loss"):
+    with pytest.raises(RuntimeError, match="Notification preference downgrade requires reviewed native-retirement evidence"):
         _migrate(pg_engine, "20261008_0009", direction="downgrade")
+    # The current release stops at schema27. Exercise the historical monetary
+    # guard directly against the retained liability without removing later fences.
+    versions = ScriptDirectory(str(Path(__file__).resolve().parents[1] / "alembic"))
+    with pg_engine.connect() as db, Operations.context(MigrationContext.configure(db)):
+        with pytest.raises(RuntimeError, match="retained model-cost liabilities without loss"):
+            versions.get_revision("20261009_0010").module.downgrade()
     with pg_engine.connect() as db:
         assert db.scalar(text("SELECT version_num FROM alembic_version")) == original_revision
         assert db.scalar(text("SELECT reserved_cost_micros FROM model_cost_liabilities")) == 1267

@@ -878,7 +878,8 @@ def test_worker_never_rewinds_stale_send_and_explicitly_excludes_privacy_from_ge
     assert all(values[NotificationOutbox.status] == "mail_unknown" for values in updates)
     selectors = [str(condition.compile(compile_kwargs={"literal_binds": True}))
         for entry in store.trace if isinstance(entry, tuple) and entry[0] == "filter" for condition in entry[1]]
-    assert any("NOT IN ('password_reset', 'password_changed', 'privacy_erasure')" in value for value in selectors)
+    assert any("NOT IN ('password_reset', 'password_changed', 'privacy_erasure', 'weekly_digest')"
+               in value for value in selectors)
 
 
 def test_central_send_wraps_actual_provider_callback_with_original_key_and_no_open_sql_session(monkeypatch):

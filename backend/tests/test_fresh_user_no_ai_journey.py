@@ -224,7 +224,11 @@ def journey(pg_engine, monkeypatch, synthetic_document_inspector):
             assert payload["to"] == [CANDIDATE]
             assert "welcome" in payload["subject"].lower()
             email_deliveries.append(payload)
-            return httpx.Response(200, json={"id": "email_synthetic_journey"})
+            class ReceiptStream(httpx.AsyncByteStream):
+                async def __aiter__(self):
+                    yield b'{"id":"email_synthetic_journey"}'
+
+            return httpx.Response(200, headers={"Content-Type": "application/json"}, stream=ReceiptStream())
         pytest.fail(
             f"Unexpected external HTTP boundary: {request.method} {request.url.host} {request.url.path}"
         )
@@ -239,6 +243,7 @@ def journey(pg_engine, monkeypatch, synthetic_document_inspector):
         original_init(client, *args, **kwargs)
 
     monkeypatch.setattr(httpx.Client, "__init__", client_init)
+    monkeypatch.setattr(httpx, "AsyncHTTPTransport", lambda **_: httpx.MockTransport(transport))
 
     def socket_forbidden(*args, **kwargs):
         pytest.fail("An isolated backend journey attempted a real network connection")
