@@ -34,7 +34,7 @@ _VERIFY = r'''
 import json,sys
 from pathlib import Path
 root=Path(sys.argv[1])
-sys.path[:0]=[str(root/"backend"),str(root/"infra/gcp")]
+sys.path[:0]=[str(root/"backend"),str(root/"infra/gcp"),str(root)]
 from scripts import schema25_app_release_contract_v3 as contract
 import unified_credit_schema25_release as release
 assert Path(contract.__file__).resolve()==root/"backend/scripts/schema25_app_release_contract_v3.py"

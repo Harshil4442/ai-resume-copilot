@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,29 @@ def test_retained_anchor_is_the_genuinely_qualified45b3_not_unqualified_bdea():
     assert gate.COMPATIBILITY_COMMAND == ("-I", "-B", "scripts/qualify_schema26_compatibility.py")
     assert gate.ROLLING == ("tests/test_schema25_app_rolling_v3.py",)
     assert gate.PROTOCOL == ("tests/test_schema25_app_protocol_v3.py",)
+
+
+def test_isolated_source_verifier_resolves_historical_namespace_import(tmp_path):
+    backend = tmp_path / "backend"
+    infra = tmp_path / "infra/gcp"
+    (backend / "scripts").mkdir(parents=True)
+    infra.mkdir(parents=True)
+    (infra / "document_candidate.py").write_text('FINGERPRINT = "owned-fingerprint"\n')
+    (backend / "scripts/schema25_app_release_contract_v3.py").write_text(
+        'PRIOR_RELEASE = "owned-prior"\nCOMPATIBILITY_COMMAND = "owned-compatibility"\n'
+        'PROTOCOL_COMMAND = "owned-protocol"\n'
+        'def source_fingerprint(root, prior):\n'
+        '    from infra.gcp.document_candidate import FINGERPRINT\n'
+        '    return FINGERPRINT\n'
+    )
+    (infra / "unified_credit_schema25_release.py").write_text(
+        'def prior_app_files(root, source):\n    return {source: b"owned"}\n'
+        'def prior_app_digest(app):\n    return "owned-app"\n'
+    )
+    raw = gate._call([sys.executable, "-I", "-B", "-c", gate._VERIFY, str(tmp_path.resolve()), "owned-source"],
+                     cwd=backend, env={key: os.environ[key] for key in ("PATH", "SYSTEMROOT") if key in os.environ})
+    assert json.loads(raw) == {"fingerprint": "owned-fingerprint", "app": "owned-app", "files": 1,
+                               "compatibility": "owned-compatibility", "protocol": "owned-protocol"}
 
 
 @pytest.mark.parametrize("damage", [None, "app", "fingerprint", "files", "command", "pin"])
