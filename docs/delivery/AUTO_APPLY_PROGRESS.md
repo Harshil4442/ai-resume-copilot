@@ -16,8 +16,9 @@ the exact original resume and only the saved first-name answer. The original PDF
 download matched its retained digest and its one-page layout was visually intact.
 Assistance was cancelled **before application approval, Fill, attachment upload or
 submission**; revocation of the exact existing device was verified in the UI.
-No fields were filled. This is current UI/download evidence, **not** a fresh SQL
-zero-execution/accounting proof, a new tailoring result or full application acceptance.
+The matching read-only SQL observation passed all ten checks and returned zero
+for all twelve linked execution and accounting counts. The scope ends at
+review, cancellation and revocation.
 
 New AI generation/tailoring, unified credits, funded free-core processing,
 checkout and final employer submission remain closed. Paid native document QA
@@ -32,8 +33,8 @@ commercial/finance gates and full R03/RTO qualification remain pending.
 |---|---|---|
 | Serving API and application workers | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
 | Production frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Production remains at the retained verified deployment. New bounded resume selectors/session changes and reviewed header-read deferral require their matching frontend publication; a READY preview is not a production alias promotion. |
-| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expires `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain; no expiry waiver or new document-processing acceptance is claimed. |
-| Companion | Public/source package **0.8.9** | Fresh review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval/Fill/upload/submit. Device `23d49cfd-0140-4254-afd8-87881b56b423` was then revoked with UI verification. No fresh SQL-count proof is claimed. |
+| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain. |
+| Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
 | Newly verified application image | Source `01b80b130467ef7acb661805f785b00a56306174`; image `sha256:a283b02b73c50762f3c5ac8aa26d3becc3769ec2a3c781942412960751c099dd` | Build `711a21d5-bbbe-4692-8818-253d06a3315f`, exact-source CI `41930847703`, normal PR105 merge `30056fd2cbe3f684fee08b85b2186e95b4ae44f8`, and official Source26 Git/recipe/image verification passed. **Not serving.** Registry entry nine records this actual tuple; no duplicate application Build is needed. |
 | Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The forward rollout requires a fresh reviewed numeric policy pair. |
@@ -42,13 +43,14 @@ The current source-image verification record has SHA-256
 `37aa5f225d2167ba39d8dcb92e69feca1dbc417b10e423a402a5ca7187493ea9`.
 The current owner review/cancel/revoke UI record has SHA-256
 `b73c37dcd010d24df5b2af19c8d9a9572110284bf91f078675ab8be563286afb`.
-These are scoped records, not replacements for the historical SQL/native proofs
-below. The completed restore receipt has SHA-256
+The matching SQL observation has SHA-256
+`c716b36be4b13666ae39744d4fb2591736ce5bf820111f51bd56ec4c79239875`.
+The completed restore receipt has SHA-256
 `0db12c8baa4ae658cf821f5d5edb69048e55cef4a9c46f0911294fea205a6511`.
 The old staging plan and journals remain under their original custody. The next
 forward rollout needs exact release qualification and current policies with at least
-four hours of validity at capture. New traffic promotion, fresh SQL accounting and
-full R03/RTO qualification remain pending.
+four hours of validity at capture. New traffic promotion, rollout financial
+readback and full R03/RTO qualification remain pending.
 
 The Gemini monthly spend cap remains **INR450**. Provider enforcement can lag;
 application cost reservations and reconciled financial qualification remain
