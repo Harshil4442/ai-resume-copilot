@@ -644,6 +644,46 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
     assert artifact["if"] == "always() && env.OUTPUT_DIRECTORY != ''"
 
 
+@pytest.mark.parametrize(("schedule", "enabled", "expected"), [
+    ("37 1 * * *", "", "monitor"),
+    ("37 1 * * *", "false", "monitor"),
+    ("37 1 * * *", "TRUE", "monitor"),
+    ("37 1 * * *", "true ", "monitor"),
+    ("37 1 * * *", "true\nREFRESH_MODE=refresh", "monitor"),
+    ("37 1 * * *", "true", "refresh"),
+    ("17,47 * * * *", "true", "monitor"),
+])
+def test_scheduled_refresh_requires_exact_opt_in(tmp_path, schedule, enabled, expected):
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    trigger = workflow.get("on", workflow.get(True))
+    job = workflow["jobs"]["maintenance"]
+    steps = job["steps"]
+    selection = next(step for step in steps if step.get("name") == "Select scheduled maintenance mode")
+    admission = next(step for step in steps if step.get("name") == "Require explicitly provisioned maintenance identity")
+    auth = next(step for step in steps if step.get("uses", "").startswith("google-github-actions/auth@"))
+    assert schedule in {row["cron"] for row in trigger["schedule"]}
+    assert job["environment"] == "document-maintenance"
+    assert job["env"]["REFRESH_MODE"] == "${{ inputs.mode || 'monitor' }}"
+    assert "github.event_name == 'workflow_dispatch'" in job["env"]["RECOVER_EXPIRED_SOURCE"]
+    assert selection["if"] == "github.event_name == 'schedule'"
+    assert steps.index(selection) < steps.index(admission) < steps.index(auth)
+    assert selection["env"] == {
+        "TRIGGER_SCHEDULE": "${{ github.event.schedule }}",
+        "DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED": "${{ vars.DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED }}",
+    }
+    output = tmp_path / "github-env"
+    subprocess.run(["bash", "-e", "-c", selection["run"]], check=True, env={
+        "GITHUB_ENV": str(output),
+        "TRIGGER_SCHEDULE": schedule,
+        "DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED": enabled,
+    })
+    assert output.read_text() == f"REFRESH_MODE={expected}\n"
+
+
 def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_ref_bypass():
     import yaml
 

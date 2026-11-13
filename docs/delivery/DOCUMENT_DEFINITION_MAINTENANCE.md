@@ -151,12 +151,17 @@ uses a different nonce and must pass the full current acceptance pipeline.
 
 ## Schedule, proof retention and alerts
 
-The daily 01:37 UTC run executes **the full refresh**, not candidate publication
-alone. The `:17` and `:47` runs check the actual serving image and fresh native immutable-image
-definition receipt (the initial baseline uses its actual image header). Successors
+The daily 01:37 UTC run monitors by default. After the owner approves unattended
+refreshes, set the `DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED` configuration
+variable in the `document-maintenance` GitHub environment to exactly `true` to
+enable the full daily refresh. Remove the variable to return to monitoring.
+A separately approved one-time recovery uses the manual `refresh` dispatch with
+`recover_expired_source` enabled and leaves the scheduled setting unset.
+The `:17` and `:47` runs always check the actual serving image and native definition
+receipt (the initial baseline uses its actual image header). Successors
 avoid an hourly multi-GB registry download, limiting monitoring egress and runtime.
 The GitHub artifact retains all metadata-only JSON journals for fourteen days.
-The next daily run retrieves up to the three newest owned refresh artifacts and
+The next enabled daily refresh retrieves up to the three newest owned refresh artifacts and
 retains its byte-exact prior native journal inside the new artifact (including any
 new Delete once/ACK), and uses it for UID/etag-scoped cleanup only after the new
 worker and all three serving caller pins are independently verified. Missing prior
