@@ -2,6 +2,11 @@ name: Stage5 owned-local capacity
 
 on:
   workflow_dispatch:
+    inputs:
+      fresh_window:
+        description: Measure three small governed batches after natural cooldowns
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths:
@@ -104,6 +109,7 @@ jobs:
           BUYERS_PERCENT: ${{ matrix.buyers }}
           OWNED_REDIS_BINARY: ${{ steps.redis.outputs.binary }}
           OWNED_PG_BIN: ${{ steps.postgres.outputs.bin }}
+          FRESH_WINDOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fresh_window }}
         working-directory: backend
         run: |
           .venv/bin/python - <<'PY'
@@ -115,7 +121,9 @@ jobs:
           target.write_text(json.dumps(source))
           target.chmod(0o600)
           PY
-          .venv/bin/python scripts/run_stage5_capacity.py --execute \
+          args=()
+          if [[ "$FRESH_WINDOW" == true ]]; then args+=(--fresh-window); fi
+          .venv/bin/python scripts/run_stage5_capacity.py --execute "${args[@]}" \
             --config "$RUNNER_TEMP/stage5-config.json" \
             --pg-bin "$OWNED_PG_BIN" --redis-server "$OWNED_REDIS_BINARY" \
             --output "$RUNNER_TEMP/stage5-owned-${{ matrix.buyers }}"

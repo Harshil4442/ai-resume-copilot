@@ -95,6 +95,18 @@ increase or per-phase namespace. Later phases can therefore be correctly refused
 they are not comparable successful-throughput samples when the budget is spent.
 Unpaced Get throughput cannot justify activating the governor or bypassing it.
 
+For a separate latency diagnostic, dispatch the workflow with `fresh_window`
+enabled or add `--fresh-window` to the local command. After the usual three
+controls, the runner uses only the governed List path. Each of the three phases
+offers 16 reads together with a concurrency cap of 1, 10, or 25. The runner waits
+at least 61 seconds before each batch, including the first. The existing shared
+Redis window ages naturally, with no reset, separate key, or retry. These waits
+count toward the existing measurement deadline. The total is at most 51 HTTP
+requests including controls. All 16 reads and exactly 32 intercepted List calls
+must succeed in each batch. Any capacity refusal fails this diagnostic. The report
+records actual peak in-flight requests and cooldown durations. A batch of 16
+cannot saturate the 25-connection cap or establish sustained throughput.
+
 The default run has at most 300 workload GETs plus three controls. Validated plans
 allow at most 2,997 total HTTP requests including controls and 600 seconds of
 measurement; concurrency is fixed at 1/10/25, and buyers at 20% or 25%. A global
