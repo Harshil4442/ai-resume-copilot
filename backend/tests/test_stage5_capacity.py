@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.stage5_capacity import (
+    FRESH_WINDOW_MODE,
     PATHS,
     Plan,
     expected_capacity_refusal,
@@ -21,6 +22,7 @@ from scripts.stage5_capacity import (
     release_native_context,
     scheduled_phase,
     summarize,
+    wait_for_fresh_window,
     workload_validation,
 )
 from scripts.stage5_resources import (
@@ -301,6 +303,94 @@ def test_indexed_deadline_and_unknown_rows_stay_in_complete_denominator_but_fail
     validation = workload_validation(results, requests_per_phase=5, preflight=PREFLIGHT)
     assert validation["failures"] == {"unexpected_status_or_error": 2}
     assert validation["passed"] is False
+
+
+def test_fresh_window_cooldown_uses_natural_time_and_global_deadline():
+    now, sleeps = [100.0], []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += min(40.0, seconds)
+
+    assert asyncio.run(wait_for_fresh_window(deadline=160.0, clock=lambda: now[0], sleep=sleep)) is None
+    assert sleeps == []
+    assert asyncio.run(wait_for_fresh_window(deadline=162.0, clock=lambda: now[0], sleep=sleep)) == 61.0
+    assert sleeps == [61.0, 21.0]
+
+
+@pytest.mark.parametrize("failure", [None, "missing", "short_cooldown", "peak", "list_calls", "429", "invalid_body"])
+def test_fresh_window_requires_every_owned_read_and_native_list_observation(failure):
+    results = [{"mode": FRESH_WINDOW_MODE, "concurrency": cap, "offered": 16,
+                "actual_peak_inflight_http": min(cap, 16), "cooldown_seconds_before_phase": 61,
+                "wire_and_sql": {"synthetic_admin_list_databases": 32},
+                "requests": [{"index": i, "status": 200, "contract_valid": True} for i in range(16)]}
+               for cap in (1, 10, 25)]
+    if failure == "missing":
+        results.pop()
+    elif failure == "short_cooldown":
+        results[0]["cooldown_seconds_before_phase"] = 60.99
+    elif failure == "peak":
+        results[-1]["actual_peak_inflight_http"] = 25
+    elif failure == "list_calls":
+        results[0]["wire_and_sql"]["synthetic_admin_list_databases"] = 31
+    elif failure == "429":
+        results[0]["requests"][0].update(status=429, contract_valid=False, capacity_refusal_valid=True)
+    elif failure == "invalid_body":
+        results[0]["requests"][0]["contract_valid"] = False
+    validation = workload_validation(results, requests_per_phase=50, preflight=PREFLIGHT, fresh_window=True)
+    assert validation["passed"] is (failure is None)
+    assert validation["production_capacity_qualified"] is False
+
+
+def test_actual_fresh_window_workload_keeps_three_batches_under_one_deadline(monkeypatch):
+    import httpx
+
+    from scripts import run_stage5_capacity as runner
+
+    now, waits, batches = [100.0], [], []
+
+    class InertClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, *args, **kwargs):
+            pytest.fail("Fake scheduler must not send HTTP")
+
+    async def sleep(seconds):
+        waits.append(seconds)
+        now[0] += seconds
+
+    async def cooldown(**kwargs):
+        return await wait_for_fresh_window(**kwargs, clock=lambda: now[0], sleep=sleep)
+
+    async def phase(**kwargs):
+        assert os.environ["CANDIDATE_METADATA_ADMISSION_ENABLED"] == "true"
+        assert os.environ["CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED"] == "true"
+        batches.append((now[0], kwargs["count"], kwargs["concurrency"], kwargs["arrivals_per_second"], kwargs["deadline"]))
+        now[0] += 2
+        return [{"index": i, "status": "deadline", "bytes": 0, "queue_ms": 0,
+                 "http_ms": 0, "arrival_to_completion_ms": 0} for i in range(kwargs["count"])]
+
+    monkeypatch.setattr(httpx, "AsyncClient", InertClient)
+    monkeypatch.setattr(runner, "ssl", SimpleNamespace(create_default_context=lambda **kwargs: None))
+    monkeypatch.setattr(runner, "time", SimpleNamespace(perf_counter=lambda: now[0]))
+    monkeypatch.setattr(runner, "scheduled_phase", phase)
+    monkeypatch.setattr(runner, "wait_for_fresh_window", cooldown)
+    for name in ("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED"):
+        monkeypatch.setenv(name, "false")
+    results, elapsed = asyncio.run(runner.workload(Plan(), SimpleNamespace(api_port=59999), {},
+        SimpleNamespace(storage=SimpleNamespace(info=lambda *args: {"total_commands_processed": 0})),
+        SimpleNamespace(snapshot=lambda: {}), {"acquire_ms": []}, Path("/not-read"), fresh_window=True))
+    assert waits == [61.0, 61.0, 61.0]
+    assert batches == [(161.0, 16, 1, None, 700.0), (224.0, 16, 10, None, 700.0), (287.0, 16, 25, None, 700.0)]
+    assert elapsed == 189.0
+    assert [(row["mode"], row["cooldown_seconds_before_phase"]) for row in results] == [(FRESH_WINDOW_MODE, 61)] * 3
 
 
 @pytest.mark.parametrize("failure", [None, "contract", "preflight", "cleanup"])

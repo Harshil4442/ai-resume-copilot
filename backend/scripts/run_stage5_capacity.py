@@ -28,6 +28,9 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.stage5_capacity import (  # noqa: E402
     BOOTSTRAP_PATH,
+    FRESH_WINDOW_COOLDOWN_SECONDS,
+    FRESH_WINDOW_MODE,
+    FRESH_WINDOW_READS,
     PATHS,
     VERSION,
     Plan,
@@ -36,6 +39,7 @@ from scripts.stage5_capacity import (  # noqa: E402
     release_native_context,
     scheduled_phase,
     summarize,
+    wait_for_fresh_window,
     workload_validation,
 )
 from scripts.stage5_resources import Resources, private_json  # noqa: E402
@@ -45,6 +49,7 @@ def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--config", type=Path, default=ROOT / "backend/capacity/stage5-owned-http-v1.json")
     result.add_argument("--execute", action="store_true")
+    result.add_argument("--fresh-window", action="store_true", help="Measure three governed batches with a natural cooldown")
     result.add_argument("--output", type=Path)
     result.add_argument("--pg-bin", type=Path)
     result.add_argument("--redis-server", type=Path)
@@ -123,7 +128,7 @@ class TmpFactory:
         return target
 
 
-async def workload(plan, resources, tokens, storage, counters, sql, cert):
+async def workload(plan, resources, tokens, storage, counters, sql, cert, *, fresh_window=False):
     import httpx
 
     from tests.fixtures.stage5_native import check_body
@@ -135,16 +140,23 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
         resources.partial_report["results"] = results
     start = time.perf_counter()
     deadline = start + plan.measurement_seconds
+    modes = (FRESH_WINDOW_MODE,) if fresh_window else ("get_unpaced_diagnostic", "list_governed_40")
+    count = FRESH_WINDOW_READS if fresh_window else plan.requests_per_phase
     async with httpx.AsyncClient(base_url=f"https://127.0.0.1:{resources.api_port}",
             verify=ssl.create_default_context(cafile=str(cert)), trust_env=False,
             timeout=httpx.Timeout(10), limits=httpx.Limits(max_connections=25, max_keepalive_connections=25)) as client:
         # No counter reset: all List phases share one actual project governor.
-        for mode in ("get_unpaced_diagnostic", "list_governed_40"):
+        for mode in modes:
             os.environ["CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED"] = "true" if mode.startswith("list") else "false"
             os.environ["CANDIDATE_METADATA_ADMISSION_ENABLED"] = "true" if mode.startswith("list") else "false"
             for concurrency in plan.concurrency:
                 if time.perf_counter() >= deadline:
                     break
+                cooldown = None
+                if fresh_window:
+                    cooldown = await wait_for_fresh_window(deadline=deadline)
+                    if cooldown is None:
+                        break
                 before = counters.snapshot()
                 redis_before = storage.storage.info("stats")["total_commands_processed"]
                 pool_before = len(sql["acquire_ms"])
@@ -175,8 +187,9 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
                             "capacity_refusal_valid": refusal_valid,
                             "retry_after": response.headers.get("retry-after")}
                 phase_start = time.perf_counter()
-                rows = await scheduled_phase(count=plan.requests_per_phase, concurrency=concurrency,
-                    arrivals_per_second=plan.arrivals_per_second, deadline=deadline, request=request)
+                rows = await scheduled_phase(count=count, concurrency=concurrency,
+                    arrivals_per_second=None if fresh_window else plan.arrivals_per_second,
+                    deadline=deadline, request=request)
                 after = counters.snapshot()
                 redis_after = storage.storage.info("stats")["total_commands_processed"]
                 metric = {key: after.get(key, 0) - before.get(key, 0) for key in set(after) | set(before)}
@@ -184,14 +197,17 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
                 from scripts.stage5_capacity import percentile
                 phase_elapsed = time.perf_counter() - phase_start
                 summary = summarize(rows)
-                results.append({"mode": mode, "concurrency": concurrency,
+                phase = {"mode": mode, "concurrency": concurrency,
                     "actual_peak_inflight_http": peak,
                     "elapsed_seconds": phase_elapsed, **summary,
                     "successful_owned_responses_per_second": summary["successful_owned_responses"] / phase_elapsed,
                     "wire_and_sql": metric,
                     "redis_server_command_delta_including_one_stats_observation": redis_after - redis_before,
                     "pool_acquisition_composite_p95_ms": percentile(acquisitions, .95),
-                    "pool_wait_only_ms": None, "requests": rows})
+                    "pool_wait_only_ms": None, "requests": rows}
+                if fresh_window:
+                    phase["cooldown_seconds_before_phase"] = cooldown
+                results.append(phase)
                 print(json.dumps({"phase": mode, "concurrency": concurrency,
                                   **summarize(rows)}), flush=True)
                 if time.perf_counter() >= deadline:
@@ -199,13 +215,13 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
             if time.perf_counter() >= deadline:
                 break
     observed = {(row["mode"], row["concurrency"]) for row in results}
-    for mode in ("get_unpaced_diagnostic", "list_governed_40"):
+    for mode in modes:
         for concurrency in plan.concurrency:
             if (mode, concurrency) not in observed:
                 # No service/Redis observation and no fabricated latency sample.
                 results.append({"mode": mode, "concurrency": concurrency,
-                    "state": "not_started_deadline", "planned_requests": plan.requests_per_phase,
-                    "unsent_requests": plan.requests_per_phase, "offered": 0,
+                    "state": "not_started_deadline", "planned_requests": count,
+                    "unsent_requests": count, "offered": 0,
                     "successful_owned_responses": 0, "status_counts": {},
                     "elapsed_seconds": None, "actual_peak_inflight_http": 0,
                     "successful_owned_responses_per_second": None,
@@ -216,7 +232,7 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert):
     return results, time.perf_counter() - start
 
 
-def execute(plan, resources):
+def execute(plan, resources, *, fresh_window=False):
     import pytest
     import uvicorn
 
@@ -345,7 +361,8 @@ def execute(plan, resources):
         actual_connect = instrumented_pool.connect
         source.pool.connect = acquire
         cpu_before = resource.getrusage(resource.RUSAGE_SELF)
-        results, elapsed = asyncio.run(workload(plan, resources, actors, storage, counters, sql, cert))
+        results, elapsed = asyncio.run(workload(plan, resources, actors, storage, counters, sql, cert,
+            fresh_window=fresh_window))
         resources.partial_report.update(results=results, measurement_seconds=elapsed)
         cpu_after = resource.getrusage(resource.RUSAGE_SELF)
         with source.connect() as connection:
@@ -378,7 +395,11 @@ def execute(plan, resources):
                 "1M authenticated requests/month remains required; 40 units/min and two Lists yields at most 864,000/30 days before other use.",
                 "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
         report["validation"] = workload_validation(results, requests_per_phase=plan.requests_per_phase,
-                                                   preflight=preflight)
+                                                   preflight=preflight, fresh_window=fresh_window)
+        if fresh_window:
+            report["workload_mode"] = FRESH_WINDOW_MODE
+            report["limitations"].append("Three short fresh windows do not measure sustained throughput. "
+                "Each offers 16 reads, so the 25-connection cap cannot be saturated.")
         resources.partial_report = report
         return report
     finally:
@@ -399,9 +420,15 @@ def main():
     cleanup_verified = False
     try:
         plan = Plan.parse(json.loads(args.config.read_text()))
+        if args.fresh_window and plan.measurement_seconds <= FRESH_WINDOW_COOLDOWN_SECONDS * len(plan.concurrency):
+            raise ValueError("Fresh-window measurement must fit all natural cooldowns")
         if not args.execute:
-            print(json.dumps({"version": VERSION, "plan": asdict(plan), "maximum_requests_including_controls": plan.requests_per_phase * 6 + 3,
-                              "external_calls": 0, "production_qualified": False}))
+            preview = {"version": VERSION, "plan": asdict(plan), "maximum_requests_including_controls": plan.requests_per_phase * 6 + 3,
+                       "external_calls": 0, "production_qualified": False}
+            if args.fresh_window:
+                preview.update(workload_mode=FRESH_WINDOW_MODE, maximum_requests_including_controls=FRESH_WINDOW_READS * 3 + 3,
+                               fresh_window_reads_per_phase=FRESH_WINDOW_READS, minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS)
+            print(json.dumps(preview))
             return 0
         if not args.output or not args.pg_bin or not args.redis_server:
             raise ValueError("Execute requires a new output directory and explicit PG17/TLS Redis binaries")
@@ -411,13 +438,15 @@ def main():
             "plan": asdict(plan), "preflight": {}, "results": [],
             "validation": {"passed": False, "failures": {"execution_incomplete": 1},
                            "production_capacity_qualified": False}}
+        if args.fresh_window:
+            resources.partial_report["workload_mode"] = FRESH_WINDOW_MODE
         try:
             # Fixed diagnostic labels only. No auth body, token, SQL parameter or
             # exception message is emitted by the runner or its private report.
             logging.disable(logging.CRITICAL)
-            result = execute(plan, resources)
+            result = execute(plan, resources, fresh_window=True) if args.fresh_window else execute(plan, resources)
             result["validation"] = workload_validation(result["results"],
-                requests_per_phase=plan.requests_per_phase, preflight=result["preflight"])
+                requests_per_phase=plan.requests_per_phase, preflight=result["preflight"], fresh_window=args.fresh_window)
             resources.partial_report = result
         finally:
             try:
