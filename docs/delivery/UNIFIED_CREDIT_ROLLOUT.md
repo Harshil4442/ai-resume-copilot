@@ -509,7 +509,10 @@ recovered two catalogue publication revisions and matched the schema, all 84
 table contents, nine sequence states, trigger definitions and relation ACLs.
 The restored test accepted a new catalogue publication and still rejected an
 unversioned evidence update and an invalid foreign key. Payment and reservation
-replay remained idempotent.
+replay remained idempotent. The expanded drill restored the exact approved PDF,
+the sealed application, the unknown attempt and its five-credit hold. Two worker
+redeliveries made zero employer calls, and the same opening refused a replacement
+application. These results use a disposable PostgreSQL 17 cluster.
 
 Production backup coverage, role and permission recovery, independent authority
 replay and recovery times still need verification before reopening after a

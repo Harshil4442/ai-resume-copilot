@@ -556,6 +556,7 @@ def test_successor_monitor_uses_fresh_native_immutable_receipt_without_hourly_la
     selected = SimpleNamespace(image=image, definition_expires_at=(NOW + timedelta(hours=23)).isoformat())
     import sys
     monkeypatch.setitem(sys.modules, "document_refresh_probe", SimpleNamespace(
+        policy_for_serving=lambda *_: "historical",
         verify_current_successor=lambda actual_image, metadata: selected))
     monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
     monkeypatch.setattr(refresh, "native_json", lambda *args: value)
@@ -564,6 +565,62 @@ def test_successor_monitor_uses_fresh_native_immutable_receipt_without_hourly_la
     assert result["definitions"]["status"] == "refresh_required"
     assert result["definitions"]["seconds_remaining"] == 23 * 3600
     assert result["definitions"]["source"] == "fresh_native_immutable_image_receipt"
+
+
+def test_current_source_expiry_emits_precise_status_without_opening_other_paths(monkeypatch, tmp_path):
+    import json
+    import sys
+
+    from infra.gcp import document_source_candidate, document_source_release
+
+    value = service()
+    image = refresh.REPOSITORY + "@sha256:" + "f" * 64
+    value["template"]["containers"][0]["image"] = image
+    calls = []
+    receipt = SimpleNamespace(image=image, definition_expires_at=(NOW - timedelta(seconds=30)).isoformat())
+
+    def observe(actual_image, metadata):
+        assert actual_image == image and metadata is value
+        calls.append("verified")
+        return receipt
+
+    def require_fresh(*_):
+        raise refresh.RefreshDenied("fresh_proof_required")
+
+    monkeypatch.setitem(sys.modules, "document_refresh_probe", SimpleNamespace(
+        policy_for_serving=lambda *_: document_source_candidate.POLICY_SHA256,
+        verify_current_successor=require_fresh))
+    monkeypatch.setattr(document_source_release, "observe_current_source_definitions", observe)
+    monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
+
+    def native_json(_http, method, url, payload=None):
+        if method == "GET":
+            assert url.endswith("/services/" + refresh.SERVICE)
+            return value
+        assert method == "POST" and url == "https://logging.googleapis.com/v2/entries:write"
+        calls.append(payload["entries"][0]["jsonPayload"])
+        return {}
+
+    monkeypatch.setattr(refresh, "native_json", native_json)
+    monkeypatch.setattr(refresh, "command", lambda *_args, **_kwargs: pytest.fail("No image pull or build"))
+    with pytest.raises(refresh.RefreshDenied, match="fresh_proof_required"):
+        refresh.serving_image(value, refresh.accepted())
+    output = tmp_path / "monitor"
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "monitor",
+        "--output-directory", str(output)])
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, _tz=None):
+            return NOW
+    monkeypatch.setattr(refresh, "datetime", Clock)
+
+    assert refresh.run_cli() == 2
+    result = json.loads((output / "result.json").read_bytes())
+    assert result["promotion_performed"] is False
+    assert result["definitions"]["source"] == "expired_native_immutable_image_receipt"
+    assert calls == ["verified", {"event": "hirewiz_document_definition_maintenance_v1", "status": "expired",
+        "controller": "hirewiz-document-refresh", "version": 1, "seconds_remaining": -30}]
 
 
 def test_workflow_keeps_same_run_different_attempt_artifacts_separate(tmp_path, monkeypatch):

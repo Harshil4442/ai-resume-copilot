@@ -173,9 +173,12 @@ Image deletion is outside this controller; there is no broad registry delete rig
 The monitor writes only a fixed nonsecret status/heartbeat to
 `projects/ai-resume-parser-482412/logs/hirewiz-document-refresh`. At 24 hours before
 the unchanged three-day deadline, or on expiry/unavailable state, it emits attention.
-A failed operation makes a separate bounded best-effort unavailable notification;
-it never retries the failed mutation. Missing monitor/auth/logging also triggers
-absence monitoring.
+A verified current V4 receipt can report expired definitions while scanner
+maintenance is held. The monitor logs the expired state once and exits with an
+attention status. Refresh and application rollout still require their fresh
+proofs. Other failed operations make a bounded best-effort unavailable
+notification. Missing monitor, authentication or logging also triggers absence
+monitoring.
 
 `infra/gcp/document_refresh_alerts.tf` is opt-in, disabled by default, and requires
 reviewed notification-channel IDs. Its alerts cover attention events and a missing

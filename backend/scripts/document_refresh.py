@@ -439,8 +439,8 @@ def header(docker: list[str], image: str) -> bytes:
         "--entrypoint=/usr/bin/clamscan", image, "--database=/var/lib/clamav", "--version"], seconds=30)
 
 
-def _serving_pin(service: Any, contract: Any) -> tuple[str, Any]:
-    """Bind the native v2 serving revision; every successor needs fresh proof."""
+def _serving_pin(service: Any, contract: Any, *, monitor: bool = False) -> tuple[str, Any]:
+    """Bind serving identity. Only monitoring may observe expired V4 proof."""
     need(type(service) is dict and service.get("name") == f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
          and service.get("uid") == "7014a5ba-faee-4fbf-8272-a437b1de49ad"
          and re.fullmatch(r"[1-9][0-9]{0,18}", str(service.get("generation", "")))
@@ -466,7 +466,14 @@ def _serving_pin(service: Any, contract: Any) -> tuple[str, Any]:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_probe import verify_current_successor
 
-        verified = verify_current_successor(image, service)
+        if monitor:
+            from document_refresh_probe import policy_for_serving
+            from infra.gcp import document_source_candidate as profile
+            if policy_for_serving(service, image) == profile.POLICY_SHA256:
+                from infra.gcp.document_source_release import observe_current_source_definitions
+                verified = observe_current_source_definitions(image, service)
+        if verified is None:
+            verified = verify_current_successor(image, service)
         need(verified.image == image, "document_refresh_serving_successor_unverified")
     return image, verified
 
@@ -480,7 +487,7 @@ def monitor(*, now: datetime) -> dict[str, Any]:
     http = native_http()
     try:
         service = native_json(http, "GET", f"https://run.googleapis.com/v2/projects/{PROJECT}/locations/{REGION}/services/{SERVICE}")
-        image, native = _serving_pin(service, contract)
+        image, native = _serving_pin(service, contract, monitor=True)
     finally:
         http.close()
     if native is None:
@@ -494,10 +501,12 @@ def monitor(*, now: datetime) -> dict[str, Any]:
         need(expires.tzinfo is not None and expires - now <= AGE_LIMIT,
              "document_refresh_native_definition_time_invalid")
         issued, remaining = expires - AGE_LIMIT, expires - now
-        result = {"status": "expired" if remaining < timedelta(0) else
+        expired = remaining <= timedelta(0)
+        result = {"status": "expired" if expired else
                   "refresh_required" if remaining <= ALERT_BEFORE else "fresh",
                   "issued_at_utc": issued.isoformat(), "expires_at_utc": expires.isoformat(),
-                  "seconds_remaining": int(remaining.total_seconds()), "source": "fresh_native_immutable_image_receipt"}
+                  "seconds_remaining": int(remaining.total_seconds()),
+                  "source": "expired_native_immutable_image_receipt" if expired else "fresh_native_immutable_image_receipt"}
     return {"mode": "monitor", "image": image, "native_serving_pin_observed": True,
             "definitions": result, "promotion_performed": False}
 
@@ -2195,14 +2204,18 @@ def run_cli() -> int:
         # Reporting is an independent bounded write, never a retry of the failed
         # Build/Job/PATCH. The exact read-only reconciliation mode must not
         # write even a failure heartbeat to Cloud Logging.
-        if not readback_requested:
+        observed_expiry = (mode == "monitor" and type(error) is RefreshDenied
+                           and error.args == ("document_refresh_expiry_alert",))
+        if not readback_requested and not observed_expiry:
             try:
                 emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
             except Exception:
                 pass
         final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
         code = _final_failure_code(error) if final_mode else "document_refresh_unavailable"
-        if not final_mode and type(error) is RefreshDenied:
+        if observed_expiry:
+            code = "document_refresh_expiry_alert"
+        elif not final_mode and type(error) is RefreshDenied:
             try:
                 code = _diagnostic_kind_code(error)[1] or code
             except Exception:

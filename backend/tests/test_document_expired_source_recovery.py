@@ -99,6 +99,18 @@ def test_expired_structural_custody_never_becomes_processing_acceptance(evidence
         transition.require_current_acceptance(identity, IMAGE, probe)
 
 
+def test_monitor_evidence_distinguishes_expired_from_fresh_without_authority(evidence):
+    probe, metadata, _, age, _ = evidence
+    expired = probe._verify_current_source(IMAGE, metadata, monitor=True)
+    assert type(expired) is release.ExpiredSourcePredecessor
+    assert expired.report()["processing_authorized"] is False
+    with pytest.raises(release.prior.NativeProofDenied, match="definitions_stale"):
+        probe._verify_current_source(IMAGE, metadata)
+    age(2)
+    fresh = probe._verify_current_source(IMAGE, metadata, monitor=True)
+    assert type(fresh) is release.prior.NativeAcceptance
+
+
 @pytest.mark.parametrize("days", [0, 2, -1])
 def test_recovery_requires_expired_not_fresh_or_future_definitions(evidence, days):
     probe, metadata, _, age, _ = evidence
