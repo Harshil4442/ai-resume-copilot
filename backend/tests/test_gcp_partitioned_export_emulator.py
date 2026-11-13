@@ -21,6 +21,7 @@ from app.domains.recovery.gcp_journal import GcsJournal
 from app.domains.recovery.gcp_pairing_attempts import GcsPairingAttempts
 from app.domains.recovery.gcp_pairing_contracts import PairingJournalIntent
 from app.domains.recovery.gcp_partitioned_export import PartitionedCutExporter
+from app.domains.recovery.gcp_partitioned_export_verification import verify_closed_export
 from app.domains.recovery.gcp_password_lifetime_contracts import EnrollPasswordAccount
 from app.domains.recovery.gcp_password_lifetime_journal import GcsPasswordLifetimeJournal
 from app.domains.recovery.store import GuardDenied, GuardUnavailable
@@ -30,6 +31,18 @@ def ordinary(c):
     return JournalIntent(operation_id=uuid4(), pin=c.pin, effect=OpeningHold(subject_uuid=c.subject,
         employer_key="a" * 64, tenant_id="synthetic", opening_key="b" * 64, binding_sha256="c" * 64),
         created_at_ms=c.now, deadline_ms=c.now + 60_000)
+
+
+def verify_detached_receipt(publication, receipt):
+    # Consume exact exported generation bytes with no source registry reads.
+    def read(bucket, path, generation, maximum):
+        assert bucket == publication.resource.bucket
+        raw, actual_generation = publication.test_state.objects[path]
+        assert actual_generation == generation and len(raw) <= maximum
+        return raw
+
+    proof = verify_closed_export(receipt, read)
+    assert (proof.records_count, proof.authority_rows_count) == (receipt.records_count, receipt.authority_rows_count)
 
 
 def test_complete_cut_exports_full_canonical_intents_and_all_scoped_native_rows(scoped):
@@ -49,6 +62,7 @@ def test_complete_cut_exports_full_canonical_intents_and_all_scoped_native_rows(
     assert {v["namespace"] for v in rows} >= {"v3_pending_session_denials", "v3_session_tombstones",
         "v3_generation_history", "v3_activations", "v3_begins", "v3_records", "v3_record_slots"}
     assert not receipt.projection_complete and not c.active.any()
+    verify_detached_receipt(c.v3, receipt)
 
 
 def test_paused_ordinary_post_is_included_before_complete_ack_and_never_becomes_late_orphan(case):
@@ -183,6 +197,7 @@ def test_complete_cut_more_than_63_has_complete_native_and_gcs_terminal_pages(ca
     assert len(lists) == 4 and sum("pageToken" in url for url in lists) == 2
     assert all(any(v.operation_id.hex.replace("-", "") in path.replace("-", "")
         for path in pub.test_state.objects) for v in inputs)
+    verify_detached_receipt(pub, receipt)
 
 
 def test_unregistered_canonical_gcs_intent_refuses_complete_prefix(case):
