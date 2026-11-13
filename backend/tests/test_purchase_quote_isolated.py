@@ -44,6 +44,15 @@ class Field:
     def in_(self, other):
         return (self.name, "in", other)
 
+    def is_(self, other):
+        return (self.name, "is", other)
+
+    def is_not(self, other):
+        return (self.name, "is_not", other)
+
+    def asc(self):
+        return self
+
     def desc(self):
         return self
 
@@ -73,7 +82,13 @@ class Query:
         self.conditions.extend(args)
         return self
 
-    def with_for_update(self):
+    def filter_by(self, **fields):
+        return self.filter(*(getattr(self.model, name) == value for name, value in fields.items()))
+
+    def with_for_update(self, **options):
+        return self
+
+    def populate_existing(self):
         return self
 
     def order_by(self, *args):
@@ -83,6 +98,10 @@ class Query:
         rows = [self.db.owner] if self.model is User else self.all()
         return rows[0] if rows else None
 
+    def one(self):
+        row, = self.all()
+        return row
+
     def all(self):
         def condition_matches(row, condition):
             if len(condition) == 2:
@@ -90,7 +109,16 @@ class Query:
                 outcomes = [condition_matches(row, item) for item in values]
                 return all(outcomes) if kind == "and" else any(outcomes)
             name, operation, value = condition
-            return getattr(row, name, None) == value if operation == "eq" else getattr(row, name, None) in value
+            actual = getattr(row, name, None)
+            if operation == "eq":
+                return actual == value
+            if operation == "in":
+                return actual in value
+            if operation == "is":
+                return actual is value
+            if operation == "is_not":
+                return actual is not value
+            raise AssertionError(operation)
 
         def matches(row):
             return all(condition_matches(row, item) for item in self.conditions)
@@ -115,6 +143,9 @@ class Storage:
         self.commits += 1
 
     def refresh(self, value):
+        pass
+
+    def flush(self):
         pass
 
 
@@ -151,11 +182,13 @@ def setup(db, *, product=None, version="catalog-original", mode="test", key_id="
         "assert_actual_variance": lambda *args: None, "current_policy": lambda: None,
         "CostPolicyUnavailable": type("CostPolicyUnavailable", (Exception,), {}),
         "IntegrityError": type("IntegrityError", (Exception,), {}),
+        "OperationalError": type("OperationalError", (Exception,), {}),
         "RazorpayProviderError": provider_error,
         "RazorpayAdapter": Provider,
         "log": SimpleNamespace(warning=lambda *args: None),
     }
     production_body("_checkout_response", dependencies)
+    production_body("_blocks_new_purchase", dependencies)
     production_body("_order_status_required", dependencies)
     production_body("_normalized_order_status", dependencies)
     return production_body("create_order", dependencies), product

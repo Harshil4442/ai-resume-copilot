@@ -318,19 +318,30 @@ def create_order(
     # Reconciliation can bind or settle the original during the provider call.
     order = db.query(PaymentOrder).filter_by(public_id=public_id).populate_existing().with_for_update().one()
     provider_order_id = provider_result["provider_order_id"]
-    if order.user_id != user_id:
+    detached = order.user_id is None and order.customer_deleted_at is not None
+    if order.user_id != user_id and not detached:
         raise HTTPException(404, "Order not found.")
     if order.provider_order_id not in (None, provider_order_id):
+        if detached:
+            raise HTTPException(404, "Order not found.")
+        if order.status in {"initializing", "created"}:
+            order.status = "creation_unknown"
+            db.commit()
         raise _order_status_required(order)
     order.provider_order_id = provider_order_id
-    if order.status == "initializing":
+    if not detached and order.status == "initializing":
         order.status = "created"
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         log.exception("Duplicate provider order identifier for local order %s", public_id)
+        if detached:
+            raise HTTPException(404, "Order not found.") from None
         raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.") from None
+    if detached:
+        # Keep callback routing for the retained audit row without reopening checkout.
+        raise HTTPException(404, "Order not found.")
     if order.status != "created":
         raise _order_status_required(order)
     return _checkout_response(

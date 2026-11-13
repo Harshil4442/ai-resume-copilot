@@ -9,8 +9,11 @@ import pytest
 from backend.app.billing.catalog import CATALOG_VERSION, PRODUCTS
 from backend.app.billing.purchase_quote import product_quote
 from backend.app.billing.razorpay import RazorpayAdapter, RazorpayProviderError
+from backend.app.domains.candidate_accounts.account_erasure import erase_account_sql
+from backend.app.domains.notification_consent.schema_compat import SUCCESSOR
 from backend.app.models import EntitlementLedger, PaymentOrder, PaymentTransaction, User
 from backend.app.routers import billing
+from backend.tests.fixtures.evidence_fence import install_owned_fence
 from backend.tests.test_payment_funding_postgres import owned_pg_url, pg_factory
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -158,3 +161,69 @@ def test_legacy_creation_reply_keeps_capture_settled(
         assert order.active_attempt_key is None
         assert db.query(PaymentTransaction).one().status == "captured"
         assert db.query(EntitlementLedger).count() == 1
+
+
+def test_legacy_creation_reply_keeps_provider_binding_after_account_erasure(
+    client, enabled_checkout, session_factory, monkeypatch,
+):
+    provider_id = "order_legacyerasurerace"
+    with session_factory() as db:
+        install_owned_fence(db.get_bind())
+        # The billing fixture creates mapped tables. Erasure also checks the
+        # exact revision marker before touching the notification projection.
+        db.execute(text("CREATE TABLE alembic_version (version_num varchar(32) PRIMARY KEY)"))
+        db.execute(text("INSERT INTO alembic_version VALUES (:revision)"), {"revision": SUCCESSOR})
+        db.commit()
+
+    def finish_create(self, *, product, local_order_id, receipt):
+        with session_factory() as db:
+            order = db.query(PaymentOrder).filter_by(public_id=local_order_id).one()
+            erase_account_sql(db, order.user_id)
+            db.commit()
+        return {"provider_order_id": provider_id}
+
+    monkeypatch.setattr(RazorpayAdapter, "create_order", finish_create)
+    result = client.post("/api/billing/orders", json=_purchase_payload())
+    assert result.status_code == 404
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        assert order.user_id is None and order.customer_deleted_at is not None
+        assert order.provider_order_id == provider_id
+        assert order.status == "customer_deleted" and order.active_attempt_key is None
+        capture = _capture_payload(order)
+    event = _post_event(client, "evt_legacy_creation_after_erasure", capture)
+    assert event.status_code == 200 and event.json()["status"] == "processed"
+    with session_factory() as db:
+        assert db.query(User).count() == 0
+        assert db.query(PaymentOrder).one().status == "paid_unfulfilled"
+        assert db.query(PaymentTransaction).one().status == "captured"
+        assert db.query(EntitlementLedger).count() == 0
+
+
+def test_legacy_creation_reply_with_conflicting_provider_id_pauses_checkout(
+    client, enabled_checkout, session_factory, monkeypatch,
+):
+    provider_calls = []
+
+    def finish_create(self, *, product, local_order_id, receipt):
+        provider_calls.append(local_order_id)
+        with session_factory() as db:
+            order = db.query(PaymentOrder).filter_by(public_id=local_order_id).one()
+            order.provider_order_id = "order_originalbinding"
+            order.status = "created"
+            db.commit()
+        return {"provider_order_id": "order_conflictingreply"}
+
+    monkeypatch.setattr(RazorpayAdapter, "create_order", finish_create)
+    purchase = _purchase_payload()
+    result = client.post("/api/billing/orders", json=purchase)
+    assert result.status_code == 409
+    order_id = result.json()["detail"]["order_id"]
+    assert client.post("/api/billing/orders", json=purchase).status_code == 409
+    status = client.get(f"/api/billing/orders/{order_id}").json()
+    assert status["status"] == "pending" and not status["checkout_available"]
+    assert provider_calls == [order_id]
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        assert order.provider_order_id == "order_originalbinding"
+        assert order.status == "creation_unknown" and order.active_attempt_key is not None
