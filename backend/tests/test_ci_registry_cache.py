@@ -73,7 +73,7 @@ def test_native_mirror_verification_waits_for_reload_without_restart(monkeypatch
 
 
 def test_missing_native_activation_is_a_bounded_failure(monkeypatch):
-    clocks = iter([0, 11])
+    clocks = iter([0, cache.DAEMON_OBSERVATION_SECONDS + 1])
     monkeypatch.setattr(cache.time, "monotonic", lambda: next(clocks))
     monkeypatch.setattr(cache.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="[]"))
     with pytest.raises(ValueError, match="did not activate"):
@@ -116,7 +116,7 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
         '[[ "$daemon_pid" =~ ^[1-9][0-9]*$ ]]',
         '[ "$daemon_pid" -gt 1 ]',
         'sudo kill -HUP "$daemon_pid"',
-        "timeout 15s python3 backend/scripts/ci_registry_cache.py --verify",
+        "timeout 35s python3 backend/scripts/ci_registry_cache.py --verify",
     ):
         assert command in cache_step and command in security_cache
     assert "restart" not in security_cache
@@ -132,7 +132,7 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
     assert (root / "infra/native-tex/Dockerfile").read_text().splitlines()[2] == "FROM mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
 
 
-def test_reload_observation_timeout_retries_only_read_inside_original_deadline(monkeypatch):
+def test_slow_reload_can_recover_after_two_bounded_observation_timeouts(monkeypatch):
     clock, calls = [0.0], []
     monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(cache.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
@@ -140,18 +140,18 @@ def test_reload_observation_timeout_retries_only_read_inside_original_deadline(m
     def observe(command, **kwargs):
         calls.append((command, kwargs["timeout"]))
         assert command == ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"]
-        if len(calls) == 1:
+        if len(calls) <= 2:
             clock[0] += kwargs["timeout"]
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         return SimpleNamespace(stdout=json.dumps([cache.MIRROR]))
 
     monkeypatch.setattr(cache.subprocess, "run", observe)
     cache.verify()
-    assert [timeout for _, timeout in calls] == [5, 4.75]
-    assert clock[0] == 5.25
+    assert [timeout for _, timeout in calls] == [5, 5, 5]
+    assert clock[0] == 10.5
 
 
-def test_repeated_observation_timeouts_exhaust_same_ten_second_budget(monkeypatch):
+def test_repeated_observation_timeouts_exhaust_thirty_second_budget(monkeypatch):
     clock, calls = [0.0], []
     monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(cache.time, "sleep", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
@@ -164,8 +164,8 @@ def test_repeated_observation_timeouts_exhaust_same_ten_second_budget(monkeypatc
     monkeypatch.setattr(cache.subprocess, "run", unavailable)
     with pytest.raises(subprocess.TimeoutExpired):
         cache.verify()
-    assert [timeout for _, timeout in calls] == [5, 4.75]
-    assert clock[0] == 10
+    assert [timeout for _, timeout in calls] == [5, 5, 5, 5, 5, 3.75]
+    assert clock[0] == 30
     assert all(command == ["docker", "info", "--format", "{{json .RegistryConfig.Mirrors}}"]
                for command, _ in calls)
 
