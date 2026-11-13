@@ -291,6 +291,13 @@ for another owner's exact opportunity. The cap is 29 HTTP requests including
 all controls. No real provider calls are made. The fixed-order, direct HTTPS
 measurement does not establish browser or production latency.
 
+The [hosted Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469657852)
+verified the expected counts and equivalent output in both the 20% and 25%
+synthetic buyer cohorts. Each completed all eight journeys per arm, moving
+from 16 to eight HTTP responses and from 32 to 16 intercepted Admin Lists.
+There were zero provider calls. The [default workload](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469626412)
+also reproduced its existing response counts in both cohorts.
+
 ## Original acceptance remains open
 
 The existing target remains about one million authenticated requests/month plus

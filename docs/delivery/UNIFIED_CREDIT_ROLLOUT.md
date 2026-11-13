@@ -122,12 +122,20 @@ qualification and planning boundary. The historical controller-only target was
 9b9. The current Source27 candidate requires its own exact-source qualification
 and release plan; the earlier image does not contain these new application fixes.
 
-For the application image, use the [native Git build recipe](../../infra/gcp/cloudbuild-monetary.yaml)
-after exact-commit CI passes. The recipe selects the existing `hirewiz-builder-20261014`
-service account and sends its logs to Cloud Logging. Use the same full SHA for
-`--git-source-revision` and `_RELEASE`, with `--git-source-dir=.` in `us-central1`.
-Verify the returned Build ID, resolved Git SHA, and immutable image digest through
-the release controller before staging. [Cloud Build service accounts and logging](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
+The existing GitHub `main` push trigger builds and pushes the app image with
+`cloudbuild.yaml`. Merge the tested combined candidate once, then record the
+resulting `main` SHA and observe its own CI and triggered Build. Use the triggered
+image if the release controller verifies its exact Git SHA, Build ID and image
+digest. The trigger does not update Cloud Run traffic. PR-head CI and a merge
+commit's Build cannot be combined as evidence for either SHA.
+
+If the exact merged SHA has no usable triggered image, first check the outcome of
+the existing Build. The [native Git build recipe](../../infra/gcp/cloudbuild-monetary.yaml)
+can produce a separately verified image for the selected commit after its CI
+passes. It uses the existing `hirewiz-builder-20261014` service account and
+Cloud Logging. Set `--git-source-revision` and `_RELEASE` to the same full SHA
+and use `--git-source-dir=.` in `us-central1`.
+[Cloud Build service accounts and logging](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
 
 ### Promote the matched schema26 bridge and frontend
 
