@@ -572,9 +572,9 @@ it.each(["different_resume", "unavailable"] as const)("current-source match refu
 
 it("current-source match learning read is explicit and binds the current resume ID", async () => {
   state.tab = "learning"; enableCreditExecution();
-  const original = state.get.getMockImplementation()!;
-  state.get.mockImplementation((url: string, signal?: AbortSignal) => url === "/v1/skill-roi" ? Promise.resolve({ items: [] }) : original(url, signal));
-  state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve(matchWorkspace(resumeId === 1 ? "current" : "different_resume"))
+  state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve({
+    ...matchWorkspace(resumeId === 1 ? "current" : "different_resume"), skill_roi: { items: [], opportunity_count: 0 },
+  })
     : url === `/v1/opportunities/${state.id}/match?resume_id=1` ? Promise.resolve(savedMatch) : undefined);
   await page();
   expect(state.wire.mock.calls.some(([url]) => String(url).includes("/match?"))).toBe(false);
@@ -585,6 +585,68 @@ it("current-source match learning read is explicit and binds the current resume 
   expect(screen.queryByRole("heading", { name: "Build a learning plan for this role" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Load saved match for learning strategy" })).toBeNull();
   expect(state.post).not.toHaveBeenCalled();
+});
+
+const rankedSkill = { opportunity_count: 1, items: [{ skill: "postgresql", opportunity_count: 1,
+  demand_ratio: 1, evidence_strength: 0, outcome_signal: 0, estimated_hours: 30, score: 93,
+  reason: "Appears in the current owned opportunity." }] };
+
+it("uses the learning Workspace projection without a standalone Skill ROI request", async () => {
+  state.tab = "learning";
+  state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve({
+    ...matchWorkspace("none"), skill_roi: rankedSkill,
+  }) : undefined);
+  await page();
+  expect(await screen.findByRole("heading", { name: "postgresql" })).toBeVisible();
+  expect(state.wire.mock.calls.map(([url]) => url)).toEqual(expect.arrayContaining([
+    `/v1/opportunities/${state.id}/workspace?tab=learning&limit=20&include_skill_roi=true`,
+  ]));
+  expect(state.wire.mock.calls.filter(([url]) => String(url).includes("/workspace?"))).toHaveLength(1);
+  expect(state.wire.mock.calls.some(([url]) => url === "/v1/skill-roi")).toBe(false);
+});
+
+it("loads the standalone result only when the owned Workspace response is from an older backend", async () => {
+  state.tab = "learning";
+  state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve(matchWorkspace("none"))
+    : url === "/v1/skill-roi" ? Promise.resolve(rankedSkill) : undefined);
+  await page();
+  expect(await screen.findByRole("heading", { name: "postgresql" })).toBeVisible();
+  expect(state.wire.mock.calls.filter(([url]) => url === "/v1/skill-roi")).toHaveLength(1);
+});
+
+it("never uses missing ROI as a fallback hint on a mismatched Workspace response", async () => {
+  state.tab = "learning";
+  const response = matchWorkspace("none");
+  state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve({
+    ...response, opportunity: { ...response.opportunity, id: "other-opportunity" },
+  }) : undefined);
+  await page();
+  expect(await screen.findByText("Skill ROI is temporarily unavailable.")).toBeVisible();
+  expect(state.wire.mock.calls.some(([url]) => url === "/v1/skill-roi")).toBe(false);
+});
+
+it.each([null, { items: [] }, { opportunity_count: 0, items: [{ skill: "unverified" }] }])(
+  "reports an unavailable or malformed current projection without a compatibility read",
+  async (skill_roi) => {
+    state.tab = "learning";
+    state.direct.mockImplementation((url: string) => url.includes("/workspace?") ? Promise.resolve({
+      ...matchWorkspace("none"), skill_roi,
+    }) : undefined);
+    await page();
+    expect(await screen.findByText("Skill ROI is temporarily unavailable.")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Skill ROI needs match data" })).toBeNull();
+    expect(state.wire.mock.calls.some(([url]) => url === "/v1/skill-roi")).toBe(false);
+  },
+);
+
+it.each([401, 404, 429, 503])("never attempts standalone Skill ROI after Workspace HTTP %s", async (status) => {
+  state.tab = "learning";
+  state.direct.mockImplementation((url: string) => url.includes("/workspace?")
+    ? Promise.reject(new ApiError("Workspace unavailable", status, null)) : undefined);
+  render(tree());
+  expect(await screen.findByRole("heading", { name: "Opportunity unavailable" })).toBeVisible();
+  expect(state.wire.mock.calls.some(([url]) => url === "/v1/skill-roi")).toBe(false);
+  expect(state.wire.mock.calls.filter(([url]) => String(url).includes("/workspace?"))).toHaveLength(1);
 });
 
 it("current-source match captures a legacy request before awaiting its late response", async () => {

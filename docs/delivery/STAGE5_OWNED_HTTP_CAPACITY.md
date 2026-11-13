@@ -260,6 +260,21 @@ failures. Each 16-read batch used 32 intercepted metadata calls after at least
 16. Cleanup was verified, and the run made no provider calls. Sustained hosted
 throughput and concurrency above 16 remain unmeasured.
 
+## Workspace Skill ROI read
+
+The Workspace learning tab requests Skill ROI within its owned Workspace read.
+The backend checks ownership before computing the existing ranking and reads
+only the scoring columns. The standalone endpoint remains available to existing
+clients. During frontend and backend version overlap, the new frontend uses it
+only after a successful Workspace response for the same opportunity omits the
+new field. An unavailable projection or a capacity refusal is shown explicitly.
+
+The local HTTP regression exercised real bearer validation through intercepted
+native SDKs. One combined read used two fresh List requests and returned the
+same result as the standalone endpoint. This saves one authenticated HTTP
+request and two metadata calls for a cold learning-tab view on the matching
+release. Production throughput and field latency remain unmeasured.
+
 ## Original acceptance remains open
 
 The existing target remains about one million authenticated requests/month plus

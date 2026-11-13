@@ -59,7 +59,6 @@ import {
   type OpportunityMatch,
   type Reminder,
   type ResumeVersion,
-  type SkillRoi,
   type SourcePreservingResumeContent,
   getSourcePreservingContent,
   stageLabels,
@@ -70,7 +69,7 @@ import { trackEvent } from "../../../lib/analytics";
 import { retryRead } from "../../../lib/readQueryPolicy";
 import { useProgressQuery } from "../../../lib/useProgressQuery";
 import type { ResumeSourceFormat } from "../../../lib/types";
-import { useWorkspace, useWorkspacePage, useWorkspaceResumes, workspaceKey, workspaceConnectionKey, type PendingWorkspaceConnection } from "../../../lib/workspacePages";
+import { parseWorkspaceSkillRoi, useWorkspace, useWorkspacePage, useWorkspaceResumes, workspaceKey, workspaceConnectionKey, type PendingWorkspaceConnection } from "../../../lib/workspacePages";
 import { WorkspaceItemDetails, WorkspacePageControls, WorkspaceRoleBody, WorkspaceVersionDetails } from "../../../components/career/WorkspaceHistory";
 import { ResumeSelector, ResumeVersionMetadata } from "../../../components/ResumeSelector";
 
@@ -286,11 +285,23 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   function refreshEvidenceReview() {
     return queryClient.invalidateQueries({ queryKey: prefix });
   }
-  const skillRoi = useQuery({
-    queryKey: ["skill-roi", ownerKey],
-    queryFn: ({ signal }) => apiGet<SkillRoi>("/v1/skill-roi", signal),
-    enabled: tab === "learning",
+  const learningWorkspace = authenticated && tab === "learning" && workspace.isSuccess
+    && workspace.data.opportunity?.id === opportunityId ? workspace.data : null;
+  const legacySkillRoi = learningWorkspace !== null && !Object.hasOwn(learningWorkspace, "skill_roi");
+  const legacySkillRoiQuery = useQuery({
+    queryKey: [...prefix, "legacy-skill-roi"],
+    queryFn: async ({ signal }) => {
+      const data = parseWorkspaceSkillRoi(await apiGet<unknown>("/v1/skill-roi", signal));
+      if (!data) throw new ApiError("Skill ROI could not be verified.", 503, null);
+      return data;
+    },
+    enabled: legacySkillRoi, retry: false, retryOnMount: false,
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
   });
+  const skillRoi = legacySkillRoi
+    ? (legacySkillRoiQuery.isSuccess ? legacySkillRoiQuery.data : null)
+    : parseWorkspaceSkillRoi(learningWorkspace?.skill_roi);
+  const skillRoiLoading = legacySkillRoi && legacySkillRoiQuery.isPending;
   const learningMatch = useQuery({
     queryKey: [...prefix, "learning-match", opportunity.data?.resume_id, opportunity.data?.latest_match_id],
     queryFn: ({ signal }) => apiGet<OpportunityMatch>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/match?resume_id=${opportunity.data!.resume_id}`, signal),
@@ -1038,17 +1049,24 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
               <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
               {unifiedServices && sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
               {unifiedServices && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
-              {skillRoi.isLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
-              {!skillRoi.isLoading && !skillRoi.data?.items.length ? <EmptyState icon={BookOpenCheck} title="Skill ROI needs match data" description="Run matches for active opportunities to see which skill investment has the strongest return." /> : null}
-              <div className="mt-7 divide-y divide-border border-y border-border">
-                {(skillRoi.data?.items || []).map((entry, index) => (
+              {skillRoiLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
+              {!skillRoiLoading && !skillRoi && !workspace.isError ? (
+                <div className="mt-7 flex flex-wrap items-center gap-3 text-sm" role="alert">
+                  <p className="text-coral">Skill ROI is temporarily unavailable.</p>
+                  <Button variant="secondary" size="sm" disabled={workspace.isFetching || legacySkillRoiQuery.isFetching}
+                    onClick={() => { if (legacySkillRoi) void legacySkillRoiQuery.refetch(); else void workspace.refetch(); }}>Retry loading Skill ROI</Button>
+                </div>
+              ) : null}
+              {skillRoi?.items.length === 0 ? <EmptyState icon={BookOpenCheck} title="Skill ROI needs match data" description="Run matches for active opportunities to see which skill investment has the strongest return." /> : null}
+              {skillRoi?.items.length ? <div className="mt-7 divide-y divide-border border-y border-border">
+                {skillRoi.items.map((entry, index) => (
                   <article key={entry.skill} className="grid gap-4 py-5 sm:grid-cols-[44px_1fr_auto] sm:items-center">
                     <span className="text-2xl font-semibold text-muted-foreground">{String(index + 1).padStart(2, "0")}</span>
                     <div><h3 className="font-semibold text-foreground">{entry.skill}</h3><p className="mt-1 text-sm text-muted-foreground">{entry.reason}</p></div>
                     <div className="sm:text-right"><p className="text-xl font-semibold text-primary">{Math.round(entry.score)}</p><p className="text-xs text-muted-foreground">~{entry.estimated_hours} hours</p></div>
                   </article>
                 ))}
-              </div>
+              </div> : null}
             </section>
           ) : null}
 

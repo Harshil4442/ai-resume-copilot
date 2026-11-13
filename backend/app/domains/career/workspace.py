@@ -1,6 +1,7 @@
 """Bounded HTTP browsing; internal complete-input and export services stay intact."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import HTTPException
@@ -15,6 +16,7 @@ from . import schemas, service, transcription_review, workspace_cursor
 MAX_PAGE = 50
 DEFAULT_PAGE = 20
 MAX_LEGACY_ITEMS = 50
+MAX_SKILL_ROI_BYTES = 32 * 1024
 
 # Explicit projections prevent deferred body reads during list serialization.
 _SPECS: dict[str, tuple[Any, type[BaseModel], str, bool]] = {
@@ -107,7 +109,7 @@ def body(db: Session, user_id: int, opportunity_id: str) -> schemas.OpportunityB
 
 
 def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "overview", limit: int = DEFAULT_PAGE,
-              selected_version_id: str | None = None) -> schemas.WorkspaceResponse:
+              selected_version_id: str | None = None, include_skill_roi: bool = False) -> schemas.WorkspaceResponse:
     opportunity = header(db, user_id, opportunity_id)
     pages = {"resume_versions": collection_page(db, user_id, opportunity, "resume_versions", limit=limit)}
     for collection in {"overview": ("contacts", "reminders"), "resume": ("evidence",), "activity": ("activity",)}.get(tab, ()):
@@ -144,13 +146,17 @@ def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "ove
                 if error.status_code not in {404, 409}:
                     raise
                 match_source_state = "unavailable"
+    skill_roi = service.calculate_skill_roi(db, user_id) if tab == "learning" and include_skill_roi else None
+    if (skill_roi is not None and len(json.dumps(skill_roi.model_dump(), ensure_ascii=False,
+            allow_nan=False).encode()) > MAX_SKILL_ROI_BYTES):
+        skill_roi = None
     return schemas.WorkspaceResponse(opportunity=opportunity, pages=schemas.WorkspacePages(**pages),
         resumes=resume_browsing.page(db, user_id, limit=limit, current_id=opportunity.resume_id), match=saved_match,
         match_source_state=match_source_state,
         submitted_resume_version_id=submitted_id,
         submitted_resume_version=schemas.ResumeVersionMetadata.model_validate(submitted) if submitted is not None else None,
         selected_resume_version=schemas.ResumeVersionMetadata.model_validate(selected) if selected is not None else None,
-        approved_evidence_count=count)
+        approved_evidence_count=count, skill_roi=skill_roi)
 
 
 def _legacy_ids(query, model, collection: str):
