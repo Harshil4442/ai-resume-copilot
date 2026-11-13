@@ -376,15 +376,16 @@ def test_recovery_history_mode_rejects_nonboolean_or_other_rescue_before_native(
             recovery.prepare(tmp_path, None, None, refresh_module=builder, application_context=object(), **extra)
 
 
-@pytest.mark.parametrize("change", [None, "receipt", "fresh", "execution", "pending"])
-def test_completed_nonserving_source_history_requires_expired_exact_native_receipts(evidence, monkeypatch, change):
+@pytest.mark.parametrize("use_archive,change", [(True, change) for change in (None, "receipt", "fresh", "execution", "pending")]
+    + [(False, change) for change in (None, "receipt", "fresh", "execution", "pending", "build", "digest")])
+def test_completed_nonserving_source_history_requires_expired_exact_native_receipts(evidence, monkeypatch, use_archive, change):
     probe, _, receipt, age, current = evidence
     identity = probe.build
     files = {"native-proof/binding.json": {"version": 4, "image": IMAGE, "build_identity": identity}}
     local = b"synthetic retained proof"
     identity["local_native_proof_sha256"] = recovery.sha(local)
     jobs, executions, operations = {}, {}, {}
-    observations = {}
+    observations, pins = {}, {}
     for mode, handle in probe.handles(identity).items():
         wanted = probe.desired(IMAGE, handle["nonce"], mode)
         job, execution = native.historical.completed(native.historical.job() | wanted)
@@ -396,8 +397,11 @@ def test_completed_nonserving_source_history_requires_expired_exact_native_recei
             "automatic_replay": False}
         files[prefix + ".run.started.json"] = {"name": job["name"], "uid": job["uid"],
             "etag": job["etag"], "automatic_replay": False}
+        pins[mode] = {"request": recovery.sha(recovery.canonical(wanted)),
+            "job_uid": job["uid"], "execution_uid": execution["uid"]}
         for phase, kind, observed in (("create", "Job", job), ("run", "Execution", execution)):
             operation = f"{release.prior.PARENT}/operations/{mode}-{phase}"
+            pins[mode][phase] = f"{mode}-{phase}"
             files[prefix + f".{phase}.acknowledged.json"] = {"name": operation}
             operations[operation] = {"name": operation, "done": True, "response": {
                 "@type": "type.googleapis.com/google.cloud.run.v2." + kind,
@@ -406,6 +410,17 @@ def test_completed_nonserving_source_history_requires_expired_exact_native_recei
     inventory.update(event=payload.INVENTORY_EVENT, policy_sha256=current.policy)
     inventory["identity_preflight"].update(runtime_hashes=current.runtime,
         renderer_version=courier.RENDERER, font_manifest_sha256=courier.FONT)
+    pins["inventory"]["receipt"], pins["corpus"]["receipt"] = probe.sha(inventory), probe.sha(receipt)
+    stamp = datetime.fromisoformat(next(row["scan"]["definitions"].split("/", 1)[1]
+        for row in receipt["cases"] if "scan" in row))
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_NATIVE", pins)
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_DEFINITIONS_ISSUED", stamp)
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_IMAGE", IMAGE.split("@", 1)[1])
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_BUILD_IDENTITY", recovery.sha(recovery.canonical(identity)))
+    def verify_build(build_id, nonce, image):
+        assert (build_id, nonce, image) == (recovery.EXPIRED_SOURCE_BUILD, recovery.EXPIRED_SOURCE_NONCE, IMAGE)
+        return {} if change == "build" else identity
+    monkeypatch.setattr(builder, "verify_current_build", verify_build)
     monkeypatch.setattr(probe, "_observation", lambda _client, mode, *_args:
         (*observations[mode], inventory if mode == "inventory" else receipt))
     monkeypatch.setattr(release, "SourceProbe", lambda *_args, **kwargs: probe if kwargs["serving_read"] else None)
@@ -419,18 +434,21 @@ def test_completed_nonserving_source_history_requires_expired_exact_native_recei
         operations[f"{release.prior.PARENT}/operations/corpus-run"]["response"]["uid"] = "different"
     elif change == "pending":
         operations[f"{release.prior.PARENT}/operations/corpus-run"]["done"] = False
+    elif change == "digest":
+        pins["corpus"]["receipt"] = "0" * 64
     raw = {name: recovery.canonical(value) for name, value in files.items()} | {"local-native-proof.json": local}
     monkeypatch.setattr(recovery, "EXPIRED_SOURCE_MANIFEST", recovery.manifest(raw))
+    supplied = raw if use_archive else None
     if change is None:
-        assert recovery.verify_expired_source_history(raw, clients, release.prior, builder) == (
+        assert recovery.verify_expired_source_history(supplied, clients, release.prior, builder) == (
             IMAGE, {name.rsplit("/", 1)[-1] for name in jobs})
     else:
         with pytest.raises((builder.RefreshDenied, release.prior.NativeProofDenied)):
-            recovery.verify_expired_source_history(raw, clients, release.prior, builder)
+            recovery.verify_expired_source_history(supplied, clients, release.prior, builder)
 
 
 @pytest.mark.parametrize("change", [None, "different", "extra", "missing", "predecessor", "serving"])
-def test_exact_nonserving_history_is_required_only_for_its_serving_predecessor(monkeypatch, tmp_path, change):
+def test_nonserving_history_uses_archive_if_present_and_native_proof_if_missing(monkeypatch, tmp_path, change):
     history, output = tmp_path / "history", tmp_path / "output"
     history.mkdir(mode=0o700)
     output.mkdir(mode=0o700)
@@ -457,18 +475,18 @@ def test_exact_nonserving_history_is_required_only_for_its_serving_predecessor(m
     monkeypatch.setattr(release, "verify_expired_current_source_predecessor", lambda *args: observed.append(args))
     monkeypatch.setattr(transition, "Controller", lambda *_args, **_kwargs: SimpleNamespace(ready=lambda *_a, **_k: None))
     def verify(actual, *_args):
-        assert actual == files
+        assert actual == (None if change == "missing" else files)
         observed.append("history")
         return IMAGE, {"inventory-job", "corpus-job"}
     monkeypatch.setattr(recovery, "verify_expired_source_history", verify)
     def prepare():
         return recovery.prepare(output, history, None, refresh_module=builder,
             application_context=SimpleNamespace(serving=None), recover_expired_source=True)
-    if change in {None, "predecessor"}:
+    if change in {None, "predecessor", "missing"}:
         assert prepare() is None
-        assert ("history" in observed) is (change is None)
+        assert ("history" in observed) is (change in {None, "missing"})
     else:
-        with pytest.raises(builder.RefreshDenied, match="expired_source_history_(required|changed|serving)"):
+        with pytest.raises(builder.RefreshDenied, match="expired_source_history_(changed|serving)"):
             prepare()
         assert observed == (["history"] if change == "serving" else [])
     assert not list(output.iterdir())
