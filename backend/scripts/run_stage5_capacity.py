@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT))
 
 from scripts.stage5_capacity import (  # noqa: E402
+    BOOTSTRAP_PATH,
     PATHS,
     VERSION,
     Plan,
@@ -317,7 +318,7 @@ def execute(plan, resources):
         with httpx.Client(base_url=f"https://127.0.0.1:{resources.api_port}",
                           verify=context, trust_env=False, timeout=10) as client:
             preflight = resources.partial_report["preflight"]
-            preflight["missing_bearer_status"] = client.get(PATHS[0]).status_code
+            preflight["missing_bearer_status"] = client.get(BOOTSTRAP_PATH).status_code
             if preflight["missing_bearer_status"] != 401:
                 raise RuntimeError("Missing bearer boundary differs")
             denied = client.get("/api/resume/2", headers={"Authorization": "Bearer " + actors[1]})
@@ -325,13 +326,13 @@ def execute(plan, resources):
             if preflight["foreign_resume_status"] != 404:
                 raise RuntimeError("Foreign owner boundary differs")
             first_start = time.perf_counter()
-            first = client.get(PATHS[0], headers={"Authorization": "Bearer " + actors[1]})
+            first = client.get(BOOTSTRAP_PATH, headers={"Authorization": "Bearer " + actors[1]})
             first_ms = (time.perf_counter() - first_start) * 1000
             from tests.fixtures.stage5_native import check_body
             preflight["bootstrap_status"] = first.status_code
             try:
                 preflight["bootstrap_contract_valid"] = first.status_code == 200 and check_body(
-                    PATHS[0], first.json(), user_id=1, buyer=False, heavy=False)
+                    BOOTSTRAP_PATH, first.json(), user_id=1, buyer=False, heavy=False)
             except (ValueError, TypeError, KeyError, AttributeError):
                 preflight["bootstrap_contract_valid"] = False
             if preflight["bootstrap_contract_valid"] is not True:

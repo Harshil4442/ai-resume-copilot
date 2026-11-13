@@ -8,10 +8,14 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
-VERSION = "stage5-owned-http-v1"
+VERSION = "stage5-owned-http-v2"
 _RETAINED_NATIVE_CONTEXTS: list = []
+BOOTSTRAP_PATH = "/api/auth/bootstrap"
+DASHBOARD_PATH = "/api/auth/dashboard"
+RESUME_PAGE_PATH = "/api/resume/page?limit=20"
+OPPORTUNITY_PAGE_PATH = "/api/v1/opportunities/page?limit=20"
 PATHS = (
-    "/api/auth/bootstrap", "/api/resume/list", "/api/v1/opportunities?limit=50",
+    DASHBOARD_PATH, RESUME_PAGE_PATH, OPPORTUNITY_PAGE_PATH,
     "/api/v1/skill-roi", "/api/v1/credits/wallet",
 )
 

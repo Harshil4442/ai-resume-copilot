@@ -16,8 +16,13 @@ from google.cloud.firestore_admin_v1.types import ListDatabasesRequest
 from google.cloud.firestore_v1.types import BeginTransactionResponse, CommitResponse
 from pydantic import ValidationError
 
-from app.domains.career.schemas import OpportunityListResponse, OpportunityResponse
-from app.schemas import UserProfileResponse
+from app.domains.career.schemas import (
+    OpportunityListResponse,
+    OpportunityPageResponse,
+    OpportunityResponse,
+)
+from app.schemas import ResumePageResponse, UserProfileResponse
+from scripts.stage5_capacity import DASHBOARD_PATH, OPPORTUNITY_PAGE_PATH, RESUME_PAGE_PATH
 from scripts.stage5_seed import owned_opportunity_ids, synthetic_email
 from tests.fixtures.stage5_native import (
     Counters,
@@ -147,6 +152,45 @@ def test_actual_public_opportunity_schema_has_exact_owned_ids_across_actors_and_
     if body["items"]:
         body["items"][0]["id"] = "capacity-opp-99999" if user_id != 8 else "capacity-opp-1"
         assert not check_body(path, body, user_id=user_id, buyer=False, heavy=user_id == 8)
+
+
+@pytest.mark.parametrize("user_id", [1, 8])
+def test_current_opportunity_metadata_rejects_wrong_owner_shape_and_cursor(user_id):
+    total = 500 if user_id == 8 else 10
+    rows = [{name: row[name] for name in ("id", "title", "company", "location", "stage", "priority", "next_action", "updated_at")}
+            for row in opportunity_page(user_id, limit=20)["items"]]
+    page = OpportunityPageResponse(items=rows, total=total, total_owned=total, active_count=total,
+        interview_count=0, next_cursor="owned_fixture_cursor" if user_id == 8 else None).model_dump(mode="json")
+    def check(value):
+        return check_body(OPPORTUNITY_PAGE_PATH, value, user_id=user_id, buyer=False, heavy=user_id == 8)
+    assert check(page)
+    assert not check({**page, "active_count": total - 1})
+    assert not check({**page, "next_cursor": None if user_id == 8 else "unexpected"})
+    assert not check({**page, "items": [{**rows[0], "job_description": "unexpected"}, *rows[1:]]})
+    assert not check({**page, "items": [{**rows[0], "id": "foreign"}, *rows[1:]]})
+
+
+def test_current_resume_metadata_rejects_wrong_owner_and_non_metadata():
+    page = ResumePageResponse(resumes=[{"id": 1, "filename": "synthetic-resume.pdf", "created_at": datetime(2026, 1, 1, tzinfo=UTC),
+        "source_available": True, "source_format": "pdf"}]).model_dump(mode="json")
+    assert check_body(RESUME_PAGE_PATH, page, user_id=1, buyer=False, heavy=False)
+    assert not check_body(RESUME_PAGE_PATH, page, user_id=2, buyer=False, heavy=False)
+    assert not check_body(RESUME_PAGE_PATH, {**page, "selected_resume": page["resumes"][0]}, user_id=1, buyer=False, heavy=False)
+    page["resumes"][0]["raw_text"] = "unexpected"
+    assert not check_body(RESUME_PAGE_PATH, page, user_id=1, buyer=False, heavy=False)
+
+
+def test_current_dashboard_rejects_incomplete_aggregate_and_foreign_owned_role():
+    body = {"schema_version": "owned-dashboard-v1", "unavailable": [], "reminders": [],
+        "bootstrap": {"schema_version": "owned-bootstrap-v1", "profile": {"email": synthetic_email(8)},
+                      "credit_wallet": {"available_credits": 90}, "unavailable": []},
+        "summary": {"resume_count": 1, "applications_count": 500, "average_match_score": 75},
+        "opportunities": {"total": 500, "items": [{"id": ident} for ident in owned_opportunity_ids(8, limit=8)]}}
+    assert check_body(DASHBOARD_PATH, body, user_id=8, buyer=True, heavy=True)
+    assert not check_body(DASHBOARD_PATH, {**body, "summary": None}, user_id=8, buyer=True, heavy=True)
+    assert not check_body(DASHBOARD_PATH, {**body, "unavailable": ["reminders"]}, user_id=8, buyer=True, heavy=True)
+    body["opportunities"]["items"][0] = {"id": "foreign"}
+    assert not check_body(DASHBOARD_PATH, body, user_id=8, buyer=True, heavy=True)
 
 
 def test_reserved_synthetic_address_matches_real_profile_schema_without_dns(monkeypatch):
