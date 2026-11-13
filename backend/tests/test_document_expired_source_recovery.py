@@ -376,6 +376,104 @@ def test_recovery_history_mode_rejects_nonboolean_or_other_rescue_before_native(
             recovery.prepare(tmp_path, None, None, refresh_module=builder, application_context=object(), **extra)
 
 
+@pytest.mark.parametrize("change", [None, "receipt", "fresh", "execution", "pending"])
+def test_completed_nonserving_source_history_requires_expired_exact_native_receipts(evidence, monkeypatch, change):
+    probe, _, receipt, age, current = evidence
+    identity = probe.build
+    files = {"native-proof/binding.json": {"version": 4, "image": IMAGE, "build_identity": identity}}
+    local = b"synthetic retained proof"
+    identity["local_native_proof_sha256"] = recovery.sha(local)
+    jobs, executions, operations = {}, {}, {}
+    observations = {}
+    for mode, handle in probe.handles(identity).items():
+        wanted = probe.desired(IMAGE, handle["nonce"], mode)
+        job, execution = native.historical.completed(native.historical.job() | wanted)
+        execution["startTime"] = job["createTime"]
+        jobs[job["name"]], executions[execution["name"]] = job, execution
+        observations[mode] = (job, execution)
+        prefix = f"native-proof/{mode}"
+        files[prefix + ".create.started.json"] = {"body_sha256": recovery.sha(recovery.canonical(wanted)),
+            "automatic_replay": False}
+        files[prefix + ".run.started.json"] = {"name": job["name"], "uid": job["uid"],
+            "etag": job["etag"], "automatic_replay": False}
+        for phase, kind, observed in (("create", "Job", job), ("run", "Execution", execution)):
+            operation = f"{release.prior.PARENT}/operations/{mode}-{phase}"
+            files[prefix + f".{phase}.acknowledged.json"] = {"name": operation}
+            operations[operation] = {"name": operation, "done": True, "response": {
+                "@type": "type.googleapis.com/google.cloud.run.v2." + kind,
+                "name": observed["name"], "uid": observed["uid"]}}
+    inventory = native.inventory()
+    inventory.update(event=payload.INVENTORY_EVENT, policy_sha256=current.policy)
+    inventory["identity_preflight"].update(runtime_hashes=current.runtime,
+        renderer_version=courier.RENDERER, font_manifest_sha256=courier.FONT)
+    monkeypatch.setattr(probe, "_observation", lambda _client, mode, *_args:
+        (*observations[mode], inventory if mode == "inventory" else receipt))
+    monkeypatch.setattr(release, "SourceProbe", lambda *_args, **kwargs: probe if kwargs["serving_read"] else None)
+    monkeypatch.setattr(release.prior, "NativeAcceptance", lambda *a, **k: pytest.fail("Unexpected acceptance"))
+    clients = SimpleNamespace(operation=operations.__getitem__, job=jobs.__getitem__, execution=executions.__getitem__)
+    if change == "receipt":
+        receipt["cases"].pop()
+    elif change == "fresh":
+        age(1)
+    elif change == "execution":
+        operations[f"{release.prior.PARENT}/operations/corpus-run"]["response"]["uid"] = "different"
+    elif change == "pending":
+        operations[f"{release.prior.PARENT}/operations/corpus-run"]["done"] = False
+    raw = {name: recovery.canonical(value) for name, value in files.items()} | {"local-native-proof.json": local}
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_MANIFEST", recovery.manifest(raw))
+    if change is None:
+        assert recovery.verify_expired_source_history(raw, clients, release.prior, builder) == (
+            IMAGE, {name.rsplit("/", 1)[-1] for name in jobs})
+    else:
+        with pytest.raises((builder.RefreshDenied, release.prior.NativeProofDenied)):
+            recovery.verify_expired_source_history(raw, clients, release.prior, builder)
+
+
+@pytest.mark.parametrize("change", [None, "different", "extra", "missing", "predecessor", "serving"])
+def test_exact_nonserving_history_is_required_only_for_its_serving_predecessor(monkeypatch, tmp_path, change):
+    history, output = tmp_path / "history", tmp_path / "output"
+    history.mkdir(mode=0o700)
+    output.mkdir(mode=0o700)
+    original = history / recovery.EXPIRED_SOURCE_ARTIFACT
+    files = {name: b"{}" for name in recovery.EXPIRED_SOURCE_FILES}
+    if change not in {"missing", "predecessor"}:
+        recovery.retain(files, original)
+    monkeypatch.setattr(recovery, "EXPIRED_SOURCE_MANIFEST", recovery.manifest(files))
+    if change == "different":
+        (original / "build-started.json").write_bytes(b'{"different":true}')
+    elif change == "extra":
+        builder.write_new(original / "result.json", {"status": "document_refresh_serving"})
+    serving = {"predecessor": PARENT, "serving": IMAGE}.get(change, builder.REPOSITORY + "@" + recovery.EXPIRED_SOURCE_PARENT)
+    service = {"template": {"containers": [{"image": serving}]}}
+    clients = SimpleNamespace(preflight=lambda: {"service": service}, close=lambda: None, http=None,
+        service=lambda _: service)
+    observed = []
+    fake_probe = SimpleNamespace(Clients=lambda: clients, BASE_IMAGE="other", PARENT=release.prior.PARENT,
+        SERVICE_UID=release.prior.SERVICE_UID, policy_for_serving=lambda *_: profile.POLICY_SHA256,
+        verify_caller_pins=lambda *_args, **_kwargs: None)
+    modules = {"document_refresh_probe": fake_probe, "document_source_release": release,
+        "document_refresh_transition": transition}
+    monkeypatch.setattr(builder, "infra", modules.__getitem__)
+    monkeypatch.setattr(release, "verify_expired_current_source_predecessor", lambda *args: observed.append(args))
+    monkeypatch.setattr(transition, "Controller", lambda *_args, **_kwargs: SimpleNamespace(ready=lambda *_a, **_k: None))
+    def verify(actual, *_args):
+        assert actual == files
+        observed.append("history")
+        return IMAGE, {"inventory-job", "corpus-job"}
+    monkeypatch.setattr(recovery, "verify_expired_source_history", verify)
+    def prepare():
+        return recovery.prepare(output, history, None, refresh_module=builder,
+            application_context=SimpleNamespace(serving=None), recover_expired_source=True)
+    if change in {None, "predecessor"}:
+        assert prepare() is None
+        assert ("history" in observed) is (change is None)
+    else:
+        with pytest.raises(builder.RefreshDenied, match="expired_source_history_(required|changed|serving)"):
+            prepare()
+        assert observed == (["history"] if change == "serving" else [])
+    assert not list(output.iterdir())
+
+
 def test_definition_update_is_writable_only_for_updater_then_restored_readonly():
     recipe = profile.definition_recipe(PARENT).decode()
     updater = recipe.index("chown -R 100:101 /var/lib/clamav")
