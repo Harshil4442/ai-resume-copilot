@@ -52,13 +52,15 @@ describe("UnifiedCreditPacks", () => {
     expect(screen.getByText(/Save ₹20/)).toBeInTheDocument();
   });
 
-  it("removes offer claims and disables stale prices when the real deadline passes", async () => {
+  it("hides stale prices at the deadline until a fresh catalog supplies the current price", async () => {
     const refresh = vi.fn(), review = vi.fn();
     const data = catalog({ products: [{ ...pack, campaign: { ...campaign, reference_price_verified: true } }] });
-    const { container } = render(<UnifiedCreditPacks catalog={data} onReview={review} onRefresh={refresh} />);
+    const { container, rerender } = render(<UnifiedCreditPacks catalog={data} onReview={review} onRefresh={refresh} />);
     await act(async () => { vi.advanceTimersByTime(1_000); });
     expect(screen.queryByText("Limited offer")).not.toBeInTheDocument();
     expect(container.querySelector("s")).toBeNull();
+    expect(screen.queryByText("₹59")).not.toBeInTheDocument();
+    expect(screen.getByText("Refresh to see the current price.")).toBeVisible();
     const reviewButton = screen.getByRole("button", { name: "Review Starter pass" });
     expect(reviewButton).toBeDisabled();
     fireEvent.click(reviewButton);
@@ -66,6 +68,13 @@ describe("UnifiedCreditPacks", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh prices" }));
     expect(refresh).toHaveBeenCalledOnce();
     expect(screen.queryByText("₹79")).not.toBeInTheDocument();
+
+    const ended = catalog({ server_time: ends, products: [{ ...pack, amount_minor: 7900,
+      campaign: { ...campaign, status: "ended" } }] });
+    rerender(<UnifiedCreditPacks catalog={ended} onReview={review} onRefresh={refresh} />);
+    expect(screen.getByText("₹79")).toBeVisible();
+    expect(screen.queryByText("Refresh to see the current price.")).not.toBeInTheDocument();
+    expect(reviewButton).toBeEnabled();
   });
 
   it("requires a new catalog at campaign start instead of inventing a discounted price", async () => {
@@ -76,6 +85,7 @@ describe("UnifiedCreditPacks", () => {
     expect(screen.getByText("₹79")).toBeInTheDocument();
     await act(async () => { vi.advanceTimersByTime(1_000); });
     expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(screen.queryByText("₹79")).not.toBeInTheDocument();
     expect(screen.queryByText("₹59")).not.toBeInTheDocument();
   });
 

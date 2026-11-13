@@ -126,6 +126,8 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     try {
       const value = parseUnifiedPurchaseQuote(await apiPostJson<unknown>("/v1/credits/purchase-quotes", { sku, idempotency_key: quoteIntent.current.key }));
       if (!value || value.sku !== sku) throw new Error("The purchase quote could not be verified. No payment has started.");
+      // Only retries of a request without a verified response reuse its key.
+      quoteIntent.current = null;
       if (mounted.current) { setQuote(value); setMessage(null); }
     } catch (failure) { if (mounted.current) setError(messageOf(failure, "Could not prepare a purchase quote.")); }
     finally { actionPending.current = false; if (mounted.current) setReviewingSku(null); }

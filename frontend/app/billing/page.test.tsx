@@ -145,6 +145,61 @@ describe("unified purchase review and payment", () => {
     expect(quotes).toHaveLength(2); expect(quotes[1][1].idempotency_key).not.toBe(quotes[0][1].idempotency_key);
     expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
   });
+  it("reviews the current price when a returning tab already received an expired quote", async () => {
+    const before = "2026-10-30T23:45:00Z";
+    const cutoff = campaign.ends_at;
+    const previousQuote = { ...quote, created_at: before, server_time: before, expires_at: cutoff, pass_expires_at: "2026-11-29T23:45:00Z" };
+    const endedCampaign = { ...campaign, status: "ended" };
+    const nextQuote = { ...quote, quote_id: "quote_standard", campaign: endedCampaign, amount_minor: 7900,
+      created_at: cutoff, server_time: cutoff, expires_at: "2026-10-31T00:15:00Z", pass_expires_at: "2026-11-30T00:00:00Z" };
+    let catalogReads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url !== "/v1/credits/catalog") return read(url);
+      if (++catalogReads === 1) return Promise.resolve({ ...catalog, server_time: before });
+      return Promise.resolve({ ...catalog, server_time: cutoff, products: [{ ...pack, amount_minor: 7900, campaign: endedCampaign }] });
+    });
+    let originalKey: string | undefined;
+    state.post.mockImplementation((url: string, body: { idempotency_key: string }) => {
+      if (url !== "/v1/credits/purchase-quotes") return post(url);
+      originalKey ??= body.idempotency_key;
+      return Promise.resolve(body.idempotency_key === originalKey ? previousQuote : nextQuote);
+    });
+
+    vi.useFakeTimers();
+    await act(async () => { render(<BillingPage />); });
+    const reviewButton = () => screen.getByRole("button", { name: "Review Starter pass" });
+    expect(reviewButton()).toBeEnabled();
+    await act(async () => { fireEvent.click(reviewButton()); });
+    fireEvent.click(screen.getByRole("checkbox", { name: /I confirm my billing country/ }));
+    expect(screen.getByRole("button", { name: "Continue with ₹59 payment" })).toBeEnabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15 * 60_000); });
+    expect(screen.getByRole("button", { name: "Continue with ₹59 payment" })).toBeDisabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh prices" })); });
+    expect(reviewButton()).toBeEnabled();
+    await act(async () => { fireEvent.click(reviewButton()); });
+    const newPayment = screen.getByRole("button", { name: "Continue with ₹79 payment" });
+    expect(newPayment).toBeDisabled();
+    const billingCountry = screen.getByRole("checkbox", { name: /I confirm my billing country/ });
+    expect(billingCountry).not.toBeChecked();
+    fireEvent.click(billingCountry);
+    expect(newPayment).toBeEnabled();
+    expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/purchase-quotes", "/v1/credits/purchase-quotes"]);
+    expect(state.post.mock.calls[1][1].idempotency_key).not.toBe(originalKey);
+    noCheckout();
+  });
+  it("reuses the quote request key when its response was lost", async () => {
+    state.post.mockRejectedValueOnce(new Error("Connection interrupted"));
+    render(<BillingPage />);
+    const reviewButton = await screen.findByRole("button", { name: "Review Starter pass" });
+    await waitFor(() => expect(reviewButton).toBeEnabled());
+    fireEvent.click(reviewButton);
+    await screen.findByRole("alert");
+    fireEvent.click(reviewButton);
+    await screen.findByRole("button", { name: "Continue with ₹59 payment" });
+    expect(state.post.mock.calls).toHaveLength(2);
+    expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+    noCheckout();
+  });
   it("reads a captured original order after an interrupted request without a second checkout", async () => {
     state.post.mockImplementation((url: string) => url === "/v1/credits/orders" ? Promise.reject(new ApiError("Read original order", 409, { detail: { code: "billing_order_requires_status", order_id: "order_unified" } })) : post(url));
     state.get.mockImplementation((url: string) => url === "/v1/credits/orders/order_unified" ? Promise.resolve(order({ status: "paid", payment_status: "captured", fulfilled: true, checkout_available: false, paid_at: stamp, pass_expires_at: quote.pass_expires_at })) : read(url));
