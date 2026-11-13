@@ -16,12 +16,20 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import qualify_native_quality_acquisition as q
+from tests.fixtures.retained_native_source import (
+    FROZEN_APP_FILES,
+    FROZEN_APP_SHA256,
+    FROZEN_FINGERPRINT,
+)
+from tests.fixtures.retained_native_source import (
+    frozen_controller_root as frozen_controller_root,  # noqa: F401
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_actual_immutable_dependencies_and_independent_five_path_controller():
-    value = q.source_identity(ROOT)
+def test_actual_immutable_dependencies_and_independent_five_path_controller(frozen_controller_root):
+    value = q.source_identity(frozen_controller_root)
     assert value["historical_baseline"] == {"release": q.HISTORICAL_RELEASE,
         "qualification_sha256": q.HISTORICAL_FINGERPRINT, "ci_run_id": 41175964104,
         "eligible": False, "state": "FAILED_no_Build"}
@@ -29,7 +37,7 @@ def test_actual_immutable_dependencies_and_independent_five_path_controller():
     assert value["full_ci_suites"] == list(q.SUITES)
     assert value["runner_entry_sha256"] == q.ENTRY_SHA256
     assert value["runtime_dependencies_sha256"] == q.digest(value["execution_dependencies"])
-    assert value["operator_data_inputs"] == q.operator_data_hashes(ROOT)
+    assert value["operator_data_inputs"] == q.operator_data_hashes(frozen_controller_root)
     assert value["runner_snapshot_inputs"] == {q.OPERATOR_REGISTRY_PATH: {
         "release": q.REGISTRY_RUNNER_RELEASE, "sha256": q.REGISTRY_RUNNER_SHA256}}
     assert set(value["proof_inputs"]) == set(q.PROOF_PATHS) and len(q.PROOF_PATHS) == 3
@@ -75,7 +83,7 @@ def test_actual_component_file_only_drift_invalidates_its_closure(tmp_path, name
 
 
 @pytest.fixture
-def native_ports(monkeypatch):
+def native_ports(monkeypatch, frozen_controller_root):
     from infra.gcp import native_quality_acquisition_isolation as isolation
 
     native, contract, _ = q._source_modules()
@@ -93,8 +101,8 @@ def native_ports(monkeypatch):
             {"name": "gcr.io/cloud-builders/docker", "args": ["build", "--tag", image.split("@")[0] + ":" + release, "."]},
             {"name": "gcr.io/cloud-builders/docker", "args": ["push", image.split("@")[0] + ":" + release]}],
         "results": {"images": [{"name": image.split("@")[0] + ":" + release, "digest": "sha256:" + "e" * 64}]}}
-    observed = dict(release=release, qualification_sha256="a" * 64, app_sha256=q.APP_SHA256,
-        app_files=290, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64)
+    observed = dict(release=release, qualification_sha256="a" * 64, app_sha256=FROZEN_APP_SHA256,
+        app_files=FROZEN_APP_FILES, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64)
     receipt = dict(schema_version="native-quality-qualified-runner-v1",
         repository="https://github.com/Harshil4442/ai-resume-copilot.git", **observed,
         ci_run_id=1, build_id=build_id, image=image, qualification_contract="hirewiz_schema26_app_rolling_v3",
@@ -133,7 +141,10 @@ def native_ports(monkeypatch):
     monkeypatch.setattr(native.Source26Boundary, "verify_source_image", lambda self, **kwargs:
         self._verify_source_image_provenance(**kwargs))
     monkeypatch.setattr(native.Source26Boundary, "_command", command)
+    # Production source validation is exercised separately with actual Git bytes.
     monkeypatch.setattr(q, "source_identity", lambda root: copy.deepcopy(identity))
+    monkeypatch.setattr(q, "_source_modules", lambda: (native, contract, None))
+    monkeypatch.setattr(q, "ROOT", frozen_controller_root)
     monkeypatch.setattr(q, "runner_source", source)
     monkeypatch.setattr(q, "git", lambda root, *args: b"" if args[0] == "status" else state["controller_head"].encode())
     monkeypatch.setenv("CLOUDSDK_CORE_DISABLE_FILE_LOGGING", "true")
@@ -202,8 +213,8 @@ def test_wrong_raw_receipt_controller_crossbinding_and_failed_historical_source(
 
 
 def test_source_child_has_no_credential_env_and_is_bounded(monkeypatch, tmp_path):
-    observed = dict(release="c" * 40, qualification_sha256="a" * 64, app_sha256=q.APP_SHA256,
-        app_files=290, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64,
+    observed = dict(release="c" * 40, qualification_sha256="a" * 64, app_sha256=FROZEN_APP_SHA256,
+        app_files=FROZEN_APP_FILES, entry_sha256=q.ENTRY_SHA256, runtime_dependencies_sha256="b" * 64,
         current_proof_sha256="8" * 64)
     monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/never/read")
     monkeypatch.setenv("GH_TOKEN", "synthetic-not-a-token")
@@ -278,20 +289,20 @@ def test_new_executable_package_ancestor_is_refused_without_import(tmp_path, nam
 
 
 
-def test_current_observer_only_committed_drift_changes_controller_not_runtime(monkeypatch):
-    before = q.source_identity(ROOT)
+def test_current_observer_only_committed_drift_changes_controller_not_runtime(monkeypatch, frozen_controller_root):
+    before = q.source_identity(frozen_controller_root)
     name = q.CURRENT_PROOF_PATHS[0]
     original_read, original_git = Path.read_bytes, q.git
-    changed = (ROOT / name).read_bytes() + b"\n# synthetic current CI observer change\n"
+    changed = (frozen_controller_root / name).read_bytes() + b"\n# synthetic current CI observer change\n"
     def read(path):
-        return changed if path == ROOT / name else original_read(path)
+        return changed if path == frozen_controller_root / name else original_read(path)
     def git(root, *args):
         return changed if args == ("show", "HEAD:" + name) else original_git(root, *args)
     monkeypatch.setattr(Path, "read_bytes", read)
     with pytest.raises(ValueError, match="uncommitted_current_proof_changed"):
-        q.source_identity(ROOT)
+        q.source_identity(frozen_controller_root)
     monkeypatch.setattr(q, "git", git)
-    after = q.source_identity(ROOT)
+    after = q.source_identity(frozen_controller_root)
     assert before["controller_sha256"] != after["controller_sha256"]
     assert before["current_proof_inputs"] != after["current_proof_inputs"]
     assert before["execution_dependencies"] == after["execution_dependencies"]
@@ -299,38 +310,40 @@ def test_current_observer_only_committed_drift_changes_controller_not_runtime(mo
 
 
 @pytest.mark.parametrize("name", (*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS))
-def test_uncommitted_successor_file_is_refused_in_actual_execution_closure(monkeypatch, name):
+def test_uncommitted_successor_file_is_refused_in_actual_execution_closure(monkeypatch, name, frozen_controller_root):
     original = Path.read_bytes
     def changed(path):
         raw = original(path)
-        return raw + b"\n# uncommitted successor drift\n" if path == ROOT / name else raw
+        return raw + b"\n# uncommitted successor drift\n" if path == frozen_controller_root / name else raw
     monkeypatch.setattr(Path, "read_bytes", changed)
     with pytest.raises(ValueError, match="uncommitted_current_execution_changed"):
-        q.controller_dependency_hashes(ROOT)
+        q.controller_dependency_hashes(frozen_controller_root)
 
 
 @pytest.mark.parametrize("name", ["Dockerfile", "backend/app/domains/analysis/native_input_acquisition.py"])
-def test_unrelated_execution_file_still_requires_exact_failed_baseline_bytes(monkeypatch, name):
+def test_unrelated_execution_file_still_requires_exact_failed_baseline_bytes(monkeypatch, name, frozen_controller_root):
     original = Path.read_bytes
     def changed(path):
         raw = original(path)
-        return raw + b"\n# unrelated runtime drift\n" if path == ROOT / name else raw
+        return raw + b"\n# unrelated runtime drift\n" if path == frozen_controller_root / name else raw
     monkeypatch.setattr(Path, "read_bytes", changed)
     with pytest.raises(ValueError, match="historical_execution_dependency_changed"):
-        q.controller_dependency_hashes(ROOT)
+        q.controller_dependency_hashes(frozen_controller_root)
 
 
 @pytest.mark.parametrize("name", (*q.CURRENT_EXECUTION_PATHS, *q.CURRENT_ADDED_EXECUTION_PATHS))
-def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(tmp_path, name):
+def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
+    tmp_path, monkeypatch, name, frozen_controller_root,
+):
     # A real local Git checkout with shared read-only objects avoids pretending
     # a committed foreign byte change is merely an uncommitted working-tree edit.
     # It supplies no CI, Build, native or funding authority.
-    before = q.controller_dependency_hashes(ROOT)
+    before = q.controller_dependency_hashes(frozen_controller_root)
     for path in before:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(q._registry_snapshot(ROOT) if path == q.OPERATOR_REGISTRY_PATH
-                           else (ROOT / path).read_bytes())
+        target.write_bytes(q._registry_snapshot(frozen_controller_root) if path == q.OPERATOR_REGISTRY_PATH
+                           else (frozen_controller_root / path).read_bytes())
     (tmp_path / name).write_bytes((tmp_path / name).read_bytes() + b"\n# committed foreign successor\n")
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0")
@@ -339,8 +352,8 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
             "-C", str(tmp_path), *args], cwd=tmp_path, env=environment,
             capture_output=True, check=True, timeout=10)
     run("init", "-q")
-    common = Path(q.git(ROOT, "rev-parse", "--git-common-dir").decode().strip())
-    common = common if common.is_absolute() else ROOT / common
+    common = Path(q.git(frozen_controller_root, "rev-parse", "--git-common-dir").decode().strip())
+    common = common if common.is_absolute() else frozen_controller_root / common
     (tmp_path / ".git/objects/info/alternates").write_text(str((common / "objects").resolve()) + "\n")
     run("add", "--all")
     run("commit", "-q", "-m", "Synthetic foreign source only")
@@ -349,6 +362,7 @@ def test_committed_foreign_successor_changes_runtime_closure_and_refuses_runner(
     assert len(before) == len(after) == 466
     assert {key for key in before if before[key] != after[key]} == {name}
     assert q.digest(before) != q.digest(after)
+    monkeypatch.setattr(q, "ROOT", frozen_controller_root)
     with pytest.raises(ValueError, match="controller_runner_execution_dependencies"):
         q._runner_source(tmp_path)
 
@@ -363,17 +377,17 @@ def registry_commit(root):
 
 
 @pytest.fixture
-def registry_tree(tmp_path):
-    paths = {*q.controller_dependency_hashes(ROOT), *q.COMPONENT_PATHS,
+def registry_tree(tmp_path, frozen_controller_root):
+    paths = {*q.controller_dependency_hashes(frozen_controller_root), *q.COMPONENT_PATHS,
              *q.PROOF_PATHS, *q.CURRENT_PROOF_PATHS}
     for name in paths:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(q._registry_snapshot(ROOT) if name == q.OPERATOR_REGISTRY_PATH
-                         else (ROOT / name).read_bytes())
+        path.write_bytes(q._registry_snapshot(frozen_controller_root) if name == q.OPERATOR_REGISTRY_PATH
+                         else (frozen_controller_root / name).read_bytes())
     subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True, capture_output=True, timeout=10)
-    common = Path(q.git(ROOT, "rev-parse", "--git-common-dir").decode().strip())
-    common = common if common.is_absolute() else ROOT / common
+    common = Path(q.git(frozen_controller_root, "rev-parse", "--git-common-dir").decode().strip())
+    common = common if common.is_absolute() else frozen_controller_root / common
     (tmp_path / ".git/objects/info/alternates").write_text(str((common / "objects").resolve()) + "\n")
     # The owned checkout descends from the real source snapshot, while all new
     # registry values below are synthetic metadata, never provider receipts.
@@ -522,12 +536,12 @@ def test_other_committed_execution_dependency_is_not_operator_data(registry_tree
         q.controller_dependency_hashes(registry_tree)
 
 
-def _owned_source_clone(target, release):
+def _owned_source_clone(target, release, *, origin=ROOT):
     """Share immutable local objects without checking out evaluation data."""
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0",
         GIT_NO_LAZY_FETCH="1", GIT_NO_REPLACE_OBJECTS="1")
-    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(target)),
+    for args in (("clone", "--quiet", "--shared", "--no-checkout", str(origin), str(target)),
                  ("-C", str(target), "reset", "--soft", release),
                  ("-C", str(target), "read-tree", "--empty")):
         subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *args],
@@ -544,13 +558,13 @@ def _owned_source_clone(target, release):
         "infra/gcp/schema26_lifecycle_join.py", "backend/scripts/schema25_app_release_contract_v3.py",
     }),
 ], ids=("registered-c6", "synthetic-c75-code-frozen-registry"))
-def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, application_release, different):
+def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, application_release, different, frozen_controller_root):
     # C6 registration attests its genuine old event, not current byte equality.
     # The c75 case compares source only; it supplies no CI, Build or image proof.
     if application_release == "c6a03af0636c7e9815159f807c9b126336d03233":
-        rows = q._registry_value((ROOT / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
+        rows = q._registry_value((frozen_controller_root / q.OPERATOR_REGISTRY_PATH).read_bytes())["sources"]
         assert len([row for row in rows if row["release"] == application_release]) == 1
-    expected = q.controller_dependency_hashes(ROOT)
+    expected = q.controller_dependency_hashes(frozen_controller_root)
     runner = tmp_path / "historical-runner"
     _owned_source_clone(runner, application_release)
     # Only source execution inputs are materialized. The mismatch must refuse
@@ -578,7 +592,7 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
         # Preserve c75 execution code with the declared frozen registry DATA
         # reference in an owned synthetic commit. This is neither the actual
         # c75 image/receipt nor a claim about that release's source identity.
-        registry = q._registry_snapshot(ROOT)
+        registry = q._registry_snapshot(frozen_controller_root)
         assert hashlib.sha256(registry).hexdigest() == q.REGISTRY_RUNNER_SHA256
         (runner / q.OPERATOR_REGISTRY_PATH).write_bytes(registry)
         registry_commit(runner)
@@ -601,42 +615,41 @@ def test_previous_source_execution_cannot_qualify_current_runtime(tmp_path, appl
         q.runner_source(runner)
 
 
-def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tmp_path):
-    # The synthetic code-only tree has today's exact runtime and the immutable
-    # runner registry snapshot. It is not a registered release/CI/Build receipt.
-    _, contract, release = q._source_modules()
-    import document_source_candidate as document
-
-    dependencies = q.controller_dependency_hashes(ROOT)
-    worker = document.validate_policy((ROOT / document.POLICY_PATH).read_bytes(), ROOT)
-    paths = {*dependencies, *q.COMPONENT_PATHS, *q.PROOF_PATHS, *q.CURRENT_PROOF_PATHS,
-        *contract.v2.QUALIFICATION_PATHS, *contract.v2.TRANSPORT_PATHS, *contract.v2.BOOTSTRAP_PATHS,
-        *contract.HISTORICAL_PATHS, *contract.NEW_PATHS, *contract.FOLLOWON_PATHS,
-        *contract.PROTOCOL_FIXTURES, *("backend/" + name for name in contract.PROOF_ROOTS),
-        *worker, *document.CONTRACT_PATHS, document.POLICY_PATH}
-    public_fonts = {"backend/evals/assets/courier_prime/" + name for name in (
-        "CourierPrime-Regular.ttf", "CourierPrime-Bold.ttf", "CourierPrime-Italic.ttf",
-        "CourierPrime-BoldItalic.ttf", "OFL.txt", "provenance.json")}
-    assert {name for name in paths if name.startswith("backend/evals/")} == public_fonts
-    assert not any(".." in Path(name).parts for name in paths)
-    runner = tmp_path / "owned-current-source"
-    _owned_source_clone(runner, q.git(ROOT, "rev-parse", "HEAD").decode().strip())
-    for name in paths:
-        target = runner / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(q._registry_snapshot(ROOT) if name == q.OPERATOR_REGISTRY_PATH
-                           else (ROOT / name).read_bytes())
+def test_source_child_keeps_actual_application_qualification_and_runner_bytes(tmp_path, frozen_controller_root):
+    # The historical controller and runner have identical qualified runtime
+    # bytes. Only the runner's registry is reset to its required snapshot.
+    runner = tmp_path / "owned-frozen-runner"
+    _owned_source_clone(runner, q.git(frozen_controller_root, "rev-parse", "HEAD").decode().strip(),
+                        origin=frozen_controller_root)
+    for name in q.git(frozen_controller_root, "ls-files", "-z").decode().split("\0"):
+        if name:
+            target = runner / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(q._registry_snapshot(ROOT) if name == q.OPERATOR_REGISTRY_PATH
+                               else (frozen_controller_root / name).read_bytes())
     registry_commit(runner)
-    synthetic_release = q.git(runner, "rev-parse", "HEAD").decode().strip()
     assert not (runner / "backend/evals/unified_credit_v2").exists()
     assert (runner / q.OPERATOR_REGISTRY_PATH).read_bytes() == q._registry_snapshot(ROOT)
+    dependencies = q.controller_dependency_hashes(frozen_controller_root)
     assert q.dependency_hashes(runner) == dependencies and len(dependencies) == 466
-    observed = q.runner_source(runner)
-    fingerprint = contract.source_fingerprint(ROOT, release.prior_app_files(ROOT, contract.PRIOR_RELEASE))
-    assert observed["release"] == synthetic_release
-    assert observed["qualification_sha256"] == fingerprint
-    assert observed["app_files"] == 290 and observed["app_sha256"] == q.APP_SHA256
+    result = subprocess.run([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + str(tmp_path / "cache"),
+        str(frozen_controller_root / q.COMPONENT_PATHS[1]), "--root", str(runner), "--source-child"],
+        cwd=tmp_path, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}, stdin=subprocess.DEVNULL,
+        capture_output=True, check=False, timeout=45)
+    assert result.returncode == 0, result.stderr.decode() or result.stdout.decode()
+    observed = json.loads(result.stdout)
+    assert observed["release"] == q.git(runner, "rev-parse", "HEAD").decode().strip()
+    assert observed["app_files"] == FROZEN_APP_FILES and observed["app_sha256"] == FROZEN_APP_SHA256
+    assert observed["qualification_sha256"] == FROZEN_FINGERPRINT
     assert observed["runtime_dependencies_sha256"] == q.digest(dependencies)
+    assert observed["current_proof_sha256"] == q.digest(q.current_proof_hashes(runner))
+
+
+def test_current_application_is_rejected_as_a_frozen_execution_source():
+    for reader in (q.source_identity, q.dependency_hashes):
+        with pytest.raises(ValueError, match="new_execution_dependency"):
+            reader(ROOT)
+
 
 
 def test_child_registry_git_reads_have_exact_finite_argument_shapes():
@@ -1287,15 +1300,16 @@ def test_current_development_receipt_owned_exact_app_pin():
         repository="https://github.com/Harshil4442/ai-resume-copilot.git", release="c" * 40,
         git_tree="d" * 40, ci_run_id=1, build_id="11111111-1111-1111-1111-111111111111",
         image=repository + "@sha256:" + "e" * 64, qualification_sha256="a" * 64,
-        app_compatibility_sha256="b" * 64, app_sha256=q.APP_SHA256, app_files=290,
+        app_compatibility_sha256="b" * 64, app_sha256=FROZEN_APP_SHA256, app_files=FROZEN_APP_FILES,
         entry_path="backend/evaluation/development40_transport_v2.py", entry_sha256="f" * 64,
         semantic_entry_path=q.ENTRY, semantic_entry_sha256=q.ENTRY_SHA256,
         channel_sha256="89b65c3c3fb874368f28702f0048c19a3bbeccc7ab910dd12bc35a593225864e",
         runtime_dependencies_sha256="a" * 64, component_sha256="b" * 64,
         observed_at="2026-11-01T00:00:00Z", ci_metadata_sha256="c" * 64, build_metadata_sha256="d" * 64)
     value = receipt.model_validate_json(json.dumps(body))
-    assert value.app_sha256 == q.APP_SHA256 and value.app_files == 290
-    for old in ("1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984",
+    assert value.app_sha256 == FROZEN_APP_SHA256 and value.app_files == FROZEN_APP_FILES
+    for old in (q.CURRENT_APPLICATION_APP_SHA256,
+                "1627433db20d69d053a0d11ca8ebf84b426c7be1a1c2f42d4f76282a08977984",
                 "13f9739f41e12e26adc56a30504548d7ad4465a93131ce1e61449bb120f540e4"):
         with pytest.raises(ValidationError):
             receipt.model_validate_json(json.dumps(body | {"app_sha256": old}))

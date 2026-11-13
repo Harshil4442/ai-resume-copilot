@@ -21,6 +21,9 @@ from evaluation.native_acquisition_v2 import channel as c
 from evaluation.native_acquisition_v2 import engine as e
 from evaluation.native_acquisition_v2 import isolation as i
 from evaluation.native_acquisition_v2 import job as j
+from tests.fixtures.retained_native_source import (
+    frozen_runtime_layout as frozen_runtime_layout,  # noqa: F401
+)
 from tests.test_native_acquisition_v2_engine import heldout_toys as heldout_toys  # noqa: F401
 from tests.test_native_acquisition_v2_engine import private_write
 from tests.test_native_acquisition_v2_engine import reviewed_toys as reviewed_toys  # noqa: F401
