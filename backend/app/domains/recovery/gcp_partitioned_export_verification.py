@@ -120,7 +120,8 @@ def _verify(receipt: PartitionedCompleteReceipt, read: BoundedReader) -> Verifie
           and cut.records_count == manifest.records_count and cut.authority_rows_count == manifest.authority_rows_count,
           "Closed native cut identity or counts disagree")
 
-    intent_entries, row_entries = {}, {}
+    intent_entries: dict[str, IntentEntry] = {}
+    row_entries: dict[str, RowEntry] = {}
     previous = ZERO
     for ordinal, ref in enumerate(manifest.chunks, 1):
         chunk = Chunk.model_validate(object_value(ref, f"authority-v3-cut-chunks/{prefix}/{ordinal}.json"))
@@ -129,10 +130,13 @@ def _verify(receipt: PartitionedCompleteReceipt, read: BoundedReader) -> Verifie
               and len(chunk.entries) == min(64, manifest.entries_count - (ordinal - 1) * 64),
               "Closed export chunk chain disagrees")
         for entry in chunk.entries:
-            index, key = ((intent_entries, str(entry.operation_id)) if isinstance(entry, IntentEntry)
-                          else (row_entries, entry.identity_sha256))
-            _need(key not in index, "Closed export contains a repeated entry")
-            index[key] = entry
+            if isinstance(entry, IntentEntry):
+                operation_id = str(entry.operation_id)
+                _need(operation_id not in intent_entries, "Closed export contains a repeated entry")
+                intent_entries[operation_id] = entry
+            else:
+                _need(entry.identity_sha256 not in row_entries, "Closed export contains a repeated entry")
+                row_entries[entry.identity_sha256] = entry
         previous = ref.sha256
     _need(previous == manifest.chunk_chain_sha256 and len(intent_entries) == manifest.records_count
           and len(row_entries) == manifest.authority_rows_count, "Closed export entry census disagrees")
