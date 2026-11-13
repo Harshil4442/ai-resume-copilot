@@ -370,6 +370,10 @@ class RefreshDenied(RuntimeError):
     """Fixed nonsecret refusal; never echo vendor output or exception text."""
 
 
+class MonitorHeartbeatUnavailable(RefreshDenied):
+    """The verified local observation survived an unacknowledged heartbeat."""
+
+
 def need(value: Any, code: str) -> None:
     if not value:
         raise RefreshDenied(code)
@@ -1848,7 +1852,6 @@ def main() -> None:
                 delegate.close()
     elif args.mode == "monitor":
         result = monitor(now=datetime.now(UTC))
-        emit_status(result)
     elif args.mode == "resume-full-source-refresh":
         need(args.resume_candidate_directory is not None and args.resume_manifest_sha256 is not None,
              "document_resume_original_candidate_required")
@@ -1921,8 +1924,13 @@ def main() -> None:
         result = candidate(args.output_directory, publish=args.publish_candidate, now=datetime.now(UTC))
     write_new(args.output_directory / "result.json", result)
     print(json.dumps(result, sort_keys=True))
-    if args.mode == "monitor" and result["definitions"]["status"] != "fresh":
-        raise RefreshDenied("document_refresh_expiry_alert")
+    if args.mode == "monitor":
+        try:
+            emit_status(result)
+        except Exception:
+            raise MonitorHeartbeatUnavailable("document_refresh_monitor_heartbeat_unavailable") from None
+        if result["definitions"]["status"] != "fresh":
+            raise RefreshDenied("document_refresh_expiry_alert")
 
 
 def _final_failure_code(error: Exception) -> str:
@@ -2206,14 +2214,17 @@ def run_cli() -> int:
         # write even a failure heartbeat to Cloud Logging.
         observed_expiry = (mode == "monitor" and type(error) is RefreshDenied
                            and error.args == ("document_refresh_expiry_alert",))
-        if not readback_requested and not observed_expiry:
+        heartbeat_unavailable = mode == "monitor" and type(error) is MonitorHeartbeatUnavailable
+        if not readback_requested and not (observed_expiry or heartbeat_unavailable):
             try:
                 emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
             except Exception:
                 pass
         final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
         code = _final_failure_code(error) if final_mode else "document_refresh_unavailable"
-        if observed_expiry:
+        if heartbeat_unavailable:
+            code = "document_refresh_monitor_heartbeat_unavailable"
+        elif observed_expiry:
             code = "document_refresh_expiry_alert"
         elif not final_mode and type(error) is RefreshDenied:
             try:

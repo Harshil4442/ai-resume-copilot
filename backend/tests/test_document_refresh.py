@@ -623,6 +623,31 @@ def test_current_source_expiry_emits_precise_status_without_opening_other_paths(
         "controller": "hirewiz-document-refresh", "version": 1, "seconds_remaining": -30}]
 
 
+def test_monitor_retains_verified_result_without_repeating_unknown_heartbeat(monkeypatch, tmp_path, capsys):
+    import json
+    import sys
+
+    output = tmp_path / "monitor"
+    expected = {"mode": "monitor", "definitions": {"status": "expired", "seconds_remaining": -30},
+                "promotion_performed": False}
+    emitted = []
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "monitor",
+        "--output-directory", str(output)])
+    monkeypatch.setattr(refresh, "monitor", lambda **_: expected)
+
+    def failed_write(result):
+        emitted.append(result)
+        assert json.loads((output / "result.json").read_bytes()) == expected
+        raise RuntimeError("private vendor response")
+
+    monkeypatch.setattr(refresh, "emit_status", failed_write)
+    assert refresh.run_cli() == 2
+    assert emitted == [expected]
+    console = capsys.readouterr().out
+    assert "document_refresh_monitor_heartbeat_unavailable" in console
+    assert "private vendor response" not in console
+
+
 def test_workflow_keeps_same_run_different_attempt_artifacts_separate(tmp_path, monkeypatch):
     import os
     import shutil
