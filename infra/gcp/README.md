@@ -162,3 +162,20 @@ action on the underlying order.
 
 See [Cloud Run request logs](https://docs.cloud.google.com/run/docs/logging)
 and [log-based alert behavior](https://docs.cloud.google.com/logging/docs/alerting/log-based-alerts).
+
+`worker_queue_alerts.tf` adds opt-in policies for the four existing analysis and employer
+queues and both private Cloud Run workers in `us-central1`. With
+`worker_queue_alerts_enabled=true`, the reviewed plan should add four queue policies and
+two worker policies using the same `document_refresh_notification_channels` destination.
+The opt-in is disabled by default. Confirm policy and channel readback after activation
+and record condition-specific delivery when a genuine incident occurs.
+
+Each queue policy checks for more than 20 queued tasks for ten minutes. Queue depth
+includes scheduled and retry work, so inspect queue state, recent dispatches and worker
+errors before intervening, especially while application admission is paused. The
+worker policies sum HTTP 5xx responses across revisions of each worker and alert at
+three or more in five minutes. These starting thresholds cover queue depth and HTTP
+failures. Task age, application-level failures returned as HTTP success, and periods
+without metric samples require separate evidence. See the
+[Cloud Tasks metrics](https://docs.cloud.google.com/tasks/docs/monitor) and
+[Cloud Run request metrics](https://docs.cloud.google.com/stackdriver/docs/solutions/slo-monitoring/sli-metrics/req-resp-metrics).
