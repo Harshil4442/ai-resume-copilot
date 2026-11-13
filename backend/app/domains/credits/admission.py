@@ -203,6 +203,29 @@ def _legacy_usage(
     return provider + int(services or 0)
 
 
+def require_route_open(db: Session, *, route_id: str) -> None:
+    """Read the route circuit. Claim and admission callers hold the money locks."""
+    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
+        raise finance.FundingUnavailable(
+            "This route is paused while its actual expense overrun is reviewed"
+        )
+    outcomes = [
+        row[0]
+        for row in db.query(CreditExecutionHold.delivery_state)
+        .filter(
+            CreditExecutionHold.route_id == route_id,
+            CreditExecutionHold.delivery_state.in_(["delivered", "failed"]),
+        )
+        .order_by(CreditExecutionHold.created_at.desc(), CreditExecutionHold.id.desc())
+        .limit(20)
+        .all()
+    ]
+    if (len(outcomes) >= 3 and all(value == "failed" for value in outcomes[:3])) or (
+        len(outcomes) == 20 and outcomes.count("failed") > 2
+    ):
+        raise finance.FundingUnavailable("This route is paused for repeated delivery failures")
+
+
 def assert_headroom(
     db: Session,
     *,
@@ -223,25 +246,7 @@ def assert_headroom(
     if route_id not in budgets.monthly_route_minor:
         raise finance.FundingUnavailable("This route has no funded execution budget")
     lock_money(db)
-    if db.query(CreditExecutionHold.id).filter_by(route_id=route_id, state="overrun").first():
-        raise finance.FundingUnavailable(
-            "This route is paused while its actual expense overrun is reviewed"
-        )
-    outcomes = [
-        row[0]
-        for row in db.query(CreditExecutionHold.delivery_state)
-        .filter(
-            CreditExecutionHold.route_id == route_id,
-            CreditExecutionHold.delivery_state.in_(["delivered", "failed"]),
-        )
-        .order_by(CreditExecutionHold.created_at.desc(), CreditExecutionHold.id.desc())
-        .limit(20)
-        .all()
-    ]
-    if (len(outcomes) >= 3 and all(value == "failed" for value in outcomes[:3])) or (
-        len(outcomes) == 20 and outcomes.count("failed") > 2
-    ):
-        raise finance.FundingUnavailable("This route is paused for repeated delivery failures")
+    require_route_open(db, route_id=route_id)
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month = day.replace(day=1)
     for start, ceiling in (

@@ -20,7 +20,7 @@ from ...services.generation_budget import _usage
 from ...services.model_cost_policy import input_token_estimate, quoted_cost
 from ..employer.admissions import lock_application_set
 from . import finance, pricing, service
-from .admission import lock_money
+from .admission import lock_money, require_route_open
 from .models import CreditExecutionAttempt, CreditExecutionHold, CreditReservation
 from .service_quotes import QualifiedRoute, require_route
 
@@ -160,6 +160,7 @@ def claim_attempt(
         raise finance.FundingUnavailable(
             "A previous provider attempt needs reconciliation; do not retry it"
         )
+    require_route_open(db, route_id=hold.route_id)
     attempt = next((a for a in attempts if a.state == "planned"), None)
     if attempt is None:
         raise finance.FundingUnavailable("The complete operation attempt allowance is exhausted")
@@ -452,14 +453,15 @@ def persistent_execution_budget(
                     or hold.snapshot.get("policy") != policy.model_dump(mode="json")
                 ):
                     raise finance.FundingUnavailable("The funded route authorization changed")
-                # CountTokens receives the user's prompt. Recheck the accepted
-                # route and provider price before sending even that free request.
+                # CountTokens receives the user's prompt. Recheck qualification
+                # and the route circuit before sending even that free request.
                 require_route(route, policy, now=service._stamp(None))
                 attempts = db.query(CreditExecutionAttempt).filter_by(hold_id=hold_id).order_by(
                     CreditExecutionAttempt.ordinal
                 ).all()
                 if any(a.state in {"started", "outcome_unknown", "usage_unavailable", "overrun"} for a in attempts):
                     raise finance.FundingUnavailable("A previous provider attempt needs reconciliation")
+                require_route_open(db, route_id=hold.route_id)
                 next_attempt = next((a for a in attempts if a.state == "planned"), None)
             if next_attempt is None or budget.used >= budget.limit:
                 raise finance.FundingUnavailable("The complete operation attempt allowance is exhausted")

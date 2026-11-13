@@ -19,6 +19,7 @@ from backend.tests.test_unified_credits import factory, grant
 from backend.tests.test_unified_execution import (
     NOW,
     admitted,
+    budgets,
     claim,
     financial_policy,
     response,
@@ -134,6 +135,54 @@ def test_original_inflight_completion_survives_cancel_and_customer_refund(factor
             assert first.state == liability.cost_state == "settled" and liability.settled_cost_micros > 0
 
 
+@pytest.mark.parametrize("trigger", ["delivery_failures", "expense_overrun"])
+def test_accepted_route_circuit_stops_next_provider_request_without_losing_settlement(factory, trigger):
+    blocked_id = seed(factory)
+    other_route = route().model_copy(update={"id": "other-tailor"})
+    with factory() as db:
+        grant(db, quantity=40, source="additional-funded-order")
+        inflight_id = admitted(db, source="inflight-tailor").id
+        sibling_id = admitted(db, source="unaffected-tailor", selected=other_route,
+            limits=budgets(monthly_route_minor={other_route.id: 10000})).id
+        trigger_ids = [admitted(db, source=f"trigger-{index}").id
+                       for index in range(3 if trigger == "delivery_failures" else 1)]
+        binding, _ = claim(db, db.get(CreditExecutionHold, inflight_id))
+        db.commit()
+
+    with execution.persistent_execution_budget(factory, user_id=1, hold_id=blocked_id,
+            route=route(), policy=financial_policy()) as budget:
+        assert invoke(budget, "preflight") == 1024
+        with factory() as db:
+            if trigger == "delivery_failures":
+                for identity in trigger_ids:
+                    execution.settle_delivery(db, user_id=1, hold_id=identity, delivered=False, now=NOW)
+            else:
+                execution.record_native_cost(db, user_id=1, hold_id=trigger_ids[0], actual_minor=14, now=NOW)
+            db.commit()
+        for stage in ("preflight", "claim"):
+            with pytest.raises(finance.FundingUnavailable, match="This route is paused"):
+                invoke(budget, stage)
+        assert budget.used == 0 and budget.attempts == []
+
+    with execution.persistent_execution_budget(factory, user_id=1, hold_id=sibling_id,
+            route=other_route, policy=financial_policy()) as budget:
+        assert invoke(budget, "preflight") == 1024
+        record = invoke(budget, "claim")
+        budget.finish(record, latency_ms=1, response=response())
+
+    with factory() as db:
+        pending = db.query(CreditExecutionAttempt).filter_by(hold_id=blocked_id).all()
+        assert pending and all(attempt.state == "planned" and attempt.claim_key is None for attempt in pending)
+        execution.finish_attempt(db, binding=binding, error=TimeoutError(), now=NOW)
+        execution.settle_delivery(db, user_id=1, hold_id=inflight_id, delivered=False, now=NOW)
+        execution.settle_delivery(db, user_id=1, hold_id=blocked_id, delivered=False, now=NOW)
+        db.commit()
+        unknown = db.get(models.ModelCostLiability, binding.liability_id)
+        assert unknown.cost_state == "outcome_unknown" and unknown.settled_cost_micros is None
+        reservation = db.get(CreditReservation, db.get(CreditExecutionHold, blocked_id).reservation_id)
+        assert reservation.released_credits == 8 and reservation.committed_credits == 0
+
+
 @pytest.mark.parametrize("change", ["owner", "group", "hold", "fingerprint", "operation", "source", "missing", "currency"])
 def test_budget_rejects_cross_bound_or_missing_analysis_source(factory, change):
     hold_id = seed(factory)
@@ -232,6 +281,58 @@ def test_real_analysis_admission_and_budget_bind_before_late_cancel(analysis_fac
             cancel_run(db, 1, identity)
         with pytest.raises(finance.FundingUnavailable, match="cancel|active"):
             invoke(budget, "claim")
+
+
+def test_worker_refunds_accepted_route_paused_between_count_and_claim(analysis_factory, monkeypatch):
+    from backend.app.domains.analysis import tasks
+    from backend.app.services import llm_client
+    from backend.tests.test_unified_analysis import quote_and_create
+    from backend.tests.test_unified_analysis import setup as analysis_setup
+
+    _, config = analysis_setup.__wrapped__(analysis_factory, monkeypatch)
+    selected = config.routes[0]
+    selected = selected.model_copy(update={"model_quotes": tuple(
+        price.model_copy(update={"model": "gemini-3.6-flash"}) for price in selected.model_quotes)})
+    from backend.tests.fixtures.reviewed_runtime import reviewed_runtime
+
+    config = config.model_copy(update={"routes": (selected,)})
+    reviewed_runtime(monkeypatch, config)
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", config.model_dump_json())
+    monkeypatch.setenv("LLM_API_KEY", "synthetic-no-provider-key")
+    monkeypatch.setattr(llm_client, "LLM_MODEL", "gemini-3.6-flash")
+
+    with analysis_factory() as db:
+        run, _ = quote_and_create(db)
+        identity = run.id
+        incident = admitted(db, source="worker-route-overrun", selected=selected).id
+        db.commit()
+
+    count_calls = []
+
+    def count(*_args):
+        count_calls.append(True)
+        with analysis_factory() as db:
+            execution.record_native_cost(db, user_id=1, hold_id=incident, actual_minor=14, now=NOW)
+            db.commit()
+        return 100
+
+    def forbidden_generation(*_args, **_kwargs):
+        pytest.fail("The stopped route sent a generation request")
+
+    from google import genai
+
+    monkeypatch.setattr(llm_client, "count_gemini_input", count)
+    monkeypatch.setattr(genai, "Client", forbidden_generation)
+    monkeypatch.setattr(tasks, "execute_operation", lambda *_: llm_client._chat(
+        [{"role": "user", "content": "Synthetic input."}]))
+    assert tasks.process_analysis_run(identity) == "failed"
+    assert tasks.process_analysis_run(identity) == "failed"
+    assert count_calls == [True]
+    with analysis_factory() as db:
+        run = db.get(models.AnalysisRun, identity)
+        assert run.attempt_count == 1 and run.generation_attempt_count == 0
+        assert run.usage_state == "released" and run.committed_units == 0 and run.result_payload is None
+        assert service.wallet(db, user_id=1, now=NOW).available_credits == 37
 
 
 @pytest.mark.parametrize("outcome", ["cancelled", "failed"])
