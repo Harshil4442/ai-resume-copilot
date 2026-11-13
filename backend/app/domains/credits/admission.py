@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from fractions import Fraction
-from typing import Annotated
+from typing import Annotated, Protocol
 
 from pydantic import Field, model_validator
 from sqlalchemy import Integer, case, cast, func, or_, text
@@ -67,6 +67,20 @@ class ExecutionBudgetPolicy(finance.Closed):
         ):
             raise ValueError("Funded sub-budgets cannot exceed the global monthly budget")
         return self
+
+
+class LegacyCostInputs(Protocol):
+    @property
+    def legacy_search_cost_minor(self) -> int: ...
+
+    @property
+    def legacy_application_cost_minor(self) -> int: ...
+
+    @property
+    def legacy_preparation_minor(self) -> int: ...
+
+    @property
+    def legacy_provider_attempt_overhead_minor(self) -> int: ...
 
 
 def lock_money(db: Session) -> None:
@@ -139,7 +153,7 @@ def _legacy_usage(
     *,
     start: datetime,
     policy: finance.FinancialPolicy,
-    budgets: ExecutionBudgetPolicy,
+    budgets: LegacyCostInputs,
     exclude_service_reservation_id: str | None = None,
 ) -> int:
     # New attempts already belong to whole-operation holds. Count legacy

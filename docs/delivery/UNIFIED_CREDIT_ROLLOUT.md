@@ -377,10 +377,20 @@ reused to discard obligations. Revision names alone do not prove source identity
 ## Shadow report
 
 `backend/scripts/credit_shadow_report.py` reads aggregate operation and ledger
-data using a read-only database transaction. Provide a reviewed nonsecret runtime
-configuration and a completed timezone-aware window of at most 31 days. It
-reports hypothetical tariffs, explicit discovery batch totals, retained provider
-liabilities, protected execution exposure, unspent credits and accepted holds.
+data using a read-only database transaction. Provide a completed timezone-aware
+window of at most 31 days using `--start` and `--end`. Use `--runtime-review`
+with an existing reviewed runtime configuration or `--reporting-review` with
+current reviewed cost assumptions when paid routes are closed. The reporting
+JSON uses `schema_version: credit-shadow-reporting-review-v1`, a reviewed
+`policy` (the existing `FinancialPolicy`), and `costs` with the review's
+`version`, `evidence_sha256`, `valid_from`, `expires_at`,
+`legacy_search_cost_minor`, `legacy_application_cost_minor`,
+`legacy_preparation_minor`, and `legacy_provider_attempt_overhead_minor`.
+Supply reviewed nonsecret amounts, which may be documented estimates. The
+existing `funding_policy_version` report field identifies the cost review used
+in reporting mode. The report shows hypothetical tariffs, explicit discovery
+batch totals, retained provider liabilities, protected execution exposure,
+unspent credits and accepted holds.
 It always reports `release_qualified: false`; it cannot debit a wallet, create a
 provider call, prove human quality, or reconcile an invoice.
 
