@@ -449,6 +449,7 @@ def main():
     args = parser().parse_args()
     resources = None
     cleanup_verified = False
+    previous_logging_threshold = logging.root.manager.disable
     try:
         plan = Plan.parse(json.loads(args.config.read_text()))
         if args.fresh_window and plan.measurement_seconds <= FRESH_WINDOW_COOLDOWN_SECONDS * len(plan.concurrency):
@@ -522,6 +523,8 @@ def main():
                 private_json(path, report)
         print(json.dumps({"error": "Owned Stage5 experiment refused or failed", "class": type(error).__name__}), file=sys.stderr)
         return 1
+    finally:
+        logging.disable(previous_logging_threshold)
 
 
 if __name__ == "__main__":

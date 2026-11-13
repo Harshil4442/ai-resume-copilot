@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -398,6 +399,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
     from scripts import run_stage5_capacity as runner
 
     output, calls = tmp_path / "owned", []
+    previous_logging_threshold = logging.root.manager.disable
     class InertResources:
         def __init__(self, directory, *args):
             self.directory, self.cleanup = directory, []
@@ -408,6 +410,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
             if failure == "cleanup":
                 raise RuntimeError("synthetic-private-error")
     def execute(plan, resources):
+        assert logging.root.manager.disable == logging.CRITICAL
         results, preflight = measured_results(plan.requests_per_phase), dict(PREFLIGHT)
         resources.partial_report.update(results=results, preflight=preflight, synthetic_test=True)
         if failure == "preflight":
@@ -424,6 +427,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
     monkeypatch.setattr(sys, "argv", ["runner", "--execute", "--output", str(output),
                                     "--pg-bin", "/not-opened", "--redis-server", "/not-opened"])
     assert runner.main() == (0 if failure is None else 1)
+    assert logging.root.manager.disable == previous_logging_threshold
     report = json.loads((output / "report.json").read_text())
     assert report["validation"]["passed"] is (failure is None)
     assert report["validation"]["production_capacity_qualified"] is False
