@@ -188,8 +188,8 @@ production environment, cloud credentials, secrets or provider action. It upload
 only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
-workflow runs only the reviewed owned-local experiment. Its PR trigger names
-only the eleven finite Stage5 tooling/config/test paths, so this Linux validation
+workflow runs only the reviewed owned-local experiments. Its PR trigger names
+only thirteen finite Stage5 tooling/config/test paths, so this Linux validation
 can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
 provides PG16, so no host17 path is assumed. The source build uses the
@@ -276,6 +276,20 @@ native SDKs. One combined read used two fresh List requests and returned the
 same result as the standalone endpoint. This saves one authenticated HTTP
 request and two metadata calls for a cold learning-tab view on the matching
 release. Production throughput and field latency remain unmeasured.
+
+The separate `--skill-roi-journey` diagnostic (workflow input `skill_roi_journey`)
+compares both paths on the same synthetic dataset and API build without changing
+the default or fresh-window workloads. The eight enrolled actors, including
+the 500-opportunity account, each visit a fixed owned learning tab in both arms.
+The first arm makes the original two concurrent reads. The second uses the
+consolidated read. Both use the original project governor and each waits at
+least 61 seconds before sending traffic. The report must confirm all eight
+journeys per arm, exactly 16 versus eight completed HTTP requests, 32 versus
+16 synthetic Admin Lists, and equivalent complete Skill ROI ranks and Workspace
+projections. The two extra access controls require 401 without a bearer and 404
+for another owner's exact opportunity. The cap is 29 HTTP requests including
+all controls. No real provider calls are made. The fixed-order, direct HTTPS
+measurement does not establish browser or production latency.
 
 ## Original acceptance remains open
 

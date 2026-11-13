@@ -7,6 +7,10 @@ on:
         description: Measure three small governed batches after natural cooldowns
         type: boolean
         default: false
+      skill_roi_journey:
+        description: Compare the two Skill ROI learning-tab read paths
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths:
@@ -17,10 +21,12 @@ on:
       - backend/scripts/stage5_resources.py
       - backend/scripts/stage5_relay.py
       - backend/scripts/stage5_seed.py
+      - backend/scripts/stage5_skill_roi.py
       - backend/tests/fixtures/stage5_native.py
       - backend/tests/test_stage5_capacity.py
       - backend/tests/test_stage5_native_fixture.py
       - backend/tests/test_stage5_seed_postgres.py
+      - backend/tests/test_stage5_skill_roi.py
 
 permissions:
   contents: read
@@ -102,7 +108,7 @@ jobs:
         env:
           HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
           HIREWIZ_STAGE5_PG_REQUIRED: "true"
-        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py
+        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py
       - name: Execute only fresh owned loopback resources
         timeout-minutes: 13
         env:
@@ -110,6 +116,7 @@ jobs:
           OWNED_REDIS_BINARY: ${{ steps.redis.outputs.binary }}
           OWNED_PG_BIN: ${{ steps.postgres.outputs.bin }}
           FRESH_WINDOW: ${{ github.event_name == 'workflow_dispatch' && inputs.fresh_window }}
+          SKILL_ROI_JOURNEY: ${{ github.event_name == 'workflow_dispatch' && inputs.skill_roi_journey }}
         working-directory: backend
         run: |
           .venv/bin/python - <<'PY'
@@ -123,6 +130,7 @@ jobs:
           PY
           args=()
           if [[ "$FRESH_WINDOW" == true ]]; then args+=(--fresh-window); fi
+          if [[ "$SKILL_ROI_JOURNEY" == true ]]; then args+=(--skill-roi-journey); fi
           .venv/bin/python scripts/run_stage5_capacity.py --execute "${args[@]}" \
             --config "$RUNNER_TEMP/stage5-config.json" \
             --pg-bin "$OWNED_PG_BIN" --redis-server "$OWNED_REDIS_BINARY" \

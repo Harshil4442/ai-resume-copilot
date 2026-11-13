@@ -716,7 +716,9 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 11 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 13 and "backend/app/**" not in trigger["paths"]
+    assert "backend/scripts/stage5_skill_roi.py" in trigger["paths"]
+    assert "backend/tests/test_stage5_skill_roi.py" in trigger["paths"]
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -735,6 +737,7 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe" in runs
     assert "fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9" in runs
     assert "run_stage5_capacity.py --execute" in runs
+    assert "--skill-roi-journey" in runs and "test_stage5_skill_roi.py" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
     assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)

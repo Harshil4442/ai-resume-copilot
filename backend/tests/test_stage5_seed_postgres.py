@@ -10,7 +10,8 @@ from sqlalchemy import create_engine, text
 from scripts.run_stage5_capacity import migrate
 from scripts.stage5_capacity import Plan
 from scripts.stage5_resources import Resources, private_json
-from scripts.stage5_seed import seed, synthetic_email
+from scripts.stage5_seed import owned_opportunity_ids, seed, synthetic_email
+from scripts.stage5_skill_roi import checked_workspace, expected_roi
 
 
 @pytest.mark.parametrize("buyers_percent", [20, 25])
@@ -22,6 +23,7 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
         pytest.skip("Set HIREWIZ_STAGE5_PG_BIN for the separate owned PG17 seed check")
     from app import database
     from app.domains.career import service as career
+    from app.domains.career import workspace
     from app.domains.career.evidence_write_fence import SETTING
     from app.domains.credits import service as credits
     from tests import test_candidate_production_factory as fixture
@@ -49,7 +51,14 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
             assert db.scalar(text("SELECT current_setting(:setting, true)"), {"setting": SETTING}) in (None, "")
             assert career.list_opportunities(db, 8, limit=50)[1] == 500
             assert career.list_opportunities(db, 7, limit=50)[1] == 10
-            assert career.calculate_skill_roi(db, 8).opportunity_count == 500
+            for uid in (1, 8):
+                role = owned_opportunity_ids(uid, limit=1)[0]
+                original = workspace.bootstrap(db, uid, role, tab="learning").model_dump(mode="json")
+                combined = workspace.bootstrap(db, uid, role, tab="learning",
+                    include_skill_roi=True).model_dump(mode="json")
+                assert checked_workspace(original, uid) == checked_workspace(combined, uid) is not None
+                assert original["skill_roi"] is None
+                assert combined["skill_roi"] == career.calculate_skill_roi(db, uid).model_dump(mode="json") == expected_roi(uid)
             buyer = 5 if buyers_percent == 20 else 4
             assert credits.wallet(db, user_id=buyer).available_credits == 90
             assert credits.wallet(db, user_id=1).available_credits == 0
