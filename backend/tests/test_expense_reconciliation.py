@@ -37,6 +37,7 @@ def tables():
     metadata = MetaData()
     Table("payment_orders", metadata,
           Column("id", Integer, primary_key=True), Column("currency", String(3)),
+          Column("provider_mode", String(16), nullable=False, server_default="live"),
           Column("gross_amount_minor", Integer), Column("refunded_amount_minor", Integer),
           Column("provider_fee_amount_minor", Integer), Column("customer_tax_amount_minor", Integer),
           Column("paid_at", DateTime()))
@@ -67,9 +68,9 @@ def context():
         engine.dispose()
 
 
-def read(engine, stamp=STAMP):
+def read(engine, stamp=STAMP, **kwargs):
     with Session(engine) as db:
-        return report_function()(db, now=stamp)
+        return report_function()(db, now=stamp, **kwargs)
 
 
 def test_refunds_follow_processed_month_not_purchase_month(context):
@@ -102,16 +103,52 @@ def test_utc_start_and_exclusive_cutoff_and_currency_do_not_mix(context):
             {"id": 4, "currency": "USD", "gross_amount_minor": 80, "paid_at": start},
         ])
         db.execute(metadata.tables["payment_refunds"].insert(), [
-            {"id": 1, "currency": "INR", "amount_minor": 5, "status": "processed", "processed_at": start},
-            {"id": 2, "currency": "INR", "amount_minor": 6, "status": "processed", "processed_at": STAMP},
-            {"id": 3, "currency": "USD", "amount_minor": 7, "status": "processed", "processed_at": start},
-            {"id": 4, "currency": "INR", "amount_minor": 8, "status": "processed", "processed_at": None},
+            {"id": 1, "order_id": 1, "currency": "INR", "amount_minor": 5, "status": "processed", "processed_at": start},
+            {"id": 2, "order_id": 2, "currency": "INR", "amount_minor": 6, "status": "processed", "processed_at": STAMP},
+            {"id": 3, "order_id": 4, "currency": "USD", "amount_minor": 7, "status": "processed", "processed_at": start},
+            {"id": 4, "order_id": 1, "currency": "INR", "amount_minor": 8, "status": "processed", "processed_at": None},
         ])
     result = read(engine, STAMP.astimezone(timezone(timedelta(hours=5, minutes=30))))
     assert result["period_start"] == start.isoformat() and result["as_of"] == STAMP.isoformat()
     assert result["captured_gross_minor"] == 10 and result["refunded_minor"] == 5
     assert result["excluded_other_currency_capture_count"] == result["excluded_other_currency_refund_count"] == 1
     assert result["processed_refunds_without_timestamp"] == 1
+
+
+def test_live_cash_excludes_test_captures_and_refunds_without_removing_real_costs(context):
+    engine, metadata = context
+    paid_at = STAMP - timedelta(days=1)
+    with engine.begin() as db:
+        db.execute(metadata.tables["payment_orders"].insert(), [
+            {"id": 1, "provider_mode": "live", "currency": "INR", "gross_amount_minor": 5900,
+             "paid_at": paid_at, "provider_fee_amount_minor": 140, "customer_tax_amount_minor": 900},
+            {"id": 2, "provider_mode": "test", "currency": "INR", "gross_amount_minor": 44900,
+             "paid_at": paid_at, "provider_fee_amount_minor": None, "customer_tax_amount_minor": None},
+        ])
+        db.execute(metadata.tables["payment_refunds"].insert(), [
+            {"id": 1, "order_id": 1, "currency": "INR", "amount_minor": 100,
+             "status": "processed", "processed_at": paid_at},
+            {"id": 2, "order_id": 2, "currency": "INR", "amount_minor": 200,
+             "status": "processed", "processed_at": paid_at},
+            {"id": 3, "order_id": 2, "currency": "INR", "amount_minor": 300,
+             "status": "processed", "processed_at": None},
+        ])
+        db.execute(metadata.tables["model_cost_liabilities"].insert(), [
+            {"id": 1, "cost_state": "outcome_unknown", "reserved_cost_micros": 700, "created_at": OLD},
+        ])
+    live = read(engine)
+    assert live["payment_provider_mode"] == "live"
+    assert (live["captured_gross_minor"], live["refunded_minor"], live["provider_fee_known_minor"]) == (5900, 100, 140)
+    assert live["orders_with_unknown_provider_fee"] == live["orders_with_unknown_customer_tax"] == 0
+    assert live["processed_refunds_without_timestamp"] == 0
+    test = read(engine, provider_mode="test")
+    assert test["payment_provider_mode"] == "test"
+    assert (test["captured_gross_minor"], test["refunded_minor"], test["provider_fee_known_minor"]) == (44900, 200, 0)
+    assert test["orders_with_unknown_provider_fee"] == test["orders_with_unknown_customer_tax"] == 1
+    assert test["processed_refunds_without_timestamp"] == 1
+    assert live["model_unresolved_held_micros"] == test["model_unresolved_held_micros"] == 700
+    with pytest.raises(ValueError, match="payment mode"):
+        read(engine, provider_mode="all")
 
 
 def test_search_application_quotes_and_prior_unknown_holds_stay_separate(context):
