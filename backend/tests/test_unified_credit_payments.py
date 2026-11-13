@@ -1,8 +1,10 @@
 """Synthetic provider transport; real HTTP, quote, capture and refund state machines."""
+import json
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
-from backend.app.billing.razorpay import RazorpayAdapter, RazorpayProviderError
+from backend.app.billing.razorpay import RAZORPAY_ORDERS_URL, RazorpayAdapter, RazorpayProviderError
 from backend.app.billing.reconciliation import OriginalOrder
 from backend.app.domains.credits import canary, release, service
 from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavailable
@@ -21,6 +23,8 @@ from test_razorpay_billing import client as client
 from test_razorpay_billing import enabled_checkout as enabled_checkout
 from test_razorpay_billing import session_factory as session_factory
 from test_unified_execution import budgets, route
+
+CREATE_RAZORPAY_ORDER = RazorpayAdapter.create_order
 
 
 def review_payload():
@@ -318,6 +322,33 @@ def test_unknown_provider_outcome_blocks_any_second_order(unified, monkeypatch):
     assert second.status_code == 409
     assert attempts == [1]
     assert client.get("/api/v1/credits/recent-order").json()["payment_status"] == "creation_unknown"
+
+
+@pytest.mark.parametrize("body", [None, [], {"entity": "order"}], ids=["null", "list", "incomplete-order"])
+def test_malformed_provider_response_preserves_original_order(unified, monkeypatch, body):
+    client, _ = unified
+    attempts = []
+
+    def post(url, **kwargs):
+        assert url == RAZORPAY_ORDERS_URL
+        attempts.append(kwargs["json"]["notes"]["hirewiz_order_id"])
+        return httpx.Response(200, content=json.dumps(body), request=httpx.Request("POST", url))
+
+    # Keep the adapter's actual decoding and validation, with only its HTTP call stubbed.
+    monkeypatch.setattr(RazorpayAdapter, "create_order", CREATE_RAZORPAY_ORDER)
+    monkeypatch.setattr("backend.app.billing.razorpay.httpx.post", post)
+    _, payload, first = start(client)
+    assert first.status_code == 409, first.text
+    detail = first.json()["detail"]
+    assert detail["code"] == "billing_order_requires_status"
+    original = client.get(f"/api/v1/credits/orders/{detail['order_id']}").json()
+    assert original["payment_status"] == "creation_unknown"
+    assert not original["checkout_available"] and not original["fulfilled"]
+    assert client.post("/api/v1/credits/orders", json=payload).json()["detail"]["order_id"] == detail["order_id"]
+    _, _, second = start(client, key="another-purchase")
+    assert second.status_code == 409
+    assert second.json()["detail"]["order_id"] == detail["order_id"]
+    assert attempts == [detail["order_id"]]
 
 
 @pytest.mark.parametrize("transport_unknown", [False, True])
