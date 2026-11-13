@@ -250,6 +250,7 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   expect(await source.body()).toEqual(original);
   await page.goto("/profile");
   await page.getByLabel("Full name", { exact: true }).fill("Synthetic Candidate");
+  await expect(page.getByRole("heading", { name: "Weekly role updates", exact: true })).toHaveCount(0);
   await page.getByLabel("Target role", { exact: true }).fill("Python Engineer");
   await page.getByLabel("Location", { exact: true }).fill("Bengaluru, India");
   await page.getByLabel("Preferred location", { exact: true }).fill("Bengaluru");

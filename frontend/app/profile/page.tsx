@@ -1,8 +1,9 @@
 "use client";
 
 import { AlertCircle, BriefcaseBusiness, CheckCircle2, Crown, Download, Link as LinkIcon, Save, ShieldOff, Trash2, User } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { guardedSignOut } from "../../lib/candidateAuthClient";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -13,7 +14,7 @@ import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { resetAnalyticsIdentity, trackEvent } from "../../lib/analytics";
 import { apiDownload, apiPostJson, apiPutJson } from "../../lib/api";
 import type { UserProfile } from "../../lib/types";
-import { fetchOwnedProfile, updateOwnedProfile } from "../../lib/ownedBootstrapClient";
+import { featureDecisionsOptions, fetchOwnedProfile, updateOwnedProfile } from "../../lib/ownedBootstrapClient";
 
 type ProfileForm = Omit<UserProfile, "email" | "profile_completeness" | "missing_fields" | "skills" | "tier" | "ai_credits"> & { skills_text: string };
 
@@ -194,8 +195,11 @@ function ProfileContent() {
 }
 
 export default function ProfilePage() {
+  const { status } = useSession();
+  const features = useQuery({ ...featureDecisionsOptions(), enabled: status === "authenticated" });
+  const showDigest = status === "authenticated" && features.isSuccess && features.data.features.weekly_digest?.enabled === true;
   return <main className="app-page"><div className="page-container space-y-10">
     <ProfileContent />
-    <WeeklyDigestPreference />
+    {showDigest ? <WeeklyDigestPreference /> : null}
   </div></main>;
 }

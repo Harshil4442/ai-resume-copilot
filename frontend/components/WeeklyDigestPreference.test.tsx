@@ -8,9 +8,11 @@ import { changeNotificationPreference, readNotificationPreference } from "../lib
 import { fetchOwnedProfile } from "../lib/ownedBootstrapClient";
 
 const session = vi.hoisted(() => ({ status: "authenticated", data: { user: { id: "owner-1", email: "owner@example.invalid" } } }));
+const featureDecisions = vi.hoisted(() => vi.fn());
 vi.mock("next-auth/react", () => ({ useSession: () => session }));
 vi.mock("../lib/notificationPreferencesClient", () => ({ readNotificationPreference: vi.fn(), changeNotificationPreference: vi.fn() }));
-vi.mock("../lib/ownedBootstrapClient", () => ({ fetchOwnedProfile: vi.fn(), updateOwnedProfile: vi.fn() }));
+vi.mock("../lib/ownedBootstrapClient", () => ({ fetchOwnedProfile: vi.fn(), updateOwnedProfile: vi.fn(),
+  featureDecisionsOptions: () => ({ queryKey: ["features"], queryFn: featureDecisions, retry: false }) }));
 vi.mock("./CareerMemoryPanel", () => ({ default: () => null }));
 const off = { weekly_digest: false, generation: 0, policy_version: "weekly-v1", next_digest_at: null, projection_current: true };
 const on = { ...off, weekly_digest: true, generation: 1, next_digest_at: "2026-11-09T00:00:00+00:00" };
@@ -23,6 +25,7 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks(); session.status = "authenticated"; session.data = { user: { id: "owner-1", email: "owner@example.invalid" } };
   vi.mocked(readNotificationPreference).mockResolvedValue(off);
+  featureDecisions.mockResolvedValue({ features: { weekly_digest: { enabled: true } } });
 });
 afterEach(cleanup);
 
@@ -34,6 +37,17 @@ describe("explicit owner-bound digest preference", () => {
     expect(await view.findByRole("checkbox")).not.toBeChecked();
     expect(fetchOwnedProfile).toHaveBeenCalledOnce();
     expect(readNotificationPreference).toHaveBeenCalledOnce();
+    view.unmount(); client.clear();
+  });
+
+  it.each([{ weekly_digest: { enabled: false } }, {}])("keeps disabled or missing digest capability out of Profile", async (features) => {
+    vi.mocked(fetchOwnedProfile).mockReturnValue(new Promise(() => {}));
+    featureDecisions.mockResolvedValue({ features });
+    const client = new QueryClient();
+    const view = render(<QueryClientProvider client={client}><ProfilePage /></QueryClientProvider>);
+    await waitFor(() => expect(client.getQueryState(["features"])?.status).toBe("success"));
+    expect(view.queryByRole("heading", { name: "Weekly role updates" })).toBeNull();
+    expect(readNotificationPreference).not.toHaveBeenCalled();
     view.unmount(); client.clear();
   });
   it("loads read-only and sends the exact generation only after explicit change and save", async () => {
