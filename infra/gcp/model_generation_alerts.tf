@@ -5,10 +5,15 @@ variable "model_generation_alerts_enabled" {
   default = false
 }
 
+locals {
+  hirewiz_model_latency_metric = "hirewiz_model_generation_latency_ms"
+  hirewiz_model_latency_filter = "resource.type=\"cloud_run_revision\" AND metric.type=\"logging.googleapis.com/user/${local.hirewiz_model_latency_metric}\""
+}
+
 resource "google_logging_metric" "model_generation_latency" {
   count           = var.model_generation_alerts_enabled ? 1 : 0
   project         = "ai-resume-parser-482412"
-  name            = "hirewiz_model_generation_latency_ms"
+  name            = local.hirewiz_model_latency_metric
   description     = "Completed model generation attempts, excluding token preflight. Values above five minutes are capped."
   filter          = <<-FILTER
     resource.type="cloud_run_revision"
@@ -37,11 +42,12 @@ resource "google_monitoring_alert_policy" "model_generation_latency" {
   display_name          = "HireWiz model generation sustained high latency"
   combiner              = "OR"
   notification_channels = var.document_refresh_notification_channels
+  depends_on            = [google_logging_metric.model_generation_latency]
 
   conditions {
     display_name = "Model generation attempt p95 exceeds 30 seconds for ten minutes"
     condition_threshold {
-      filter                  = "resource.type=\"cloud_run_revision\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.model_generation_latency[0].name}\""
+      filter                  = local.hirewiz_model_latency_filter
       comparison              = "COMPARISON_GT"
       threshold_value         = 30000
       duration                = "600s"

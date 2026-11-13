@@ -179,3 +179,18 @@ failures. Task age, application-level failures returned as HTTP success, and per
 without metric samples require separate evidence. See the
 [Cloud Tasks metrics](https://docs.cloud.google.com/tasks/docs/monitor) and
 [Cloud Run request metrics](https://docs.cloud.google.com/stackdriver/docs/solutions/slo-monitoring/sli-metrics/req-resp-metrics).
+
+`model_generation_alerts.tf` measures completed generation attempts in the API,
+analysis worker and résumé coordinator. The application logs only a fixed provider
+family, outcome and elapsed milliseconds for each attempt. The metric extracts only
+latency and the initial alert checks whether the five-minute p95 exceeds 30 seconds
+for ten minutes. Check the log metric's ingestion and time-series data after the
+application starts serving the instrumented release. Missing samples are expected
+while generation is disabled.
+
+`release_observability_dashboard.tf` adds the opt-in HireWiz production operations
+dashboard. Its four panels show queue depth, worker HTTP 5xx, generation latency and
+Razorpay callback failures. Enable the generation metric with the dashboard. Review
+the additive Terraform plan, the existing channel, and current monitoring prices
+before activation. Verify the deployed filters and dashboard under the operator's
+account. Read actual delivery evidence when an incident occurs.

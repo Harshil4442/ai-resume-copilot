@@ -4,8 +4,9 @@ variable "release_observability_dashboard_enabled" {
 }
 
 resource "google_monitoring_dashboard" "release_observability" {
-  count   = var.release_observability_dashboard_enabled ? 1 : 0
-  project = "ai-resume-parser-482412"
+  count      = var.release_observability_dashboard_enabled ? 1 : 0
+  project    = "ai-resume-parser-482412"
+  depends_on = [google_logging_metric.model_generation_latency]
 
   dashboard_json = jsonencode({
     displayName = "HireWiz production operations"
@@ -56,7 +57,7 @@ resource "google_monitoring_dashboard" "release_observability" {
               plotType = "LINE"
               timeSeriesQuery = {
                 timeSeriesFilter = {
-                  filter = "resource.type=\"cloud_run_revision\" AND metric.type=\"logging.googleapis.com/user/${google_logging_metric.model_generation_latency[0].name}\""
+                  filter = local.hirewiz_model_latency_filter
                   aggregation = {
                     alignmentPeriod  = "300s"
                     perSeriesAligner = "ALIGN_PERCENTILE_95"

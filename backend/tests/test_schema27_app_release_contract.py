@@ -105,7 +105,7 @@ def owned(tmp_path, monkeypatch):
 def test_new_family_is_not_the_neverqualified294_or_retained_producer():
     assert c.PRIOR_RELEASE == "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
     assert c.PRIOR_APP_FILES == 290 and c.PRIOR_APP_SHA256.startswith("f2775c3b")
-    assert c.CANDIDATE_APP_FILES == 312 and c.CANDIDATE_APP_SHA256.startswith('78c95a6f')
+    assert c.CANDIDATE_APP_FILES == 312 and c.CANDIDATE_APP_SHA256.startswith('83facc0e')
     assert c.HTTP_PATHS == c.v3.HTTP_PATHS | c.NEW_HTTP_PATHS
     assert c.HTTP_SCHEMAS == c.v3.HTTP_SCHEMAS | c.NEW_HTTP_SCHEMAS
     assert len(c.NEW_HTTP_PATHS) == 4 and len(c.NEW_HTTP_SCHEMAS) == 5
