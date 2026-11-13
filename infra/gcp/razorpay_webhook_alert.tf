@@ -3,6 +3,19 @@ variable "razorpay_webhook_alert_enabled" {
   default = false
 }
 
+locals {
+  razorpay_webhook_failure_filter = <<-EOT
+    resource.type="cloud_run_revision"
+    resource.labels.service_name="ai-resume-parser"
+    resource.labels.location="us-central1"
+    log_id("run.googleapis.com/requests")
+    httpRequest.requestMethod="POST"
+    httpRequest.requestUrl=~"^https?://[^/?#]+/api/billing/webhooks/razorpay([?].*)?$"
+    httpRequest.status>=500
+    httpRequest.status<600
+  EOT
+}
+
 resource "google_monitoring_alert_policy" "razorpay_webhook_errors" {
   count                 = var.razorpay_webhook_alert_enabled ? 1 : 0
   project               = "ai-resume-parser-482412"
@@ -13,16 +26,7 @@ resource "google_monitoring_alert_policy" "razorpay_webhook_errors" {
   conditions {
     display_name = "Razorpay callback returned HTTP 5xx"
     condition_matched_log {
-      filter = <<-EOT
-        resource.type="cloud_run_revision"
-        resource.labels.service_name="ai-resume-parser"
-        resource.labels.location="us-central1"
-        log_id("run.googleapis.com/requests")
-        httpRequest.requestMethod="POST"
-        httpRequest.requestUrl=~"^https?://[^/?#]+/api/billing/webhooks/razorpay([?].*)?$"
-        httpRequest.status>=500
-        httpRequest.status<600
-      EOT
+      filter = local.razorpay_webhook_failure_filter
     }
   }
 
