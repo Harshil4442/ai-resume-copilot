@@ -149,3 +149,16 @@ actual corresponding receipt exists. No production incident or test notification
 was induced. Preserve the channel and policy handles during future deployments.
 See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
 and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).
+
+`razorpay_webhook_alert.tf` defines an opt-in alert for HTTP 5xx responses to the
+direct Razorpay callback. Use the reviewed notification channel and inspect the
+plan for just this alert before activation. It matches existing Cloud Run request
+logs for the exact route, method, API service and region. It extracts no log
+labels and sends at most one notification per hour. Invalid signatures and other
+4xx responses are outside this alert. A provider delivery failure that never
+reaches Cloud Run still needs Razorpay-side monitoring. When the alert fires,
+check Razorpay delivery and reconcile the affected event before taking any
+action on the underlying order.
+
+See [Cloud Run request logs](https://docs.cloud.google.com/run/docs/logging)
+and [log-based alert behavior](https://docs.cloud.google.com/logging/docs/alerting/log-based-alerts).
