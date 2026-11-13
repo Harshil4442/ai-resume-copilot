@@ -579,6 +579,39 @@ test("workspace pages search all saved roles and load resume options only on dem
   expect(f.requests.filter((request) => request.method !== "GET")).toEqual([]); expect(f.unexpected).toEqual([]);
 });
 
+for (const [path, heading, link] of [
+  ["/resume", "Add your source resume", "Resume"],
+  ["/workspace", "Your opportunities", "All opportunities"],
+] as const) {
+  test(`Dashboard reuses its account overview on client navigation to ${path}`, async ({ page, context, baseURL }) => {
+    const origin = new URL(baseURL!);
+    test.skip(origin.protocol !== "http:" || origin.hostname !== "127.0.0.1", "Requires the owned loopback session fixture");
+    await context.route("**/*", (route) => new URL(route.request().url()).origin === origin.origin ? route.continue() : route.abort());
+    const f = fixture(); await f.install(context, baseURL!);
+    const accountReads = () => f.requests.filter(({ path }) => path === "/auth/dashboard" || path === "/auth/bootstrap").map(({ path }) => path);
+    await page.goto("/dashboard");
+    await expect(page.getByRole("heading", { name: "Good to see you, Taylor.", exact: true })).toBeVisible();
+    expect(accountReads()).toEqual(["/auth/dashboard"]);
+
+    // A hard reload would lose the owner-local cache, and a goto would not test Link navigation.
+    const documentStart = await page.evaluate(() => performance.timeOrigin);
+    if (path === "/resume" && page.viewportSize()!.width < 1280) await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    await page.getByRole("link", { name: link, exact: true }).click();
+    await expect(page).toHaveURL(new URL(path, origin).href);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    if (path === "/workspace") {
+      await expect(page.getByText("Backend Engineer", { exact: true }).first()).toBeVisible();
+      expect(f.requests.filter(({ path }) => path === "/v1/opportunities/page")).toHaveLength(1);
+    } else {
+      await expect(page.getByRole("checkbox", { name: /Optional AI skill enrichment/ })).toBeVisible();
+    }
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStart);
+    expect(accountReads()).toEqual(["/auth/dashboard"]);
+    expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+    expect(f.unexpected).toEqual([]);
+  });
+}
+
 test("existing dashboard, workspace, resume and billing remain usable at every width", async ({ page, context, baseURL }, testInfo) => {
   const f = fixture(); await f.install(context, baseURL!);
   if (process.env.PLAYWRIGHT_LAB_DIR) await page.addInitScript(() => {
