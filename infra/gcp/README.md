@@ -182,11 +182,12 @@ without metric samples require separate evidence. See the
 
 `model_generation_alerts.tf` measures completed generation attempts in the API,
 analysis worker and résumé coordinator. The application logs only a fixed provider
-family, outcome and elapsed milliseconds for each attempt. The metric extracts only
-latency and the initial alert checks whether the five-minute p95 exceeds 30 seconds
-for ten minutes. Check the log metric's ingestion and time-series data after the
-application starts serving the instrumented release. Missing samples are expected
-while generation is disabled.
+family, outcome and elapsed milliseconds for each admitted attempt. Elapsed time
+includes client work around the provider request. The alert checks whether the
+15-minute p95 exceeds 30 seconds for ten minutes. The 15-minute alignment gives
+log-based metrics time to ingest late samples. Check ingestion and time-series data
+after the instrumented release is serving. Missing samples are expected while
+generation is disabled. See [log metric ingestion](https://docs.cloud.google.com/logging/docs/logs-based-metrics/troubleshooting).
 
 `release_observability_dashboard.tf` adds the opt-in HireWiz production operations
 dashboard. Its four panels show queue depth, worker HTTP 5xx, generation latency and

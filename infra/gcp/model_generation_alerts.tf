@@ -14,7 +14,7 @@ resource "google_logging_metric" "model_generation_latency" {
   count           = var.model_generation_alerts_enabled ? 1 : 0
   project         = "ai-resume-parser-482412"
   name            = local.hirewiz_model_latency_metric
-  description     = "Completed model generation attempts, excluding token preflight. Values above five minutes are capped."
+  description     = "Elapsed time for admitted model generation attempts, excluding token preflight. Values above five minutes are capped."
   filter          = <<-FILTER
     resource.type="cloud_run_revision"
     resource.labels.location="us-central1"
@@ -45,7 +45,7 @@ resource "google_monitoring_alert_policy" "model_generation_latency" {
   depends_on            = [google_logging_metric.model_generation_latency]
 
   conditions {
-    display_name = "Model generation attempt p95 exceeds 30 seconds for ten minutes"
+    display_name = "15-minute generation attempt p95 exceeds 30 seconds for ten minutes"
     condition_threshold {
       filter                  = local.hirewiz_model_latency_filter
       comparison              = "COMPARISON_GT"
@@ -54,7 +54,7 @@ resource "google_monitoring_alert_policy" "model_generation_latency" {
       evaluation_missing_data = "EVALUATION_MISSING_DATA_INACTIVE"
 
       aggregations {
-        alignment_period   = "300s"
+        alignment_period   = "900s"
         per_series_aligner = "ALIGN_PERCENTILE_95"
       }
     }

@@ -3,12 +3,8 @@ variable "release_observability_dashboard_enabled" {
   default = false
 }
 
-resource "google_monitoring_dashboard" "release_observability" {
-  count      = var.release_observability_dashboard_enabled ? 1 : 0
-  project    = "ai-resume-parser-482412"
-  depends_on = [google_logging_metric.model_generation_latency]
-
-  dashboard_json = jsonencode({
+locals {
+  hirewiz_release_observability_dashboard = {
     displayName = "HireWiz production operations"
     gridLayout = {
       columns = "2"
@@ -51,7 +47,7 @@ resource "google_monitoring_dashboard" "release_observability" {
           }
         },
         {
-          title = "Model generation p95 latency in milliseconds"
+          title = "Model generation attempt p95 by revision (ms)"
           xyChart = {
             dataSets = [{
               plotType = "LINE"
@@ -75,7 +71,15 @@ resource "google_monitoring_dashboard" "release_observability" {
         },
       ]
     }
-  })
+  }
+}
+
+resource "google_monitoring_dashboard" "release_observability" {
+  count      = var.release_observability_dashboard_enabled ? 1 : 0
+  project    = "ai-resume-parser-482412"
+  depends_on = [google_logging_metric.model_generation_latency]
+
+  dashboard_json = jsonencode(local.hirewiz_release_observability_dashboard)
 
   lifecycle {
     precondition {
