@@ -6,12 +6,19 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
 import pytest
+from backend.app.billing.catalog import CATALOG_VERSION, PRODUCTS
+from backend.app.billing.purchase_quote import product_quote
 from backend.app.models import EntitlementLedger, PaymentOrder, PaymentTransaction, User
+from backend.app.routers import billing
 from backend.tests.test_payment_funding_postgres import owned_pg_url, pg_factory
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from test_razorpay_billing import (
     TEST_KEY_SECRET,
     _capture_payload,
+    _create_order,
     _post_event,
+    _purchase_payload,
     _service_order,
 )
 from test_razorpay_billing import client as client
@@ -26,6 +33,47 @@ def session_factory(pg_factory):
         db.add(User(email="buyer@example.com", password_hash="synthetic", ai_credits=20))
         db.commit()
     return pg_factory
+
+
+def test_legacy_cleanup_keeps_owner_lock_until_replacement_is_durable(
+    client, enabled_checkout, session_factory, monkeypatch,
+):
+    original = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        order.provider_order_id = None
+        db.commit()
+
+    admission_entered, resume = Event(), Event()
+    original_variance = billing.assert_actual_variance
+
+    def pause_admission(db, policy):
+        admission_entered.set()
+        assert resume.wait(5), "The ownership check must finish before checkout resumes"
+        return original_variance(db, policy)
+
+    monkeypatch.setattr(billing, "assert_actual_variance", pause_admission)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(client.post, "/api/billing/orders", json=_purchase_payload())
+        try:
+            assert admission_entered.wait(5), "Replacement did not reach the funding check"
+            with session_factory() as db:
+                # FOR UPDATE NOWAIT on the actual owner must fail while the
+                # real HTTP request is still reviewing the replacement.
+                with pytest.raises(OperationalError) as locked:
+                    db.execute(text("SELECT id FROM users FOR UPDATE NOWAIT"))
+                assert locked.value.orig.sqlstate == "55P03"
+        finally:
+            resume.set()
+        response = pending.result(timeout=5)
+    assert response.status_code == 200
+
+    growth = _purchase_payload() | {"sku": "growth_bundle", "accepted_quote":
+        product_quote(PRODUCTS["growth_bundle"], CATALOG_VERSION).model_dump()}
+    blocked = client.post("/api/billing/orders", json=growth)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["order_id"] == response.json()["order_id"]
+    assert enabled_checkout == [original["order_id"], response.json()["order_id"]]
 
 
 def test_checkout_callback_does_not_downgrade_capture_committed_after_original_read(

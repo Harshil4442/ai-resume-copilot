@@ -516,6 +516,49 @@ def test_fresh_initializing_attempt_blocks_a_second_provider_order(
         assert db.query(PaymentOrder).one().status == "initializing"
 
 
+def test_legacy_checkout_blocks_a_new_sku_until_the_owned_original_is_resolved(
+    client, enabled_checkout, session_factory,
+):
+    original = _create_order(client)
+    growth = _purchase_payload() | {"sku": "growth_bundle", "accepted_quote":
+        product_quote(PRODUCTS["growth_bundle"], CATALOG_VERSION).model_dump()}
+    response = client.post("/api/billing/orders", json=growth)
+    assert response.status_code == 409
+    assert response.json()["detail"]["order_id"] == original["order_id"]
+    assert _create_order(client, original["order_id"])["provider_order_id"] == original["provider_order_id"]
+    assert enabled_checkout == [original["order_id"]]
+    with session_factory() as db:
+        assert db.query(PaymentOrder).one().status == "created"
+
+
+def test_legacy_checkout_cleanup_commits_only_with_the_replacement_order(
+    client, enabled_checkout, session_factory, monkeypatch,
+):
+    original = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        order.provider_order_id = None
+        db.commit()
+
+    def funding_unavailable(*_):
+        raise billing.CostPolicyUnavailable("Synthetic funding review unavailable.")
+
+    with monkeypatch.context() as funding:
+        funding.setattr(billing, "assert_actual_variance", funding_unavailable)
+        refused = client.post("/api/billing/orders", json=_purchase_payload())
+    assert refused.status_code == 503
+    assert enabled_checkout == [original["order_id"]]
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        assert order.status == "created" and order.active_attempt_key is not None
+
+    replacement = _create_order(client)
+    assert enabled_checkout == [original["order_id"], replacement["order_id"]]
+    with session_factory() as db:
+        old = db.query(PaymentOrder).filter_by(public_id=original["order_id"]).one()
+        assert old.status == "abandoned" and old.active_attempt_key is None
+
+
 def test_server_owned_order_reuse_and_mode_isolation(
     client, enabled_checkout, monkeypatch, session_factory
 ):

@@ -17,6 +17,7 @@ from backend.app.services.delivery_contracts import current_output_contract
 from test_razorpay_billing import (  # Reuse verified-signature test transport only.
     _capture_payload,
     _post_event,
+    _purchase_payload,
     _refund_payload,
 )
 from test_razorpay_billing import client as client
@@ -88,6 +89,31 @@ def start(client, *, key="first-purchase"):
     payload = {"quote_id": quote.json()["quote_id"], "billing_country": "IN", "idempotency_key": key}
     result = client.post("/api/v1/credits/orders", json=payload)
     return quote.json(), payload, result
+
+
+def test_legacy_checkout_respects_owned_unified_order_during_mode_switch(unified, monkeypatch, session_factory):
+    client, calls = unified
+    _, _, created = start(client)
+    assert created.status_code == 200
+    original = created.json()["order_id"]
+    monkeypatch.setenv("UNIFIED_CREDITS_ENABLED", "false")
+
+    response = client.post("/api/billing/orders", json=_purchase_payload())
+    assert response.status_code == 409
+    assert response.json()["detail"]["order_id"] == original
+    assert [identity for identity, _ in calls] == [original]
+
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        other = User(email="other-checkout-owner@example.test")
+        db.add(other)
+        db.flush()
+        order.user_id = other.id
+        db.commit()
+
+    allowed = client.post("/api/billing/orders", json=_purchase_payload())
+    assert allowed.status_code == 200
+    assert [identity for identity, _ in calls] == [original, allowed.json()["order_id"]]
 
 
 def test_review_cannot_enable_production_with_estimates_or_synthetic_evidence(monkeypatch):

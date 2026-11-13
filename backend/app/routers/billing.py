@@ -51,13 +51,15 @@ OPEN_ORDER_STATUSES = UNCERTAIN_ORDER_STATUSES | {"created", "client_confirmed",
 MAX_WEBHOOK_BYTES = 1_000_000
 
 
-def _blocks_new_purchase(*, hold_unbound_paid: bool = False):
-    # Only legacy status discovery already included unbound paid rows. Keep
-    # that support path without widening unified purchase admission.
+def _blocks_new_purchase(*, hold_unbound_paid: bool = False, bound_mode: str | None = None):
+    # Legacy discovery and admission hold unbound paid rows for review.
+    # A mode filter narrows bound attempts only; uncertain orders stay held.
     unbound_statuses = UNCERTAIN_ORDER_STATUSES | ({"paid_unfulfilled"} if hold_unbound_paid else set())
     bound = PaymentOrder.provider_order_id.is_not(None)
     if not hold_unbound_paid:
         bound = and_(bound, PaymentOrder.provider_order_id != "")
+    if bound_mode is not None:
+        bound = and_(bound, PaymentOrder.provider_mode == bound_mode)
     return or_(
         PaymentOrder.status.in_(unbound_statuses),
         and_(PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"}), bound),
@@ -196,43 +198,31 @@ def create_order(
     if product.entitlement_kind == "premium_access" and user.is_premium_active():
         raise HTTPException(status_code=409, detail="Premium access is already active.")
 
-    open_orders = (
+    # The owner lock serializes purchase admission. A read here avoids waiting
+    # on settlement, which takes the payment order lock before the owner lock.
+    held = (
         db.query(PaymentOrder)
         .filter(
             PaymentOrder.user_id == user.id,
-            PaymentOrder.status.in_(OPEN_ORDER_STATUSES),
-            or_(PaymentOrder.status.in_(UNCERTAIN_ORDER_STATUSES), and_(
-                PaymentOrder.sku == product.sku, PaymentOrder.provider_mode == settings.mode,
-            )),
+            PaymentOrder.provider == "razorpay",
+            _blocks_new_purchase(hold_unbound_paid=True, bound_mode=settings.mode),
         )
-        .order_by(PaymentOrder.created_at.desc())
-        .with_for_update()
-        .all()
+        .order_by(PaymentOrder.created_at.asc(), PaymentOrder.id.asc())
+        .first()
     )
-    abandoned = []
-    for existing in open_orders:
-        if existing.status in UNCERTAIN_ORDER_STATUSES:
+    if held is not None:
+        if held.status in UNCERTAIN_ORDER_STATUSES:
             # Age, a changed pack/key/mode, and a missing response cannot prove
             # that the provider created no payable order. Keep the attempt held.
-            raise _order_status_required(existing, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.")
-        if existing.provider_order_id:
-            # A standard provider order has no safe local cancel primitive and
-            # an old Checkout popup can remain payable. Block instead of
-            # exposing a second payable order after catalog or key changes.
-            raise _order_status_required(existing, "An earlier checkout requires review before another purchase.")
-        abandoned.append(existing)
+            raise _order_status_required(held, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.")
+        # A provider order from any pack can remain payable under this mode.
+        raise _order_status_required(held, "An earlier checkout requires review before another purchase.")
     if not product_purchase_enabled(product, checkout_enabled=settings.checkout_enabled):
         raise HTTPException(status_code=503, detail="This service purchase is not available yet.")
     validate_purchase_quote(payload.accepted_quote, product_quote(product, CATALOG_VERSION))
     if not request_key:
         raise HTTPException(409, {"code": "billing_request_requires_review",
             "message": "Refresh the purchase review before creating checkout. A new order requires an accepted quote and request identity."})
-    for existing in abandoned:
-        existing.status = "abandoned"
-        existing.active_attempt_key = None
-    if abandoned:
-        db.commit()
-
     try:
         authority = service_prices()["cost_policy_snapshot"]
         assert_actual_variance(db, current_policy())
@@ -264,10 +254,34 @@ def create_order(
         status="initializing",
         active_attempt_key=f"{user.id}:{product.sku}:{settings.mode}",
     )
-    db.add(order)
+    # Only unbound attempts for this SKU and mode can be superseded. Keep the
+    # owner lock through cleanup and insertion, then dispatch once.
     try:
+        unbound = (
+            db.query(PaymentOrder)
+            .filter(
+                PaymentOrder.user_id == user.id,
+                PaymentOrder.provider == "razorpay",
+                PaymentOrder.sku == product.sku,
+                PaymentOrder.provider_mode == settings.mode,
+                PaymentOrder.status.in_(OPEN_ORDER_STATUSES - UNCERTAIN_ORDER_STATUSES),
+                PaymentOrder.provider_order_id.is_(None),
+            )
+            .with_for_update(nowait=True)
+            .all()
+        )
+        for existing in unbound:
+            existing.status = "abandoned"
+            existing.active_attempt_key = None
+        if unbound:
+            db.flush()
+        db.add(order)
         db.commit()
-        db.refresh(order)
+    except OperationalError as exc:
+        db.rollback()
+        if getattr(exc.orig, "sqlstate", None) != "55P03":
+            raise
+        raise HTTPException(status_code=409, detail="Another payment update is in progress. Check your original order.") from None
     except IntegrityError:
         db.rollback()
         concurrent = (
@@ -281,6 +295,7 @@ def create_order(
         if concurrent:
             raise _order_status_required(concurrent) from None
         raise HTTPException(status_code=409, detail="Checkout initialization is in progress.")
+    db.refresh(order)
 
     try:
         provider_result = RazorpayAdapter(settings).create_order(
