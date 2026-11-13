@@ -24,20 +24,36 @@ from uuid import uuid4
 import pytest
 from backend.app.billing.service import process_razorpay_webhook
 from backend.app.domains.career import evidence_fence_definition, evidence_write_fence
+from backend.app.domains.career import schemas as career_schemas
+from backend.app.domains.career import service as career_service
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionAttempt, CreditExecutionHold
 from backend.app.domains.dispatch.models import DispatchOutbox
-from backend.app.domains.employer.models import EmployerSource
+from backend.app.domains.employer import admissions, artifacts, connectors, tasks
+from backend.app.domains.employer import credits as employer_credits
+from backend.app.domains.employer import models as employer_models
+from backend.app.domains.employer import service as employer_service
 from backend.app.domains.resume_uploads.models import ResumeUpload
-from backend.app.models import EvidenceItem, ModelCostLiability, PaymentOrder, Resume, User
+from backend.app.models import (
+    EvidenceItem,
+    ModelCostLiability,
+    PaymentOrder,
+    Resume,
+    ResumeVersion,
+    User,
+)
+from backend.app.services.resume_artifacts import render_resume_version
+from fastapi import HTTPException
 from psycopg.errors import CheckViolation, ForeignKeyViolation, InsufficientPrivilege
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 from test_employer_admissions_postgres import _migrate
+from test_employer_services import ANSWERS, FORM
 from test_razorpay_billing import _capture_payload
+from test_resume_layout import _edit, _first_unit, _pdf
 from test_unified_credits import reserve
 
 from scripts import notification_schema27_contract as schema27
@@ -135,8 +151,9 @@ def assert_payment_and_reserve_replay(engine, stamp, capture, reservation_id, so
 def seed_application(source, stamp):
     source_bytes = b"\\documentclass{article}\n\\begin{document}Synthetic Candidate\\end{document}\n"
     with Session(source) as db:
-        db.add(User(id=1, email="restore27@example.test", ai_credits=17, job_service_credits=13))
-        db.flush()
+        if db.get(User, 1) is None:
+            db.add(User(id=1, email="restore27@example.test", ai_credits=17, job_service_credits=13))
+            db.flush()
         db.add(Resume(id=1, user_id=1, original_filename="synthetic.tex",
                       source_document=source_bytes, source_format="tex"))
         db.add(ResumeUpload(id="owned-upload", user_id=1, idempotency_sha256="a" * 64,
@@ -195,10 +212,138 @@ def seed_application(source, stamp):
 
 def publish_employer(source):
     with Session(source) as db:
-        db.add(EmployerSource(id="owned-employer", employer="Synthetic Employer", platform="greenhouse",
-                              board_token="synthetic", careers_url="https://example.test/careers",
-                              verification_url="https://example.test/careers", verification_note="Synthetic"))
+        db.add(employer_models.EmployerSource(id="owned-employer", employer="Synthetic Employer", platform="greenhouse",
+                                              board_token="synthetic", careers_url="https://example.test/careers",
+                                              verification_url="https://example.test/careers", verification_note="Synthetic"))
         db.commit()
+
+
+def seed_application_recovery(engine, stamp):
+    """Build the retained send boundary without calling a provider."""
+    original = _pdf()
+    with Session(engine) as db:
+        source = db.get(employer_models.EmployerSource, "owned-employer")
+        posting = employer_models.EmployerPosting(
+            id="owned-posting", source_id=source.id, external_id="owned-requisition", title="Software Engineer",
+            employer=source.employer, description="Synthetic software engineering role",
+            canonical_url="https://example.test/careers/owned-requisition", apply_url="https://example.test/careers/owned-requisition",
+            content_sha256="a" * 64, first_seen_at=stamp, last_checked_at=stamp,
+        )
+        posting.opening_key = admissions.opening_identity(posting, source)
+        resume = Resume(id=2, user_id=1, original_filename="synthetic.pdf", source_format="pdf", source_document=original)
+        db.add_all([posting, resume])
+        db.flush()
+        edit = _edit(_first_unit(original, "pdf"))
+        evidence = EvidenceItem(id="owned-approved-application-evidence", user_id=1, resume_id=resume.id,
+                                category="experience", title="Synthetic application evidence",
+                                evidence_text=edit["original_text"], approval_state="approved")
+        edit["evidence_ids"] = [evidence.id]
+        db.add(evidence)
+        evidence_write_fence.flush_evidence_writes(db, [evidence])
+        version = ResumeVersion(id="owned-approved-version", user_id=1, resume_id=resume.id, version_number=1,
+                                label="Approved synthetic version", evidence_ids=[evidence.id], structured_content={
+                                    "format_preservation": "source", "source_format": "pdf", "source_edits": [edit],
+                                })
+        db.add(version)
+        db.flush()
+        version = career_service.update_resume_version_state(
+            db, 1, version.id, career_schemas.ResumeVersionStateUpdate(approval_state="approved"),
+        )
+        rendered = render_resume_version(version, resume, "pdf")
+        assert rendered.content != original
+        artifact = employer_models.SealedApplicationArtifact(
+            id="owned-approved-artifact", user_id=1, resume_id=resume.id, resume_version_id=version.id,
+            content=rendered.content, filename=rendered.filename, media_type=rendered.media_type,
+            size_bytes=len(rendered.content), sha256=hashlib.sha256(rendered.content).hexdigest(),
+        )
+        db.add(artifact)
+        db.flush()
+        application_id = "owned-unknown-application"
+        balance = db.get(User, 1).job_service_credits
+        reservation = employer_credits.reserve(
+            db, user_id=1, operation="job_application", source_id=application_id, unit_price=5, count=1,
+        )
+        actions = ["upload", "submit"]
+        application = employer_models.EmployerApplication(
+            id=application_id, user_id=1, posting_id=posting.id, opening_key=posting.opening_key,
+            employer_key=admissions.employer_identity(source), admission_snapshot=admissions.quote(source, posting, now=stamp),
+            pricing_snapshot={"unit_price": 5, "pricing_version": reservation.pricing_version,
+                              "cost_policy_snapshot": reservation.cost_policy_snapshot},
+            idempotency_key="owned-application", input_fingerprint="b" * 64,
+            active_key=f"1:{posting.opening_key}", resume_id=resume.id, resume_choice="tailored",
+            resume_version_id=version.id, artifact_id=artifact.id, form=FORM, answers=ANSWERS, consents={},
+            job_content_sha256=posting.content_sha256, application_mode="api", status="submitting",
+            allowed_actions=actions, approved_at=stamp, approval_expires_at=stamp + timedelta(minutes=10),
+            credit_cost=5, reservation_id=reservation.id,
+        )
+        application.package_digest = employer_service._package_digest(application, posting, source, artifact)
+        application.approved_digest = application.package_digest
+        db.add(application)
+        db.flush()
+        db.add(employer_models.EmployerApplicationApproval(
+            id="owned-application-approval", application_id=application_id, package_digest=application.package_digest,
+            review_snapshot={"artifact_sha256": artifact.sha256, "resume_version_id": version.id}, allowed_actions=actions,
+            approved_at=stamp, expires_at=application.approval_expires_at,
+        ))
+        admissions.reserve(db, application, source, now=stamp)
+        admissions.launch(db, application, source, now=stamp)
+        db.add(employer_models.EmployerApplicationAttempt(
+            id="owned-application-attempt", application_id=application_id, launch_token="owned-launch-token",
+            package_digest=application.package_digest, state="unknown", started_at=stamp, completed_at=stamp,
+            error_code="submission_outcome_unknown",
+        ))
+        tasks._mark_unknown(db, application)
+        db.commit()
+        return application_id, original, rendered.content, balance - reservation.reserved_amount
+
+
+def assert_application_recovery(engine, expected, monkeypatch):
+    application_id, original, approved_pdf, remaining = expected
+
+    def deny_transport(*_args, **_kwargs):
+        pytest.fail("Restored unknown application attempted employer transport")
+
+    monkeypatch.setattr(tasks, "SessionLocal", sessionmaker(bind=engine))
+    monkeypatch.setattr(connectors, "load_form", deny_transport)
+    monkeypatch.setattr(connectors, "submit_greenhouse", deny_transport)
+    assert tasks.execute_application(application_id) == "unknown"
+    assert tasks.execute_application(application_id) == "unknown"
+    with Session(engine) as db:
+        application = db.get(employer_models.EmployerApplication, application_id)
+        approval = db.query(employer_models.EmployerApplicationApproval).filter_by(application_id=application_id).one()
+        attempt = db.query(employer_models.EmployerApplicationAttempt).filter_by(application_id=application_id).one()
+        admission = db.query(employer_models.EmployerAdmission).filter_by(application_id=application_id).one()
+        reservation = db.get(employer_models.ServiceCreditReservation, application.reservation_id)
+        event = db.query(employer_models.ServiceCreditEvent).filter_by(source_id=application_id).one()
+        posting = db.get(employer_models.EmployerPosting, application.posting_id)
+        version = career_service.get_resume_version(db, 1, application.resume_version_id)
+        resume = db.get(Resume, version.resume_id)
+        artifact = db.get(employer_models.SealedApplicationArtifact, application.artifact_id)
+        assert resume.source_document == original and version.approval_state == "approved"
+        assert artifact.resume_version_id == version.id and artifacts.read(artifact) == approved_pdf
+        assert render_resume_version(version, resume, "pdf").content == approved_pdf
+        assert approval.review_snapshot == {"artifact_sha256": artifact.sha256, "resume_version_id": version.id}
+        assert application.approved_digest == approval.package_digest == attempt.package_digest == application.package_digest
+        assert posting.is_open and posting.opening_key == application.opening_key == admission.opening_key
+        assert application.status == attempt.state == admission.state == "unknown"
+        assert attempt.launch_token == "owned-launch-token" and attempt.receipt is application.receipt is None
+        assert admission.possible_send_at is not None and admission.active_key == f"1:{posting.opening_key}"
+        assert application.charged_credits == reservation.committed_amount == reservation.released_amount == 0
+        assert reservation.state == "reserved" and reservation.reserved_amount == 5
+        assert (event.event_type, event.amount, event.balance_after) == ("reserve", -5, remaining)
+        assert db.get(User, 1).job_service_credits == remaining
+
+        # A replacement cannot bypass the retained possible-send claim for the same opening.
+        replacement = employer_models.EmployerApplication(
+            id="owned-replacement-application", user_id=1, opening_key=application.opening_key,
+            employer_key=application.employer_key, credit_cost=application.credit_cost,
+            admission_snapshot=application.admission_snapshot,
+        )
+        source = db.get(employer_models.EmployerSource, posting.source_id)
+        assert employer_service._package_digest(application, posting, source, artifact) == approval.package_digest
+        with pytest.raises(HTTPException) as conflict:
+            admissions.reserve(db, replacement, source)
+        assert conflict.value.status_code == 409 and conflict.value.detail["code"] == "canonical_opening_conflict"
 
 
 def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_path, record_property):
@@ -439,7 +584,7 @@ def physical_catalogue(db):
     )
 
 
-def test_schema27_physical_recovery_preserves_published_catalogue_and_obligations(record_property):
+def test_schema27_physical_recovery_preserves_published_catalogue_and_obligations(record_property, monkeypatch):
     configured = os.getenv("HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN")
     if not configured:
         pytest.skip("Requires an explicitly selected local PG17 binary directory")
@@ -466,14 +611,20 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
         stamp = datetime.now(UTC) - timedelta(seconds=1)
         with owned_pg_cluster(pg_bin, source_data, password) as (source, source_port):
             _migrate(source, schema27.SCHEMA)
-            source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
+            with Session(source) as db:
+                db.add(User(id=1, email="restore27@example.test", ai_credits=17, job_service_credits=13))
+                db.commit()
             publish_employer(source)
+            application_recovery = seed_application_recovery(source, stamp)
+            # The later synthetic payment and model rows must not fund the earlier accepted application.
+            source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
             tables, sequences = expected = snapshot(source)
             assert {(row["valid_from"], row["valid_to"], row["enabled"])
-                    for row in tables["employer_catalogue_source_revisions"]} == {(1, 2, True), (2, None, False)}
-            assert tables["employer_catalogue_clock"][0]["watermark"] == 2
+                    for row in tables["employer_catalogue_source_revisions"]} == {(1, 3, True), (3, None, False)}
+            assert tables["employer_catalogue_clock"][0]["watermark"] == 3
+            assert len(tables["employer_catalogue_posting_revisions"]) == 1
             with source.connect() as db:
                 expected_catalogue = physical_catalogue(db)
                 system_identifier = db.scalar(text("SELECT system_identifier FROM pg_control_system()"))
@@ -499,6 +650,9 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
                 assert physical_catalogue(db) == expected_catalogue
             assert snapshot(restored) == expected
             assert_payment_and_reserve_replay(restored, stamp, capture, reservation_id, source_bytes, credits)
+            assert_application_recovery(restored, application_recovery, monkeypatch)
+            record_property("owned_unknown_application_redeliveries", 2)
+            record_property("owned_unknown_application_employer_calls", 0)
             assert snapshot(restored) == expected
             with restored.connect() as db:
                 with pytest.raises(DBAPIError) as denied, db.begin_nested():
@@ -512,7 +666,7 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
                 assert db.execute(text(
                     "SELECT valid_from,valid_to,enabled FROM public.employer_catalogue_source_revisions "
                     "WHERE source_id='owned-employer' ORDER BY valid_from"
-                )).all() == [(1, 2, True), (2, 3, False), (3, None, True)]
+                )).all() == [(1, 3, True), (3, 4, False), (4, None, True)]
                 db.rollback()
             assert snapshot(restored) == expected
             record_property("owned_physical_start_and_verify_seconds", round(time.monotonic() - started, 3))
