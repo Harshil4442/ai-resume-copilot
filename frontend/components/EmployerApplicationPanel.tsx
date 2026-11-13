@@ -81,7 +81,8 @@ export default function EmployerApplicationPanel({ id, onClose, onChange }: Prop
 function ApplicationEditor({ application, onChange, ownerKey }: { application: EmployerApplication; onChange: () => void; ownerKey: string }) {
   const client = useQueryClient();
   const [resumeId, setResumeId] = useState(String(application.resume_id));
-  const resumeOptions = useResumeOptions({ selectedId: resumeId, ownerKey });
+  // Share resume metadata with Employer Jobs in the session owner's QueryClient.
+  const resumeOptions = useResumeOptions({ selectedId: resumeId });
   const [choice, setChoice] = useState<ResumeChoice>(application.resume_choice);
   const [versionId, setVersionId] = useState(application.resume_version_id ?? "");
   const [answers, setAnswers] = useState(application.answers);

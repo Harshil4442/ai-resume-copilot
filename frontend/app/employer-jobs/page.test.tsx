@@ -8,13 +8,12 @@ const state = vi.hoisted(() => ({ owner: "one", session: { status: "authenticate
 vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post, ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
 vi.mock("next-auth/react", () => ({ SessionProvider: ({ children }: { children: React.ReactNode }) => children, useSession: () => state.session }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/employer-jobs" }));
-vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div data-testid="application-panel">Review application {id}</div> }));
 
 import EmployerJobsPage from "./page";
 import { ApiError } from "../../lib/api";
 import SessionProviderWrapper from "../../components/SessionProviderWrapper";
 import Nav from "../../components/Nav";
-import type { EmployerSearchPreparation, EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
+import type { EmployerApplication, EmployerSearchPreparation, EmployerSearchSummary, SearchResult } from "../../lib/employerJobs";
 
 let client: QueryClient;
 function summary(owner = state.owner): EmployerSearchSummary {
@@ -22,6 +21,15 @@ function summary(owner = state.owner): EmployerSearchSummary {
 }
 function item(owner = state.owner): SearchResult {
   return { posting: { id: `job_${owner}`, source_id: "source_fixture", external_id: "1", title: `Saved job for ${owner}`, employer: "Synthetic Employer", location: "Bengaluru", description: "Python", canonical_url: "https://employer.example/jobs/1", apply_url: "https://employer.example/jobs/1", platform: "greenhouse", publication_at: null, last_checked_at: "2026-10-11T00:00:00Z", application_mode: "manual" }, fit: { score: 80, matched_skills: ["Python"], missing_evidence: [], reasons: ["Documented overlap"], scoring_version: "basic-catalog-overlap-v1" }, charged_credits: 2 };
+}
+function application(id: string): EmployerApplication {
+  return {
+    id, status: "needs_action", application_mode: "manual", posting: item().posting,
+    resume_id: state.owner === "one" ? 10 : 20, resume_choice: "original", resume_version_id: null,
+    form: { version: "local", fields: [], consents: [] }, package_digest: "a".repeat(64),
+    artifact: null, answers: {}, consents: {}, missing_fields: [], credit_cost: 0,
+    charged_credits: 0, requires_user_action: true,
+  };
 }
 function read(url: string) {
   const owner = state.owner;
@@ -32,6 +40,7 @@ function read(url: string) {
   if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
   if (url === "/resume/page?limit=20") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
   if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
+  if (url.startsWith("/v1/employer-jobs/applications/")) return Promise.resolve(application(url.split("/").at(-1)!));
   if (url.includes("/search-summaries?")) return Promise.resolve({ items: [summary(owner)], next_cursor: null });
   if (url.includes("/results?")) return Promise.resolve({ search: summary(owner), items: [item(owner)], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "v1-exact-snapshot" });
   throw new Error(`Unexpected GET in local control: ${url}`);
@@ -129,19 +138,45 @@ describe("employer page saved-search composition", () => {
   });
 
   it("retains explicit original-resume preparation for the selected job and opens the existing review flow", async () => {
-    state.post.mockResolvedValue({ id: "application_saved", status: "manual_handoff" });
+    state.post.mockResolvedValue(application("application_saved"));
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");
     fireEvent.click(screen.getByRole("button", { name: /Python Engineer one/ }));
     await screen.findByRole("heading", { name: "Saved job for one" });
     fireEvent.click(screen.getByRole("button", { name: "Prepare application" }));
-    await screen.findByTestId("application-panel");
+    await screen.findByRole("dialog", { name: "Review your application" });
     expect(state.post).toHaveBeenCalledTimes(1);
     const [url, payload] = state.post.mock.calls[0];
     expect(url).toBe("/v1/employer-jobs/applications");
     expect(payload).toMatchObject({ posting_id: "job_one", resume_id: 10, resume_choice: "original" });
     expect(payload.idempotency_key).toEqual(expect.any(String));
     expect(state.post.mock.calls.some(([target]) => String(target).includes("tailor") || String(target).includes("execute") || String(target).includes("approve"))).toBe(false);
+  });
+
+  it("reuses fresh resume metadata in application review and reloads it on an account switch", async () => {
+    state.get.mockImplementation((url: string) => url.endsWith("/applications")
+      ? Promise.resolve({ items: [application("application_saved")] }) : read(url));
+    const tree = () => <SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>;
+    const view = render(tree());
+    await screen.findByRole("option", { name: "original-one.pdf · #10" });
+    fireEvent.click(await screen.findByRole("button", { name: /Saved job for one/ }));
+    await screen.findByRole("dialog", { name: "Review your application" });
+    expect(await screen.findByRole("combobox", { name: "Saved original file" })).toHaveValue("10");
+    expect(await screen.findByRole("option", { name: "original-one.pdf · #10" })).toBeVisible();
+    const resumeReads = () => state.get.mock.calls.filter(([url]) => url === "/resume/page?limit=20");
+    expect(resumeReads()).toHaveLength(1);
+
+    state.owner = "two";
+    state.session = { status: "authenticated", data: { user: { id: "two" } } };
+    view.rerender(tree());
+    expect(screen.queryByRole("dialog", { name: "Review your application" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "original-one.pdf · #10" })).not.toBeInTheDocument();
+    await screen.findByRole("option", { name: "original-two.pdf · #20" });
+    fireEvent.click(await screen.findByRole("button", { name: /Saved job for two/ }));
+    expect(await screen.findByRole("combobox", { name: "Saved original file" })).toHaveValue("20");
+    expect(await screen.findByRole("option", { name: "original-two.pdf · #20" })).toBeVisible();
+    expect(resumeReads()).toHaveLength(2);
+    expect(state.post).not.toHaveBeenCalled();
   });
 
   it("keeps requested count, excluded employers, and idempotency for an interrupted explicit paid search", async () => {
@@ -238,7 +273,7 @@ describe("employer page saved-search composition", () => {
     state.get.mockImplementation((url: string) => url.includes("search-summaries?")
       ? Promise.resolve({ items: [saved], next_cursor: null })
       : url.includes("/results?") ? Promise.resolve({ search: saved, items: [item()], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
-    state.post.mockResolvedValue({ id: "explicit_application", status: "manual_handoff" });
+    state.post.mockResolvedValue(application("explicit_application"));
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Saved search choices need review.");
     fireEvent.click(screen.getByRole("button", { pressed: false }));
@@ -246,7 +281,7 @@ describe("employer page saved-search composition", () => {
     expect(state.post).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Resume"), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "Prepare application" }));
-    await screen.findByTestId("application-panel");
+    await screen.findByRole("dialog", { name: "Review your application" });
     expect(state.post).toHaveBeenCalledTimes(1);
     expect(state.post.mock.calls[0][0]).toBe("/v1/employer-jobs/applications");
     expect(state.post.mock.calls[0][1]).toMatchObject({ posting_id: "job_one", resume_id: 10, resume_choice: "original" });
