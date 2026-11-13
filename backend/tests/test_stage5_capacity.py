@@ -430,8 +430,8 @@ def test_completed_phase_is_retained_when_later_observation_fails_without_socket
 
 
 def test_no_configurable_provider_destination_and_no_payment_mutation_path():
-    assert len(PATHS) == 5 and all(path.startswith("/api/") for path in PATHS)
-    assert not {"POST", "pay", "submit", "search"} & set(PATHS)
+    assert PATHS == ("/api/auth/dashboard", "/api/resume/page?limit=20", "/api/v1/opportunities/page?limit=20",
+                     "/api/v1/skill-roi", "/api/v1/credits/wallet")
     assert unused_port() not in FORBIDDEN_PORTS
 
 

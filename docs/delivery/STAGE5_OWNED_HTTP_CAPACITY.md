@@ -42,16 +42,19 @@ accounts and one 500-opportunity account. The eight sampled actors include free,
 buyer and heavy accounts. Heavy traffic is intentionally oversampled, not a claim
 about actual customer behavior.
 
-Only five real owned GETs are used: common bootstrap, resume list, opportunities
-page, skill ROI and wallet. The complete shipping FastAPI app/middleware is used;
-only this finite path set is offered by the workload. Missing-bearer and foreign
-resume controls must first return 401/404 through the real boundary. Measured SQL
-connections inherit server-side read-only transactions. Counts, response contracts
-and balances are checked; a 200 with wrong ownership or content is a failed result.
+The `stage5-owned-http-v2` report measures five real owned GETs: Dashboard,
+resume metadata page, opportunity metadata page, skill ROI and wallet. Dashboard
+uses the consolidated account read. The metadata pages use the same first-page
+size of 20 as the frontend. The complete shipping FastAPI app and middleware run
+for every request. Before measurement, bootstrap must return 401 without a bearer
+and a valid owned response with one. The foreign resume must return 404. Measured
+SQL connections inherit server-side read-only transactions. Counts, response
+contracts and balances are checked. A 200 with wrong ownership or content fails.
 Synthetic addresses use reserved `example.com` and the real public profile email
-validator, without DNS or email delivery. Opportunity ownership is checked against
-the exact seeded public-ID page and each item's resume ID, including offsets;
-the public response intentionally does not expose its private SQL `user_id`.
+validator, without DNS or email delivery. The metadata oracle checks the exact
+seeded public IDs, totals and response fields. The 500-role account must receive a
+continuation cursor. This workload measures first-page reads. Later pages and
+search remain covered by their separate API and browser tests.
 No order, upload, search, application, email, employer, model or native cloud call
 is generated. ADC, external requests/httpx, native TLS channels and non-owned
 Python socket connections deny before send. The emulator's Docker network has no

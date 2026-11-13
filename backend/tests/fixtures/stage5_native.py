@@ -28,6 +28,12 @@ from google.cloud.firestore_v1.types import Document, Write
 
 from app.domains.recovery.contracts import canonical
 from app.domains.recovery.gcp_buffer import BufferedTransaction
+from scripts.stage5_capacity import (
+    BOOTSTRAP_PATH,
+    DASHBOARD_PATH,
+    OPPORTUNITY_PAGE_PATH,
+    RESUME_PAGE_PATH,
+)
 from tests.test_gcp_rpc import ScriptedSdk
 
 _request_scope: ContextVar[object | None] = ContextVar("stage5_owned_request_scope", default=None)
@@ -252,14 +258,45 @@ def configured_accounts(*, engine, directory, endpoint: str, counters):
 def check_body(path: str, body: dict, *, user_id: int, buyer: bool, heavy: bool) -> bool:
     from scripts.stage5_seed import owned_opportunity_ids, synthetic_email
 
-    if type(body) is not dict:
+    if type(body) is not dict or heavy != (user_id == 8):
         return False
-    if path == "/api/auth/bootstrap":
+    if path == BOOTSTRAP_PATH:
         return (type(body.get("profile")) is dict and type(body.get("credit_wallet")) is dict
                 and body.get("schema_version") == "owned-bootstrap-v1" and
                 body["profile"].get("email") == synthetic_email(user_id) and
                 body.get("unavailable") == [] and
                 body.get("credit_wallet", {}).get("available_credits") == (90 if buyer else 0))
+    total = 500 if heavy else 10
+    if path == DASHBOARD_PATH:
+        summary, opportunities = body.get("summary"), body.get("opportunities")
+        items = opportunities.get("items") if type(opportunities) is dict else None
+        return (body.get("schema_version") == "owned-dashboard-v1" and body.get("unavailable") == []
+                and body.get("reminders") == []
+                and check_body(BOOTSTRAP_PATH, body.get("bootstrap"), user_id=user_id, buyer=buyer, heavy=heavy)
+                and type(summary) is dict and summary.get("resume_count") == 1
+                and summary.get("applications_count") == total and summary.get("average_match_score") == 75
+                and type(opportunities) is dict and opportunities.get("total") == total
+                and type(items) is list and all(type(row) is dict for row in items)
+                and [row.get("id") for row in items] == owned_opportunity_ids(user_id, limit=8))
+    if path == RESUME_PAGE_PATH:
+        items = body.get("resumes")
+        return (set(body) == {"resumes", "next_cursor", "selected_resume"}
+                and body["next_cursor"] is None and body["selected_resume"] is None
+                and type(items) is list and len(items) == 1 and type(items[0]) is dict
+                and set(items[0]) == {"id", "filename", "created_at", "source_available", "source_format"}
+                and items[0].get("id") == user_id and items[0].get("filename") == "synthetic-resume.pdf"
+                and items[0].get("source_available") is True and items[0].get("source_format") == "pdf")
+    if path == OPPORTUNITY_PAGE_PATH:
+        items, cursor = body.get("items"), body.get("next_cursor")
+        fields = {"id", "title", "company", "location", "stage", "priority", "next_action", "updated_at"}
+        return (set(body) == {"schema_version", "items", "total", "total_owned", "active_count", "interview_count", "next_cursor"}
+                and body.get("schema_version") == "opportunity-page-v1"
+                and body.get("total") == body.get("total_owned") == body.get("active_count") == total
+                and body.get("interview_count") == 0
+                and (type(cursor) is str and 0 < len(cursor) <= 1024 if heavy else cursor is None)
+                and type(items) is list and all(type(row) is dict and set(row) == fields for row in items)
+                and [row["id"] for row in items] == owned_opportunity_ids(user_id, limit=20)
+                and all(row["stage"] == "saved" for row in items))
     if path == "/api/resume/list":
         return len(body.get("resumes", [])) == 1 and body["resumes"][0]["id"] == user_id
     if urlsplit(path).path == "/api/v1/opportunities":
