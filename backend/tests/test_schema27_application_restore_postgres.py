@@ -1,4 +1,8 @@
-"""Owned schema27 SQL restore evidence. No provider, worker or production access."""
+"""Owned schema27 SQL restore evidence using an explicitly selected local PG17.
+
+Set HIREWIZ_SCHEMA27_LOCAL_RESTORE=true with the disposable fixture on port
+55435. The historical CI transfer clients intentionally allow only schema9.
+"""
 
 import hashlib
 import json
@@ -66,15 +70,17 @@ def assert_payment_and_reserve_replay(engine, stamp, capture, reservation_id, so
 
 
 def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_path, record_property):
+    if os.getenv("HIREWIZ_SCHEMA27_LOCAL_RESTORE") != "true":
+        pytest.skip("Requires an explicitly selected local PG17 restore rehearsal")
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        pytest.fail("The historical CI transfer clients do not support this owned restore rehearsal")
     configured = os.getenv("HIREWIZ_TEST_POSTGRES_URL")
     if not configured:
-        if os.getenv("HIREWIZ_TRANSFER_POSTGRES_REQUIRED") == "true":
-            pytest.fail("Schema27 restore requires the owned PostgreSQL fixture")
-        pytest.skip("Requires the disposable local PostgreSQL fixture")
+        pytest.fail("Schema27 restore requires the owned PostgreSQL fixture")
     url = make_url(configured)
     if (url.drivername, url.host, url.database, url.username, url.password, url.query) != (
         "postgresql+psycopg", "127.0.0.1", "hirewiz_admission_test", "hirewiz", "hirewiz", {},
-    ) or url.port not in {55433, 55435}:
+    ) or url.port != 55435:
         pytest.fail("Schema27 restore accepts only the owned local PostgreSQL fixture")
     dump = os.getenv("HIREWIZ_TRANSFER_PG_DUMP") or shutil.which("pg_dump")
     restore = os.getenv("HIREWIZ_TRANSFER_PG_RESTORE") or shutil.which("pg_restore")
@@ -235,9 +241,12 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
     finally:
         for engine in engines:
             engine.dispose()
-        with admin.connect() as db:
-            for name in reversed(created):
-                db.exec_driver_sql(f'DROP DATABASE "{name}" WITH (FORCE)')
-            assert db.scalar(text("SELECT count(*) FROM pg_database WHERE datname IN (:source, :target, :rebuilt)"),
-                             {"source": source_name, "target": target_name, "rebuilt": rebuilt_name}) == 0
-        admin.dispose()
+        try:
+            if created:
+                with admin.connect() as db:
+                    for name in reversed(created):
+                        db.exec_driver_sql(f'DROP DATABASE "{name}" WITH (FORCE)')
+                    assert db.scalar(text("SELECT count(*) FROM pg_database WHERE datname IN (:source, :target, :rebuilt)"),
+                                     {"source": source_name, "target": target_name, "rebuilt": rebuilt_name}) == 0
+        finally:
+            admin.dispose()
