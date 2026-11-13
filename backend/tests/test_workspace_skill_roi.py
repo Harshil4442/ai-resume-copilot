@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 from google.cloud.firestore_admin_v1.types import Database, ListDatabasesResponse
+from sqlalchemy.exc import OperationalError
 
 from app.domains.career import service, workspace
 from app.models import EvidenceItem, Opportunity, User
@@ -122,3 +123,25 @@ def test_oversize_projection_is_explicitly_unavailable(learning, monkeypatch):
     monkeypatch.setattr(workspace, "MAX_SKILL_ROI_BYTES", 1)
     result = learning.client.get(PATH + QUERY, headers=learning.headers)
     assert result.status_code == 200 and result.json()["skill_roi"] is None
+
+
+def test_skill_roi_database_failure_leaves_workspace_available(learning, monkeypatch, caplog):
+    original = workspace.resume_browsing.page
+    steps = []
+
+    def load_resumes(*args, **kwargs):
+        steps.append("resumes")
+        return original(*args, **kwargs)
+
+    def failed_read(*_):
+        steps.append("skill_roi")
+        raise OperationalError("PRIVATE STATEMENT", {}, RuntimeError("PRIVATE ERROR"))
+
+    monkeypatch.setattr(workspace.resume_browsing, "page", load_resumes)
+    monkeypatch.setattr(service, "calculate_skill_roi", failed_read)
+    result = learning.client.get(PATH + QUERY, headers=learning.headers)
+    assert result.status_code == 200, result.text
+    assert result.json()["opportunity"]["id"] == "owned-skill-roi"
+    assert result.json()["skill_roi"] is None and steps == ["resumes", "skill_roi"]
+    assert "Workspace Skill ROI database read unavailable" in caplog.text
+    assert "PRIVATE" not in caplog.text

@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, false, func, or_
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import Session
 
 from ... import models
@@ -17,6 +20,7 @@ MAX_PAGE = 50
 DEFAULT_PAGE = 20
 MAX_LEGACY_ITEMS = 50
 MAX_SKILL_ROI_BYTES = 32 * 1024
+log = logging.getLogger(__name__)
 
 # Explicit projections prevent deferred body reads during list serialization.
 _SPECS: dict[str, tuple[Any, type[BaseModel], str, bool]] = {
@@ -146,12 +150,19 @@ def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "ove
                 if error.status_code not in {404, 409}:
                     raise
                 match_source_state = "unavailable"
-    skill_roi = service.calculate_skill_roi(db, user_id) if tab == "learning" and include_skill_roi else None
-    if (skill_roi is not None and len(json.dumps(skill_roi.model_dump(), ensure_ascii=False,
-            allow_nan=False).encode()) > MAX_SKILL_ROI_BYTES):
-        skill_roi = None
+    resumes = resume_browsing.page(db, user_id, limit=limit, current_id=opportunity.resume_id)
+    skill_roi = None
+    if tab == "learning" and include_skill_roi:
+        # Keep this optional query last so a read failure cannot block the workspace.
+        try:
+            ranking = service.calculate_skill_roi(db, user_id)
+        except (OperationalError, DatabaseTimeout):
+            log.warning("Workspace Skill ROI database read unavailable")
+        else:
+            if len(json.dumps(ranking.model_dump(), ensure_ascii=False, allow_nan=False).encode()) <= MAX_SKILL_ROI_BYTES:
+                skill_roi = ranking
     return schemas.WorkspaceResponse(opportunity=opportunity, pages=schemas.WorkspacePages(**pages),
-        resumes=resume_browsing.page(db, user_id, limit=limit, current_id=opportunity.resume_id), match=saved_match,
+        resumes=resumes, match=saved_match,
         match_source_state=match_source_state,
         submitted_resume_version_id=submitted_id,
         submitted_resume_version=schemas.ResumeVersionMetadata.model_validate(submitted) if submitted is not None else None,

@@ -263,11 +263,13 @@ throughput and concurrency above 16 remain unmeasured.
 ## Workspace Skill ROI read
 
 The Workspace learning tab requests Skill ROI within its owned Workspace read.
-The backend checks ownership before computing the existing ranking and reads
-only the scoring columns. The standalone endpoint remains available to existing
+The backend checks ownership before computing the existing ranking from
+saved job snapshots, match skills, outcomes and approved evidence skills. The standalone endpoint remains available to existing
 clients. During frontend and backend version overlap, the new frontend uses it
 only after a successful Workspace response for the same opportunity omits the
-new field. An unavailable projection or a capacity refusal is shown explicitly.
+new field. The current DB8 API predates the compact Workspace route, so the
+frontend still requires the bridge API first. An unavailable projection or
+capacity refusal is shown explicitly.
 
 The local HTTP regression exercised real bearer validation through intercepted
 native SDKs. One combined read used two fresh List requests and returned the
