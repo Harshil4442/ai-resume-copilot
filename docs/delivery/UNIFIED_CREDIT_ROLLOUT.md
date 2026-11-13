@@ -122,6 +122,13 @@ qualification and planning boundary. The historical controller-only target was
 9b9. The current Source27 candidate requires its own exact-source qualification
 and release plan; the earlier image does not contain these new application fixes.
 
+For the application image, use the [native Git build recipe](../../infra/gcp/cloudbuild-monetary.yaml)
+after exact-commit CI passes. The recipe selects the existing `hirewiz-builder-20261014`
+service account and sends its logs to Cloud Logging. Use the same full SHA for
+`--git-source-revision` and `_RELEASE`, with `--git-source-dir=.` in `us-central1`.
+Verify the returned Build ID, resolved Git SHA, and immutable image digest through
+the release controller before staging. [Cloud Build service accounts and logging](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
+
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial
 compatible prior8cb app update. Do not replay the completed migration or treat a
