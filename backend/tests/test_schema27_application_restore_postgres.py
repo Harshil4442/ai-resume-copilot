@@ -15,11 +15,13 @@ from uuid import uuid4
 
 import pytest
 from backend.app.billing.service import process_razorpay_webhook
+from backend.app.domains.career import evidence_fence_definition, evidence_write_fence
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionAttempt, CreditExecutionHold
 from backend.app.domains.dispatch.models import DispatchOutbox
+from backend.app.domains.employer.models import EmployerSource
 from backend.app.domains.resume_uploads.models import ResumeUpload
-from backend.app.models import ModelCostLiability, PaymentOrder, Resume, User
+from backend.app.models import EvidenceItem, ModelCostLiability, PaymentOrder, Resume, User
 from psycopg.errors import CheckViolation
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -39,6 +41,11 @@ RESTORE_TABLES = (
     "credit_execution_holds", "credit_execution_attempts", "model_cost_liabilities",
     "dispatch_outbox",
 )
+MIGRATION_SEEDS = {"alembic_version", "employer_catalogue_clock"}
+EMPTY_CATALOGUE_CLOCK = [{
+    "id": 1, "watermark": 0, "inventory_state": "sources",
+    "source_cursor": None, "posting_cursor": None, "prune_cursor": None,
+}]
 SOURCE_CONSTRAINT = (
     "CHECK (((source_format)::text = ANY ((ARRAY['pdf'::character varying, "
     "'docx'::character varying, 'tex'::character varying, 'texzip'::character varying])::text[])))"
@@ -56,6 +63,54 @@ def upload_constraint(db):
         "conkey,pg_get_constraintdef(oid) FROM pg_constraint "
         "WHERE conrelid='public.resume_uploads'::regclass AND conname='ck_resume_upload_format'"
     )).one()
+
+
+def snapshot(engine):
+    """Compare every ordinary public table and exact sequence runtime state."""
+    with engine.connect() as db:
+        assert db.scalar(text("SELECT version_num FROM public.alembic_version")) == schema27.SCHEMA
+        relations = db.execute(text(
+            "SELECT c.relname,c.relkind FROM pg_class AS c JOIN pg_namespace AS n ON n.oid=c.relnamespace "
+            "WHERE n.nspname='public' AND c.relkind IN ('r','S') ORDER BY c.relname"
+        ))
+        tables, sequences = {}, {}
+        quote = engine.dialect.identifier_preparer.quote
+        for name, kind in relations:
+            relation = f"public.{quote(name)}"
+            if kind == "S":
+                sequences[name] = tuple(db.execute(text(f"SELECT last_value,is_called FROM {relation}")).one())
+            else:
+                tables[name] = db.execute(text(
+                    f"SELECT to_jsonb(row) FROM {relation} AS row ORDER BY to_jsonb(row)"
+                )).scalars().all()
+        return tables, sequences
+
+
+def create_data_archive(dump, restore, db_options, source_name, archive, toc):
+    subprocess.run([dump, "--data-only", "--format=custom", "--no-password",
+                    "--file", str(archive), "--dbname", source_name],
+                   env=db_options, check=True, timeout=30, capture_output=True)
+    archive_entries = subprocess.run([restore, "--list", str(archive)], env=db_options,
+                                     check=True, timeout=5, capture_output=True, text=True).stdout
+    excluded, retained = set(), []
+    for line in archive_entries.splitlines():
+        fields = line.split()
+        if len(fields) >= 7 and fields[3:6] == ["TABLE", "DATA", "public"] and fields[6] in MIGRATION_SEEDS:
+            assert fields[6] not in excluded and fields[7:] == ["hirewiz"]
+            excluded.add(fields[6])
+            continue
+        retained.append(line)
+    assert excluded == MIGRATION_SEEDS
+    toc.write_text("\n".join(retained) + "\n")
+
+
+def restore_data(restore, db_options, database, archive, toc=None):
+    command = [restore, "--data-only", "--single-transaction", "--exit-on-error",
+               "--no-owner", "--no-privileges", "--no-password", "--dbname", database]
+    if toc is not None:
+        command.extend(["--use-list", str(toc)])
+    return subprocess.run([*command, str(archive)], env=db_options,
+                          timeout=30, capture_output=True, text=True)
 
 
 def assert_payment_and_reserve_replay(engine, stamp, capture, reservation_id, source_bytes, credits):
@@ -87,8 +142,8 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
     assert dump and restore, "PG17 dump and restore clients are required"
 
     tag = uuid4().hex
-    source_name, target_name, rebuilt_name = (
-        f"hw_restore27_{tag}_{suffix}" for suffix in ("source", "raw", "rebuilt")
+    source_name, target_name, rebuilt_name, catalogue_name = (
+        f"hw_restore27_{tag}_{suffix}" for suffix in ("source", "raw", "rebuilt", "catalogue")
     )
     connect_args = {"connect_timeout": 5, "sslmode": "disable",
                     "options": "-cstatement_timeout=15000 -clock_timeout=5000"}
@@ -98,12 +153,12 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
     try:
         with admin.connect() as db:
             assert int(db.scalar(text("SHOW server_version_num"))) // 10000 == 17
-            for name in (source_name, target_name, rebuilt_name):
+            for name in (source_name, target_name, rebuilt_name, catalogue_name):
                 db.exec_driver_sql(f'CREATE DATABASE "{name}"')
                 created.append(name)
                 engines.append(create_engine(url.set(database=name), poolclass=NullPool,
                                              connect_args=connect_args))
-        source, target, rebuilt = engines
+        source, target, rebuilt, catalogue = engines
         _migrate(source, schema27.SCHEMA)
         stamp = datetime.now(UTC) - timedelta(seconds=1)
         archive = tmp_path / "owned-schema27.dump"
@@ -168,22 +223,24 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
                                           claim_key="owned-claim", started_at=stamp))
             db.add(DispatchOutbox(id="owned-outbox", topic="analysis.run", aggregate_id="run-one",
                                   idempotency_key="owned-outbox-request", payload={"run_id": "run-one"}))
+            evidence = EvidenceItem(id="owned-evidence", user_id=1, resume_id=1, category="experience",
+                                    title="Synthetic evidence", evidence_text="Verified fixture example")
+            db.add(evidence)
+            evidence_write_fence.flush_evidence_writes(db, [evidence])
+            db.execute(text("SELECT setval('public.users_id_seq',41,true),setval('public.resumes_id_seq',72,false)"))
             db.commit()
 
-        def snapshot(engine):
-            with engine.connect() as db:
-                assert db.scalar(text("SELECT version_num FROM public.alembic_version")) == schema27.SCHEMA
-                contents = {}
-                for table in RESTORE_TABLES:
-                    # All names above are fixed owned-test relations; compare full synthetic rows.
-                    contents[table] = db.execute(text(
-                        f"SELECT to_jsonb(row) FROM public.{table} AS row ORDER BY to_jsonb(row)"
-                    )).scalars().all()
-                return contents
-
         expected = snapshot(source)
-        assert len(expected["credit_purchase_quotes"]) == 2
-        assert all(expected[table] for table in expected)
+        expected_tables, expected_sequences = expected
+        assert len(expected_tables["credit_purchase_quotes"]) == 2
+        assert all(expected_tables[table] for table in (*RESTORE_TABLES, "evidence_items"))
+        assert expected_tables["alembic_version"] == [{"version_num": schema27.SCHEMA}]
+        assert expected_tables["employer_catalogue_clock"] == EMPTY_CATALOGUE_CLOCK
+        assert expected_sequences["users_id_seq"] == (41, True)
+        assert expected_sequences["resumes_id_seq"] == (72, False)
+        record_property("owned_public_tables", len(expected_tables))
+        record_property("owned_nonempty_public_tables", sum(bool(rows) for rows in expected_tables.values()))
+        record_property("owned_public_sequences", len(expected_sequences))
         started = time.monotonic()
         subprocess.run([dump, "--format=custom", "--no-owner", "--no-privileges", "--no-password",
                         "--file", str(archive), "--dbname", source_name],
@@ -210,18 +267,29 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
                                match="^schema20_upload_format_constraint_mismatch$"):
                 schema27.verify_shape(restored)
 
-        # An independent target gets the reviewed Alembic DDL and only the
-        # selected fixture data. Normal FK checks and triggers stay enabled.
+        # The two reviewed migration-owned rows already match the archive.
         data_archive = tmp_path / "owned-schema27-data.dump"
+        data_toc = tmp_path / "owned-schema27-data.list"
         started = time.monotonic()
         _migrate(rebuilt, schema27.SCHEMA)
-        subprocess.run([dump, "--data-only", "--format=custom", "--strict-names", "--no-password",
-                        "--file", str(data_archive), "--dbname", source_name,
-                        *[f"--table=public.{table}" for table in RESTORE_TABLES]],
-                       env=db_options, check=True, timeout=30, capture_output=True)
-        restored_data = subprocess.run([restore, "--data-only", "--single-transaction", "--exit-on-error",
-                                        "--no-owner", "--no-privileges", "--no-password", "--dbname", rebuilt_name,
-                                        str(data_archive)], env=db_options, timeout=30, capture_output=True, text=True)
+        with rebuilt.connect() as restored:
+            schema27.verify_shape(restored)
+        clean_target = snapshot(rebuilt)
+        assert {table: clean_target[0][table] for table in MIGRATION_SEEDS} == {
+            table: expected_tables[table] for table in MIGRATION_SEEDS
+        }
+        create_data_archive(dump, restore, db_options, source_name, data_archive, data_toc)
+        unfiltered = restore_data(restore, db_options, rebuilt_name, data_archive)
+        assert unfiltered.returncode != 0 and "alembic_version_pkc" in unfiltered.stderr
+        assert snapshot(rebuilt) == clean_target
+        refused = restore_data(restore, db_options, rebuilt_name, data_archive, data_toc)
+        assert refused.returncode != 0 and "evidence_writer_version_required" in refused.stderr
+        assert snapshot(rebuilt) == clean_target
+
+        # Exercise the installed fence using the current writer marker on this owned client.
+        writer_options = {**db_options, "PGOPTIONS": db_options["PGOPTIONS"] +
+                          f" -c{evidence_fence_definition.SETTING}={evidence_fence_definition.VERSION}"}
+        restored_data = restore_data(restore, writer_options, rebuilt_name, data_archive, data_toc)
         assert restored_data.returncode == 0, restored_data.stderr
         record_property("owned_rebuild_and_data_restore_seconds", round(time.monotonic() - started, 3))
         with rebuilt.begin() as restored:
@@ -238,6 +306,38 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
         assert snapshot(rebuilt) == expected
         assert_payment_and_reserve_replay(rebuilt, stamp, capture, reservation_id, source_bytes, view.credits)
         assert snapshot(rebuilt) == expected
+        with rebuilt.connect() as restored:
+            assert restored.execute(text(
+                "SELECT nextval('public.users_id_seq'),nextval('public.resumes_id_seq')"
+            )).one() == (42, 72)
+            restored.rollback()
+        tables, sequences = snapshot(rebuilt)
+        assert tables == expected_tables
+        assert sequences == {**expected_sequences, "users_id_seq": (42, True), "resumes_id_seq": (72, True)}
+        assert snapshot(source) == expected
+
+        # A published catalogue exercises actual trigger side effects during COPY.
+        with Session(source) as db:
+            db.add(EmployerSource(id="owned-employer", employer="Synthetic Employer", platform="greenhouse",
+                                  board_token="synthetic", careers_url="https://example.test/careers",
+                                  verification_url="https://example.test/careers", verification_note="Synthetic"))
+            db.commit()
+        published_tables, _ = snapshot(source)
+        assert published_tables["employer_catalogue_clock"] == [{**EMPTY_CATALOGUE_CLOCK[0], "watermark": 1}]
+        assert len(published_tables["employer_catalogue_source_revisions"]) == 1
+        _migrate(catalogue, schema27.SCHEMA)
+        clean_catalogue = snapshot(catalogue)
+        assert clean_catalogue[0]["employer_catalogue_clock"] == EMPTY_CATALOGUE_CLOCK
+        create_data_archive(dump, restore, db_options, source_name, data_archive, data_toc)
+        refused = restore_data(restore, writer_options, catalogue_name, data_archive, data_toc)
+        assert refused.returncode != 0
+        assert 'COPY failed for table "employer_catalogue_source_revisions"' in refused.stderr
+        assert 'unique constraint "employer_catalogue_source_revisions_pkey"' in refused.stderr
+        assert "(source_id, valid_from)=(owned-employer, 1)" in refused.stderr
+        # This refusal precedes SEQUENCE SET. Sequence changes generally survive rollback.
+        assert snapshot(catalogue) == clean_catalogue
+        assert snapshot(source) == (published_tables, expected_sequences)
+        record_property("owned_published_catalogue_restore_refusal", "employer_catalogue_source_revisions_pkey")
     finally:
         for engine in engines:
             engine.dispose()
@@ -246,7 +346,7 @@ def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_pa
                 with admin.connect() as db:
                     for name in reversed(created):
                         db.exec_driver_sql(f'DROP DATABASE "{name}" WITH (FORCE)')
-                    assert db.scalar(text("SELECT count(*) FROM pg_database WHERE datname IN (:source, :target, :rebuilt)"),
-                                     {"source": source_name, "target": target_name, "rebuilt": rebuilt_name}) == 0
+                    assert db.scalar(text("SELECT count(*) FROM pg_database WHERE datname = ANY(:names)"),
+                                     {"names": created}) == 0
         finally:
             admin.dispose()
