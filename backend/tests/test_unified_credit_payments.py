@@ -373,6 +373,10 @@ def test_verified_refunds_after_spend_create_exact_debt_and_preserve_quote(unifi
         "refunded", 5900, False, False)
     assert {k: v for k, v in refunded["accepted_quote"].items() if k != "server_time"} == {
         k: v for k, v in created["accepted_quote"].items() if k != "server_time"}
+    history = client.get("/api/v1/credits/history?limit=20")
+    assert history.status_code == 200
+    revocations = [item for item in history.json()["items"] if item["event_type"] == "revoke"]
+    assert [(item["amount"], item["balance_after"]) for item in revocations] == [(-20, -1), (-20, 19)]
     with session_factory() as db:
         assert db.query(PaymentRefund).count() == 2
         assert db.query(CreditGrant).one().remaining_credits == 0
