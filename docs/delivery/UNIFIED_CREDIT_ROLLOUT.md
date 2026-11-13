@@ -152,9 +152,13 @@ to production. Then promote the staged frontend and verify its paginated résum�
 and workspace reads through the canonical host. Verify fresh sign-in separately.
 
 Before schema27 DDL, a frontend failure can be handled by restoring the prior
-frontend while the compatible bridge is serving. A backend rollback also needs
-the controller's fresh rollback checks. For failures after schema27 DDL, use a
-recovery path verified for schema27 and retained customer obligations.
+frontend while the compatible bridge is serving. If the paginated frontend is
+live, restore the prior alias before moving API traffic back. Use
+`schema27_native_migration.py bridge-rollback` with the original verified bridge
+plan, plan hash and journal for the pre-DDL backend traffic rollback. The same
+lock fences rollback and DDL. The controller still requires exact schema26 and
+fresh rollback evidence. After schema27 DDL, use a recovery path verified for
+schema27 and retained customer obligations.
 
 ### Historical schema25 rollout
 
@@ -442,6 +446,13 @@ Record real attributed execution costs through the existing internal settlement
 function only after the source measurement is verified. Unknown amounts remain
 protected across month boundaries, cancellation and account deletion.
 
+`backend/scripts/audit_expense_policy.py --ledger` reports live captures,
+processing fees and refunds by default. Use `--provider-mode test` for test-mode
+payment reconciliation. Refunds follow their processed date and original order
+mode. Model and service exposure still include all recorded work because a test
+payment can coexist with actual provider costs. Reconcile those costs separately
+before calculating a margin.
+
 ## Commercial guardrails
 
 The proposed offer packs are ₹59/40 credits, ₹179/130 credits and ₹449/360
@@ -478,13 +489,23 @@ The [local PostgreSQL 17 rehearsal](../../backend/tests/test_schema27_applicatio
 uses a dedicated disposable cluster with `HIREWIZ_SCHEMA27_LOCAL_RESTORE=true`.
 A full logical restore retained the fixture rows, but PostgreSQL reconstructed
 the résumé format constraint with a different cast expression. The strict
-catalogue verifier refused that restored schema. Rebuilding the schema with
-Alembic and restoring data for the 17 fixture tables passed the verifier with
-foreign keys and triggers enabled. Original résumé bytes, active quotes, reserved
-credits, unresolved provider expense and idempotent payment replay were checked.
-This rehearsal covers the selected synthetic tables. Production backup coverage,
-role and permission recovery, independent authority replay and recovery times
-still need verification before reopening after a database failure.
+catalogue verifier refused that restored schema. The Alembic rebuild with a
+data-only archive passed the verifier with foreign keys and triggers enabled
+and matched all 84 public tables and nine sequence states in the synthetic
+fixture. This included original résumé bytes, an evidence row, active quotes,
+reserved credits, unresolved provider expense and idempotent payment replay.
+The replay checked the two existing migration seeds separately and used the
+existing evidence writer contract.
+
+With a published employer source, the same data import stopped atomically.
+The source insert created a revision row that was also present in the archive.
+The drill verified the refusal and unchanged target rows. A complete restore
+must retain that archived history and verify catalogue invariants before use.
+Production backup coverage, role and permission recovery, independent authority
+replay and recovery times still need verification before reopening after a
+database failure. The provider reports a six-hour point-in-time history window
+for the current project. An isolated restore and independent backup must be
+verified separately. [Neon restore documentation](https://neon.com/docs/postgres/backup-restore/branch-restore)
 
 Accepted model work checks the route's sustained-failure and expense-overrun
 pause before sending a prompt for token counting and again when claiming a
