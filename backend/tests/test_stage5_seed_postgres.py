@@ -22,6 +22,7 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
         pytest.skip("Set HIREWIZ_STAGE5_PG_BIN for the separate owned PG17 seed check")
     from app import database
     from app.domains.career import service as career
+    from app.domains.career.evidence_write_fence import SETTING
     from app.domains.credits import service as credits
     from tests import test_candidate_production_factory as fixture
 
@@ -43,7 +44,9 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
         data = seed(engine, Plan(buyers_percent=buyers_percent))
         assert data["opportunities"] == 100490 and data["candidate_password_accounts"] == 8
         assert data["credit_accounts"] == 10000 * buyers_percent // 100
+        assert data["evidence_items"] == 30000
         with case.accounts.sessions() as db:
+            assert db.scalar(text("SELECT current_setting(:setting, true)"), {"setting": SETTING}) in (None, "")
             assert career.list_opportunities(db, 8, limit=50)[1] == 500
             assert career.list_opportunities(db, 7, limit=50)[1] == 10
             assert career.calculate_skill_roi(db, 8).opportunity_count == 500
