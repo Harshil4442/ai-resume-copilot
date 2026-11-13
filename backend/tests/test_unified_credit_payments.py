@@ -302,6 +302,53 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
     assert status["fulfilled"] and status["status"] == "paid" and status["pass_expires_at"]
 
 
+def test_campaign_cutoff_keeps_unexpired_offer_quote_payable(unified, monkeypatch, session_factory):
+    client, calls = unified
+    cutoff = datetime.now(UTC) + timedelta(minutes=1)
+    with session_factory() as db:
+        campaign = db.query(CreditCampaign).one()
+        campaign.starts_at = cutoff - timedelta(days=30)
+        campaign.ends_at = cutoff
+        db.commit()
+
+    issued_at = cutoff - timedelta(seconds=1)
+    monkeypatch.setattr(service, "utcnow", lambda: issued_at)
+    offer_response = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "before-campaign-cutoff",
+    })
+    assert offer_response.status_code == 200, offer_response.text
+    offer = offer_response.json()
+    assert offer["amount_minor"] == 5900
+    assert offer["campaign"]["status"] == "active"
+    assert datetime.fromisoformat(offer["expires_at"]) == issued_at + timedelta(minutes=15)
+
+    monkeypatch.setattr(service, "utcnow", lambda: cutoff)
+    standard_response = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "at-campaign-cutoff",
+    })
+    assert standard_response.status_code == 200, standard_response.text
+    standard = standard_response.json()
+    assert standard["amount_minor"] == 7900
+    assert standard["campaign"]["status"] == "ended"
+    assert calls == []
+
+    # A customer can accept the offer until their own quote expires.
+    payment = client.post("/api/v1/credits/orders", json={
+        "quote_id": offer["quote_id"], "billing_country": "IN",
+        "idempotency_key": "accept-offer-after-campaign-cutoff",
+    })
+    assert payment.status_code == 200, payment.text
+    order = payment.json()
+    assert order["amount_minor"] == 5900
+    assert order["accepted_quote"]["quote_id"] == offer["quote_id"]
+    assert order["accepted_quote"]["expires_at"] == offer["expires_at"]
+    assert calls == [(order["order_id"], 5900)]
+    with session_factory() as db:
+        stored = db.query(PaymentOrder).one()
+        assert stored.gross_amount_minor == 5900
+        assert OriginalOrder.from_order(stored).quote["amount_minor"] == 5900
+
+
 def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed_order(unified, session_factory):
     client, calls = unified
     identities = []
