@@ -35,7 +35,6 @@ from ..billing.service import (
     WebhookValidationError,
     _process_capture,
     _process_refund,
-    as_aware,
     process_razorpay_webhook,
 )
 from ..database import get_db
@@ -434,18 +433,17 @@ def _normalized_order_status(order: PaymentOrder) -> str:
 
 
 def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
+    # Delivery stays complete after premium expires or the owner ends access.
+    # Current premium access is evaluated independently by the account profile.
     entitlement = (
         db.query(EntitlementLedger)
         .filter(
             EntitlementLedger.source_order_id == order.id,
-            EntitlementLedger.status == "active",
+            EntitlementLedger.status.in_(("active", "ended_by_user")),
         )
         .first()
     )
-    fulfilled = bool(entitlement)
-    if entitlement and entitlement.expires_at:
-        expires_at = as_aware(entitlement.expires_at)
-        fulfilled = bool(expires_at and expires_at > _utcnow())
+    fulfilled = order.status in {"paid", "partially_refunded"} and entitlement is not None
     transaction = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.order_id == order.id)

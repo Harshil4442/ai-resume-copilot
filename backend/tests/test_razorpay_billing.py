@@ -376,6 +376,7 @@ def test_recent_order_prioritizes_oldest_owned_legacy_payment_hold(client, sessi
     assert response.status_code == 200
     assert response.json()["order_id"] == oldest["order_id"]
     assert response.json()["status"] == ("failed" if status == "payment_failed" else "pending")
+    assert response.json()["fulfilled"] is False
     assert response.headers["cache-control"] == "no-store, private"
 
 
@@ -790,6 +791,33 @@ def test_delayed_webhook_uses_order_entitlement_snapshot(
     with session_factory() as db:
         entitlement = db.query(EntitlementLedger).one()
         assert entitlement.quantity == 30
+
+
+@pytest.mark.parametrize("ended_by_user", [False, True])
+def test_recent_paid_premium_order_remains_fulfilled_after_access_ends(
+    client, enabled_checkout, session_factory, ended_by_user
+):
+    created = _accepted_legacy_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        capture = _capture_payload(order)
+    if not ended_by_user:
+        capture["created_at"] = int((datetime.now(UTC) - timedelta(days=31)).timestamp())
+    assert _post_event(client, "evt_legacy_access_ends", capture).json()["status"] == "processed"
+    if ended_by_user:
+        assert client.post("/api/billing/end-premium").json() == {"status": "ended", "auto_renews": False}
+
+    with session_factory() as db:
+        assert not db.query(User).one().is_premium_active()
+        assert db.query(EntitlementLedger).one().status == ("ended_by_user" if ended_by_user else "active")
+
+    for path in ("/api/billing/recent-order", f"/api/billing/orders/{created['order_id']}"):
+        response = client.get(path)
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["order_id"], body["status"], body["fulfilled"], body["checkout_available"]) == (
+            created["order_id"], "paid", True, False
+        )
 
 
 def test_unknown_order_event_is_retryable_and_reconciles_same_event_id(
