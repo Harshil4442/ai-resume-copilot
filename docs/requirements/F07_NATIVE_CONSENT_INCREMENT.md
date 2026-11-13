@@ -262,3 +262,19 @@ document QA, model calls and commercial activation remain on hold. This
 increment still needs the qualified bridge rollout and schema migration. The
 native protocol and profile successors must be qualified together before
 promotion, and rollback must account for rows written by the new protocol.
+
+The scanner recovery checks the earlier completed inventory and corpus jobs
+against their original GitHub artifact when present. After the artifact expires,
+the workflow can re-read the exact Cloud Build provenance, acknowledged Cloud
+Run operations and structured native receipts. This historical check cannot
+refresh the definitions. Both the serving worker and the abandoned candidate
+still require their native evidence to be readable. On 13 November the earliest
+expected Cloud Logging retention cutoff was 2 December at 20:40 UTC. If those
+receipts become unavailable, the existing recovery path stops before a new
+build.
+
+Vercel currently tracks `main` with automatic custom-domain assignment disabled.
+After the exact candidate passes CI, a normal merge can stage a frontend build
+without moving the public aliases. Verify the merged tree, staged deployment and
+alias readback. Promote the frontend after the matching Cloud Run application
+and schema migration pass their deployment checks.
