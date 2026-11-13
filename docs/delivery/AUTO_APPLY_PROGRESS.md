@@ -1,12 +1,12 @@
 # HireWiz development and deployment progress
 
 Updated **13 November 2026 (IST)**. The API and both application workers still
-serve DB8 on schema26; frontend 751/Hohsg remains the production frontend.
-The new pagination/authentication application image is verified but is **not
-serving**. The 9b9 zero-traffic stages were restored on 5 November. On 13 November,
-Cloud Run showed DB8 as the latest ready and created revision, serving 100% of
-traffic on all three services. The combined successor is undergoing
-[GitHub release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43420484928).
+serve DB8 on schema26. Frontend 751/Hohsg was last verified on the production
+domain. PR114's pagination and authentication update has a verified Cloud Run
+image and a staged Vercel deployment. Its frontend depends on the matching API.
+Cloud Run still shows DB8 as the latest ready revision with 100% of traffic on
+all three services. The payment recovery and monitoring follow-on is PR115.
+[PR114 release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43438302862) · [PR115](https://github.com/Harshil4442/ai-resume-copilot/pull/115)
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
 below retain their original historical scope.
@@ -33,6 +33,11 @@ discovery batches. The report retained two unknown and three settled provider
 liabilities, with zero SQL mutations or model calls. Representative shadow
 accounting remains pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
+The local PostgreSQL 17 recovery rehearsal restored a populated employer catalogue
+and verified the schema, 84 table contents, nine sequence states, original résumé
+bytes and payment replay. An isolated Neon recovery and measured production
+recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#schema27-database-recovery-rehearsal)
+
 ## Latest verified runtime and pending releases
 
 | Component | Current evidence | Verification and boundary |
@@ -42,11 +47,12 @@ accounting remains pending. [Observation evidence](evidence/2026-11-13-credit-sh
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
-| Newly verified application image | Source `01b80b130467ef7acb661805f785b00a56306174`; image `sha256:a283b02b73c50762f3c5ac8aa26d3becc3769ec2a3c781942412960751c099dd` | Build `711a21d5-bbbe-4692-8818-253d06a3315f`, exact-source CI `41930847703`, normal PR105 merge `30056fd2cbe3f684fee08b85b2186e95b4ae44f8`, and official Source26 Git/recipe/image verification passed. **Not serving.** Registry entry nine records this actual tuple; no duplicate application Build is needed. |
-| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The forward rollout requires a fresh reviewed numeric policy pair. |
+| Staged frontend | PR114 merge `5c54768dac9225fbb32763f55d46fc794141a91f`; deployment `dpl_ChHqR3DxbTbp5yPt8nijyzAv5zgS` | The staged deployment is ready. Promote it after the matching API and the old frontend's authenticated reads pass verification. |
+| Verified application image | PR114 source `629e808c78dfdbdeaad0a8862974b8c18b6c6fde`; image `sha256:5fde8e759699df51d2d91d0463d648a06500794c7d25e8b9d543a9e71efe938c` | Build `77bb4df7-7013-419e-bdad-302be4a52ecf`, exact-source CI `43438302862` and Source27 Git/build/image verification passed. Cloud Run staging awaits scanner and funding checks. |
+| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The replacement pair remains unpublished. |
 
-The current source-image verification record has SHA-256
-`37aa5f225d2167ba39d8dcb92e69feca1dbc417b10e423a402a5ca7187493ea9`.
+The PR114 source-image verification record has SHA-256
+`6d851cbaf7077930c7c74c5959479965bc3e037737f261da45a44ff4e27129e2`.
 The current owner review/cancel/revoke UI record has SHA-256
 `b73c37dcd010d24df5b2af19c8d9a9572110284bf91f078675ab8be563286afb`.
 The matching SQL observation has SHA-256

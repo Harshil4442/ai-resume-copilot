@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-13T12:07:43.561683+00:00",
+  "updated_at": "2026-11-13T16:03:10+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -143,10 +143,11 @@
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json",
-        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json"
+        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json",
+        "docs/delivery/UNIFIED_CREDIT_ROLLOUT.md"
       ],
-      "status_observed_at": "2026-11-13T12:07:43.561683+00:00",
-      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks. The temporary IAM additions were removed and verified. The production shadow baseline for 6–13 November UTC completed read-only with zero qualifying operations or discovery batches. Representative funded shadow accounting, finance reconciliation and full R03/RTO qualification remain pending."
+      "status_observed_at": "2026-11-13T16:03:10+00:00",
+      "local_result": "Production shadow observation for 6–13 November UTC found zero qualifying operations. A local PostgreSQL 17 physical recovery preserved the current schema, published employer history, original resume bytes and financial obligations. The live/test cash report was verified using a read-only production session. Representative funded shadow accounting, supplier reconciliation, an isolated production-provider restore and measured recovery times remain pending."
     },
     {
       "number": 7,
@@ -170,10 +171,11 @@
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/AUTO_APPLY_PROGRESS.md"
       ],
-      "local_result": "Last verified public frontend source 751319 includes companion 0.8.9. The db8 API and workers serve schema 26. The owner reviewed and downloaded the original résumé, cancelled before Fill and revoked the exact device. GitHub Support cleared the billing lock, and release verification resumed on GitHub Free. F07 notifications are default off. Fresh scanner verification remains on hold. Controlled production promotion, paid canary, commercial acceptance, optimized AI, wallet conversion, payments and final submission remain pending.",
-      "status_observed_at": "2026-11-13T10:38:00+00:00"
+      "local_result": "DB8 still serves all API and worker traffic. PR114 has a verified backend image and a ready staged frontend. The hosted PR115 test exercised synthetic checkout recovery. Fresh scanner verification remains on hold and the reviewed policy pair is unpublished. Cloud Run staging, frontend alias promotion, paid canary, commercial acceptance, wallet activation, checkout and final submission remain pending.",
+      "status_observed_at": "2026-11-13T16:03:10+00:00"
     },
     {
       "number": 8,
@@ -815,8 +817,11 @@
       "status": "in_progress",
       "evidence": [
         "docs/delivery/evidence/2026-10-27-unified-credit-local-integration.json",
-        "docs/delivery/evidence/2026-10-29-schema25-production-base.json"
-      ]
+        "docs/delivery/evidence/2026-10-29-schema25-production-base.json",
+        "docs/delivery/UNIFIED_CREDIT_ROLLOUT.md"
+      ],
+      "local_result": "The pre-DDL bridge traffic rollback is verified on the owned test paths. PostgreSQL 17 physical recovery passed strict catalogue, original file, active quote, credit reservation, unresolved cost and duplicate payment checks. Provider recovery and external authority replay remain pending.",
+      "status_observed_at": "2026-11-13T16:03:10+00:00"
     },
     {
       "id": "R04",
