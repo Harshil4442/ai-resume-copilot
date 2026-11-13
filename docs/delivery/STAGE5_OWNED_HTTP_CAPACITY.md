@@ -230,6 +230,17 @@ semantic-header correction still requires a fresh actual Linux result.
 A later Mac Docker image-inspect
 probe timed out before any resource creation and was not repeated.
 
+The [13 November Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43410352917)
+measured the current Dashboard, résumé metadata and Workspace metadata routes
+alongside Skill ROI and wallet. Each synthetic buyer cohort offered 300 reads,
+with 170 valid HTTP 200 responses, 130 validated HTTP 429 refusals, zero
+contract failures and zero provider calls. Ownership controls and cleanup passed.
+In each cohort, the unpaced diagnostic accounted for 150 successful reads.
+The first governed phase admitted 20 reads using 40 metadata calls. The two
+later governed phases admitted zero because they shared that same minute's
+allowance. The run therefore measures the limiter's behavior under a shared
+burst. Successful governed throughput at concurrency 10 and 25 remains unmeasured.
+
 ## Original acceptance remains open
 
 The existing target remains about one million authenticated requests/month plus

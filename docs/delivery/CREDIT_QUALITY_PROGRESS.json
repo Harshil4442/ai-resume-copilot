@@ -651,8 +651,8 @@
       "evidence": [
         "docs/delivery/STAGE5_OWNED_HTTP_CAPACITY.md"
       ],
-      "local_result": "Both synthetic buyer cohorts seeded successfully on disposable PostgreSQL. Twenty-four checks against the current Dashboard and first-page résumé and opportunity readers passed. The full owned Linux workload and measured hosted capacity remain pending.",
-      "status_observed_at": "2026-11-13T10:38:00+00:00"
+      "local_result": "Both owned Linux workloads passed the response and cleanup checks. Each recorded 170 valid reads and 130 governed refusals out of 300 requests. The governed quota was consumed by 20 successful reads, using 40 metadata calls. Higher-concurrency successful governed reads and hosted capacity remain unmeasured.",
+      "status_observed_at": "2026-11-13T10:42:00+00:00"
     },
     {
       "id": "I03",
