@@ -60,6 +60,7 @@ def contract_digest(operation):
     )
     from ..career import evidence_fence_definition, evidence_write_fence
     from ..credits import canary
+    from ..notification_consent import schema_compat
     from . import operations, service
 
     if operation not in inputs.OPERATIONS:
@@ -68,7 +69,7 @@ def contract_digest(operation):
                interview_contract, tailoring_contract, personal_claims, prompt_privacy,
                resume_artifacts, resume_layout, inputs, canary, document_ingestion,
                docx_artifact, native_tex, delivery_contracts, result_commit, generation_gate, native_import, matching_contract,
-               evidence_fence_definition, evidence_write_fence)
+               evidence_fence_definition, evidence_write_fence, schema_compat)
     if _sync().supports(operation) or operation in {"job_match", "resume_tailor"}:
         from ...services import provider_input_guard, source_transcription
         from ..career import transcription_review
@@ -356,8 +357,17 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
     schema = _schema(auth)
     with engine.begin() as conn:
         conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
-    if not set(inspect(engine).get_table_names(schema=schema)) <= set(Base.metadata.tables):
-        raise ValueError("Unknown tables exist in this evaluation schema")
+    extra_tables = set(inspect(engine).get_table_names(schema=schema)) - set(Base.metadata.tables)
+    if extra_tables:
+        # A migrated, still loopback-only experiment has three additional
+        # catalog/legacy tables. Verify the revision and projection before use.
+        from ..notification_consent.schema_compat import projection_available
+
+        if extra_tables != {"alembic_version", "resume_upload_cleanups", "resume_uploads"}:
+            raise ValueError("Unknown tables exist in this evaluation schema")
+        with factory() as db:
+            if not projection_available(db, namespace=schema):
+                raise ValueError("The migrated evaluation schema must support notification erasure")
     Base.metadata.create_all(engine)
     # This already-authorized owned evaluation namespace has no complete
     # Alembic catalog. Install the identical real fence, never a no-op marker or
@@ -421,6 +431,10 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
                 if new_evidence:
                     flush_evidence_writes(db, new_evidence)
                 db.flush()
+                # Freeze the same stored evidence versions that execution reads
+                # from PostgreSQL, including its timestamp representation.
+                for item in new_evidence:
+                    db.expire(item)
             for side, route in auth.routes.items():
                 identity = _run_id(auth, side, case_id)
                 if db.get(models.AnalysisRun, identity) is not None:

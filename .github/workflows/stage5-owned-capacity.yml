@@ -15,6 +15,9 @@ on:
     branches: [main]
     paths:
       - .github/workflows/stage5-owned-capacity.yml
+      - backend/app/domains/analysis/supported_evaluation.py
+      - backend/app/domains/analysis/supported_evaluation_synchronous.py
+      - backend/app/domains/notification_consent/schema_compat.py
       - backend/capacity/stage5-owned-http-v1.json
       - backend/scripts/run_stage5_capacity.py
       - backend/scripts/stage5_capacity.py
@@ -27,6 +30,9 @@ on:
       - backend/tests/test_stage5_native_fixture.py
       - backend/tests/test_stage5_seed_postgres.py
       - backend/tests/test_stage5_skill_roi.py
+      - backend/tests/test_supported_evaluation.py
+      - backend/tests/test_supported_evaluation_postgres.py
+      - backend/tests/test_supported_evaluation_services_postgres.py
 
 permissions:
   contents: read
@@ -109,6 +115,15 @@ jobs:
           HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
           HIREWIZ_STAGE5_PG_REQUIRED: "true"
         run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py
+      - name: Verify quality evaluation on owned PostgreSQL
+        if: matrix.buyers == 20
+        working-directory: backend
+        env:
+          APP_ENV: test
+          DATABASE_URL: sqlite://
+          HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
+          HIREWIZ_STAGE5_PG_REQUIRED: "true"
+        run: .venv/bin/pytest -q tests/test_supported_evaluation_postgres.py tests/test_supported_evaluation_services_postgres.py
       - name: Execute only fresh owned loopback resources
         timeout-minutes: 13
         env:
