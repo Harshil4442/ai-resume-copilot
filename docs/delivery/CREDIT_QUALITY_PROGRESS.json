@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-05T20:11:24.533761+00:00",
+  "updated_at": "2026-11-13T10:38:00+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -171,8 +171,8 @@
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
         "docs/delivery/evidence/2026-11-03-active-operating-status.json"
       ],
-      "local_result": "Last verified public www frontend source751319 includes companion0.8.9; db8 API/workers remain on schema26. The owner review/download/cancel-before-Fill/exact-device revoke portion passed. F07 notifications and schema-transition fixes are local, default off and not release-qualified. GitHub CI is blocked by the account billing lock, and scanner maintenance remains held. Controlled successor promotion, paid canary/commercial acceptance, optimized AI, wallet conversion, new payments and final submission remain pending.",
-      "status_observed_at": "2026-11-05T14:19:50.050546+00:00"
+      "local_result": "Last verified public frontend source 751319 includes companion 0.8.9. The db8 API and workers serve schema 26. The owner reviewed and downloaded the original résumé, cancelled before Fill and revoked the exact device. GitHub Support cleared the billing lock, and release verification resumed on GitHub Free. F07 notifications are default off. Fresh scanner verification remains on hold. Controlled production promotion, paid canary, commercial acceptance, optimized AI, wallet conversion, payments and final submission remain pending.",
+      "status_observed_at": "2026-11-13T10:38:00+00:00"
     },
     {
       "number": 8,
@@ -648,7 +648,11 @@
       "id": "I02",
       "requirement": "Load assumptions. Benchmark roughly one million authenticated API requests per month plus separately tested peaks; 0.5 to 0.75 average active database compute units; 2 to 4 million Redis commands; and 20 to 50 GB active document storage. These are workload assumptions, not unrestricted entitlements. [2][3][5]",
       "status": "pending",
-      "evidence": []
+      "evidence": [
+        "docs/delivery/STAGE5_OWNED_HTTP_CAPACITY.md"
+      ],
+      "local_result": "Both synthetic buyer cohorts seeded successfully on disposable PostgreSQL. Twenty-four checks against the current Dashboard and first-page résumé and opportunity readers passed. The full owned Linux workload and measured hosted capacity remain pending.",
+      "status_observed_at": "2026-11-13T10:38:00+00:00"
     },
     {
       "id": "I03",
@@ -815,8 +819,12 @@
     {
       "id": "R04",
       "requirement": "Stop conditions. Stop the affected optimized route for any confirmed fabrication, privacy leak, original-file corruption or unauthorized application action. Pause new optional execution on budget shortfall, stale supplier policy, sustained failure or a breached quality gate. Investigate before resuming.",
-      "status": "pending",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "docs/delivery/UNIFIED_CREDIT_ROLLOUT.md"
+      ],
+      "local_result": "Accepted model work checks the existing route failure and expense pause before sending a token-count request and before claiming generation. Local tests covered credit restoration, terminal duplicate delivery, an unaffected route and retained unknown supplier costs. Critical-incident and production recovery evidence remain pending.",
+      "status_observed_at": "2026-11-13T10:38:00+00:00"
     },
     {
       "id": "R05",

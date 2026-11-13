@@ -419,3 +419,11 @@ An unknown model, payment or submission response is a reconciliation state, not
 permission to repeat a POST. Roll back code only to a compatible tested version;
 retain all populated accounting tables and do not restore an expensive route
 without sufficient reserved funding.
+
+Accepted model work checks the route's sustained-failure and expense-overrun
+pause before sending a prompt for token counting and again when claiming a
+generation attempt. If the pause stops that claim, the worker ends the run and
+restores its credits. An attempt already authorized before the pause can still
+reach the provider. Reconcile its result or unknown cost using the original
+attempt record. Confirmed critical incidents still require the reviewed
+route-specific stop and investigation process.
