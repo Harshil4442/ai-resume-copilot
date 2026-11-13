@@ -138,6 +138,16 @@ describe("unified wallet, history and original payment contracts", () => {
     expect(parseUnifiedCreditHistory({ schema_version: "unified-credits-v1", items: [event, event] })).toBeNull();
     expect(parseUnifiedCreditHistory({ schema_version: "unified-credits-v1", items: [event], next_cursor: {} })).toBeNull();
   });
+  it("preserves a signed ledger balance after a refund of spent credits", () => {
+    const event = { id: "event-refund", event_type: "revoke", amount: -20, balance_after: -1, created_at: quote.created_at };
+    const history = { schema_version: "unified-credits-v1", items: [event], next_cursor: "next-safe" };
+    expect(parseUnifiedCreditHistory(history)).toEqual(history);
+    for (const balance of ["-1", -1.5, Number.NEGATIVE_INFINITY, Number.MIN_SAFE_INTEGER - 1]) {
+      expect(parseUnifiedCreditHistory({ ...history, items: [{ ...event, balance_after: balance }] })).toBeNull();
+    }
+    expect(parseUnifiedCreditWallet({ ...wallet, available_credits: -1 })).toBeNull();
+    expect(parseUnifiedCreditWallet({ ...wallet, debt_credits: -1 })).toBeNull();
+  });
   it("accepts original order terms even after their quote expired", () => {
     const old = { ...quote, server_time: "2026-11-01T00:00:00Z" };
     const parsed = parseUnifiedCreditOrder({ ...order, accepted_quote: old });

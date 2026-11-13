@@ -74,6 +74,24 @@ describe("unified billing account", () => {
     expect(screen.getByText(/have not been added together or converted/)).toBeInTheDocument();
     expect(screen.queryByText("20 credits")).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
   });
+  it("shows both refund events and the negative ledger balance without a negative spendable wallet", async () => {
+    const refundedWallet = { ...wallet, available_credits: 0, reserved_credits: 0, debt_credits: 1, lots: [] };
+    const refunds = [
+      { id: "refund-two", event_type: "revoke", amount: -20, balance_after: -1, created_at: stamp },
+      { id: "refund-one", event_type: "revoke", amount: -20, balance_after: 19, created_at: stamp },
+    ];
+    state.get.mockImplementation((url: string) => url === "/auth/bootstrap"
+      ? Promise.resolve(ownedBootstrapFixture({ wallet: refundedWallet })) : url === "/v1/credits/history?limit=20"
+      ? Promise.resolve({ schema_version: schema, items: refunds, next_cursor: "next-history" }) : read(url));
+    render(<BillingPage />);
+    expect(await screen.findByText("Balance -1")).toBeVisible();
+    expect(screen.getAllByText("-20 credits")).toHaveLength(2);
+    expect(screen.getByText("Balance 19")).toBeVisible();
+    expect(within(screen.getByText("Available credits").parentElement!).getByText("0")).toBeVisible();
+    expect(within(screen.getByText("Pending balance adjustment").parentElement!).getByText("1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Load older activity" })).toBeEnabled();
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
   it.each([undefined, null, -1, "3", 1.5])("does not invent a wallet balance for malformed data %j", async (available_credits) => {
     state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: { ...wallet, available_credits } })) : read(url));
     render(<BillingPage />); await screen.findByText(/Your credit balance is unavailable/); expect(screen.queryByText("Available credits")).not.toBeInTheDocument();
