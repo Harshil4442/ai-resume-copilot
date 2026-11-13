@@ -116,8 +116,10 @@ def report(db, *, config: RuntimeConfig | ReportingReview, start: datetime, end:
         func.count(ModelCostLiability.id),
         func.coalesce(func.sum(ModelCostLiability.reserved_cost_micros), 0),
         func.coalesce(func.sum(ModelCostLiability.settled_cost_micros), 0)).group_by(ModelCostLiability.cost_state).all()
-    provider = [{"state": state, "attempts": count, "reserved_usd_micros": held,
-        "recorded_settled_usd_micros": settled} for state, count, held, settled in provider_rows]
+    # PostgreSQL returns numeric for sums of BIGINT columns. The inputs are
+    # integer microdollars, so preserve them as exact JSON integers.
+    provider = [{"state": state, "attempts": count, "reserved_usd_micros": int(held),
+        "recorded_settled_usd_micros": int(settled)} for state, count, held, settled in provider_rows]
     holds = db.query(CreditExecutionHold.delivery_state, CreditExecutionHold.state,
         func.count(CreditExecutionHold.id)).group_by(CreditExecutionHold.delivery_state, CreditExecutionHold.state).all()
     live_credits = db.query(func.coalesce(func.sum(CreditGrant.remaining_credits), 0)).filter(

@@ -2,6 +2,8 @@
 import json
 import sys
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from backend.app.domains.credits import finance, runtime, service, shadow
@@ -121,6 +123,26 @@ def test_reporting_review_is_closed_and_cannot_supply_runtime_authority(monkeypa
     monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", review.model_dump_json())
     with pytest.raises(finance.FundingUnavailable):
         runtime.current_runtime(1, now=NOW)
+
+
+def test_shadow_serializes_postgres_numeric_liability_sums_as_exact_integers(factory, monkeypatch):
+    amount = 9_007_199_254_740_993
+    with factory() as db:
+        query = db.query
+
+        def postgres_sums(*columns):
+            if columns[0] is ModelCostLiability.cost_state:
+                return SimpleNamespace(group_by=lambda *_: SimpleNamespace(
+                    all=lambda: [("settled", 2, Decimal(amount), Decimal(15))]
+                ))
+            return query(*columns)
+
+        monkeypatch.setattr(db, "query", postgres_sums)
+        result = shadow.report(db, config=reporting_review(), start=NOW - timedelta(hours=1),
+                               end=NOW, now=NOW)
+        liability, = json.loads(json.dumps(result))["all_retained_provider_liabilities"]
+        assert liability == {"state": "settled", "attempts": 2, "reserved_usd_micros": amount,
+                             "recorded_settled_usd_micros": 15}
 
 
 @pytest.mark.parametrize("component", ["policy", "costs"])
