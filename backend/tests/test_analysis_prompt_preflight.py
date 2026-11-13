@@ -13,7 +13,7 @@ from backend.app import models
 from backend.app.domains.analysis import operations, schemas
 from backend.app.domains.analysis import service as analysis_service
 from backend.app.domains.common import payload_fingerprint
-from backend.app.domains.credits import analysis, finance, runtime
+from backend.app.domains.credits import analysis, finance, pricing, runtime, service
 from backend.app.domains.credits.models import CreditReservation
 from backend.app.routers.credits import analysis_reuse
 from backend.app.services import llm_client
@@ -21,10 +21,14 @@ from backend.app.services.analysis_prompt_preflight import (
     interview_prompt_bound,
     tailoring_prompt_bound,
 )
+from backend.app.services.delivery_contracts import current_output_contract
 from backend.app.services.interview_contract import InterviewContextUnavailable
 from backend.app.services.model_cost_policy import input_token_estimate
 from backend.app.services.prompt_privacy import redact_messages
 from backend.tests.test_analysis_runs import _database
+from backend.tests.test_unified_credits import NOW
+from backend.tests.test_unified_execution import budgets, financial_policy
+from backend.tests.test_unified_execution import route as synthetic_route
 from fastapi import Response
 from reportlab.pdfgen.canvas import Canvas
 from starlette.requests import Request
@@ -137,6 +141,31 @@ def test_tailoring_repair_above_quoted_envelope_refuses_before_model(monkeypatch
         )
 
 
+def _configure_quote_route(monkeypatch, operation, source_format, *capacities):
+    base_route = synthetic_route(attempts=len(capacities))
+    config = None
+
+    def set_capacities(*max_inputs):
+        nonlocal config
+        qualified_route = base_route.model_copy(update={
+            "operation": operation,
+            "credits": pricing.SERVICE_CREDITS[operation],
+            "output_contract_sha256": current_output_contract(operation),
+            "supported_source_formats": (source_format,),
+            "supported_limits": {"context_bytes": 500_000, "source_bytes": 2_000_000, "evidence_items": 100},
+            "model_quotes": tuple(
+                quote.model_copy(update={"max_input_tokens": maximum})
+                for quote, maximum in zip(base_route.model_quotes, max_inputs, strict=True)
+            ),
+        })
+        config = runtime.RuntimeConfig(policy=financial_policy(), budgets=budgets(), routes=(qualified_route,))
+
+    set_capacities(*capacities)
+    monkeypatch.setattr(runtime, "current_runtime", lambda user_id, **kwargs: config)
+    monkeypatch.setattr(service, "utcnow", lambda: NOW)
+    return set_capacities
+
+
 @pytest.mark.parametrize("operation", ["interview_questions", "resume_tailor"])
 def test_quote_rejects_oversized_prompt_before_credit_reservation(monkeypatch, operation):
     engine, factory = _database()
@@ -157,30 +186,19 @@ def test_quote_rejects_oversized_prompt_before_credit_reservation(monkeypatch, o
                 ),
             ])
             db.commit()
-            route = SimpleNamespace(
-                supported_source_formats=("docx",),
-                model_quotes=(
-                    SimpleNamespace(max_input_tokens=1_000_000),
-                    SimpleNamespace(max_input_tokens=1),
-                ),
-            )
-            config = SimpleNamespace(resolve_route=lambda *args, **kwargs: route)
-            monkeypatch.setattr(runtime, "current_runtime", lambda user_id, **kwargs: config)
+            set_capacities = _configure_quote_route(monkeypatch, operation, "docx", 50_000, 1)
             request = schemas.AnalysisRunCreate(
                 operation=operation, opportunity_id="opp_preflight",
                 input={"mode": "enhanced", "num_questions": 8}
                 if operation == "interview_questions" else {},
             )
-            with pytest.raises(finance.FundingUnavailable, match="complete prompt"):
+            with pytest.raises(finance.CreditServiceInputUnsupported, match="supported context"):
                 analysis.prepare_quote_context(db, user_id=1, payload=request)
             assert db.query(CreditReservation).count() == 0
             assert db.query(models.AnalysisRun).count() == 0
             # A route that covers the full bounded prompt can pass admission;
             # this does not activate a paid route or grant quality approval.
-            route.model_quotes = (
-                SimpleNamespace(max_input_tokens=1_000_000),
-                SimpleNamespace(max_input_tokens=1_000_000),
-            )
+            set_capacities(50_000, 50_000)
             analysis.prepare_quote_context(db, user_id=1, payload=request)
             if operation == "resume_tailor":
                 opportunity = db.get(models.Opportunity, "opp_preflight")
@@ -265,18 +283,13 @@ def test_fragmented_pdf_quote_uses_actual_route_capacity(monkeypatch):
                 source_units=units,
                 complete_context=True,
             )
-            route = SimpleNamespace(
-                supported_source_formats=("pdf",),
-                model_quotes=(SimpleNamespace(max_input_tokens=needed),),
-            )
-            monkeypatch.setattr(runtime, "current_runtime", lambda user_id, **kwargs:
-                                SimpleNamespace(resolve_route=lambda *args, **kwargs: route))
+            set_capacities = _configure_quote_route(monkeypatch, "resume_tailor", "pdf", needed)
             request = schemas.AnalysisRunCreate(
                 operation="resume_tailor", opportunity_id="opp_fragments", input={}
             )
             analysis.prepare_quote_context(db, user_id=1, payload=request)
-            route.model_quotes = (SimpleNamespace(max_input_tokens=needed - 1),)
-            with pytest.raises(finance.FundingUnavailable, match="complete prompt"):
+            set_capacities(needed - 1)
+            with pytest.raises(finance.CreditServiceInputUnsupported, match="supported context"):
                 analysis.prepare_quote_context(db, user_id=1, payload=request)
             assert db.query(CreditReservation).count() == 0
             assert db.query(models.AnalysisRun).count() == 0
