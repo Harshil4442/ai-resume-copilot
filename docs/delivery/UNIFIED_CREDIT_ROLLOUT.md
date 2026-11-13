@@ -501,11 +501,21 @@ With a published employer source, the same data import stopped atomically.
 The source insert created a revision row that was also present in the archive.
 The drill verified the refusal and unchanged target rows. A complete restore
 must retain that archived history and verify catalogue invariants before use.
+
+The owned physical recovery test uses PostgreSQL 17 `pg_basebackup` with
+streamed WAL and `pg_verifybackup`. Start it only with an explicitly selected
+local binary directory in `HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN`. A detached cluster
+recovered two catalogue publication revisions and matched the schema, all 84
+table contents, nine sequence states, trigger definitions and relation ACLs.
+The restored test accepted a new catalogue publication and still rejected an
+unversioned evidence update and an invalid foreign key. Payment and reservation
+replay remained idempotent.
+
 Production backup coverage, role and permission recovery, independent authority
 replay and recovery times still need verification before reopening after a
 database failure. The provider reports a six-hour point-in-time history window
-for the current project. An isolated restore and independent backup must be
-verified separately. [Neon restore documentation](https://neon.com/docs/postgres/backup-restore/branch-restore)
+and zero stored snapshots for the current project. Verify an isolated Neon
+restore and independent backup separately. [Neon restore documentation](https://neon.com/docs/postgres/backup-restore/branch-restore)
 
 Accepted model work checks the route's sustained-failure and expense-overrun
 pause before sending a prompt for token counting and again when claiming a
