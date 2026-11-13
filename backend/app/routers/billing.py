@@ -166,6 +166,7 @@ def create_order(
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = user.id
     reference = payload.order_reference
     request_key = payload.idempotency_key
     identity = reference or (purchase_request_id(user.id, request_key) if request_key else None)
@@ -295,32 +296,43 @@ def create_order(
         if concurrent:
             raise _order_status_required(concurrent) from None
         raise HTTPException(status_code=409, detail="Checkout initialization is in progress.")
-    db.refresh(order)
-
     try:
         provider_result = RazorpayAdapter(settings).create_order(
             product=product,
-            local_order_id=order.public_id,
+            local_order_id=public_id,
             receipt=receipt,
         )
     except RazorpayProviderError:
-        log.warning("Razorpay order creation outcome is unknown for local order %s", order.public_id)
-        order.status = "creation_unknown"
+        log.warning("Razorpay order creation response was unavailable for local order %s", public_id)
+        order = db.query(PaymentOrder).filter_by(public_id=public_id).populate_existing().with_for_update().one()
+        if order.user_id != user_id:
+            raise HTTPException(404, "Order not found.") from None
+        if order.status == "initializing":
+            order.status = "creation_unknown"
         # The durable attempt key stays reserved until provider proof resolves it.
-        db.add(order)
         db.commit()
-        raise _order_status_required(order, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.") from None
+        if order.status in UNCERTAIN_ORDER_STATUSES:
+            raise _order_status_required(order, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.") from None
+        raise _order_status_required(order) from None
 
-    order.provider_order_id = provider_result["provider_order_id"]
-    order.status = "created"
-    db.add(order)
+    # Reconciliation can bind or settle the original during the provider call.
+    order = db.query(PaymentOrder).filter_by(public_id=public_id).populate_existing().with_for_update().one()
+    provider_order_id = provider_result["provider_order_id"]
+    if order.user_id != user_id:
+        raise HTTPException(404, "Order not found.")
+    if order.provider_order_id not in (None, provider_order_id):
+        raise _order_status_required(order)
+    order.provider_order_id = provider_order_id
+    if order.status == "initializing":
+        order.status = "created"
     try:
         db.commit()
-        db.refresh(order)
     except IntegrityError:
         db.rollback()
-        log.exception("Duplicate provider order identifier for local order %s", order.public_id)
-        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.")
+        log.exception("Duplicate provider order identifier for local order %s", public_id)
+        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.") from None
+    if order.status != "created":
+        raise _order_status_required(order)
     return _checkout_response(
         order=order, current_user=user, settings=settings
     )

@@ -8,6 +8,7 @@ from threading import Event
 import pytest
 from backend.app.billing.catalog import CATALOG_VERSION, PRODUCTS
 from backend.app.billing.purchase_quote import product_quote
+from backend.app.billing.razorpay import RazorpayAdapter, RazorpayProviderError
 from backend.app.models import EntitlementLedger, PaymentOrder, PaymentTransaction, User
 from backend.app.routers import billing
 from backend.tests.test_payment_funding_postgres import owned_pg_url, pg_factory
@@ -79,8 +80,6 @@ def test_legacy_cleanup_keeps_owner_lock_until_replacement_is_durable(
 def test_checkout_callback_does_not_downgrade_capture_committed_after_original_read(
     client, enabled_checkout, session_factory, monkeypatch,
 ):
-    from backend.app.billing.razorpay import RazorpayAdapter
-
     order_id = _service_order(client)["order_id"]
     with session_factory() as db:
         order = db.query(PaymentOrder).filter_by(public_id=order_id).one()
@@ -116,3 +115,46 @@ def test_checkout_callback_does_not_downgrade_capture_committed_after_original_r
         assert db.query(PaymentTransaction).one().status == "captured"
         assert db.query(EntitlementLedger).count() == 1
         assert db.query(User).one().job_service_credits == 500
+
+
+@pytest.mark.parametrize("response_lost", [False, True])
+def test_legacy_creation_reply_keeps_capture_settled(
+    client, enabled_checkout, session_factory, monkeypatch, response_lost,
+):
+    provider_id = "order_legacycreationrace"
+    provider_calls = []
+
+    def finish_create(self, *, product, local_order_id, receipt):
+        provider_calls.append(local_order_id)
+        with session_factory() as db:
+            order = db.query(PaymentOrder).filter_by(public_id=local_order_id).one()
+            assert order.status == "initializing"
+            # The reconciliation route can bind the provider order before
+            # the original create call finishes. Then the signed event settles it.
+            order.provider_order_id = provider_id
+            db.commit()
+            capture = _capture_payload(order)
+        event = _post_event(client, "evt_legacy_creation_race", capture)
+        assert event.status_code == 200 and event.json()["status"] == "processed"
+        if response_lost:
+            raise RazorpayProviderError("synthetic response loss after settlement")
+        return {"provider_order_id": provider_id}
+
+    monkeypatch.setattr(RazorpayAdapter, "create_order", finish_create)
+    purchase = _purchase_payload()
+    result = client.post("/api/billing/orders", json=purchase)
+    assert result.status_code == 409
+    detail = result.json()["detail"]
+    assert detail["code"] == "billing_order_requires_status"
+    order_id = detail["order_id"]
+    assert client.post("/api/billing/orders", json=purchase).status_code == 409
+    readback = client.get(f"/api/billing/orders/{order_id}").json()
+    assert readback["status"] == "paid" and readback["fulfilled"]
+    assert not readback["checkout_available"]
+    assert provider_calls == [order_id]
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        assert order.provider_order_id == provider_id
+        assert order.active_attempt_key is None
+        assert db.query(PaymentTransaction).one().status == "captured"
+        assert db.query(EntitlementLedger).count() == 1
