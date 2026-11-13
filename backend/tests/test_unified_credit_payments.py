@@ -276,6 +276,52 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
     assert status["fulfilled"] and status["status"] == "paid" and status["pass_expires_at"]
 
 
+def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed_order(unified, session_factory):
+    client, calls = unified
+    identities = []
+    for index in range(3):
+        _, _, result = start(client, key=f"fixture-recovery-pass-{index}")
+        assert result.status_code == 200, result.text
+        identity = result.json()["order_id"]
+        identities.append(identity)
+        # Earlier compatible modes can retain independent active attempts. Use
+        # the real checkout only for immutable fixture terms and provider IDs.
+        with session_factory() as db:
+            row = db.query(PaymentOrder).filter_by(public_id=identity).one()
+            if index < 2:
+                row.status = "refunded"
+                row.active_attempt_key = None
+                db.commit()
+            else:
+                latest_capture = _capture_payload(row)
+    assert _post_event(client, "evt_latest_unified_paid", latest_capture).status_code == 200
+    oldest, next_order, latest = identities
+    with session_factory() as db:
+        rows = {row.public_id: row for row in db.query(PaymentOrder)}
+        now = datetime.now(UTC)
+        rows[oldest].status = "payment_failed"
+        rows[oldest].created_at = now - timedelta(days=3)
+        rows[next_order].status = "created"
+        rows[next_order].created_at = now - timedelta(days=2)
+        original_capture = _capture_payload(rows[oldest])
+        next_capture = _capture_payload(rows[next_order])
+        original_capture["payload"]["payment"]["entity"]["id"] = "pay_recovered_oldest"
+        next_capture["payload"]["payment"]["entity"]["id"] = "pay_recovered_next"
+        db.commit()
+
+    first = client.get("/api/v1/credits/recent-order")
+    assert first.status_code == 200
+    assert first.json()["order_id"] == oldest and first.json()["payment_status"] == "payment_failed"
+    assert not first.json()["checkout_available"] and "no-store" in first.headers["cache-control"]
+    _, _, blocked = start(client, key="fixture-blocked-recovery-pass")
+    assert blocked.status_code == 409 and blocked.json()["detail"]["order_id"] == oldest
+    assert _post_event(client, "evt_oldest_unified_paid", original_capture).status_code == 200
+    assert client.get("/api/v1/credits/recent-order").json()["order_id"] == next_order
+    assert _post_event(client, "evt_next_unified_paid", next_capture).status_code == 200
+    assert client.get("/api/v1/credits/recent-order").json()["order_id"] == latest
+    assert len(calls) == 3
+
+
 def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified, session_factory):
     client, _ = unified
     _, _, result = start(client)

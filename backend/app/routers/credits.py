@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -42,8 +42,8 @@ from ..models import EntitlementLedger, PaymentOrder, User
 from ..rate_limiter import limiter
 from ..security import get_current_user
 from .billing import (
-    OPEN_ORDER_STATUSES,
     UNCERTAIN_ORDER_STATUSES,
+    _blocks_new_purchase,
     _normalized_order_status,
     _order_status_required,
 )
@@ -520,7 +520,10 @@ def _status(db: Session, order: PaymentOrder, email: str) -> dict:
 @router.get("/recent-order", response_model=CreditOrderStatusView | None)
 def recent_order(response: Response, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _headers(response)
-    order = db.query(PaymentOrder).filter_by(user_id=current_user.id, entitlement_kind="credit_pass").order_by(PaymentOrder.created_at.desc()).first()
+    blocks_purchase = _blocks_new_purchase()
+    order = (db.query(PaymentOrder).filter_by(user_id=current_user.id, entitlement_kind="credit_pass")
+        .order_by(blocks_purchase.desc(), case((blocks_purchase, PaymentOrder.created_at)).asc(),
+                  PaymentOrder.created_at.desc(), PaymentOrder.id.asc()).first())
     return _status(db, order, current_user.email) if order else None
 
 
@@ -568,11 +571,10 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
             return _checkout(original, current_user, settings)
         user = db.query(User).filter_by(id=current_user.id).with_for_update().one()
         # Prevent a second payable attempt, including an unknown legacy order.
-        pending = db.query(PaymentOrder).filter(PaymentOrder.user_id == user.id,
-            PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"})).with_for_update(nowait=True).all()
-        for order in pending:
-            if order.provider_order_id or order.status in UNCERTAIN_ORDER_STATUSES:
-                raise _order_status_required(order)
+        pending = (db.query(PaymentOrder).filter(PaymentOrder.user_id == user.id, _blocks_new_purchase())
+            .order_by(PaymentOrder.created_at.asc(), PaymentOrder.id.asc()).with_for_update(nowait=True).first())
+        if pending:
+            raise _order_status_required(pending)
         review = release.current_review()
         quote = service.accept_purchase_quote(db, user_id=user.id, quote_id=payload.quote_id, order_id=identity)
         view = service.quote_response(quote)

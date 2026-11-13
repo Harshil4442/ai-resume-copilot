@@ -52,6 +52,19 @@ OPEN_ORDER_STATUSES = UNCERTAIN_ORDER_STATUSES | {"created", "client_confirmed",
 MAX_WEBHOOK_BYTES = 1_000_000
 
 
+def _blocks_new_purchase(*, hold_unbound_paid: bool = False):
+    # Only legacy status discovery already included unbound paid rows. Keep
+    # that support path without widening unified purchase admission.
+    unbound_statuses = UNCERTAIN_ORDER_STATUSES | ({"paid_unfulfilled"} if hold_unbound_paid else set())
+    bound = PaymentOrder.provider_order_id.is_not(None)
+    if not hold_unbound_paid:
+        bound = and_(bound, PaymentOrder.provider_order_id != "")
+    return or_(
+        PaymentOrder.status.in_(unbound_statuses),
+        and_(PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"}), bound),
+    )
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -453,10 +466,7 @@ def get_recent_order(
 ) -> dict | None:
     _no_store(response)
     cutoff = _utcnow() - timedelta(hours=24)
-    blocks_purchase = or_(
-        PaymentOrder.status.in_(UNCERTAIN_ORDER_STATUSES | {"paid_unfulfilled"}),
-        and_(PaymentOrder.status.in_(OPEN_ORDER_STATUSES), PaymentOrder.provider_order_id.is_not(None)),
-    )
+    blocks_purchase = _blocks_new_purchase(hold_unbound_paid=True)
     order = (
         db.query(PaymentOrder)
         .filter(
