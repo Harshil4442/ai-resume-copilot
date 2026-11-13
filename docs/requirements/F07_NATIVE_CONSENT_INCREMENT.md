@@ -255,8 +255,10 @@ Before activation, the release still needs:
 - Reviewed live mail delivery, representative capacity and budget/retention checks.
 - Controlled API/worker/frontend promotion and explicit enablement readback.
 
-GitHub CI is currently blocked by the account billing lock. Scanner maintenance,
-paid document QA, model calls and commercial activation remain on hold. No live
-migration, source rollout, provider message or new purchase was performed for this
-increment. The native protocol and profile successors must be qualified together;
-this branch is not eligible for blind promotion or old-image rollback after use.
+GitHub Support cleared the account billing lock on November 6, 2026. The
+November 13 CI run on the release branch started all five jobs. Release still
+requires passing CI for the final source commit. Scanner maintenance, paid
+document QA, model calls and commercial activation remain on hold. This
+increment still needs the qualified bridge rollout and schema migration. The
+native protocol and profile successors must be qualified together before
+promotion, and rollback must account for rows written by the new protocol.

@@ -17,7 +17,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp")]
+sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp"), str(ROOT)]
 FAMILY = "hirewiz_schema27_app_v1"
 COMPATIBILITY_SUITES = (
     "tests/test_notification_schema27_step_postgres.py",

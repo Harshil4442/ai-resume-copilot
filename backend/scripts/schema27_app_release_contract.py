@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '999dc593913c049b26cf6394f43cca098dbf244d79c0d521d24ecd7c69d8256c'
+CANDIDATE_APP_SHA256 = 'bfc13d92c0213c5bccaafbe65676260450a59eabe5dd9b65553dd5b56e17ad60'
 CANDIDATE_APP_FILES = 312
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -127,10 +127,10 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def read(root, name):
+def read(root, name, *, allow_empty=False):
     path = root / name
     need(path.is_file() and not path.is_symlink() and path.resolve() == path
-         and 0 < path.stat().st_size <= 2 * 1024**2, "source_path")
+         and (0 if allow_empty else 1) <= path.stat().st_size <= 2 * 1024**2, "source_path")
     return path.read_bytes()
 
 
@@ -147,7 +147,9 @@ def current_app(root):
     names = sorted(p.relative_to(root).as_posix() for p in (root / "backend/app").rglob("*")
                    if p.is_file() and p.suffix in {".py", ".json"} and "__pycache__" not in p.parts)
     need(0 < len(names) <= 2048, "app_inventory")
-    files = {name: read(root, name) for name in names}
+    # Python package markers may be empty and still belong in the source digest.
+    files = {name: read(root, name, allow_empty=Path(name).name == "__init__.py")
+             for name in names}
     need(sum(map(len, files.values())) <= 32 * 1024**2, "app_inventory_bytes")
     return files
 

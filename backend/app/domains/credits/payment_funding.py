@@ -294,7 +294,7 @@ def _history(db):
             allocations.append(value["after_state"])
         else:
             reviews.append(value["after_state"])
-    used = {}
+    used: dict[str, int] = {}
     for body in allocations:
         request = AllocationRequest.model_validate(body["request"])
         fund = body["funding_id"]

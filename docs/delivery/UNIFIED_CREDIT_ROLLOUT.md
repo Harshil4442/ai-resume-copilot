@@ -14,11 +14,11 @@ paid quote requests. New generation remains gated. Funding, qualification and
 processing outages retain their unavailable response rather than being described
 as a user input problem. See [the workflow evidence](evidence/2026-11-06-saved-guidance-input-feedback.json).
 
-Draft PR109 contains the earlier `0c5e4ce` workspace successor. Its first CI run
-42085527252 failed before any job step started: GitHub reported an account
-billing lock. The additional local fixes are not pushed, qualified or deployed.
-Do not retry CI until that account condition changes, and do not substitute the
-previously built 9b9 image as qualification of the new candidate.
+GitHub Support reset the account billing state on 6 November 2026. The next
+[CI run for draft PR109](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43404674109)
+started all five jobs on 13 November after the additional fixes were pushed.
+Release qualification still requires passing CI and a verified build for the
+final candidate commit.
 
 Last verified production context remains DB8 on committed schema26 with the
 three original services and restored schedules/coordinator, and frontend

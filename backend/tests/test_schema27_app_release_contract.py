@@ -76,6 +76,7 @@ def owned(tmp_path, monkeypatch):
           "def collect_schema27_release_target(*args,**kwargs):\n"
           " return _collect_fresh_release_target(*args,purpose='schema27_fresh_release_capture',**kwargs)\n")
     write(root, "backend/app/owned.py", "VALUE=1\n")
+    write(root, "backend/app/__init__.py", b"")
     app = c.current_app(root)
     monkeypatch.setattr(c, "CANDIDATE_APP_FILES", len(app))
     monkeypatch.setattr(c, "CANDIDATE_APP_SHA256", c.app_digest(app))
@@ -104,7 +105,7 @@ def owned(tmp_path, monkeypatch):
 def test_new_family_is_not_the_neverqualified294_or_retained_producer():
     assert c.PRIOR_RELEASE == "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
     assert c.PRIOR_APP_FILES == 290 and c.PRIOR_APP_SHA256.startswith("f2775c3b")
-    assert c.CANDIDATE_APP_FILES == 312 and c.CANDIDATE_APP_SHA256.startswith('999dc593')
+    assert c.CANDIDATE_APP_FILES == 312 and c.CANDIDATE_APP_SHA256.startswith('bfc13d92')
     assert c.HTTP_PATHS == c.v3.HTTP_PATHS | c.NEW_HTTP_PATHS
     assert c.HTTP_SCHEMAS == c.v3.HTTP_SCHEMAS | c.NEW_HTTP_SCHEMAS
     assert len(c.NEW_HTTP_PATHS) == 4 and len(c.NEW_HTTP_SCHEMAS) == 5
