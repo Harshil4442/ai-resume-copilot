@@ -4,6 +4,7 @@ import contextvars
 import json
 import logging
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +18,39 @@ correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     default="unassigned",
 )
 
+_generation_log = logging.getLogger("model_generation")
+_generation_providers = frozenset({"google", "openai", "openai_compatible"})
+_max_generation_latency_ms = 300_000
+
+
+@dataclass(frozen=True)
+class ProviderGenerationTiming:
+    provider: str
+    latency_ms: int
+    failed: bool
+
+    def payload(self) -> dict[str, str | int]:
+        return {
+            "event": "hirewiz_model_generation_latency_v1",
+            "severity": "INFO",
+            "provider": self.provider,
+            "outcome": "failed" if self.failed else "succeeded",
+            "latency_ms": self.latency_ms,
+        }
+
+
+def record_provider_generation(provider: object, latency_ms: int, *, failed: bool) -> None:
+    if type(provider) is not str or provider not in _generation_providers:
+        return
+    if type(latency_ms) is not int or latency_ms < 0:
+        return
+    event = ProviderGenerationTiming(provider, min(latency_ms, _max_generation_latency_ms), failed)
+    try:
+        _generation_log.info("model generation latency", extra={"generation_timing": event})
+    except Exception:
+        # Telemetry must never change generation or ledger settlement.
+        pass
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -26,6 +60,9 @@ class JsonFormatter(logging.Formatter):
         timing = getattr(record, "catalog_timing", None)
         if isinstance(timing, CatalogTimingEvent):
             return json.dumps(timing.payload(), separators=(",", ":"), allow_nan=False)
+        generation = getattr(record, "generation_timing", None)
+        if isinstance(generation, ProviderGenerationTiming):
+            return json.dumps(generation.payload(), separators=(",", ":"), allow_nan=False)
         payload: dict[str, Any] = {
             "timestamp": datetime.now(UTC).isoformat(),
             "severity": record.levelname,
