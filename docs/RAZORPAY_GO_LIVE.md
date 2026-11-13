@@ -20,6 +20,13 @@ The launch product is the unified credit pass in the [current requirements](requ
 
 ## 2. Verify the checkout and webhook configuration
 
+The 13 November serving revision has live checkout disabled. Its Razorpay
+credential settings are present as environment values. Before activation,
+move those bindings into managed secrets. Preserve the key ID used by
+outstanding orders and the signing configuration used by their webhooks.
+If rotation is needed, reconcile the original orders first and verify the
+callback overlap before retiring any earlier credential.
+
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
 - [ ] Subscribe to `payment.captured`, `order.paid`, `payment.failed` and `refund.processed`. Verify the signature on the raw request body and the provider event identifier. Confirm that duplicate deliveries and both capture event types for the same payment settle at most once. Unmatched events require reconciliation. See [Razorpay webhook validation and testing](https://razorpay.com/docs/webhooks/validate-test/).
