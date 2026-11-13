@@ -24,7 +24,7 @@ Last verified production context remains DB8 on committed schema26 with the
 three original services and restored schedules/coordinator, and frontend
 751/Hohsg with companion 0.8.9. The owner original-file review/download,
 cancel-before-Fill and exact-device revocation portion is verified. Actual
-Fill/upload/submission, human Reviewer 2, shadow accounting, 10,000-user capacity,
+Fill/upload/submission, human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 finance/commercial gates and full R03/RTO qualification remain pending.
 Paid 80-document/nine-job native QA and 17-case scanner maintenance are OWNER
 HOLD. The retained scanner proof expired `2026-11-05T06:24:10Z`; it has no waiver.
@@ -93,7 +93,7 @@ The future application-submission tariff does not enable final submission.
 | 3. Deterministic processing and reuse | Basic/curated paths, owned saved-result reuse and employer-origin batch discovery | Complete application journeys with real supported sources; no unsupported coverage claim |
 | 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts and 200 materialized synthetic native inputs | Actual funded model outputs, complete native runtime/render receipts, blinded human comparison and statistical evidence |
 | 5. Capacity privacy and responsive experience | Account export/erasure, funded free limits, responsive review screens | Representative load/performance measurements and integrated privacy/security review |
-| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and freshly observed; retained data, financial digests and ACL preserved; captured resources restored | Representative seven-day/200-operation shadow accounting |
+| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and observed; retained data, financial digests and ACL preserved; captured resources restored. Read-only production baseline observation completed for 6–13 November UTC. | Representative seven-day/200-operation shadow accounting |
 | 7. Controlled deployment and commercial decision | PR57 merged; tested immutable API/workers promoted; frontend canonical production alias promoted; separate pilot reopening checked | Current account/companion acceptance after lifecycle repair, qualified optimized-route canary, commercial hosting and payment gates |
 | 8. Ongoing quality and economics | Stop conditions and accounting signals defined | Operational alert ownership, regular invoice/quality review and measured ongoing evidence |
 
@@ -393,6 +393,12 @@ batch totals, retained provider liabilities, protected execution exposure,
 unspent credits and accepted holds.
 It always reports `release_qualified: false`; it cannot debit a wallet, create a
 provider call, prove human quality, or reconcile an invoice.
+
+The 6–13 November UTC production observation found zero qualifying operations
+and discovery batches, and retained two unknown and three settled provider
+liabilities. The report used reviewed estimates and ran without SQL mutations or
+model calls. The representative window and 200 successful paid-equivalent
+operations required by R02 remain pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
 The report does not replace provider invoices or resource metering. Do not
 release native expense holds just because the customer received a result.

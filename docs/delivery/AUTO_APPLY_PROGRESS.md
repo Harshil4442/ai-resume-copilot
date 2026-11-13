@@ -6,7 +6,7 @@ The new pagination/authentication application image is verified but is **not
 serving**. The 9b9 zero-traffic stages were restored on 5 November. On 13 November,
 Cloud Run showed DB8 as the latest ready and created revision, serving 100% of
 traffic on all three services. The combined successor is undergoing
-[GitHub release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43412461746).
+[GitHub release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43420484928).
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
 below retain their original historical scope.
@@ -26,6 +26,12 @@ checkout and final employer submission remain closed. Paid native document QA
 **OWNER HOLD**. Broader native/model quality qualification remains pending.
 Human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 commercial/finance gates and full R03/RTO qualification remain pending.
+
+The production shadow observation for 6–13 November UTC completed under the
+read-only database role. The window contained no qualifying operations or
+discovery batches. The report retained two unknown and three settled provider
+liabilities, with zero SQL mutations or model calls. Representative shadow
+accounting remains pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
 ## Latest verified runtime and pending releases
 

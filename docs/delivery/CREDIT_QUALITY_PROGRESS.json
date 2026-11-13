@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-13T10:38:00+00:00",
+  "updated_at": "2026-11-13T12:07:43.561683+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -142,10 +142,11 @@
         "docs/delivery/evidence/2026-10-31-protocol-batch-remedy.json",
         "docs/delivery/evidence/2026-11-02-utc-and-browser-repair.json",
         "docs/delivery/evidence/2026-11-02-scanner-metadata-source.json",
-        "docs/delivery/evidence/2026-11-03-active-operating-status.json"
+        "docs/delivery/evidence/2026-11-03-active-operating-status.json",
+        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json"
       ],
-      "status_observed_at": "2026-11-03T23:37:55.247448+00:00",
-      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks; own narrow IAM additions were removed and verified. Full R03/RTO qualification, funded seven-day shadow accounting and finance reconciliation remain pending."
+      "status_observed_at": "2026-11-13T12:07:43.561683+00:00",
+      "local_result": "Schema26 migration/application promotion and restoration of the three original schedules and original coordinator have scoped terminal evidence. The joined final read passed schema, financial, identity, policy and resource checks. The temporary IAM additions were removed and verified. The production shadow baseline for 6–13 November UTC completed read-only with zero qualifying operations or discovery batches. Representative funded shadow accounting, finance reconciliation and full R03/RTO qualification remain pending."
     },
     {
       "number": 7,
@@ -804,7 +805,8 @@
       "requirement": "Shadow and canary. Propose at least seven days of representative shadow accounting and an initial opted-in cohort no larger than 5% of eligible traffic. Require at least 200 successful paid-equivalent operations across supported cohorts before widening; continue longer if coverage or statistical evidence is inadequate. Shadow calls and human review require a funded testing budget.",
       "status": "in_progress",
       "evidence": [
-        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json"
+        "docs/delivery/evidence/2026-10-29-reviewed-release-integration.json",
+        "docs/delivery/evidence/2026-11-13-credit-shadow-observation.json"
       ]
     },
     {
