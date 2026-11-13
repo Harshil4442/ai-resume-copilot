@@ -358,6 +358,26 @@ def record_checkout_result(
     ):
         raise HTTPException(status_code=400, detail="Invalid checkout confirmation.")
 
+    # Settlement locks the order before touching payment transactions. Refresh
+    # the loaded row under that same lock before deciding how to record evidence.
+    order = (
+        db.query(PaymentOrder)
+        .filter(
+            PaymentOrder.id == order.id,
+            PaymentOrder.user_id == current_user.id,
+            PaymentOrder.provider == "razorpay",
+        )
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if order.provider_mode != settings.mode or order.provider_key_id != settings.key_id:
+        raise HTTPException(status_code=409, detail="This checkout attempt is no longer available.")
+    if payload.razorpay_order_id != order.provider_order_id:
+        raise HTTPException(status_code=400, detail="Invalid checkout confirmation.")
+
     transaction = (
         db.query(PaymentTransaction)
         .filter(
