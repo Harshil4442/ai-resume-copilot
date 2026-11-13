@@ -472,6 +472,20 @@ permission to repeat a POST. Roll back code only to a compatible tested version;
 retain all populated accounting tables and do not restore an expensive route
 without sufficient reserved funding.
 
+### Schema27 database recovery rehearsal
+
+The [local PostgreSQL 17 rehearsal](../../backend/tests/test_schema27_application_restore_postgres.py)
+uses a dedicated disposable cluster with `HIREWIZ_SCHEMA27_LOCAL_RESTORE=true`.
+A full logical restore retained the fixture rows, but PostgreSQL reconstructed
+the résumé format constraint with a different cast expression. The strict
+catalogue verifier refused that restored schema. Rebuilding the schema with
+Alembic and restoring data for the 17 fixture tables passed the verifier with
+foreign keys and triggers enabled. Original résumé bytes, active quotes, reserved
+credits, unresolved provider expense and idempotent payment replay were checked.
+This rehearsal covers the selected synthetic tables. Production backup coverage,
+role and permission recovery, independent authority replay and recovery times
+still need verification before reopening after a database failure.
+
 Accepted model work checks the route's sustained-failure and expense-overrun
 pause before sending a prompt for token counting and again when claiming a
 generation attempt. If the pause stops that claim, the worker ends the run and
