@@ -7,7 +7,11 @@ vi.mock("next/web-vitals", () => ({ useReportWebVitals: vi.fn() }));
 import CoreWebVitals, { vitalProperties } from "./CoreWebVitals";
 
 describe("performance data boundary", () => {
-  afterEach(() => { localStorage.clear(); delete window.gtag; });
+  afterEach(() => {
+    localStorage.clear();
+    delete window.gtag;
+    history.replaceState(null, "", "/");
+  });
   it("sends no metric before consent or after consent is withdrawn", () => {
     window.gtag = vi.fn();
     render(<CoreWebVitals />);
@@ -20,6 +24,31 @@ describe("performance data boundary", () => {
     expect(window.gtag).toHaveBeenCalledOnce();
     localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "essential", savedAt: new Date().toISOString() }));
     report(metric as Parameters<typeof report>[0]);
+    expect(window.gtag).toHaveBeenCalledOnce();
+  });
+  it("drops late callbacks during sensitive navigation or for a sensitive measured page", () => {
+    window.gtag = vi.fn();
+    localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "analytics", savedAt: new Date().toISOString() }));
+    history.replaceState(null, "", "/dashboard");
+    const { unmount } = render(<CoreWebVitals />);
+    const report = vi.mocked(useReportWebVitals).mock.calls.at(-1)![0];
+    const metric = { name: "LCP", value: 1400, id: "page-sample", rating: "good", delta: 1400, entries: [], navigationType: "navigate" };
+    const from = (path: string) => ({ ...metric, navigationURL: window.location.origin + path }) as Parameters<typeof report>[0];
+
+    history.replaceState(null, "", "/reset-password/#token=synthetic");
+    report(from("/dashboard"));
+    expect(window.gtag).not.toHaveBeenCalled();
+
+    unmount();
+    history.replaceState(null, "", "/notifications/unsubscribe?token=synthetic");
+    report(metric as Parameters<typeof report>[0]);
+    history.replaceState(null, "", "/dashboard");
+    report(from("/privacy-erasure/confirm#token=synthetic"));
+    expect(window.gtag).not.toHaveBeenCalled();
+
+    render(<CoreWebVitals />);
+    const resumed = vi.mocked(useReportWebVitals).mock.calls.at(-1)![0];
+    resumed(from("/reset-password-example"));
     expect(window.gtag).toHaveBeenCalledOnce();
   });
   it("reports a static section instead of a private opportunity ID or query", () => {
