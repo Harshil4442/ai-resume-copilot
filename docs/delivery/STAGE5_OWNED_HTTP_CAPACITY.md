@@ -251,7 +251,14 @@ In each cohort, the unpaced diagnostic accounted for 150 successful reads.
 The first governed phase admitted 20 reads using 40 metadata calls. The two
 later governed phases admitted zero because they shared that same minute's
 allowance. The run therefore measures the limiter's behavior under a shared
-burst. Successful governed throughput at concurrency 10 and 25 remains unmeasured.
+burst.
+
+In the [fresh-window follow-up](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43412081101),
+each cohort completed all 48 governed reads with no refusals or contract
+failures. Each 16-read batch used 32 intercepted metadata calls after at least
+61 seconds of natural cooldown. Actual peak concurrent requests were 1, 10 and
+16. Cleanup was verified, and the run made no provider calls. Sustained hosted
+throughput and concurrency above 16 remain unmeasured.
 
 ## Original acceptance remains open
 

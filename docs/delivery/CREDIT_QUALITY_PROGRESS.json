@@ -651,8 +651,8 @@
       "evidence": [
         "docs/delivery/STAGE5_OWNED_HTTP_CAPACITY.md"
       ],
-      "local_result": "Both owned Linux workloads passed the response and cleanup checks. Each recorded 170 valid reads and 130 governed refusals out of 300 requests. The governed quota was consumed by 20 successful reads, using 40 metadata calls. Higher-concurrency successful governed reads and hosted capacity remain unmeasured.",
-      "status_observed_at": "2026-11-13T10:42:00+00:00"
+      "local_result": "Both Linux cohorts recorded 170 valid reads and 130 governed refusals out of 300 requests in the shared burst. Each fresh-window cohort then completed 48 governed reads with zero refusals, 32 metadata calls per batch and actual concurrency peaks of 1, 10 and 16. Cleanup passed. Sustained hosted capacity remains unmeasured.",
+      "status_observed_at": "2026-11-13T10:57:00+00:00"
     },
     {
       "id": "I03",
