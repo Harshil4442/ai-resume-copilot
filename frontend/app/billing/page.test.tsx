@@ -593,3 +593,55 @@ it("aborts owner-unmounted payment status and ignores its late terminal result w
   await act(async () => { resolve(order({ status: "paid", fulfilled: true })); });
   expect(state.get).toHaveBeenCalledTimes(before); expect(state.post).not.toHaveBeenCalled();
 });
+
+it.each(["pending", "captured"] as const)("recovers a %s original purchase after a billing reload", async (outcome) => {
+  let recentReads = 0;
+  let resolveRecent!: (value: ReturnType<typeof order>) => void;
+  state.get.mockImplementation((url: string) => {
+    if (url !== "/v1/credits/recent-order") return read(url);
+    recentReads += 1;
+    return recentReads === 1 ? Promise.resolve(null) : new Promise((resolve) => { resolveRecent = resolve; });
+  });
+
+  const original = render(<BillingPage />);
+  const reviewButton = await screen.findByRole("button", { name: "Review Starter pass" });
+  await waitFor(() => expect(reviewButton).toBeEnabled());
+  fireEvent.click(reviewButton);
+  const pay = await screen.findByRole("button", { name: "Continue with ₹59 payment" });
+  await confirmIndia();
+  fireEvent.click(pay);
+  await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+  act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+  original.unmount();
+
+  render(<BillingPage />);
+  const newPurchase = await screen.findByRole("button", { name: "Review Starter pass" });
+  await waitFor(() => expect(resolveRecent).toBeDefined());
+  expect(newPurchase).toBeDisabled();
+  expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+  expect(openCheckout).toHaveBeenCalledOnce();
+
+  const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+  await act(async () => resolveRecent(outcome === "captured" ? settled : order()));
+  if (outcome === "captured") {
+    await screen.findByRole("heading", { name: "Credit payment confirmed" });
+    expect(screen.queryByRole("button", { name: "Resume original checkout" })).not.toBeInTheDocument();
+    expect(openCheckout).toHaveBeenCalledOnce();
+    expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+    return;
+  }
+
+  const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+  expect(newPurchase).toBeDisabled();
+  expect(resume).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+  await confirmIndia();
+  fireEvent.click(resume);
+  await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(2));
+  const orders = state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders");
+  expect(orders).toHaveLength(2);
+  expect(orders[1]).toEqual(["/v1/credits/orders", {
+    quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified",
+  }]);
+  expect(hostedCheckout.mock.calls[1][0]).toMatchObject({ order_id: "provider_unified", amount: 5900 });
+});
