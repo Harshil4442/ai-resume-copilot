@@ -100,10 +100,10 @@ def validate_digest_rows(values: dict[tuple[str, str], dict], records: dict[str,
         if values.get(("v3_recovery_mailboxes", str(subject.subject_uuid))) != {**mailbox, "email_sha256": email_sha256}:
             raise GuardUnavailable("Digest census lost its exact immutable recipient binding")
     for owner, chain in chains.items():
-        if sorted(chain) != list(range(1, max(chain) + 1)):
-            raise GuardUnavailable("Digest consent census contains a missing generation")
         previous = None
-        for generation in sorted(chain):
+        for index, generation in enumerate(sorted(chain), 1):
+            if generation != index:
+                raise GuardUnavailable("Digest consent census contains a missing generation")
             head, declared = chain[generation]
             if declared != previous:
                 raise GuardUnavailable("Digest consent census lost its exact predecessor")

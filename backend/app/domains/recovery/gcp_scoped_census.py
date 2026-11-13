@@ -211,8 +211,9 @@ def validate_scoped_rows(values: dict[tuple[str, str], dict]) -> set[tuple[str, 
                     expect("v3_account_tombstones", str(command.subject.account_binding_id), tombstone.model_dump(mode="json"))
     for key, subject in subjects.items():
         chain = histories[key]
-        if (sorted(chain) != list(range(1, subject.auth_generation + 1))
-                or not chain or chain[subject.auth_generation].credential_sha256 != subject.credential_sha256):
+        if (len(chain) != subject.auth_generation or not chain
+                or any(generation != index for index, generation in enumerate(sorted(chain), 1))
+                or chain[subject.auth_generation].credential_sha256 != subject.credential_sha256):
             raise GuardUnavailable("Full scoped generation history detects rollback, missing revision or gap")
     for (namespace, key), raw in values.items():
         if namespace != "v3_recovery_mailboxes":

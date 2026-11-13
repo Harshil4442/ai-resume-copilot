@@ -55,23 +55,26 @@ def archive():
     reference, body = partitioned_intent(canonical(intent.model_dump(mode="json")).encode(), resource)
     key = str(reference.operation_id)
     zero = "0" * 64
-    registration = {"segment_id": "b" * 64, "lane": int(hashlib.sha256(key.encode()).hexdigest(), 16) % 2,
-                    "lane_ordinal": 1, "directory_shard": 0, "directory_ordinal": 1, "previous": zero}
+    lane = int(hashlib.sha256(key.encode()).hexdigest(), 16) % pin.lanes
+    segment_id = fingerprint({"pin": pin.model_dump(mode="json"), "lane": lane, "lane_ordinal": 1})
+    shard = int(segment_id, 16) % pin.directory_shards
+    registration = {"segment_id": segment_id, "lane": lane, "lane_ordinal": 1, "directory_shard": shard,
+                    "directory_ordinal": 1, "previous": zero}
     registration = SegmentRegistration.model_validate({**registration, "digest": fingerprint(registration)})
     binding = {"reference": reference.model_dump(mode="json"), "segment_id": registration.segment_id,
                "ordinal": 1, "previous": zero}
     record = PartitionedRecord.model_validate({**binding, "chain_digest": fingerprint(binding), "intent": body})
-    directory = DirectoryHead(shard=0, count=1, digest=registration.digest)
+    directories = tuple(DirectoryHead(shard=i, count=int(i == shard), digest=registration.digest if i == shard else zero)
+                        for i in range(pin.directory_shards))
     segment = SegmentState(registration=registration, phase="SEALED", count=1, digest=record.chain_digest)
 
     # One orphan deny is durably recorded, with no matching consuming grant.
     rows = {
         ("v3_root", "current"): root.model_dump(mode="json"),
         ("v3_records", key): record.model_dump(mode="json"),
-        ("v3_directory", "0"): directory.model_dump(mode="json"),
-        ("v3_directory", "1"): {"shard": 1, "count": 0, "digest": zero},
+        **{("v3_directory", str(directory.shard)): directory.model_dump(mode="json") for directory in directories},
         ("v3_segments", registration.segment_id): segment.model_dump(mode="json"),
-        ("v3_registration_slots", "0:1"): registration.model_dump(mode="json"),
+        ("v3_registration_slots", f"{shard}:1"): registration.model_dump(mode="json"),
         ("v3_record_slots", f"{registration.segment_id}:1"): {
             "operation_id": key, "record_sha256": fingerprint(record.model_dump(mode="json")),
         },
@@ -82,22 +85,26 @@ def archive():
             "lane": 1 - registration.lane, "segment_count": 0, "segment_id": None,
         },
     }
-    native_rows = {fingerprint({"namespace": ns, "key": row_key}): {"namespace": ns, "key": row_key, "value": value}
-                   for (ns, row_key), value in rows.items()}
-    cut = PartitionedCut(root=root, directory_heads=(directory, DirectoryHead(shard=1, count=0, digest=zero)),
-                         segments=(segment,), records_sha256=fingerprint({"records": [record.model_dump(mode="json")]}),
-                         records_count=1, authority_rows_count=len(rows),
-                         authority_rows_sha256=fingerprint({"authority_rows": [native_rows[k] for k in sorted(native_rows)]}))
     entries = [{"kind": "canonical_intent", "operation_id": key, **store(reference.path, body, "2")}]
-    entries.extend({"kind": "native_authority_row", "identity_sha256": identity,
-                    **store(f"authority-v3-native-rows/{prefix}/{identity}.json", row, "3")}
-                   for identity, row in sorted(native_rows.items()))
     chunk_path = f"authority-v3-cut-chunks/{prefix}/1.json"
     manifest_path = f"authority-v3-complete-cuts/{prefix}.json"
     manifest = {"version": 3, "pin": pin.model_dump(mode="json"), "close_id": str(root.close_id),
-                "native_cut": store(f"authority-v3-native-cuts/{prefix}.json", cut.model_dump(mode="json")),
-                "chunks": [], "chunk_chain_sha256": zero, "records_count": 1, "authority_rows_count": len(rows),
-                "entries_count": len(entries), "complete_prefix": True, "projection_complete": False}
+                "chunks": [], "chunk_chain_sha256": zero, "records_count": 1,
+                "complete_prefix": True, "projection_complete": False}
+
+    def capture_rows():
+        native_rows = {fingerprint({"namespace": ns, "key": row_key}): {"namespace": ns, "key": row_key, "value": value}
+                       for (ns, row_key), value in rows.items()}
+        ordered = sorted(native_rows.items())
+        cut = PartitionedCut(root=root, directory_heads=directories, segments=(segment,),
+                             records_sha256=fingerprint({"records": [record.model_dump(mode="json")]}), records_count=1,
+                             authority_rows_count=len(rows), authority_rows_sha256=fingerprint({"authority_rows": [row for _, row in ordered]}))
+        entries[1:] = [{"kind": "native_authority_row", "identity_sha256": identity,
+                        **store(f"authority-v3-native-rows/{prefix}/{identity}.json", row, "3")} for identity, row in ordered]
+        manifest.update(native_cut=store(f"authority-v3-native-cuts/{prefix}.json", cut.model_dump(mode="json")),
+                        authority_rows_count=len(rows), entries_count=len(entries))
+
+    capture_rows()
 
     def seal(previous=zero):
         chunk = store(chunk_path, {"version": 3, "pin": pin.model_dump(mode="json"), "close_id": str(root.close_id),
@@ -106,7 +113,7 @@ def archive():
         manifest["chunk_chain_sha256"] = chunk["sha256"]
         ref = store(manifest_path, manifest, "5")
         return PartitionedCompleteReceipt(pin=pin, close_id=root.close_id, native_cut_sha256=manifest["native_cut"]["sha256"],
-                                         records_count=1, authority_rows_count=len(rows), manifest_path=manifest_path,
+                                         records_count=1, authority_rows_count=manifest["authority_rows_count"], manifest_path=manifest_path,
                                          manifest_generation=ref["generation"], manifest_sha256=ref["sha256"])
 
     reads = []
@@ -121,7 +128,8 @@ def archive():
         return value
 
     return SimpleNamespace(seal=seal, read=read, reads=reads, objects=objects, entries=entries, chunk=chunk_path,
-                           intent=reference.path, root=entries[1]["path"], rows=len(rows), store=store)
+                           intent=reference.path, root=entries[1]["path"], rows=len(rows), store=store,
+                           native_rows=rows, capture_rows=capture_rows)
 
 
 def test_detached_export_checks_every_native_and_orphan_intent_object(archive):
@@ -139,6 +147,33 @@ def test_detached_export_suppresses_reader_error_bodies(archive):
     with pytest.raises(GuardUnavailable, match="^Closed export object could not be read$") as error:
         verify_closed_export(archive.seal(), read)
     assert error.value.__suppress_context__
+
+
+@pytest.mark.parametrize(("fault", "reason"), [
+    ("missing_record_slot", "record slot chain"),
+    ("missing_registration_slot", "registration slot chain"),
+    ("lane_head", "lane census"),
+    ("directory_head", "directory census"),
+    ("unknown_row", "unregistered native rows"),
+    ("unowned_mailbox", "protected enrollment ownership"),
+])
+def test_detached_export_checks_semantics_after_rebuilt_hashes(archive, fault, reason):
+    rows = archive.native_rows
+    if fault == "missing_record_slot":
+        del rows[next(identity for identity in rows if identity[0] == "v3_record_slots")]
+    if fault == "missing_registration_slot":
+        del rows[next(identity for identity in rows if identity[0] == "v3_registration_slots")]
+    if fault == "lane_head":
+        rows["v3_lanes", "0"]["lane"] = 1
+    if fault == "directory_head":
+        rows["v3_directory", "0"]["digest"] = "a" * 64
+    if fault == "unknown_row":
+        rows["v3_unsupported", "unknown"] = {"synthetic": True}
+    if fault == "unowned_mailbox":
+        rows["v3_recovery_mailboxes", str(uuid4())] = {"synthetic": True}
+    archive.capture_rows()
+    with pytest.raises(GuardUnavailable, match=reason):
+        verify_closed_export(archive.seal(), archive.read)
 
 
 @pytest.mark.parametrize("fault", ["missing_chunk", "wrong_generation", "modified_bytes", "missing_intent",
