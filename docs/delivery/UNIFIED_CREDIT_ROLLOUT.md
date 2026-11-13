@@ -129,6 +129,35 @@ service account and sends its logs to Cloud Logging. Use the same full SHA for
 Verify the returned Build ID, resolved Git SHA, and immutable image digest through
 the release controller before staging. [Cloud Build service accounts and logging](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
 
+### Promote the matched schema26 bridge and frontend
+
+The paginated frontend needs `/api/resume/page` and the workspace read routes
+from the bridge API. Keep the current frontend serving while staging the bridge.
+Use the bridge controller's fresh scanner and reviewed funding checks before
+creating candidate revisions, even at zero traffic.
+
+The current frontend still reads the legacy résumé and workspace routes. Before
+moving API traffic, use the verified read-only database observer to count groups
+above the legacy limits. Check résumés by owner (500), activity, contacts,
+reminders and versions by owner and opportunity (50 each), evidence and versions
+by owner and résumé (50 each), and scheduled reminders by owner (50). Retain only
+aggregate counts. Resolve any overflow affecting the current frontend before
+starting the mixed release.
+
+At the exact zero-traffic tag, verify release health and use an existing test
+session to check the owned legacy résumé list, account bootstrap and a workspace
+detail. Verify the existing pilot flags and closed payment and generation flags.
+Repeat the legacy reads through the serving frontend after the matching API moves
+to production. Then promote the staged frontend and verify its paginated résumé
+and workspace reads through the canonical host. Verify fresh sign-in separately.
+
+Before schema27 DDL, a frontend failure can be handled by restoring the prior
+frontend while the compatible bridge is serving. A backend rollback also needs
+the controller's fresh rollback checks. For failures after schema27 DDL, use a
+recovery path verified for schema27 and retained customer obligations.
+
+### Historical schema25 rollout
+
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial
 compatible prior8cb app update. Do not replay the completed migration or treat a
