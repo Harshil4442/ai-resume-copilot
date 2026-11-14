@@ -112,16 +112,27 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   });
 }
 
-export async function apiDownload(path: string, fallbackFilename: string): Promise<void> {
-  const response = await fetch(accountApiPath(path), { cache: "no-store" });
+type ReviewedDownload = { media_type: string; size_bytes: number; sha256: string };
+
+export async function apiDownload(path: string, fallbackFilename: string, reviewed?: ReviewedDownload, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(accountApiPath(path), { cache: "no-store", signal, ...(reviewed ? { redirect: "error" } : {}) });
   if (!response.ok) {
     const data = await parseResponse(response);
     throw new ApiError(errorMessage(data, `Download failed (${response.status})`), response.status, data);
   }
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="?([^";]+)"?/i);
-  const filename = match?.[1] || fallbackFilename;
-  const url = URL.createObjectURL(await response.blob());
+  const filename = reviewed ? fallbackFilename : match?.[1] || fallbackFilename;
+  const blob = await response.blob();
+  if (reviewed) {
+    const mismatch = () => new Error("This file no longer matches the reviewed application. Load a fresh review from your companion.");
+    if (blob.size !== reviewed.size_bytes || blob.type !== reviewed.media_type) throw mismatch();
+    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (hash !== reviewed.sha256) throw mismatch();
+  }
+  signal?.throwIfAborted();
+  const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;

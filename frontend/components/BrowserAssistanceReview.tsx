@@ -380,11 +380,24 @@ export default function BrowserAssistanceReview({ deviceId, reviewId, applicatio
     }
   }
   async function download() {
-    if (!review?.payload || review.payload.review_protocol_version === 3 || busy) return;
-    setBusy(true); setError(null);
-    try { await apiDownload(`/v1/employer-jobs/applications/${encodeURIComponent(review.payload.application_id)}/artifact`, review.payload.artifact.filename); if (mounted.current) setDownloaded(true); }
-    catch (failure) { if (mounted.current) { setDownloaded(false); setError(failure instanceof Error ? failure.message : "The exact review file could not be downloaded."); } }
-    finally { if (mounted.current) setBusy(false); }
+    if (!review?.payload || review.payload.review_protocol_version === 3 || active.current) return;
+    const { application_id: applicationId, artifact } = review.payload;
+    const controller = new AbortController();
+    active.current = controller;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(BROWSER_CLIENT_TIMEOUT_MS)]);
+    setBusy(true); setError(null); setDownloaded(false); setAccepted(false);
+    try {
+      await apiDownload(`/v1/employer-jobs/applications/${encodeURIComponent(applicationId)}/artifact`, artifact.filename, artifact, signal);
+      if (mounted.current && !signal.aborted) setDownloaded(true);
+    } catch (failure) {
+      if (mounted.current && !controller.signal.aborted) {
+        setError(signal.aborted ? "The exact review file could not be downloaded." :
+          failure instanceof Error ? failure.message : "The exact review file could not be downloaded.");
+      }
+    } finally {
+      if (active.current === controller) active.current = null;
+      if (mounted.current) setBusy(false);
+    }
   }
   async function copyApplication() {
     if (!validApplication) return;
