@@ -21,7 +21,7 @@ APP_SHA256 = '4c86409a4eae9bd941e2e89a3b000b972fd891f3d1c67a9ed0fe68b3effb27af'
 # These pins never relabel APP_SHA256, the old entry or a historical runner.
 SOURCE26_APPLICATION_FAMILY = "hirewiz_schema26_app_rolling_v3"
 CURRENT_APPLICATION_FAMILY = "hirewiz_schema27_app_v1"
-CURRENT_APPLICATION_APP_SHA256 = 'b1210f21b68b57baebd85cfb8fe96823b5bdf080ca7f7eb08539b31a95a4cd48'
+CURRENT_APPLICATION_APP_SHA256 = '9cdb02aa1d57934838eec61d85f770779868117b4ed0ff61e508ee9410a2b842'
 CURRENT_APPLICATION_APP_FILES = 313
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
