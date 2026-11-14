@@ -1,12 +1,13 @@
 # HireWiz development and deployment progress
 
-Updated **13 November 2026 (IST)**. The API, analysis worker and employer
+Updated **14 November 2026 (IST)**. The API, analysis worker and employer
 worker each send 100% of their traffic to DB8 on schema26. The separate résumé
-coordinator serves its retained 7a00839 image. Frontend 751/Hohsg was last
-verified on the production domain. PR114's pagination and authentication
-update has a verified Cloud Run image and a staged Vercel deployment. The
-scanner, checkout, recovery and monitoring changes are integrated in draft PR120.
-[PR114 release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43438302862) · [PR120](https://github.com/Harshil4442/ai-resume-copilot/pull/120)
+coordinator serves its retained 7a00839 image. The live frontend has two
+separate DB8-compatible updates. It reduces sign-in and Dashboard requests and
+checks that a browser-review download matches the selected résumé. The merged
+saved Workspace and interview history work has an exact GCP image and awaits
+the bridge rollout. [Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/395e268e24892c4f23ac9e3622030ffb286ff554) ·
+[Merged Workspace changes](https://github.com/Harshil4442/ai-resume-copilot/pull/125)
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
 below retain their original historical scope.
@@ -44,12 +45,11 @@ recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#sche
 |---|---|---|
 | Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
 | Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-d-32d98b931d16-open` | 100% serving on the retained revision. The latest-ready pointer names a different revision. |
-| Production frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Production remains at the retained verified deployment. New bounded resume selectors/session changes and reviewed header-read deferral require their matching frontend publication; a READY preview is not a production alias promotion. |
+| Production frontend | Source `395e268e24892c4f23ac9e3622030ffb286ff554`; `dpl_4XgSeiDLBieZFZmcbNh5Bw4SfhVF` | The canonical domain serves both narrow frontend fixes. A production-build Chromium test rejected changed bytes and downloaded the exact reviewed file at widths 390 and 1440 px using synthetic responses. Public post-promotion checks verified the review page, protected routes and closed checkout. A new signed-in production download remains unverified. |
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
-| Staged frontend | PR114 merge `5c54768dac9225fbb32763f55d46fc794141a91f`; deployment `dpl_ChHqR3DxbTbp5yPt8nijyzAv5zgS` | The staged deployment is ready. Promote it after the matching API and the old frontend's authenticated reads pass verification. |
-| Verified application image | PR114 source `629e808c78dfdbdeaad0a8862974b8c18b6c6fde`; image `sha256:5fde8e759699df51d2d91d0463d648a06500794c7d25e8b9d543a9e71efe938c` | Build `77bb4df7-7013-419e-bdad-302be4a52ecf`, exact-source CI `43438302862` and Source27 Git/build/image verification passed. Cloud Run staging awaits scanner and funding checks. |
+| Bridge application image | PR125 merge `4dc9aea40e11a55f2d137abbdd446edcd9051e98`; image `sha256:08888d36aacf24a8a5cde68935abac7ff69e5fb2c1062badc60786df5a1321a9` | Build `2bccad42-17dd-4f95-adb4-9bfe318739a0` succeeded. The merged tree equals the tested PR tree. Exact main CI and full release qualification remain pending. Cloud Run staging requires current scanner verification and funding evidence. [Main CI](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43582145259) |
 | Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The replacement pair remains unpublished. |
 
 The PR114 source-image verification record has SHA-256
