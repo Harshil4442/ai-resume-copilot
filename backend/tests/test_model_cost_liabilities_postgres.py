@@ -4,6 +4,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from threading import Event, local
+from time import monotonic, sleep
 
 import pytest
 from alembic.migration import MigrationContext
@@ -81,33 +82,64 @@ def test_postgres_reservation_before_erasure_retains_hold_without_provider_lock(
 
 
 @pytest.mark.parametrize("action", ["admission", "settlement", "creation"])
-def test_postgres_erasure_wins_then_current_settlement_only_or_new_work_denied(factory, monkeypatch, action):
+def test_postgres_erasure_wins_then_current_settlement_only_or_new_work_denied(factory, pg_engine, monkeypatch, action):
     role = local()
     entered, release = Event(), Event()
+    pids: dict[str, int] = {}
     original = admissions.lock_application_set
+
     def guard(db, user_id):
         original(db, user_id)
         if getattr(role, "name", None) == "delete":
+            pids["holder"] = db.scalar(text("SELECT pg_backend_pid()"))
             entered.set()
             assert release.wait(8)
+
+    def watch_waiter(_conn, cursor, statement, _params, _context, _many):
+        if getattr(role, "name", None) == "waiter" and statement.startswith("SELECT pg_advisory_xact_lock"):
+            # This fixture deliberately creates a privacy-transaction wait. Give
+            # only this connection the same bounded lock window as the test.
+            cursor.execute("SET LOCAL lock_timeout = '8s'")
+            pids["waiter"] = cursor.connection.info.backend_pid
+
     monkeypatch.setattr(admissions, "lock_application_set", guard)
+
     def deletion():
         role.name = "delete"
         erase(factory)
+
     with persistent_run_budget(factory, "private_run_1") as budget:
         record = admit(budget) if action == "settlement" else None
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            deleted = pool.submit(deletion)
-            assert entered.wait(5)
+
+        def contend():
+            role.name = "waiter"
             if action == "admission":
-                future = pool.submit(admit, budget)
-            elif action == "settlement":
-                future = pool.submit(budget.finish, record, latency_ms=1, response=usage())
-            else:
-                future = pool.submit(_create, factory)
-            with pytest.raises(TimeoutError):
-                future.result(timeout=0.1)
-            release.set()
+                return admit(budget)
+            if action == "settlement":
+                return budget.finish(record, latency_ms=1, response=usage())
+            return _create(factory)
+
+        def waiting_on_erasure() -> bool:
+            with pg_engine.connect() as observer:
+                return observer.scalar(text(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                    "WHERE pid=:waiter AND wait_event_type='Lock' AND wait_event='advisory' "
+                    "AND :holder=ANY(pg_blocking_pids(pid)))"
+                ), {"waiter": pids.get("waiter"), "holder": pids["holder"]}) is True
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            event.listen(pg_engine, "before_cursor_execute", watch_waiter)
+            try:
+                deleted = pool.submit(deletion)
+                assert entered.wait(5)
+                future = pool.submit(contend)
+                deadline = monotonic() + 3
+                while not waiting_on_erasure():
+                    assert not future.done() and monotonic() < deadline, "Contender never waited on the erasure fence"
+                    sleep(0.01)
+            finally:
+                release.set()
+                event.remove(pg_engine, "before_cursor_execute", watch_waiter)
             deleted.result(timeout=8)
             if action == "settlement":
                 future.result(timeout=8)
