@@ -25,7 +25,7 @@ from .services.resume_upload_coordinator import (
     valid_upload_id,
 )
 
-app = FastAPI(title="Resume Upload Coordinator", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Resume Upload Coordinator", docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
 
 
 @dataclass(frozen=True)

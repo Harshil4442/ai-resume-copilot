@@ -62,6 +62,13 @@ def test_wake_disabled_by_default(configured, monkeypatch):
     assert configured.post(WAKE_PATH, headers=auth()).status_code == 503
 
 
+def test_private_task_destination_never_redirects(wake_configured, monkeypatch):
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: pytest.fail('unexpected auth request'))
+    for path in (WAKE_PATH + '/', '/internal/resume-uploads/scan/', '/internal/resume-uploads/cleanup/'):
+        result = wake_configured.post(path, headers=auth(), follow_redirects=False)
+        assert result.status_code == 404 and 'Location' not in result.headers
+
+
 def test_wake_caller_and_scheduler_are_not_interchangeable(wake_configured, monkeypatch):
     monkeypatch.setattr(worker, 'execute_wake', lambda *a: pytest.fail('wake child invocation'))
     monkeypatch.setattr(worker, 'execute', lambda *a: pytest.fail('scheduler child invocation'))
