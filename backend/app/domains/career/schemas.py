@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from ...schemas import ResumePageResponse
 
@@ -394,6 +394,7 @@ class OpportunityExportResponse(BaseModel):
 # Browsing metadata is deliberately separate from review/approval bodies.
 WorkspaceTab = Literal["overview", "resume", "learning", "interview", "outcome", "activity"]
 WorkspaceCollection = Literal["activity", "contacts", "reminders", "evidence", "resume_versions"]
+WorkspacePageCollection = Literal[WorkspaceCollection, "interview_results"]
 
 
 class OpportunityHeader(BaseModel):
@@ -481,6 +482,18 @@ class ResumeVersionMetadata(BaseModel):
     created_at: datetime
 
 
+class InterviewResultMetadata(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    completed_at: datetime
+
+    @field_validator("completed_at")
+    @classmethod
+    def utc_completion(cls, value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 class WorkspacePage[Metadata](BaseModel):
     items: list[Metadata]
     next_cursor: str | None
@@ -492,6 +505,7 @@ class WorkspacePages(BaseModel):
     contacts: WorkspacePage[ContactMetadata] | None = None
     reminders: WorkspacePage[ReminderResponse] | None = None
     evidence: WorkspacePage[EvidenceMetadata] | None = None
+    interview_results: WorkspacePage[InterviewResultMetadata] | None = None
 
 
 class WorkspaceResponse(BaseModel):
@@ -510,7 +524,7 @@ class WorkspaceResponse(BaseModel):
 WorkspacePageResponse = (
     WorkspacePage[ActivityMetadata] | WorkspacePage[ContactMetadata]
     | WorkspacePage[ReminderResponse] | WorkspacePage[EvidenceMetadata]
-    | WorkspacePage[ResumeVersionMetadata]
+    | WorkspacePage[ResumeVersionMetadata] | WorkspacePage[InterviewResultMetadata]
 )
 
 

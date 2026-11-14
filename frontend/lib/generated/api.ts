@@ -3955,6 +3955,16 @@ export interface components {
                 [key: string]: string;
             }[];
         };
+        /** InterviewResultMetadata */
+        InterviewResultMetadata: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Id */
+            id: string;
+        };
         /** JobMatchHistoryItem */
         JobMatchHistoryItem: {
             /** Company */
@@ -6160,6 +6170,13 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** WorkspacePage[InterviewResultMetadata] */
+        WorkspacePage_InterviewResultMetadata_: {
+            /** Items */
+            items: components["schemas"]["InterviewResultMetadata"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
         /** WorkspacePage[ReminderResponse] */
         WorkspacePage_ReminderResponse_: {
             /** Items */
@@ -6179,6 +6196,7 @@ export interface components {
             activity?: components["schemas"]["WorkspacePage_ActivityMetadata_"] | null;
             contacts?: components["schemas"]["WorkspacePage_ContactMetadata_"] | null;
             evidence?: components["schemas"]["WorkspacePage_EvidenceMetadata_"] | null;
+            interview_results?: components["schemas"]["WorkspacePage_InterviewResultMetadata_"] | null;
             reminders?: components["schemas"]["WorkspacePage_ReminderResponse_"] | null;
             resume_versions: components["schemas"]["WorkspacePage_ResumeVersionMetadata_"];
         };
@@ -12514,7 +12532,7 @@ export interface operations {
             header?: never;
             path: {
                 opportunity_id: string;
-                collection: "activity" | "contacts" | "reminders" | "evidence" | "resume_versions";
+                collection: "activity" | "contacts" | "reminders" | "evidence" | "resume_versions" | "interview_results";
             };
             cookie?: never;
         };
@@ -12526,7 +12544,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspacePage_ActivityMetadata_"] | components["schemas"]["WorkspacePage_ContactMetadata_"] | components["schemas"]["WorkspacePage_ReminderResponse_"] | components["schemas"]["WorkspacePage_EvidenceMetadata_"] | components["schemas"]["WorkspacePage_ResumeVersionMetadata_"];
+                    "application/json": components["schemas"]["WorkspacePage_ActivityMetadata_"] | components["schemas"]["WorkspacePage_ContactMetadata_"] | components["schemas"]["WorkspacePage_ReminderResponse_"] | components["schemas"]["WorkspacePage_EvidenceMetadata_"] | components["schemas"]["WorkspacePage_ResumeVersionMetadata_"] | components["schemas"]["WorkspacePage_InterviewResultMetadata_"];
                 };
             };
             /** @description Validation Error */

@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'd91e2f8993abff963299dfa1cd5a31616bf305ad7559d1d0c53da9728c66feac'
+CANDIDATE_APP_SHA256 = 'ec2ff98e1eb208ce6e9428b8f44f9b3fda86191bcb8ec6448d846461e5b5f461'
 CANDIDATE_APP_FILES = 313
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -46,6 +46,7 @@ NEW_HTTP_PATHS = {
     "/api/v1/opportunities/page": "29f1a35114d7cf58e15d0816b6dcda425b4098c745bb18b64bbc15d08407f8a4",
     # Optional learning projection. Keep the retained v3 route pin immutable.
     "/api/v1/opportunities/{opportunity_id}/workspace": "6e1d8ef20c87bdf480648071f00c941cbe711d3f772af5e8f89ebb48b1501cfa",
+    "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": "ce7b8e566f8d9d169ad1e29455fe2d247eb23d9f16c10ff4cc6cbd9aca59fa1c",
 }
 NEW_HTTP_SCHEMAS = {
     "PreferenceChange": "f836f891975e90293310e2b7ed501a2ad5e41d7ad80d8f46a74dcdcd5419a072",
@@ -54,6 +55,9 @@ NEW_HTTP_SCHEMAS = {
     "OpportunityPageItem": "8393811d947f625ea1a973b02547823c23ce0b75016f780babe2275a4c47b95d",
     "OpportunityPageResponse": "fc5888ecca03cb83495b1d8733ed477c28de5ed83caf794e480cfe2b2328d244",
     "WorkspaceResponse": "8f408916af8d6005c2604ce6a570bddca996b2005691bdd3b2db9eef06f87318",
+    "InterviewResultMetadata": "b0b0577d8c6472de876710cf2f1998ccbc9824c661f4d81b4fe7a7f5d4ebf813",
+    "WorkspacePage_InterviewResultMetadata_": "ce512358144d1940c3cb0f91018c1445831fcd662fb62fe6b0fde4b5711bfa46",
+    "WorkspacePages": "e1b63ac13d466953c1c4f4f5e18d749dedeae62e3a34ff11c4889639d2bb3363",
 }
 HTTP_PATHS = {**v3.HTTP_PATHS, **NEW_HTTP_PATHS}
 HTTP_SCHEMAS = {**v3.HTTP_SCHEMAS, **NEW_HTTP_SCHEMAS}
@@ -117,6 +121,8 @@ F07_PATHS = (
     "frontend/instrumentation-client.ts", "frontend/components/SessionProviderWrapper.tsx", "frontend/next.config.mjs",
     "backend/app/domains/career/workspace.py", "backend/tests/test_workspace_skill_roi.py",
     "backend/tests/test_career_workspace_pagination.py",
+    "frontend/app/workspace/[id]/page.tsx", "frontend/app/workspace/[id]/page.test.tsx",
+    "frontend/components/career/WorkspaceInterviewHistory.tsx", "frontend/lib/useQuotedAnalysis.ts",
     "frontend/lib/workspacePages.ts",
 )
 

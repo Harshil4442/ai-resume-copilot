@@ -32,7 +32,7 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
   selectionKey: string;
   context: Omit<ServiceReviewContext, "operation" | "inputFingerprint">;
   availability: CreditAvailability | null | undefined;
-  onRun: (run: AnalysisRun) => void;
+  onRun: (run: AnalysisRun, reused: boolean) => void;
 }) {
   const [review, setReview] = useState<Review | null>(null);
   const [previousResult, setPreviousResult] = useState<string | null>(null);
@@ -55,7 +55,7 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
         throw error;
       }
     },
-    onSuccess: (run, accepted) => { setReview(null); if (accepted.selectionKey === selectionKey) onRun(run); else setPreviousResult(`Your approved request for ${accepted.context.resume?.filename || accepted.context.job?.title || "the previous inputs"} was saved. Return to those inputs to view its result.`); window.dispatchEvent(new Event("refresh_unified_credits")); },
+    onSuccess: (run, accepted) => { setReview(null); if (accepted.selectionKey === selectionKey) onRun(run, false); else setPreviousResult(`Your approved request for ${accepted.context.resume?.filename || accepted.context.job?.title || "the previous inputs"} was saved. Return to those inputs to view its result.`); window.dispatchEvent(new Event("refresh_unified_credits")); },
     retry: false,
   });
   const lookup = useMutation({
@@ -80,7 +80,7 @@ export function useQuotedAnalysis({ request, selectionKey, context, availability
       return { review: { quote, request: selectedRequest, context: { ...selectedContext, operation, inputFingerprint: quote.input_fingerprint }, selectionKey: selectedKey, executionKey: crypto.randomUUID() } satisfies Review };
     },
     onSuccess: (result) => { if (result.run) {
-      if (result.selectionKey === selectionKey) { onRun(result.run); setPreviousResult("Your existing request was loaded. No new credits were charged."); }
+      if (result.selectionKey === selectionKey) { onRun(result.run, true); setPreviousResult("Your existing request was loaded. No new credits were charged."); }
       else setPreviousResult("An existing result was found for the previous inputs. Return to those inputs to view it.");
     } else if (result.review) { execution.reset(); setReview(result.review); }
     else setPreviousResult("No saved result matches these inputs. No work was started or credits charged."); },

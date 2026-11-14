@@ -399,6 +399,7 @@ it("reopens saved enhanced interview questions when catalog and execution are pa
   state.post.mockResolvedValue({ reused_run: run });
   await page();
   expect(screen.getByRole("combobox", { name: /Question mode/ })).toHaveValue("curated");
+  expect(screen.queryByRole("heading", { name: "Saved interviews" })).not.toBeInTheDocument();
   expect(state.post).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Find saved result for Interview preparation · no charge" }));
   expect(await screen.findByRole("heading", { name: question })).toBeVisible();
@@ -406,6 +407,61 @@ it("reopens saved enhanced interview questions when catalog and execution are pa
   expect(screen.queryByRole("button", { name: /Approve .* credits/ })).not.toBeInTheDocument();
   expect(state.post.mock.calls).toEqual([["/v1/credits/analysis-reuse", { operation: "interview_questions",
     opportunity_id: state.id, input: { num_questions: 8, mode: "enhanced" } }]]);
+});
+it("opens an older saved interview directly without billing or progress polling", async () => {
+  state.tab = "interview";
+  const role = state.id;
+  const run = { id: "retained-interview", completed_at: stamp };
+  const expired = { id: "expired-interview", completed_at: stamp };
+  const question = "How did you improve reliability in your previous role?";
+  const resultsPage = `/v1/opportunities/${role}/workspace/interview_results`;
+  const answerPath = `/v1/analysis-runs/${run.id}/result`;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) return Promise.resolve({ ...matchWorkspace("none"), pages: {
+      ...matchWorkspace("none").pages, interview_results: { items: [run], next_cursor: "saved-cursor" },
+    } });
+    if (url.startsWith(resultsPage)) return Promise.resolve({ items: [expired], next_cursor: null });
+    if (url === answerPath) return Promise.resolve({ ...run, operation: "interview_questions",
+      result: { opportunity_id: role, mode: "enhanced", questions: [{ question, answer: "Describe your verified contribution." }] } });
+    if (url === `/v1/analysis-runs/${expired.id}/result`) return Promise.reject(new ApiError("Deleted under retention policy.", 410, null));
+  });
+  state.get.mockImplementation((url: string) => url === "/auth/bootstrap"
+    ? Promise.resolve(ownedBootstrapFixture({ availability: { catalog_enabled: false, execution_enabled: false, supported_operations: [] } }))
+    : read(url));
+  await page();
+  const savedResult = screen.getByRole("button", { name: /Open saved interview from/ });
+  const runReads = () => state.wire.mock.calls.map(([url]) => url).filter(url => url.startsWith("/v1/analysis-runs/"));
+  expect(runReads()).toEqual([]);
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(1);
+  fireEvent.click(savedResult);
+  expect(await screen.findByRole("heading", { name: question })).toBeVisible();
+  expect(runReads()).toEqual([answerPath]);
+  expect(state.post).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Older interviews" }));
+  const older = await screen.findByRole("button", { name: /Open saved interview from/ });
+  expect(screen.queryByRole("heading", { name: question })).not.toBeInTheDocument();
+  fireEvent.click(older);
+  expect(await screen.findByText("This saved interview is no longer available.")).toBeVisible();
+  expect(runReads()).toEqual([answerPath, `/v1/analysis-runs/${expired.id}/result`]);
+  expect(state.post).not.toHaveBeenCalled();
+});
+it("keeps a completed exact-result lookup from reloading saved interview history", async () => {
+  state.tab = "interview";
+  const run = { id: "existing-interview", opportunity_id: state.id, operation: "interview_questions", status: "succeeded",
+    estimated_units: 5, committed_units: 5, billing_currency: "credits", usage_state: "committed" };
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) return Promise.resolve({ ...matchWorkspace("none"), pages: {
+      ...matchWorkspace("none").pages, interview_results: { items: [{ id: run.id, completed_at: stamp }], next_cursor: null },
+    } });
+    if (url === `/v1/analysis-runs/${run.id}`) return Promise.resolve(run);
+    if (url === `/v1/analysis-runs/${run.id}/result`) return Promise.resolve({ ...run,
+      result: { opportunity_id: state.id, mode: "enhanced", questions: [{ question: "A previously saved question?" }] } });
+  });
+  state.post.mockResolvedValue({ reused_run: run });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Find saved result for Interview preparation · no charge" }));
+  expect(await screen.findByRole("heading", { name: "A previously saved question?" })).toBeVisible();
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(1);
 });
 it("keeps snapshots accessible when no paid route is qualified", async () => {
   enableCreditExecution([]); await page(); expect(screen.getByRole("button", { name: "Generate tailored version" })).toBeDisabled();
