@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import LargeBinary, Text, and_, cast, func, literal_column, or_, select, text, true
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased, load_only
 
 from ... import models as core
@@ -852,6 +853,18 @@ def _validate_answers(form, answers, consents):
             raise HTTPException(422, f"{field['label']} exceeds the employer's maximum length")
 
 
+def _application_posting_snapshot(posting):
+    # Refresh clocks are incidental. Bind the exact posting inputs to the form
+    # read and the subsequent package, including destination and opening scope.
+    return (posting.source_id, posting.external_id, posting.requisition_id,
+            posting.canonical_url, posting.apply_url, posting.content_sha256)
+
+
+def _application_source_changed():
+    return HTTPException(409, {"code": "application_source_changed",
+        "message": "The employer or job changed during preparation. Review the current job before trying again."})
+
+
 def create_application(db: Session, user_id: int, payload: schemas.ApplicationCreate):
     _require_enabled()
     fingerprint = payload_fingerprint(payload.model_dump(exclude={"idempotency_key"}))
@@ -862,13 +875,16 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         return existing
     posting = _posting(db, payload.posting_id)
     source = _source(db, posting.source_id)
-    if _source_mode(source) == "api":
+    initial_mode = _source_mode(source)
+    if initial_mode == "api":
         from ..credits.runtime import requires_unified_billing
         if requires_unified_billing(db, user_id):
             raise HTTPException(409, "Verified unified-credit submission is not enabled. Use reviewed browser assistance or the employer portal.")
     if not posting.is_open or not source.enabled:
         raise HTTPException(409, "This employer job is no longer available")
-    source_snapshot = connectors.source_contract(source)
+    source_snapshot = copy.deepcopy(connectors.source_contract(source))
+    source_policy = (source.employer_key, config.employer_limits(source))
+    posting_snapshot = _application_posting_snapshot(posting)
     posting_external_id = posting.external_id
     resume_snapshot, version_snapshot = _selection_snapshot(db, user_id, payload)
     db.rollback()  # No rendering/storage/provider call while holding a transaction.
@@ -886,6 +902,28 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
             if existing.input_fingerprint != fingerprint:
                 raise HTTPException(409, "This request key was already used with another application")
             return existing
+        # Ingestion locks source before posting. Keep both rows stable through
+        # commit, and do not wait on a scan while holding the candidate lock.
+        try:
+            source = db.query(models.EmployerSource).filter_by(id=source_snapshot.id).populate_existing().with_for_update(
+                read=True, nowait=True).first()
+            posting = db.query(models.EmployerPosting).filter_by(id=payload.posting_id).populate_existing().with_for_update(
+                nowait=True).first()
+        except DBAPIError as exc:
+            if (getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)) != "55P03":
+                raise
+            db.rollback()  # The lock refusal aborts the PostgreSQL transaction.
+            raise HTTPException(409, {"code": "application_source_busy",
+                "message": "This job is being refreshed. Try preparing the application again shortly."}) from None
+        if source is None or posting is None:
+            raise _application_source_changed()
+        if not posting.is_open or not source.enabled:
+            raise HTTPException(409, "This employer job was closed or disabled while the application was being prepared")
+        if (_application_posting_snapshot(posting) != posting_snapshot
+                or connectors.source_contract(source) != source_snapshot
+                or (source.employer_key, config.employer_limits(source)) != source_policy
+                or _source_mode(source) != initial_mode):
+            raise _application_source_changed()
         opening_key = admissions.opening_identity(posting, source)
         active_key = f"{user_id}:{opening_key}"
         if db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
@@ -898,10 +936,6 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         ).count()
         if open_count >= config.positive_int("EMPLOYER_MAX_OPEN_APPLICATIONS", 100, 1000):
             raise HTTPException(429, "Complete or cancel existing prepared applications before preparing more")
-        posting = _posting(db, payload.posting_id)
-        source = _source(db, posting.source_id)
-        if not posting.is_open or not source.enabled:
-            raise HTTPException(409, "This employer job was closed or disabled while the application was being prepared")
         # Candidate-owned selections and evidence may have changed during rendering.
         _selection_snapshot(db, user_id, payload)
         artifact = _artifact_row(sealed, user_id, payload)
