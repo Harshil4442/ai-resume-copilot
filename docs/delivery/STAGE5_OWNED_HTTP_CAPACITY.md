@@ -326,7 +326,17 @@ Common bootstrap reduces actual journey requests without sharing authorization
 across requests. The currently qualified payment poll is eight adaptive automatic
 reads (0,5,15,35,65,95,125,155 seconds absent request time), plus one explicit manual
 status read; upload polling is separately eight reads with a 240-second deadline.
-The historical 24-at-2.5-second estimate is superseded. First-minute behavior under a production traffic mix, concurrent streams,
-other callers and Redis command allowance still needs measurement. Local reads cannot qualify production p95, native SQL CU, Redis
-allowance, autoscaling, browser p75 metrics, invoice costs, cost envelopes or
-10,000-user peaks. List/admission activation and Stage5 acceptance remain gated.
+The historical 24-at-2.5-second estimate is superseded. First-minute behavior
+under a production traffic mix, concurrent streams, other callers and Redis
+command allowance still needs measurement.
+
+On November 14, the signed-in Jobs page encountered four 429 responses under the
+serving 40-call governor. After the window cleared, the same reads succeeded. The
+live frontend now paces those four reads and shows one explicit retry after a
+capacity refusal. A post-deployment signed-in read verified four sequential 200s.
+In a bounded 24-hour Cloud Run log sample, each relevant route had only one or
+two successful requests, with the longest successful response ranging from about
+1.96 to 2.38 seconds across the six routes. This sample cannot support a production
+p95. The remaining benchmarks include native SQL CU, Redis allowance, autoscaling,
+browser p75 metrics, invoice costs, cost envelopes and 10,000-user peaks. Any
+change to the live governor and Stage5 acceptance remain gated.
