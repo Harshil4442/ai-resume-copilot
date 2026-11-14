@@ -98,6 +98,41 @@ contending with an unknown child's lease. One-record ticks intentionally limit
 throughput; cadence/scaling changes need observed queue age, latency and cleanup
 metrics. No throughput/availability SLA is established here.
 
+### Event-driven scan candidate
+
+The optional Cloud Tasks path targets only one existing upload. The API first
+commits the owner-bound intent, then confirms its named task before returning
+the signed PUT URL. An uncertain task response returns HTTP 503 without a URL.
+The browser can retry the reservation once with the original idempotency key.
+Only the owner's completion request authorizes inspection.
+
+The API requires `RESUME_UPLOAD_TASK_WAKE_ENABLED=true`, `GOOGLE_CLOUD_PROJECT`,
+`RESUME_UPLOAD_TASK_LOCATION`, `RESUME_UPLOAD_TASK_QUEUE=hirewiz-resume-wake`
+and `RESUME_UPLOAD_COORDINATOR_AUDIENCE`. The coordinator requires
+`RESUME_UPLOAD_COORDINATOR_WAKE_ENABLED=true` and the separate
+`RESUME_UPLOAD_COORDINATOR_WAKE_AUDIENCE`,
+`RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_EMAIL` and
+`RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_SUBJECT` values. The audience on both
+sides is the coordinator's untagged HTTPS origin. The SQL timestamp remains
+the expiry authority. The handler returns 409 while the upload still needs a
+wake, and 204 when no further processing is needed.
+
+The [optional queue configuration](../../infra/gcp/resume_upload_wake.tf)
+pins HTTPS routing and its OIDC caller at queue level. The shared API runtime
+has a queue-scoped create and exact-task read role. The wake caller can invoke
+only the private coordinator. Validate effective Cloud Tasks routing, task
+readback after duplicate creation, token subject and the coordinator's request
+log retention using synthetic data before activation. Task delivery timing must
+be measured with the current four-minute browser wait and 15-minute admission.
+
+Keep the existing every-minute scan job enabled while proving the new path.
+Pause only that job after both endpoints are serving, preexisting uploads have
+drained, and the targeted queue covers successful and failed delivery. Keep
+`RESUME_UPLOAD_COORDINATOR_SCAN_ENABLED`, direct upload availability, the
+existing cleanup job and cleanup caller active. To revert, restore the scan job
+before disabling new task publication and allow existing tasks to settle.
+The two five-minute maintenance jobs still affect database idle time.
+
 Provision a dedicated ordinary SQL login only after the global authority fence and
 schema14 migration gates pass. Review SELECT/UPDATE on upload rows; SELECT/INSERT/
 UPDATE on cleanup rows; Resume INSERT and sequence usage; and the User row-lock
