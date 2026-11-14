@@ -298,6 +298,15 @@ from 16 to eight HTTP responses and from 32 to 16 intercepted Admin Lists.
 There were zero provider calls. The [default workload](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469626412)
 also reproduced its existing response counts in both cohorts.
 
+The [strict first-minute run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43582472448)
+replayed the saved Dashboard, Workspace, payment status and upload status reads in
+an owned environment with 10,000 seeded users. With the same 40 synthetic Admin
+List calls per minute, the 20% buyer cohort returned 19 successful reads and 16
+capacity refusals, and the 25% cohort returned 16 successful reads and 21 refusals.
+The client suppressed two and four repeat reads respectively. Both runs recorded
+zero external provider attempts and zero contract failures. The observed refusals
+limit the supported throughput under this workload.
+
 ## Original acceptance remains open
 
 The existing target remains about one million authenticated requests/month plus
@@ -317,8 +326,17 @@ Common bootstrap reduces actual journey requests without sharing authorization
 across requests. The currently qualified payment poll is eight adaptive automatic
 reads (0,5,15,35,65,95,125,155 seconds absent request time), plus one explicit manual
 status read; upload polling is separately eight reads with a 240-second deadline.
-The historical 24-at-2.5-second estimate is superseded. First-minute journey bursts,
-multiple active streams, other callers and Redis command allowance still need
-measurement. Local reads cannot qualify production p95, native SQL CU, Redis
-allowance, autoscaling, browser p75 metrics, invoice costs, cost envelopes or
-10,000-user peaks. List/admission activation and Stage5 acceptance remain gated.
+The historical 24-at-2.5-second estimate is superseded. First-minute behavior
+under a production traffic mix, concurrent streams, other callers and Redis
+command allowance still needs measurement.
+
+On November 14, the signed-in Jobs page encountered four 429 responses under the
+serving 40-call governor. After the window cleared, the same reads succeeded. The
+live frontend now paces those four reads and shows one explicit retry after a
+capacity refusal. A post-deployment signed-in read verified four sequential 200s.
+In a bounded 24-hour Cloud Run log sample, each relevant route had only one or
+two successful requests, with the longest successful response ranging from about
+1.96 to 2.38 seconds across the six routes. This sample cannot support a production
+p95. The remaining benchmarks include native SQL CU, Redis allowance, autoscaling,
+browser p75 metrics, invoice costs, cost envelopes and 10,000-user peaks. Any
+change to the live governor and Stage5 acceptance remain gated.
