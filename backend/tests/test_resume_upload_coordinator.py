@@ -14,6 +14,10 @@ AUDIENCE = 'https://hirewiz-resume-coordinator-synthetic.run.app'
 EMAIL = 'hirewiz-resume-scheduler@synthetic-project.iam.gserviceaccount.com'
 SUBJECT = '123456789012345678901'
 TOKEN = 'synthetic.valid.signature'
+WAKE_EMAIL = 'hirewiz-resume-wake@synthetic-project.iam.gserviceaccount.com'
+WAKE_SUBJECT = '223456789012345678901'
+WAKE_ID = 'rup_' + 'a' * 32
+WAKE_PATH = '/internal/resume-uploads/wake/' + WAKE_ID
 
 
 @pytest.fixture
@@ -35,6 +39,75 @@ def configured(monkeypatch):
 
 def auth():
     return {'Authorization': 'Bearer ' + TOKEN}
+
+
+@pytest.fixture
+def wake_configured(configured, monkeypatch):
+    monkeypatch.setenv('RESUME_UPLOAD_COORDINATOR_WAKE_ENABLED', 'true')
+    monkeypatch.setenv('RESUME_UPLOAD_COORDINATOR_WAKE_AUDIENCE', AUDIENCE)
+    monkeypatch.setenv('RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_EMAIL', WAKE_EMAIL)
+    monkeypatch.setenv('RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_SUBJECT', WAKE_SUBJECT)
+    return configured
+
+
+def wake_claims():
+    return {'iss': 'https://accounts.google.com', 'aud': AUDIENCE,
+            'email': WAKE_EMAIL, 'email_verified': True, 'sub': WAKE_SUBJECT}
+
+
+def test_wake_disabled_by_default(configured, monkeypatch):
+    monkeypatch.delenv('RESUME_UPLOAD_COORDINATOR_WAKE_ENABLED', raising=False)
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: pytest.fail('auth request'))
+    monkeypatch.setattr(worker, 'execute_wake', lambda *a: pytest.fail('child invocation'))
+    assert configured.post(WAKE_PATH, headers=auth()).status_code == 503
+
+
+def test_private_task_destination_never_redirects(wake_configured, monkeypatch):
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: pytest.fail('unexpected auth request'))
+    for path in (WAKE_PATH + '/', '/internal/resume-uploads/scan/', '/internal/resume-uploads/cleanup/'):
+        result = wake_configured.post(path, headers=auth(), follow_redirects=False)
+        assert result.status_code == 404 and 'Location' not in result.headers
+
+
+def test_wake_caller_and_scheduler_are_not_interchangeable(wake_configured, monkeypatch):
+    monkeypatch.setattr(worker, 'execute_wake', lambda *a: pytest.fail('wake child invocation'))
+    monkeypatch.setattr(worker, 'execute', lambda *a: pytest.fail('scheduler child invocation'))
+    assert wake_configured.post(WAKE_PATH, headers=auth()).status_code == 403
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: wake_claims())
+    for mode in ('scan', 'cleanup'):
+        assert wake_configured.post('/internal/resume-uploads/' + mode, headers=auth()).status_code == 403
+    monkeypatch.setenv('RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_SUBJECT', SUBJECT)
+    assert wake_configured.post(WAKE_PATH, headers=auth()).status_code == 503
+
+
+@pytest.mark.parametrize('status,expected', [('pending', 409), ('terminal', 204)])
+def test_wake_response_is_only_typed_ack_or_retry(wake_configured, monkeypatch, status, expected):
+    calls = []
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: wake_claims())
+    monkeypatch.setattr(worker, 'execute_wake', lambda identifier: calls.append(identifier) or coordinator.WakeOutcome('wake', status))
+    response = wake_configured.post(WAKE_PATH, headers=auth())
+    assert calls == [WAKE_ID] and response.status_code == expected and not response.content
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.headers.get('retry-after') == ('60' if status == 'pending' else None)
+
+
+@pytest.mark.parametrize('path,body', [(WAKE_PATH + '?expiry=1', b''), (WAKE_PATH + 'x', b''), (WAKE_PATH, b'private')])
+def test_wake_rejects_noncanonical_inputs_without_child(wake_configured, monkeypatch, path, body):
+    monkeypatch.setattr(worker, '_verified_claims', lambda *a: wake_claims())
+    monkeypatch.setattr(worker, 'execute_wake', lambda *a: pytest.fail('child invocation'))
+    response = wake_configured.post(path, headers=auth(), content=body)
+    assert response.status_code == 400 and 'private' not in response.text
+
+
+def test_wake_supervisor_sends_exact_id_only_through_pipe(monkeypatch):
+    code = ('import sys; assert len(sys.argv) == 1; assert sys.stdin.buffer.read() == '
+            + repr(WAKE_ID.encode()) + '; print(\'{"mode":"wake","status":"terminal"}\')')
+    monkeypatch.setattr(coordinator, '_child_command', lambda mode: [sys.executable, '-c', code])
+    assert coordinator.execute_wake(WAKE_ID) == coordinator.WakeOutcome('wake', 'terminal')
+    with pytest.raises(coordinator.CoordinatorUnavailable):
+        coordinator.execute_wake(WAKE_ID + 'x')
+    with pytest.raises(coordinator.CoordinatorUnavailable):
+        coordinator._decode_wake(b'{"mode":"wake","status":"terminal","id":"private"}')
 
 
 def test_default_disabled_never_verifies_or_starts_resources(monkeypatch):
@@ -192,8 +265,9 @@ def test_disabled_real_child_imports_no_database_and_has_empty_output(monkeypatc
     assert str(failure.value) == 'resume_coordinator_unavailable'
 
 
+@pytest.mark.parametrize('operation', ['scan', 'wake'])
 @pytest.mark.parametrize('change', ['valid', 'expired', 'wrong-audience', 'wrong-issuer', 'bad-signature'])
-def test_real_google_signature_time_and_audience_verifier(configured, monkeypatch, change):
+def test_real_google_signature_time_and_audience_verifier(configured, monkeypatch, change, operation):
     import json
     import time
     from datetime import UTC, datetime, timedelta
@@ -214,8 +288,9 @@ def test_real_google_signature_time_and_audience_verifier(configured, monkeypatc
     private = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                                 serialization.NoEncryption())
     signer = crypt.RSASigner.from_string(private, key_id='synthetic')
-    claims = {'iss': 'https://accounts.google.com', 'aud': AUDIENCE, 'email': EMAIL,
-              'sub': SUBJECT, 'email_verified': True, 'iat': int(time.time()) - 5, 'exp': int(time.time()) + 60}
+    email, subject = (WAKE_EMAIL, WAKE_SUBJECT) if operation == 'wake' else (EMAIL, SUBJECT)
+    claims = {'iss': 'https://accounts.google.com', 'aud': AUDIENCE, 'email': email,
+              'sub': subject, 'email_verified': True, 'iat': int(time.time()) - 5, 'exp': int(time.time()) + 60}
     if change == 'expired':
         claims['exp'] = int(time.time()) - 2
     if change == 'wrong-audience':
@@ -246,12 +321,17 @@ def test_real_google_signature_time_and_audience_verifier(configured, monkeypatc
         'RESUME_UPLOAD_COORDINATOR_CALLER_EMAIL': EMAIL,
         'RESUME_UPLOAD_COORDINATOR_CALLER_SUBJECT': SUBJECT,
         'RESUME_UPLOAD_COORDINATOR_ENABLED': 'true', 'RESUME_UPLOAD_COORDINATOR_SCAN_ENABLED': 'true',
+        'RESUME_UPLOAD_COORDINATOR_WAKE_ENABLED': 'true', 'RESUME_UPLOAD_COORDINATOR_WAKE_AUDIENCE': AUDIENCE,
+        'RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_EMAIL': WAKE_EMAIL,
+        'RESUME_UPLOAD_COORDINATOR_WAKE_CALLER_SUBJECT': WAKE_SUBJECT,
         'RESUME_DIRECT_UPLOAD_ENABLED': 'true', 'SSLKEYLOGFILE': '/nonexistent/synthetic-keylog'}.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(google_requests, 'Request', FakeRequest)
     monkeypatch.setattr(worker, 'execute', lambda mode: coordinator.Outcome(mode))
-    response = configured.post('/internal/resume-uploads/scan', headers={'Authorization': 'Bearer ' + signed})
-    assert response.status_code == (200 if change == 'valid' else 401)
+    monkeypatch.setattr(worker, 'execute_wake', lambda identifier: coordinator.WakeOutcome('wake', 'terminal'))
+    path, success = (WAKE_PATH, 204) if operation == 'wake' else ('/internal/resume-uploads/scan', 200)
+    response = configured.post(path, headers={'Authorization': 'Bearer ' + signed})
+    assert response.status_code == (success if change == 'valid' else 401)
     assert seen == [('https://www.googleapis.com/oauth2/v1/certs', 5, False)]
 
 

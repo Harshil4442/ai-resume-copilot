@@ -55,6 +55,16 @@ def discovery_enabled() -> bool:
     return enabled("EMPLOYER_DISCOVERY_ENABLED")
 
 
+def periodic_refresh_enabled() -> bool:
+    """Control new scheduled refresh work without closing employer discovery."""
+    return os.getenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", "true") == "true"
+
+
+def periodic_refresh_cadence_minutes() -> int | None:
+    value = os.getenv("EMPLOYER_PERIODIC_REFRESH_CADENCE_MINUTES", "5")
+    return int(value) if value in {"5", "15", "30", "60"} else None
+
+
 def submit_enabled() -> bool:
     return enabled("EMPLOYER_AUTO_SUBMIT_ENABLED")
 

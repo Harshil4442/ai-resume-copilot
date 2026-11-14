@@ -1,6 +1,9 @@
 import os
 import sys
-from sqlalchemy import create_engine
+from psycopg import OperationalError as PostgresOperationalError
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import ExceptionContext
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 _configured_database_url = (os.getenv("DATABASE_URL") or "").strip()
@@ -43,6 +46,17 @@ if not DATABASE_URL.startswith("sqlite"):
     }
 engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True, **pool_options)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@event.listens_for(engine, "handle_error")
+def mark_database_connect_failure(context: ExceptionContext) -> None:
+    """Identify failed new connections even when libpq supplied no SQLSTATE."""
+    error = context.sqlalchemy_exception
+    driver = context.original_exception
+    if (context.connection is None and not context.is_pre_ping and isinstance(error, OperationalError)
+            and isinstance(driver, PostgresOperationalError) and driver.sqlstate is None):
+        error.hirewiz_connect_failed = True
+
 
 def get_db():
     db = SessionLocal()

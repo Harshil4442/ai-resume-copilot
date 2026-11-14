@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 
 from .observability import configure_observability, correlation_id_var
 from .catalog_timing import CatalogTimingMiddleware, catalog_span, current_catalog_timing
@@ -169,6 +170,26 @@ app.include_router(credits.router, prefix="/api")
 app.include_router(credits.public_router, prefix="/api")
 app.include_router(public_endpoints.router, prefix="/api")
 app.include_router(v1_router, prefix="/api")
+
+@app.exception_handler(DBAPIError)
+async def database_exception_handler(request: Request, exc: DBAPIError):
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4().hex[:12])
+    sqlstate = getattr(exc.orig, "sqlstate", None)
+    # Keep acknowledgement and reconciliation semantics on all other writes.
+    retryable_view = request.method in {"GET", "HEAD"} and request.url.path.startswith("/api/")
+    unavailable = (exc.connection_invalidated or getattr(exc, "hirewiz_connect_failed", False) is True
+                   or isinstance(sqlstate, str) and (sqlstate == "53000" or sqlstate.startswith("08")))
+    # DBAPI exception text can include connection details and SQL parameters.
+    log.warning("Database request failed [%s] (%s)", correlation_id, "unavailable" if unavailable else "unclassified")
+    if retryable_view and unavailable:
+        return JSONResponse(status_code=503, headers={"Retry-After": "60", "Cache-Control": "private, no-store"},
+                            content={"detail": {
+                                "code": "database_unavailable",
+                                "message": "Saved information is temporarily unavailable. Please try again shortly.",
+                            }, "correlation_id": correlation_id})
+    return JSONResponse(status_code=500, headers={"Cache-Control": "private, no-store"},
+                        content={"detail": "Internal server error", "correlation_id": correlation_id})
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

@@ -519,6 +519,32 @@ The source insert created a revision row that was also present in the archive.
 The drill verified the refusal and unchanged target rows. A complete restore
 must retain that archived history and verify catalogue invariants before use.
 
+The owned logical archive rehearsal uses `HIREWIZ_SCHEMA27_LOGICAL_PG_BIN`
+and a full archive that retains database-object ownership and ACLs. The two
+separately initialized clusters use matching synthetic role names. The archive
+preserves populated catalogue history, table and sequence state, trigger and
+routine definitions, effective reader grants, and payment and application replay.
+Recreating the résumé format check with its original migration predicate restores
+that exact check. The unchanged strict verifier still refuses the independently
+restored password-reset purpose/status checks, and comparison identifies other
+deparsed check differences. This logical restore remains unqualified for rollout.
+
+The [migration-built rehearsal](../../backend/tests/test_schema27_application_restore_postgres.py)
+uses `HIREWIZ_SCHEMA27_CANONICAL_PG_BIN`. The target starts with the exact
+Alembic schema. In one transaction, the fixture replaces its empty catalogue
+clock with the archived row, pauses only the source and posting publication
+INSERT triggers, imports the data, and reenables those same triggers. A foreign
+key is exercised while the two triggers are paused, and the evidence writer
+uses its existing version contract. The strict verifier accepts the restored
+database. Table contents, sequences, trigger and routine definitions, constraint
+definitions, the test reader's ACLs, and payment and application replay match.
+The fixture also restores a completed one-job search and its original paid
+history. The saved-search triggers validate the archived item, prove the original
+snapshot and authorize publication to its owner in their normal order. The owner
+can read the same result, another user is refused, and replay leaves the ledger
+unchanged. Production roles and broader data recovery remain outside this local
+test.
+
 The owned physical recovery test uses PostgreSQL 17 `pg_basebackup` with
 streamed WAL and `pg_verifybackup`. Start it only with an explicitly selected
 local binary directory in `HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN`. A detached cluster

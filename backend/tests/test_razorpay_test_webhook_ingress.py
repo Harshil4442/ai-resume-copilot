@@ -245,17 +245,39 @@ def test_loses_only_one_ack_after_durable_test_order_settlement(relay, unified, 
         assert db.query(CreditGrant).one().quantity == 40
 
     marker = tmp_path / f"ack-loss-{hashlib.sha256(provider_order.encode()).hexdigest()}.used"
-    assert marker.read_bytes() == b"" and (marker.stat().st_mode & 0o777) == 0o600
+    digest = hashlib.sha256(headers["X-Razorpay-Event-Id"].encode()).hexdigest().encode()
+    replayed = marker.with_suffix(".replayed")
+    assert marker.read_bytes() == digest and (marker.stat().st_mode & 0o777) == 0o600
     assert send(receiver, body=capture, headers=capture_headers)[0] == 200
+    assert not replayed.exists()
     with running(ingress.WebhookIngress(0, upstream.server_port,
             hold=ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET))) as restarted:
+        distinct = headers | {"X-Razorpay-Event-Id": "evt_same_order"}
+        assert send(restarted, body=body, headers=distinct)[0] == 200
+        assert send(restarted, body=body, headers=distinct)[0] == 200
+        assert not replayed.exists()
+        assert send(restarted, body=body, headers=headers | {"X-Razorpay-Signature": "0" * 64})[0] == 400
+        assert not replayed.exists()
         assert send(restarted, body=body, headers=headers)[0] == 200
-        # A second processed delivery also leaves the one-shot marker alone.
-        assert send(restarted, body=body, headers=headers | {"X-Razorpay-Event-Id": "evt_same_order"})[0] == 200
+        assert replayed.read_bytes() == digest and (replayed.stat().st_mode & 0o777) == 0o600
+        assert send(restarted, body=body, headers=headers)[0] == 200
+        assert marker.read_bytes() == replayed.read_bytes() == digest
     with session_factory() as db:
         assert db.query(PaymentEvent).count() == 4
         assert db.query(CreditGrant).one().remaining_credits == 40
     assert len(provider_calls) == 1
+
+
+def test_legacy_empty_ack_marker_never_refuses_again_or_attests_replay(tmp_path):
+    tmp_path.chmod(0o700)
+    control = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    attempt = ingress.AckLossAttempt("a" * 64, "b" * 64)
+    marker = tmp_path / f"ack-loss-{attempt.order_digest}.used"
+    marker.touch(mode=0o600)
+    assert not control.note_settlement(attempt, "processed")
+    assert not control.note_settlement(attempt, "duplicate")
+    assert marker.read_bytes() == b""
+    assert not marker.with_suffix(".replayed").exists()
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT"])

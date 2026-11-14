@@ -88,12 +88,16 @@ verify they settle one credit lot. To verify a genuine Razorpay retry, atomicall
 write `{"ack_loss_order":"order_<exact-Test-order-ID>"}` to the printed private
 `hold.json` with mode `0600` before paying. Use this rule by itself. For the first
 matching signed `order.paid` with an event ID, the receiver returns 503 only after
-the local billing handler confirms that the event committed. Its empty,
-order-specific marker keeps that response one-shot across receiver restarts.
-Leave the receiver and webhook running, and verify one recorded event and one
-credit lot after Razorpay retries the original event ID. If the retry is not
-observed, record it as pending. Remove the rule before testing partial and
-remaining refunds, when the Test payment method supports them.
+the local billing handler confirms that the event committed. The private
+`ack-loss-<order-digest>.used` marker records only the SHA-256 digest of that
+event ID and keeps the response one-shot across receiver restarts. Keep the rule
+armed until the same signed event gets a successful `duplicate` response and
+the companion `.replayed` marker contains the same digest. Confirm the first
+failed delivery in Razorpay and verify one recorded event and one credit lot in
+the isolated ledger. If either delivery observation is unavailable, keep the
+retry verification pending. A legacy empty `.used` marker prevents another
+deliberate failure but cannot verify which event retried. Remove the rule
+before testing partial and remaining refunds, when supported.
 
 If a previous lab runner is already active, a second receiver can target that
 runner's verified loopback API port directly. Use a new loopback receiver port,

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ... import models as core
 from ... import schemas as core_schemas
 from ..common import utcnow
+from . import wake
 from .models import ResumeUpload
 from .schemas import (
     EXTENSION_FORMATS,
@@ -37,6 +38,11 @@ def fail(status: int, code: str) -> None:
 def enabled() -> None:
     if os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "false") != "true":
         fail(503, "direct_upload_unavailable")
+
+
+def admission_enabled() -> bool:
+    """Keep accepted uploads and saved source access available during a pause."""
+    return os.getenv("RESUME_UPLOAD_ADMISSION_ENABLED", "true") == "true"
 
 
 def lock_owner(db: Session, owner_id: int):
@@ -87,6 +93,8 @@ def create(db: Session, owner_id: int, body: UploadCreate, key: str, store: Obje
         if row.request_sha256 != digest:
             fail(409, "idempotency_metadata_conflict")
     else:
+        if not admission_enabled():
+            fail(503, "direct_upload_unavailable")
         active = db.query(ResumeUpload).filter(ResumeUpload.user_id == owner_id, ResumeUpload.state.in_(ACTIVE_STATES), ResumeUpload.expires_at > now).count()
         daily = db.query(ResumeUpload).filter(ResumeUpload.user_id == owner_id, ResumeUpload.created_at >= now - timedelta(days=1)).count()
         if active >= ACTIVE_LIMIT or daily >= DAILY_LIMIT:
@@ -107,8 +115,22 @@ def create(db: Session, owner_id: int, body: UploadCreate, key: str, store: Obje
                 source_id=identifier, key=f"upload:{key_digest}", fingerprint=digest,
                 input_bytes=body.size_bytes, attempts=3)
         db.add(row)
+    # Capture the wake identity before commit expires ORM fields. Reading those
+    # fields after commit would open a new transaction during the provider RPC.
+    upload_id = row.id
+    expires_at = row.expires_at
+    needs_wake = wake.enabled() and row.state == "awaiting_upload" and row.upload_grant_expires_at > now and expires_at > now
     # Every fixed object target exists durably before issuing a capability.
     db.commit()
+    if needs_wake:
+        try:
+            wake.confirm(upload_id, expires_at)
+        except wake.WakeUnavailable:
+            raise HTTPException(503, {"code": "resume_upload_wake_unavailable"},
+                                headers={"Retry-After": "5", "Cache-Control": "private, no-store"}) from None
+        # An owner can complete or cancel while the wake is being confirmed.
+        row = owned(db, owner_id, upload_id)
+        now = utcnow()
     grant = None
     headers: dict[str, str] = {}
     if row.state == "awaiting_upload" and row.upload_grant_expires_at > now and row.expires_at > now:

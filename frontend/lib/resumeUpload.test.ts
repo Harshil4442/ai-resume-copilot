@@ -341,7 +341,41 @@ describe("direct private resume upload contract", () => {
   it("does not quietly fall back if the direct service is unavailable", async () => {
     fetchMock.mockResolvedValue(json({},503));
     await expect(uploadResumeFile(file())).rejects.toThrow("Secure resume upload is unavailable");
+    expect(fetchMock.mock.calls).toHaveLength(1);
     expect(apiPostForm).not.toHaveBeenCalled(); expect(puts()).toHaveLength(0);
+  });
+
+  it.each(["wake acknowledgement", "intent response", "BFF 502", "BFF 504"])("recovers an uncertain %s with the original key before one PUT", async (failure) => {
+    vi.useFakeTimers();
+    const value = file();
+    serve(value);
+    let firstRequest!: () => void;
+    const requested = new Promise<void>((resolve) => { firstRequest = resolve; });
+    fetchMock.mockImplementationOnce(async () => {
+      firstRequest();
+      if (failure === "intent response") throw new TypeError("synthetic transport loss");
+      if (failure === "BFF 502") return json({ detail: "The backend is unavailable" }, 502);
+      if (failure === "BFF 504") return json({ detail: "The backend request timed out" }, 504);
+      return json({ detail: { code: "resume_upload_wake_unavailable" } }, 503, { "Retry-After": "5" });
+    });
+    const outcome = uploadResumeFile(value);
+    await requested;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(puts()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await outcome).toEqual(resume);
+    const reservations = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/resume/uploads"));
+    expect(reservations).toHaveLength(2);
+    expect(reservations[1][1]?.headers).toEqual(reservations[0][1]?.headers);
+    expect(reservations[1][1]?.body).toEqual(reservations[0][1]?.body);
+    expect(puts()).toHaveLength(1);
+  });
+
+  it("does not reserve again if the requested retry interval exceeds the upload wait", async () => {
+    fetchMock.mockResolvedValue(json({ detail: { code: "resume_upload_wake_unavailable" } }, 503, { "Retry-After": "240" }));
+    await expect(uploadResumeFile(file())).rejects.toThrow("Secure resume upload is unavailable");
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    expect(puts()).toHaveLength(0);
   });
 
   it.each(nativeFormats)("never falls back after a $kind control or scanner failure", async ({ name, type }) => {

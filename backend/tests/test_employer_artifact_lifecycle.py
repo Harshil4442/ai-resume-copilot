@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -7,7 +7,7 @@ from backend.app import models as core
 from backend.app.domains.common import utcnow
 from backend.app.domains.dispatch import service as dispatch
 from backend.app.domains.dispatch.models import DispatchOutbox
-from backend.app.domains.employer import artifacts, models, privacy, tasks
+from backend.app.domains.employer import artifacts, models, privacy, service, tasks
 from backend.app.routers import worker
 from backend.tests import test_employer_services as service_tests
 from google.api_core.exceptions import NotFound
@@ -234,12 +234,14 @@ def test_purge_cannot_touch_database_backups(context, monkeypatch):
         assert deletion.completed_at is None and deletion.last_error_code == "ValueError"
 
 
-def test_maintenance_recovers_upload_cleanup_when_discovery_is_disabled(context, monkeypatch):
+@pytest.mark.parametrize("flag", ["EMPLOYER_DISCOVERY_ENABLED", "EMPLOYER_PERIODIC_REFRESH_ENABLED"])
+def test_maintenance_recovers_upload_cleanup_when_refreshes_are_disabled(context, monkeypatch, flag):
     factory, _, _ = context
-    monkeypatch.setenv("EMPLOYER_DISCOVERY_ENABLED", "false")
+    monkeypatch.setenv(flag, "false")
     monkeypatch.delenv("ANALYSIS_TASK_TOKEN", raising=False)
-    monkeypatch.setattr(worker, "run_maintenance", lambda _db: SimpleNamespace(to_dict=lambda: {}))
-    monkeypatch.setattr(worker, "dispatch_pending", lambda **_kwargs: {"dispatched": 0, "failed": 0})
+    calls = []
+    monkeypatch.setattr(worker, "run_maintenance", lambda _db: calls.append("maintenance") or SimpleNamespace(to_dict=lambda: {}))
+    monkeypatch.setattr(worker, "dispatch_pending", lambda **_kwargs: calls.append("dispatch") or {"dispatched": 0, "failed": 0})
     with factory() as db:
         db.add(models.EmployerArtifactUpload(id="upload_disabled", user_id=None,
             gcs_object="gs://private-test/applications/1/upload_disabled/abandoned",
@@ -250,3 +252,26 @@ def test_maintenance_recovers_upload_cleanup_when_discovery_is_disabled(context,
     with factory() as db:
         assert db.query(DispatchOutbox).one().topic == "employer.artifact-delete"
         assert db.query(models.EmployerArtifactUpload).count() == 0
+    assert calls == ["maintenance", "dispatch"]
+
+
+def test_maintenance_keeps_cleanup_and_dispatch_outside_source_cadence(context, monkeypatch):
+    factory, _, _ = context
+    monkeypatch.setenv("EMPLOYER_DISCOVERY_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_CADENCE_MINUTES", "15")
+    monkeypatch.delenv("ANALYSIS_TASK_TOKEN", raising=False)
+    monkeypatch.setattr(service, "utcnow", lambda: datetime(2026, 11, 15, 0, 10, tzinfo=UTC))
+    calls = []
+    monkeypatch.setattr(worker, "run_maintenance", lambda _db: calls.append("maintenance") or SimpleNamespace(to_dict=lambda: {}))
+    monkeypatch.setattr(worker, "dispatch_pending", lambda **_kwargs: calls.append("dispatch") or {"dispatched": 0, "failed": 0})
+    with factory() as db:
+        db.add(models.EmployerArtifactUpload(id="upload_off_window", user_id=None,
+            gcs_object="gs://private-test/applications/1/upload_off_window/abandoned",
+            lease_until=utcnow() - timedelta(seconds=1)))
+        db.commit()
+        result = worker.execute_maintenance_task(x_cloudscheduler=None, x_hirewiz_task_token=None, db=db)
+        assert result["artifact_cleanup_queued"] == 1 and result["sources_queued"] == 0
+    with factory() as db:
+        assert db.query(DispatchOutbox).one().topic == "employer.artifact-delete"
+    assert calls == ["maintenance", "dispatch"]

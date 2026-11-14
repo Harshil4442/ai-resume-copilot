@@ -1,4 +1,4 @@
-"""Default-disabled, private direct-resume scan/cleanup transport.
+"""Default-disabled, private direct-resume scan, wake and cleanup transport.
 
 Scheduler headers are not authentication. Google verifies signature/time/audience;
 fixed workload issuer, account email and native account subject are also bound.
@@ -13,12 +13,19 @@ from dataclasses import asdict, dataclass
 from urllib.parse import urlsplit
 
 import certifi
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from starlette.concurrency import run_in_threadpool
 
-from .services.resume_upload_coordinator import CoordinatorUnavailable, Mode, enabled, execute
+from .services.resume_upload_coordinator import (
+    CoordinatorUnavailable,
+    Mode,
+    enabled,
+    execute,
+    execute_wake,
+    valid_upload_id,
+)
 
-app = FastAPI(title="Resume Upload Coordinator", docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="Resume Upload Coordinator", docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
 
 
 @dataclass(frozen=True)
@@ -28,12 +35,12 @@ class CallerConfig:
     subject: str
 
 
-def caller_config() -> CallerConfig:
+def _caller_config(prefix: str) -> CallerConfig:
     try:
         project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-        audience = os.getenv("RESUME_UPLOAD_COORDINATOR_AUDIENCE", "")
-        email = os.getenv("RESUME_UPLOAD_COORDINATOR_CALLER_EMAIL", "")
-        subject = os.getenv("RESUME_UPLOAD_COORDINATOR_CALLER_SUBJECT", "")
+        audience = os.getenv(prefix + "_AUDIENCE", "")
+        email = os.getenv(prefix + "_CALLER_EMAIL", "")
+        subject = os.getenv(prefix + "_CALLER_SUBJECT", "")
         target = urlsplit(audience)
         if (not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", project)
                 or len(audience) > 512 or target.scheme != "https"
@@ -46,6 +53,19 @@ def caller_config() -> CallerConfig:
         return CallerConfig(audience, email, subject)
     except Exception:
         raise HTTPException(503, "resume_coordinator_configuration_unavailable") from None
+
+
+def caller_config() -> CallerConfig:
+    return _caller_config("RESUME_UPLOAD_COORDINATOR")
+
+
+def wake_caller_config() -> CallerConfig:
+    scheduler = caller_config()
+    wake = _caller_config("RESUME_UPLOAD_COORDINATOR_WAKE")
+    if (scheduler.email == wake.email or scheduler.subject == wake.subject
+            or scheduler.audience != wake.audience):
+        raise HTTPException(503, "resume_coordinator_configuration_unavailable")
+    return wake
 
 
 def _verified_claims(token: str, audience: str) -> dict:
@@ -92,14 +112,8 @@ def authenticate(request: Request, config: CallerConfig) -> None:
         raise HTTPException(403, "resume_coordinator_caller_refused")
 
 
-async def _tick(request: Request, mode: Mode) -> dict:
-    if not enabled(mode):
-        raise HTTPException(503, "resume_coordinator_disabled")
-    if request.url.query:
-        raise HTTPException(400, "resume_coordinator_body_refused")
-    config = caller_config()
-    await run_in_threadpool(authenticate, request, config)
-    # No filename/content/IDs/signed URL in coordinator requests. Read at most a
+async def _require_empty_body(request: Request) -> None:
+    # No filename, content or signed URL enters the task. Read at most a
     # first nonempty chunk, under an absolute empty-body deadline.
     async def empty_body():
         async for chunk in request.stream():
@@ -111,6 +125,15 @@ async def _tick(request: Request, mode: Mode) -> dict:
         raise
     except Exception:
         raise HTTPException(400, "resume_coordinator_body_refused") from None
+
+
+async def _tick(request: Request, mode: Mode) -> dict:
+    if not enabled(mode):
+        raise HTTPException(503, "resume_coordinator_disabled")
+    if request.url.query:
+        raise HTTPException(400, "resume_coordinator_body_refused")
+    await run_in_threadpool(authenticate, request, caller_config())
+    await _require_empty_body(request)
     try:
         return asdict(await run_in_threadpool(execute, mode))
     except CoordinatorUnavailable:
@@ -138,3 +161,20 @@ async def scan(request: Request):
 @app.post("/internal/resume-uploads/cleanup")
 async def cleanup(request: Request):
     return await _tick(request, "cleanup")
+
+
+@app.post("/internal/resume-uploads/wake/{upload_id}")
+async def wake(request: Request, upload_id: str) -> Response:
+    if not enabled("wake"):
+        raise HTTPException(503, "resume_coordinator_disabled")
+    if request.url.query or not valid_upload_id(upload_id):
+        raise HTTPException(400, "resume_coordinator_wake_refused")
+    await run_in_threadpool(authenticate, request, wake_caller_config())
+    await _require_empty_body(request)
+    try:
+        outcome = await run_in_threadpool(execute_wake, upload_id)
+    except CoordinatorUnavailable:
+        raise HTTPException(503, "resume_coordinator_unavailable") from None
+    if outcome.status == "terminal":
+        return Response(status_code=204)
+    return Response(status_code=409, headers={"Retry-After": "60"})

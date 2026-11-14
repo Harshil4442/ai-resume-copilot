@@ -391,6 +391,30 @@ class ReconciliationTest(unittest.TestCase):
         self.assertEqual((order.status, order.active_attempt_key, db.grants, db.adjustments),
                          ("partially_refunded", None, [(100, 2)], [16_225]))
 
+    def test_other_refund_attempts_do_not_block_a_proven_processed_refund(self):
+        remote = remote_order(status="paid", attempts=1, amount_paid=64_900, amount_due=0)
+        processed = dict(id="rfnd_processed", entity="refund", payment_id="pay_original",
+                         amount=16_225, currency="INR", status="processed")
+        failed = dict(processed, id="rfnd_failed", amount=5_000, status="failed")
+        pending = dict(processed, id="rfnd_pending", amount=2_000, status="pending")
+        for total, matches in ((16_225, True), (18_225, False)):
+            with self.subTest(amount_refunded=total):
+                order = original_order()
+                db = Storage(order)
+                captured = payment(amount_refunded=total)
+                operation, _ = setup(db, {"orders": collection(remote), "orders/order_original": remote,
+                    "orders/order_original/payments": collection(captured), "payments/pay_original": captured,
+                    "payments/pay_original/refunds": collection(failed, processed, pending)})
+                result = invoke(operation, db)
+                if matches:
+                    self.assertEqual(result["resolution"], "settled")
+                    self.assertEqual((order.status, order.refunded_amount_minor, db.adjustments),
+                                     ("partially_refunded", 16_225, [16_225]))
+                    self.assertEqual([record.provider_refund_id for record in db.rows[Refund]], [processed["id"]])
+                else:
+                    self.assertEqual(result["resolution"], "unresolved")
+                    self.assertEqual((db.commits, db.grants, db.rows[Refund]), (0, [], []))
+
     def test_transport_uses_get_only_and_limits_response_bytes(self):
         calls = []
         @contextmanager

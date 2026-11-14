@@ -15,7 +15,15 @@ import pytest
 from backend.app import models as core
 from backend.app.database import get_db
 from backend.app.domains.common import utcnow
-from backend.app.domains.resume_uploads import privacy, scanner, schemas, service, storage, tasks
+from backend.app.domains.resume_uploads import (
+    privacy,
+    scanner,
+    schemas,
+    service,
+    storage,
+    tasks,
+    wake,
+)
 from backend.app.domains.resume_uploads.models import ResumeUpload, ResumeUploadCleanup
 from backend.app.routers import resume_uploads as routes
 from backend.app.security import get_current_user
@@ -203,6 +211,64 @@ def test_concurrent_idempotency_and_metadata_conflict(context):
     with pytest.raises(HTTPException) as failure:
         admission(context, filename="changed.pdf")
     assert failure.value.status_code == 409
+
+
+def test_wake_unavailable_preserves_intent_and_same_key_retry_outside_lock(context, monkeypatch):
+    monkeypatch.setenv("RESUME_UPLOAD_TASK_WAKE_ENABLED", "true")
+    factory, store = context
+    request = schemas.UploadCreate(filename="resume.pdf", size_bytes=len(CONTENT),
+        sha256=hashlib.sha256(CONTENT).hexdigest())
+    identities = []
+
+    with factory() as admission_db:
+        def confirm(identifier, expires_at):
+            assert not admission_db.in_transaction()
+            with factory() as observer:
+                owner = observer.query(core.User).filter_by(id=1).with_for_update(nowait=True).one()
+                row = observer.query(ResumeUpload).filter_by(id=identifier).with_for_update(nowait=True).one()
+                assert row.user_id == owner.id and row.state == "awaiting_upload"
+                assert row.expires_at == expires_at
+                identities.append((row.id, row.expires_at, row.upload_grant_expires_at))
+            if len(identities) == 1:
+                raise wake.WakeUnavailable
+
+        monkeypatch.setattr(wake, "confirm", confirm)
+        with pytest.raises(HTTPException) as failure:
+            service.create(admission_db, 1, request, "synthetic-wake-retry", store)
+        assert failure.value.status_code == 503
+        assert failure.value.detail == {"code": "resume_upload_wake_unavailable"}
+        assert failure.value.headers == {"Retry-After": "5", "Cache-Control": "private, no-store"}
+        assert store.signs == 0
+
+        monkeypatch.setenv("RESUME_UPLOAD_ADMISSION_ENABLED", "false")
+        result = service.create(admission_db, 1, request, "synthetic-wake-retry", store)
+        assert result.upload_url is not None and result.state == "awaiting_upload"
+        assert identities == [(result.upload_id, result.expires_at, result.upload_grant_expires_at)] * 2
+        assert store.signs == 1 and admission_db.query(ResumeUpload).count() == 1
+    assert_no_saved(context)
+
+
+@pytest.mark.parametrize("change", ["completed", "cancelled", "grant_expired"])
+def test_wake_acknowledgement_does_not_sign_closed_or_expired_intent(context, monkeypatch, change):
+    monkeypatch.setenv("RESUME_UPLOAD_TASK_WAKE_ENABLED", "true")
+    factory, store = context
+    started = utcnow()
+    monkeypatch.setattr(service, "utcnow", lambda: started)
+
+    def confirm(identifier, _expires_at):
+        with factory() as concurrent:
+            if change == "completed":
+                service.complete(concurrent, 1, identifier)
+            if change == "cancelled":
+                service.cancel(concurrent, 1, identifier)
+        if change == "grant_expired":
+            monkeypatch.setattr(service, "utcnow", lambda: started + timedelta(seconds=301))
+
+    monkeypatch.setattr(wake, "confirm", confirm)
+    intent, _ = admission(context)
+    assert intent.upload_url is None and store.signs == 0
+    assert intent.state == {"completed": "queued", "cancelled": "cancelled", "grant_expired": "awaiting_upload"}[change]
+    assert_no_saved(context)
 
 
 def test_concurrent_active_limit_is_not_oversold(context, monkeypatch):
@@ -493,6 +559,47 @@ def test_disabled_route_does_not_query_new_tables_or_sign(context, monkeypatch):
         service.status(NoSQL(), 1, "rup_" + "a"*32)
     assert exc.value.status_code == 503
     assert context[1].signs == 0
+
+
+def test_paused_admission_preserves_accepted_uploads_and_saved_sources(context, monkeypatch):
+    factory, store = context
+    monkeypatch.delenv("RESUME_UPLOAD_ADMISSION_ENABLED", raising=False)
+    accepted, target = admission(context, key="accepted-before-pause")
+    cancelled, cancelled_target = admission(context, key="cancel-after-pause")
+    monkeypatch.setenv("RESUME_UPLOAD_ADMISSION_ENABLED", "false")
+
+    for owner, key, content, status_code in (
+        (1, "new-key", CONTENT, 503),
+        (2, "accepted-before-pause", CONTENT, 503),
+        (1, "accepted-before-pause", CONTENT + b"changed", 409),
+    ):
+        with pytest.raises(HTTPException) as error:
+            admission(context, owner=owner, key=key, content=content)
+        assert error.value.status_code == status_code
+    assert store.signs == 2
+    assert_no_saved(context)
+    with factory() as db:
+        assert db.query(ResumeUpload).count() == 2
+
+    retry, retry_target = admission(context, key="accepted-before-pause")
+    assert retry == accepted
+    assert retry_target.quarantine_name == target.quarantine_name
+    assert store.signs == 3
+    store.upload(target)
+    store.upload(cancelled_target)
+    with factory() as db:
+        assert service.status(db, 1, accepted.upload_id).state == "awaiting_upload"
+        assert service.complete(db, 1, accepted.upload_id).state == "queued"
+        assert service.cancel(db, 1, cancelled.upload_id).state == "cancelled"
+    assert tasks.process_due(factory, store) == 1
+    assert privacy.cleanup_due(factory, store) == 2
+    with factory() as db:
+        released = service.status(db, 1, accepted.upload_id)
+        assert released.state == "released" and released.resume is not None
+        download = service.source_access(db, 1, released.resume.resume_id, store)
+        assert download.url.startswith("https://synthetic.invalid/clean?generation=")
+        assert download.sha256 == hashlib.sha256(CONTENT).hexdigest()
+        assert db.get(core.User, 1).ai_credits == 100
 
 
 @pytest.mark.parametrize("body", [{"size_bytes": schemas.MAX_BYTES+1}, {"size_bytes": True}, {"size_bytes": 0},
