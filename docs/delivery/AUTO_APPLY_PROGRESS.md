@@ -2,11 +2,11 @@
 
 Updated **14 November 2026 (IST)**. The API, analysis worker and employer
 worker each send 100% of their traffic to DB8 on schema26. The separate résumé
-coordinator serves its retained 7a00839 image. The live frontend has two
-separate DB8-compatible updates. It reduces sign-in and Dashboard requests and
-checks that a browser-review download matches the selected résumé. The merged
+coordinator serves its retained 7a00839 image. The live frontend reduces
+sign-in and Dashboard requests, checks that a browser-review download matches
+the selected résumé, and restores keyboard focus when application review closes. The merged
 saved Workspace and interview history work has an exact GCP image and awaits
-the bridge rollout. [Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/395e268e24892c4f23ac9e3622030ffb286ff554) ·
+the bridge rollout. [Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/fa7a88ebc41992658e71d4aa532a4aa8f04609e5) ·
 [Merged Workspace changes](https://github.com/Harshil4442/ai-resume-copilot/pull/125)
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
@@ -45,7 +45,7 @@ recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#sche
 |---|---|---|
 | Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
 | Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-d-32d98b931d16-open` | 100% serving on the retained revision. The latest-ready pointer names a different revision. |
-| Production frontend | Source `395e268e24892c4f23ac9e3622030ffb286ff554`; `dpl_4XgSeiDLBieZFZmcbNh5Bw4SfhVF` | The canonical domain serves both narrow frontend fixes. A production-build Chromium test rejected changed bytes and downloaded the exact reviewed file at widths 390 and 1440 px using synthetic responses. Public post-promotion checks verified the review page, protected routes and closed checkout. A new signed-in production download remains unverified. |
+| Production frontend | Source `fa7a88ebc41992658e71d4aa532a4aa8f04609e5`; `dpl_EdxsRk84ScY2sAt42u2Sdmcq8mku` | Production-build browser tests verified exact-file download at 390 and 1440 px, plus keyboard focus, résumé choice and account switching across five widths using synthetic responses. Public post-promotion checks verified the review page, protected routes and closed checkout. A new signed-in production journey remains unverified. |
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
