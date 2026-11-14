@@ -11,13 +11,14 @@ const parse = parseResult(learningResult);
 type LearningStrategyProps = {
   resume: { id: number; filename: string }; job: { id: string; title: string; employer?: string }; matchId: number;
   availability: CreditAvailability | null | undefined;
+  allowEnhanced?: boolean;
 };
 type LearningPlan = NonNullable<ReturnType<typeof parse>>;
 export function LearningStrategyPanel(props: LearningStrategyProps) {
   // The enclosing session-owner boundary also remounts this private state on an account change.
-  return <SelectedLearningStrategyPanel key={`${props.resume.id}:${props.job.id}:${props.matchId}`} {...props} />;
+  return <SelectedLearningStrategyPanel key={`${props.resume.id}:${props.job.id}:${props.matchId}:${props.allowEnhanced !== false}`} {...props} />;
 }
-function SelectedLearningStrategyPanel({ resume, job, matchId, availability }: LearningStrategyProps) {
+function SelectedLearningStrategyPanel({ resume, job, matchId, availability, allowEnhanced = true }: LearningStrategyProps) {
   const [mode, setMode] = useState<"curated" | "enhanced">("curated");
   const [selectionVersion, setSelectionVersion] = useState(0);
   const [saved, setSaved] = useState<{ stage: "idle" | "loading" | "missing" | "error" | "found"; result: LearningPlan | null }>({ stage: "idle", result: null });
@@ -50,7 +51,7 @@ function SelectedLearningStrategyPanel({ resume, job, matchId, availability }: L
     } finally { if (lookup.current === controller) lookup.current = null; }
   }
   return <section className="mt-7 border-t border-border pt-7" aria-label="Learning plan for this role"><h2 className="font-display text-2xl">Build a learning plan for this role</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Suggested projects are future work. They do not become resume achievements until you complete them and approve the evidence.</p>
-    <label className="mt-4 grid gap-2 text-sm font-semibold">Learning plan mode<select className="field-control" value={mode} disabled={action.pending || curated.isPending || Boolean(action.recovery)} onChange={(event) => changeMode(event.target.value as typeof mode)}><option value="curated">Curated resources · no generative AI</option><option value="enhanced">Personalized plan · review AI credit charge</option></select></label>
+    {allowEnhanced ? <label className="mt-4 grid gap-2 text-sm font-semibold">Learning plan mode<select className="field-control" value={mode} disabled={action.pending || curated.isPending || Boolean(action.recovery)} onChange={(event) => changeMode(event.target.value as typeof mode)}><option value="curated">Curated resources · no generative AI</option><option value="enhanced">Personalized plan · review AI credit charge</option></select></label> : null}
     {mode === "curated" ? <p className="mt-2 text-xs text-muted-foreground">{allowance ? `0 credits within an allowance of ${allowance.per_account_30_days} new plans per rolling 30 days, subject to available capacity.` : "New curated plans are currently paused. You can still look for an existing saved plan."}</p> : null}
     <Button className="mt-3" variant="secondary" disabled={action.pending || curated.isPending || saved.stage === "loading" || Boolean(action.review || action.recovery) || (mode === "curated" ? !allowance : !action.available)} onClick={() => { setSaved({ stage: "idle", result: null }); if (mode === "curated") curated.mutate({ id: matchId, scope: scope.current }); else action.requestQuote(); }}>{mode === "curated" ? "View curated plan" : "Review personalized plan charge"}</Button>
     {mode === "curated" ? <div className="mt-3 space-y-2"><Button variant="ghost" size="sm" disabled={saved.stage === "loading" || curated.isPending} onClick={() => void findSaved()}>Find saved curated plan</Button>

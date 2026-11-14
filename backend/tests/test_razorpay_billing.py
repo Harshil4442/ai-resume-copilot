@@ -641,6 +641,45 @@ def test_checkout_signature_records_evidence_but_never_provisions(
         assert db.query(EntitlementLedger).count() == 0
 
 
+@pytest.mark.parametrize(
+    ("signature_body_matches", "event_id", "expected_detail"),
+    [
+        (False, "evt_capture", "Invalid webhook signature."),
+        (None, "evt_capture", "Invalid webhook signature."),
+        (True, None, "Missing webhook event identifier."),
+        (True, "   ", "Missing webhook event identifier."),
+    ],
+    ids=["signature-for-different-body", "missing-signature", "missing-event-id", "blank-event-id"],
+)
+def test_webhook_requires_matching_signature_and_event_id_before_settlement(
+    client, enabled_checkout, session_factory, signature_body_matches, event_id, expected_detail,
+):
+    created = _accepted_legacy_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        raw = json.dumps(_capture_payload(order), sort_keys=True, separators=(",", ":")).encode()
+
+    headers = {"content-type": "application/json"}
+    if event_id is not None:
+        headers["x-razorpay-event-id"] = event_id
+    if signature_body_matches is not None:
+        signed_body = raw if signature_body_matches else raw + b"\n"
+        headers["x-razorpay-signature"] = _signature(signed_body)
+
+    response = client.post("/api/billing/webhooks/razorpay", content=raw, headers=headers)
+    assert response.status_code == 400
+    assert response.json() == {"detail": expected_detail}
+    assert enabled_checkout == []
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        user = db.query(User).filter_by(email="buyer@example.com").one()
+        assert order.status == "created"
+        assert user.tier == "free"
+        assert db.query(PaymentEvent).count() == 0
+        assert db.query(PaymentTransaction).count() == 0
+        assert db.query(EntitlementLedger).count() == 0
+
+
 def test_capture_is_webhook_only_atomic_and_idempotent(
     client, enabled_checkout, session_factory
 ):

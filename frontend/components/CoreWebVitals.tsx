@@ -1,7 +1,7 @@
 "use client";
 
 import { useReportWebVitals } from "next/web-vitals";
-import { isPasswordResetPath, isPasswordResetUrl } from "../lib/passwordResetPrivacy";
+import { isPasswordResetPath } from "../lib/passwordResetPrivacy";
 
 type Vital = { name: string; value: number; id: string; rating: string; navigationURL?: string };
 
@@ -31,10 +31,17 @@ function consentStillGranted() {
 function report(metric: Vital) {
   const { pathname, origin } = window.location;
   // The observer can report after navigation, even after this component unmounts.
-  if (isPasswordResetPath(pathname) || isPasswordResetUrl(metric.navigationURL)
-    || !consentStillGranted() || !window.gtag) return;
+  if (isPasswordResetPath(pathname) || !consentStillGranted() || !window.gtag) return;
+  let measuredPath = pathname;
+  if (metric.navigationURL !== undefined) {
+    let navigation: URL;
+    try { navigation = new URL(metric.navigationURL); }
+    catch { return; }
+    if (navigation.origin !== origin || isPasswordResetPath(navigation.pathname)) return;
+    measuredPath = navigation.pathname;
+  }
   const connection = (navigator as Navigator & { connection?: { effectiveType?: string } }).connection?.effectiveType;
-  const properties = vitalProperties(metric, pathname, window.innerWidth, connection);
+  const properties = vitalProperties(metric, measuredPath, window.innerWidth, connection);
   if (properties) window.gtag("event", "web_vital", {
     ...properties,
     page_location: origin + "/" + properties.route_group,

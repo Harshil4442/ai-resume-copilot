@@ -1047,8 +1047,10 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
           {tab === "learning" ? (
             <section>
               <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
-              {unifiedServices && sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
-              {unifiedServices && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
+              {sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
+              {sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }}
+                job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id}
+                availability={creditAvailability.data} allowEnhanced={unifiedServices} /> : null}
               {skillRoiLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
               {!skillRoiLoading && !skillRoi && !workspace.isError ? (
                 <div className="mt-7 flex flex-wrap items-center gap-3 text-sm" role="alert">
@@ -1092,7 +1094,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
                 </div>
               ) : null}
               {interviewMode === "curated" && curatedAllowance ? <p className="mt-3 text-xs text-muted-foreground">Curated question allowance: up to {curatedAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved questions remain accessible.</p> : null}
-              {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div> : null}
+              <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div>
               <AnalysisRunFeedback run={interviewRun.data} />
               <RunStatusCheck query={interviewRun} label="interview" />
               {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}

@@ -56,6 +56,25 @@ describe("performance data boundary", () => {
     expect(properties).toMatchObject({ route_group: "workspace", device_group: "mobile", metric_value: 1400 });
     expect(JSON.stringify(properties)).not.toMatch(/private-candidate|secret|resume/);
   });
+  it("attributes late measurements to the original same-origin navigation", () => {
+    window.gtag = vi.fn();
+    localStorage.setItem("hirewiz_cookie_consent", JSON.stringify({ version: 2, preference: "analytics", savedAt: new Date().toISOString() }));
+    history.replaceState(null, "", "/billing");
+    render(<CoreWebVitals />);
+    const report = vi.mocked(useReportWebVitals).mock.calls.at(-1)![0];
+    const metric = { name: "LCP", value: 1400, id: "late-sample", rating: "good", delta: 1400, entries: [], navigationType: "navigate" };
+    const from = (navigationURL: string) => ({ ...metric, navigationURL }) as Parameters<typeof report>[0];
+
+    report(from(window.location.origin + "/workspace/private-id?resume=private-query"));
+    expect(window.gtag).toHaveBeenCalledWith("event", "web_vital", expect.objectContaining({
+      route_group: "workspace", page_location: window.location.origin + "/workspace",
+    }));
+    expect(JSON.stringify(vi.mocked(window.gtag).mock.calls)).not.toMatch(/private-id|private-query/);
+
+    report(from("https://foreign.example/workspace"));
+    report(from("invalid URL"));
+    expect(window.gtag).toHaveBeenCalledOnce();
+  });
   it("bounds metric and metadata values without recording arbitrary paths", () => {
     expect(vitalProperties({ name: "unknown-private-event", value: 1, id: "sample", rating: "good" }, "/secret", 1440)).toBeNull();
     expect(vitalProperties({ name: "CLS", value: Number.NaN, id: "sample", rating: "good" }, "/secret", 1440)).toBeNull();
