@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections.abc import Mapping
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -32,6 +33,13 @@ from backend.scripts.run_cold_browser_journey import (
 from backend.tests.fixtures.cold_browser_credit_policy import environment as credit_policy
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
+
+LAUNCH_CATALOG_VERSION = "inr-unified-2026-10-27-v1"
+LAUNCH_PRICES = frozenset({
+    ("starter_pass", 5900, 40),
+    ("growth_pass", 17900, 130),
+    ("scale_pass", 44900, 360),
+})
 
 
 class CheckoutLabError(RuntimeError):
@@ -130,6 +138,21 @@ def require(condition: bool, message: str) -> None:
         raise CheckoutLabError(message)
 
 
+def synthetic_campaign(now: datetime) -> dict[str, object]:
+    start = now - timedelta(hours=1)
+    return {
+        "id": "razorpay-test-lab",
+        "version": "razorpay-test-lab-v1",
+        "catalog_version": LAUNCH_CATALOG_VERSION,
+        "enabled": True,
+        "starts_at": start,
+        "ends_at": start + timedelta(days=30),
+        "timezone": "Asia/Kolkata",
+        "reference_price_verified": False,
+        "created_at": now,
+    }
+
+
 def wait_loopback(url: str, process, *, tls=True, status: int = 200) -> None:
     deadline = time.monotonic() + 90
     with httpx.Client(verify=tls, trust_env=False, timeout=2) as client:
@@ -222,6 +245,13 @@ def run(credentials: dict[str, str], duration: int) -> None:
         migration = _run_bounded([sys.executable, "-m", "alembic", "upgrade", "head"],
                                  cwd=ROOT / "backend", env=api_env, timeout=90)
         require(migration.returncode == 0, "Local database migration failed")
+        if credentials:
+            with admin.begin() as db:
+                db.execute(text(f'INSERT INTO "{schema}".credit_campaigns '
+                    '(id, version, catalog_version, enabled, starts_at, ends_at, timezone, '
+                    'reference_price_verified, created_at) VALUES '
+                    '(:id, :version, :catalog_version, :enabled, :starts_at, :ends_at, :timezone, '
+                    ':reference_price_verified, :created_at)'), synthetic_campaign(datetime.now(UTC)))
         build = _run_bounded(["npm", "run", "build"], cwd=ROOT / "frontend", env=next_env, timeout=240)
         require(build.returncode == 0, "Local production frontend build failed")
 
@@ -252,8 +282,13 @@ def run(credentials: dict[str, str], duration: int) -> None:
 
         with httpx.Client(base_url=frontend, verify=tls, trust_env=False, timeout=10) as client:
             catalog = client.get("/api/backend/public/credits/catalog")
-            require(catalog.status_code == 200 and catalog.json().get("checkout_enabled") is True,
-                    "Test checkout catalog is unavailable")
+            require(catalog.status_code == 200, "Test checkout catalog is unavailable")
+            payload = catalog.json()
+            require(payload.get("checkout_enabled") is True, "Test checkout catalog is closed")
+            offers = {(row["sku"], row["amount_minor"], row["credits"]) for row in payload["products"]
+                      if isinstance(row.get("campaign"), dict) and row["campaign"]["status"] == "active"
+                      and row["campaign"]["reference_price_verified"] is False}
+            require(offers == LAUNCH_PRICES, "Test catalog did not return the expected launch terms")
         print(f"Checkout lab is available at {frontend}/register", flush=True)
         print(f"Use the lab's loopback certificate at {cert}", flush=True)
         print(f"Point the temporary Test webhook tunnel only to {ingress}{WEBHOOK_PATH}", flush=True)

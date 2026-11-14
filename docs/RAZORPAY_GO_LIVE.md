@@ -69,11 +69,14 @@ backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout \
 ```
 
 Enter the Test key ID, key secret and separate webhook secret at the hidden
-prompts. Open the printed local URL in an isolated browser profile, trust only
-the launcher's loopback certificate for this session, and register a synthetic
-account. Use Razorpay's test payment methods. Point the HTTPS tunnel only at the
-printed loopback [receiver](../backend/scripts/razorpay_test_webhook_ingress.py)
-port and configure the exact printed callback path in the Test dashboard. The
+prompts. The disposable database has a synthetic active campaign so the lab
+uses the proposed introductory totals without displaying a crossed-out price.
+Its dates apply only to this test. Open the printed local URL in an isolated
+browser profile, trust only the launcher's loopback certificate for this
+session, and register a synthetic account. Use Razorpay's test payment methods.
+Point the HTTPS tunnel only at the printed loopback
+[receiver](../backend/scripts/razorpay_test_webhook_ingress.py) port and configure
+the exact printed callback path in the Test dashboard. The
 receiver relays the raw body and the Razorpay signature and event ID. It returns
 only the HTTP status and keeps no delivery records. Verify that `GET /api/health`
 and unrelated POST paths are refused at the public endpoint. The launcher

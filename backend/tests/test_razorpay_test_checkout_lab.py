@@ -1,18 +1,35 @@
 """Keep the opt-in checkout lab separate from provider-free acceptance runs."""
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
+from backend.app.domains.credits.models import CreditCampaign
+from backend.app.domains.credits.pricing import public_catalog
 from backend.scripts.run_razorpay_test_checkout import (
+    LAUNCH_PRICES,
     allowed_provider_request,
     provider_environment,
     runtime_environment,
+    synthetic_campaign,
 )
 
 TEST_AUTH = ("rzp_test_synthetic123", "synthetic-checkout-test-key")
 TEST_WEBHOOK_SECRET = "a-separate-synthetic-webhook-secret"
 API = "https://api.razorpay.com"
 RECEIPT = "hw_ord_" + "a" * 32
+
+
+def test_synthetic_launch_prices_expire_without_claiming_a_reference_price():
+    now = datetime(2026, 11, 14, 9, tzinfo=UTC)
+    campaign = CreditCampaign(**synthetic_campaign(now))
+    offers = public_catalog(campaign=campaign, now=now).products
+    assert {(row.sku, row.amount_minor, row.credits) for row in offers} == LAUNCH_PRICES
+    assert all(row.campaign and not row.campaign.reference_price_verified for row in offers)
+    assert campaign.ends_at - campaign.starts_at == timedelta(days=30)
+    standard = public_catalog(campaign=campaign, now=campaign.ends_at).products
+    assert [row.amount_minor for row in standard] == [7900, 22900, 59900]
 
 
 def test_only_selected_environment_escapes_parent_process(tmp_path):
