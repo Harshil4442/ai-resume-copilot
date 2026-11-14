@@ -192,6 +192,9 @@ def legacy_opportunity_detail(db: Session, user_id: int, opportunity_id: str) ->
     # later collection must not trigger body reads from earlier collections.
     for collection in ("activity", "contacts", "reminders", "resume_versions"):
         model, _, order_name, descending = _SPECS[collection]
+        # The legacy frontend defaults to the first version when recording an application.
+        if collection == "resume_versions":
+            order_name = "version_number"
         order = getattr(model, order_name)
         query = _query(db, user_id, compact, collection, metadata=False).order_by(
             order.desc() if descending else order.asc(), model.id.desc() if descending else model.id.asc())

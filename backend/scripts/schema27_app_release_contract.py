@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '31e6859c96e8c4e7cd5b9808a1d51d5fd059556649307086646eef49110081eb'
+CANDIDATE_APP_SHA256 = 'd91e2f8993abff963299dfa1cd5a31616bf305ad7559d1d0c53da9728c66feac'
 CANDIDATE_APP_FILES = 313
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -116,6 +116,7 @@ F07_PATHS = (
     "frontend/app/api/backend/[...path]/route.ts", "frontend/app/api/backend/[...path]/notificationRoutes.test.ts",
     "frontend/instrumentation-client.ts", "frontend/components/SessionProviderWrapper.tsx", "frontend/next.config.mjs",
     "backend/app/domains/career/workspace.py", "backend/tests/test_workspace_skill_roi.py",
+    "backend/tests/test_career_workspace_pagination.py",
     "frontend/lib/workspacePages.ts",
 )
 
