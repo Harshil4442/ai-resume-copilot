@@ -133,7 +133,8 @@ function validateIntent(value: unknown, file: File, media: string): Intent {
 
 function validateStatus(value: unknown, id: string, sourceFormat: ResumeSourceFormat): Status {
   if (!record(value) || value.upload_id !== id || typeof value.state !== "string" || !STATES.has(value.state)
-    || (value.error_code !== null && (typeof value.error_code !== "string" || value.error_code.length > 64))) throw new Error("Resume status could not be verified.");
+    || (value.error_code !== null && (typeof value.error_code !== "string" || value.error_code.length > 64))
+    || (value.state !== "released" && value.resume !== null)) throw new Error("Resume status could not be verified.");
   if (value.state === "released" && (!record(value.resume) || !Number.isSafeInteger(value.resume.resume_id) || Number(value.resume.resume_id) <= 0
     || value.resume.source_available !== true || value.resume.source_format !== sourceFormat || !Array.isArray(value.resume.skills))) {
     throw new Error("Saved resume could not be verified.");
@@ -241,6 +242,9 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
       }
       if (current?.state === "released") { progress("completed"); return current.resume!; }
       if (current && ["rejected", "failed", "cancelled", "expired"].includes(current.state)) {
+        if (current.state === "failed" && current.error_code === "resume_inspection_unavailable") {
+          throw new Error("Resume inspection is temporarily unavailable. This file was not saved. Try again later or use a resume you already saved.");
+        }
         throw new Error(current.state === "rejected" ? "This document did not pass resume safety checks. Check your source file for unsupported or unsafe content. No analysis units were charged."
           : "Your resume could not be saved. No analysis units were charged. Temporary upload cleanup is scheduled.");
       }
