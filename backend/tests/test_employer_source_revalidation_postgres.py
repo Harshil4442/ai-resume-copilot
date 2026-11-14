@@ -157,3 +157,39 @@ def test_postgres_competing_refresh_observes_running_lease_without_another_get(o
     assert cache.published == 2
     with factory() as db:
         assert db.get(models.EmployerSource, "source-owned-pg").scan_token is None
+
+
+@pytest.mark.parametrize("change", ["configuration", "claim", "checkpoint"])
+def test_postgres_permanent_error_cannot_record_against_changed_source(owned_source_database, monkeypatch, change):
+    from datetime import timedelta
+
+    factory, cache = owned_source_database
+    def obsolete_failure(_source, **_kwargs):
+        with factory() as db:
+            source = db.get(models.EmployerSource, "source-owned-pg", with_for_update=True)
+            if change == "configuration":
+                source.board_token = "replacement"
+            elif change == "claim":
+                source.scan_token = "replacement-claim"
+            else:
+                source.last_success_at += timedelta(minutes=1)
+            db.commit()
+        raise connectors.ConnectorError("job_destination_tenant_mismatch", safe_to_retry=False)
+
+    monkeypatch.setattr(connectors, "fetch_source_scan", obsolete_failure)
+    with factory() as db:
+        current = db.get(models.EmployerSource, "source-owned-pg")
+        previous_due = current.next_refresh_at
+        previous_success = current.last_success_at
+    with pytest.raises(connectors.ConnectorError, match="job_destination_tenant_mismatch"):
+        tasks.refresh_source("source-owned-pg")
+    with factory() as db:
+        current = db.get(models.EmployerSource, "source-owned-pg")
+        assert current.status == "healthy" and current.last_error_code is None
+        assert current.next_refresh_at == previous_due
+        assert current.last_success_at == previous_success + timedelta(minutes=int(change == "checkpoint"))
+        assert current.scan_token is not None
+        if change == "claim":
+            assert current.scan_token == "replacement-claim"
+        assert db.get(models.EmployerPosting, "job-owned-pg").is_open
+    assert cache.published == 1
