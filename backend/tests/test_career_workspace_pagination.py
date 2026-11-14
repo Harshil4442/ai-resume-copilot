@@ -7,14 +7,14 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, null
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import models
 from app.database import get_db
 from app.domains.career import service, workspace
-from app.routers.v1 import career
+from app.routers.v1 import analysis, career
 from app.security import get_current_user
 
 STAMP = datetime(2026, 11, 1)
@@ -41,6 +41,7 @@ def owned():
     event.listen(engine, "before_cursor_execute", lambda _c, _cursor, statement, _p, _ctx, _many: statements.append(statement))
     app = FastAPI()
     app.include_router(career.router, prefix="/api/v1")
+    app.include_router(analysis.router, prefix="/api/v1")
 
     def database():
         with factory() as db:
@@ -145,6 +146,62 @@ def test_cursor_binds_owner_opportunity_source_collection_filter_limit(owned):
     owner.id = 2
     assert client.get(PREFIX).status_code == 404
     assert client.get("/api/v1/opportunities/opp_other/workspace/evidence", params={"limit": 1, "state": "approved", "cursor": token}).status_code == 400
+
+
+def test_saved_interview_pages_keep_owned_results_after_input_changes(owned):
+    client, factory, owner, sql, _ = owned
+    results_path = f"{PREFIX}/interview_results"
+    with factory() as db:
+        def saved(identity, **changes):
+            values = {"id": identity, "user_id": 1, "opportunity_id": "opp_a",
+                "operation": "interview_questions", "status": "succeeded", "completed_at": STAMP,
+                "idempotency_key": identity, "input_fingerprint": "a" * 64,
+                "input_payload": {"private": "historical evidence"}, "model": "retired-model",
+                "result_payload": {"questions": [{"question": "Private earlier question"}]}}
+            db.add(models.AnalysisRun(**(values | changes)))
+
+        saved("interview_b", input_payload={"purged": True}, input_purged_at=STAMP + timedelta(days=30))
+        saved("interview_a")
+        saved("other_opportunity", opportunity_id="opp_b")
+        saved("other_owner", user_id=2, opportunity_id="opp_other")
+        saved("other_operation", operation="resume_tailor")
+        saved("pending", status="queued", completed_at=None)
+        saved("purged", result_purged_at=STAMP)
+        saved("missing_payload", result_payload=None)
+        saved("sql_null_payload", result_payload=null())
+        db.query(models.Opportunity).filter_by(id="opp_a").update({"latest_analysis_run_id": "other_operation"})
+        db.commit()
+
+    assert client.get(PREFIX).json()["pages"].get("interview_results") is None
+    sql.clear()
+    response = client.get(PREFIX, params={"tab": "interview", "limit": 1})
+    assert response.status_code == 200, response.text
+    first = response.json()["pages"]["interview_results"]
+    assert [item["id"] for item in first["items"]] == ["interview_b"]
+    assert set(first["items"][0]) == {"id", "completed_at"}
+    assert first["next_cursor"]
+    assert not any("result_payload" in statement.partition("\nFROM")[0] or "input_payload" in statement
+                   for statement in sql)
+    with factory() as db:
+        db.query(models.Opportunity).filter_by(id="opp_a").update({"resume_id": 11, "job_description": "Changed role"})
+        db.commit()
+    next_params = {"cursor": first["next_cursor"], "limit": 1}
+    assert client.get(results_path, params=next_params).json() == {
+        "items": [{"id": "interview_a", "completed_at": first["items"][0]["completed_at"]}], "next_cursor": None}
+    assert client.get(results_path.replace("opp_a", "opp_b"), params=next_params).status_code == 400
+    detail_path = "/api/v1/analysis-runs/interview_b/result"
+    assert client.get(detail_path).json()["result"]["questions"] == [{"question": "Private earlier question"}]
+    owner.id = 2
+    assert client.get(results_path).status_code == 404
+    assert client.get(detail_path).status_code == 404
+    assert client.get(results_path.replace("opp_a", "opp_other"), params=next_params).status_code == 400
+    owner.id = 1
+    with factory() as db:
+        db.query(models.AnalysisRun).filter_by(id="interview_b").update({
+            "result_payload": None, "result_purged_at": STAMP + timedelta(days=90)})
+        db.commit()
+    assert client.get(detail_path).status_code == 410
+    assert [item["id"] for item in client.get(results_path).json()["items"]] == ["interview_a"]
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=51", "limit=abc", "tab=unknown", "selected_version_id=", "selected_version_id=" + "x" * 65])

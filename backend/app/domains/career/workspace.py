@@ -29,6 +29,7 @@ _SPECS: dict[str, tuple[Any, type[BaseModel], str, bool]] = {
     "reminders": (models.Reminder, schemas.ReminderResponse, "due_at", False),
     "evidence": (models.EvidenceItem, schemas.EvidenceMetadata, "created_at", True),
     "resume_versions": (models.ResumeVersion, schemas.ResumeVersionMetadata, "created_at", True),
+    "interview_results": (models.AnalysisRun, schemas.InterviewResultMetadata, "completed_at", True),
 }
 
 
@@ -60,6 +61,10 @@ def _query(db: Session, user_id: int, opportunity: schemas.OpportunityHeader, co
             if collection != "reminders" or state not in {"scheduled", "completed", "dismissed"}:
                 raise HTTPException(422, "Unsupported workspace collection filter")
             query = query.filter(model.status == state)
+    if collection == "interview_results":
+        query = query.filter(model.operation == "interview_questions", model.status == "succeeded",
+            model.completed_at.is_not(None), model.result_purged_at.is_(None),
+            model.result_payload["questions"].as_string().is_not(None))
     return query
 
 
@@ -70,7 +75,8 @@ def collection_page(db: Session, user_id: int, opportunity: schemas.OpportunityH
     query = _query(db, user_id, opportunity, collection, metadata=True, state=state)
     model, response, order_name, descending = _SPECS[collection]
     order = getattr(model, order_name)
-    context = (user_id, opportunity.id, collection, opportunity.resume_id, state, limit)
+    source_id = None if collection == "interview_results" else opportunity.resume_id
+    context = (user_id, opportunity.id, collection, source_id, state, limit)
     if cursor is not None:
         stamp, identity = workspace_cursor.decode(cursor, context)
         comparison = or_(order < stamp, and_(order == stamp, model.id < identity)) if descending else or_(
@@ -116,7 +122,8 @@ def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "ove
               selected_version_id: str | None = None, include_skill_roi: bool = False) -> schemas.WorkspaceResponse:
     opportunity = header(db, user_id, opportunity_id)
     pages = {"resume_versions": collection_page(db, user_id, opportunity, "resume_versions", limit=limit)}
-    for collection in {"overview": ("contacts", "reminders"), "resume": ("evidence",), "activity": ("activity",)}.get(tab, ()):
+    for collection in {"overview": ("contacts", "reminders"), "resume": ("evidence",), "activity": ("activity",),
+                       "interview": ("interview_results",)}.get(tab, ()):
         pages[collection] = collection_page(db, user_id, opportunity, collection, limit=limit)
     applied = db.query(models.ApplicationEvent.resume_version_id).filter(models.ApplicationEvent.user_id == user_id,
         models.ApplicationEvent.opportunity_id == opportunity.id, models.ApplicationEvent.to_stage == "applied",

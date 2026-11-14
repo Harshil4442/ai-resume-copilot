@@ -3719,6 +3719,25 @@
         "title": "InterviewQuestionsResponse",
         "type": "object"
       },
+      "InterviewResultMetadata": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "completed_at"
+        ],
+        "title": "InterviewResultMetadata",
+        "type": "object"
+      },
       "JobMatchHistoryItem": {
         "properties": {
           "company": {
@@ -10162,6 +10181,34 @@
         "title": "WorkspacePage[EvidenceMetadata]",
         "type": "object"
       },
+      "WorkspacePage_InterviewResultMetadata_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewResultMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "WorkspacePage[InterviewResultMetadata]",
+        "type": "object"
+      },
       "WorkspacePage_ReminderResponse_": {
         "properties": {
           "items": {
@@ -10244,6 +10291,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WorkspacePage_EvidenceMetadata_"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "interview_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePage_InterviewResultMetadata_"
               },
               {
                 "type": "null"
@@ -20405,7 +20462,8 @@
                 "contacts",
                 "reminders",
                 "evidence",
-                "resume_versions"
+                "resume_versions",
+                "interview_results"
               ],
               "title": "Collection",
               "type": "string"
@@ -20478,6 +20536,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/WorkspacePage_ResumeVersionMetadata_"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WorkspacePage_InterviewResultMetadata_"
                     }
                   ],
                   "title": "Response Get Workspace Page Api V1 Opportunities  Opportunity Id  Workspace  Collection  Get"

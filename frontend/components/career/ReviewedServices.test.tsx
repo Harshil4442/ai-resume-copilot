@@ -180,6 +180,23 @@ it("keeps enhanced saved lookup distinct from curated lookup while new execution
   expect(screen.queryByText(learning.readiness_summary)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Find saved curated plan" })).toBeEnabled();
 });
+
+it("opens in curated mode after credit features close and reopen", () => {
+  const panel = (allowEnhanced: boolean) => <QueryClientProvider client={client}><LearningStrategyPanel
+    resume={resume} job={job} matchId={5} availability={allowEnhanced ? availability : null} allowEnhanced={allowEnhanced} /></QueryClientProvider>;
+  const rendered = render(panel(true));
+  fireEvent.change(screen.getByRole("combobox", { name: "Learning plan mode" }), { target: { value: "enhanced" } });
+  expect(screen.getByRole("button", { name: "Review personalized plan charge" })).toBeEnabled();
+
+  rendered.rerender(panel(false));
+  expect(screen.queryByRole("combobox", { name: "Learning plan mode" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Find saved curated plan" })).toBeEnabled();
+
+  rendered.rerender(panel(true));
+  expect(screen.getByRole("combobox", { name: "Learning plan mode" })).toHaveValue("curated");
+  expect(state.post).not.toHaveBeenCalled();
+});
+
 it("does not attach a late enrichment result to another selected resume", async () => {
   let finish!: (value: unknown) => void; const original = state.post.getMockImplementation()!;
   state.post.mockImplementation((url, ...rest) => url === "/resume/1/enrich" ? new Promise((resolve) => { finish = resolve; }) : original(url, ...rest));

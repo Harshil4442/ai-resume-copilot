@@ -34,7 +34,7 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
     { cwd: new URL("backend/", ROOT).pathname, stdio: ["pipe", "pipe", "pipe"], env: {...process.env,PYTHONWARNINGS:"ignore::DeprecationWarning",PYTHONDONTWRITEBYTECODE:"1"} });
   python.stderr.on("data", (chunk) => { errors += chunk.toString(); });
   createInterface({ input: python.stdout }).on("line", (line) => pending.shift()?.resolve(JSON.parse(line)));
-  python.on("exit", () => { for (const waiter of pending.splice(0)) waiter.reject(new Error("Owned SQL bridge exited")); });
+  python.on("exit", () => { for (const waiter of pending.splice(0)) waiter.reject(new Error(`Owned SQL bridge exited\n${errors}`)); });
   const bridge = (value) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Owned SQL bridge timed out")), 10000);
     pending.push({ resolve: (reply) => { clearTimeout(timer); resolve(reply); }, reject: (failure) => { clearTimeout(timer); reject(failure); } });
@@ -136,7 +136,9 @@ async function fixture({ granted = true, loseBegin = false, typed = false, unkno
       typedApplication: typedApplication?.body, connect, prepare, approve,
       async close() {
         await context?.close(); assert.equal(context.pages().length, 0);
-        python.stdin.end(); await new Promise((resolve) => python.once("exit", resolve));
+        if (python.exitCode === null && python.signalCode === null) {
+          python.stdin.end(); await new Promise((resolve) => python.once("exit", resolve));
+        }
         assert.equal(errors, "");
         await rm(directory, { recursive: true, force: true }); await assert.rejects(stat(directory), { code: "ENOENT" });
         assert.ok(requests.every(({ url, method }) => url === PORTAL && method === "GET"
@@ -319,6 +321,59 @@ test("installed MV3 v3 approves exact binary disclosure before a one-shot resume
     for (const key of ["payload", "answers", "artifact", "artifact_base64"]) assert.equal(Object.hasOwn(stored, key), false);
   } finally { await f.close(); }
 });
+
+for (const choice of ["custom", "tailored"]) {
+  test(`installed MV3 v3 requires fresh approval for a saved ${choice} resume and selects its exact bytes once`, async () => {
+    const f = await fixture({ attachment: true });
+    try {
+      await f.connect();
+      const original = await f.prepare();
+      await f.approve(original);
+      const saved = await f.bridge({ operation: "save_resume_choice", choice });
+      assert.equal(saved.status, 200);
+      assert.notEqual(saved.body.package_digest, original.payload.package_digest);
+      assert.notEqual(saved.body.artifact.sha256, original.payload.artifact.sha256);
+      assert.equal(saved.body.artifact.resume_choice, choice);
+      assert.equal(saved.body.artifact.resume_id, choice === "custom" ? 2 : 1);
+      assert.equal(saved.body.artifact.resume_version_id, choice === "tailored" ? "owned_tailored" : null);
+
+      assert.equal((await message(f.popup, { type: "assistance_fill" })).ok, false);
+      assert.equal(f.leases.length, 0);
+      assert.equal(f.requests.filter(({ url }) => url.endsWith("/artifact")).length, 0);
+      assert.equal(f.uploads.length, 0);
+      assert.equal(await f.portal.locator("#resume").evaluate((node) => node.files.length), 0);
+      await f.popup.locator("#assistance-cancel").click();
+      await expect(f.popup.locator("#assistance-prepare-attachment")).toBeEnabled({ timeout: 5000 });
+
+      const review = await f.prepare();
+      assert.notEqual(review.id, original.id);
+      assert.notEqual(review.review_digest, original.review_digest);
+      assert.equal(review.payload.package_digest, saved.body.package_digest);
+      assert.deepEqual(review.payload.artifact, saved.body.artifact);
+      assert.equal((await message(f.popup, { type: "assistance_fill" })).ok, false);
+      assert.equal(f.leases.length, 0);
+      assert.equal(f.uploads.length, 0);
+
+      await f.approve(review);
+      const filled = await message(f.popup, { type: "assistance_fill" });
+      assert.equal(filled.ok, true, filled.error);
+      assert.equal(filled.value.phase, "filled");
+      await f.portal.evaluate(() => window.uploadPromise);
+      assert.equal(f.leases.length, 1);
+      assert.equal(f.leases[0].payload.review_digest, review.review_digest);
+      assert.deepEqual(f.leases[0].payload.artifact, saved.body.artifact);
+      assert.equal(f.requests.filter(({ url }) => url.endsWith("/artifact")).length, 1);
+      assert.equal(f.uploads.length, 1);
+      assert.equal(createHash("sha256").update(f.uploads[0]).digest("hex"), saved.body.artifact.sha256);
+      assert.equal(await f.portal.locator("#resume").evaluate((node) => node.files[0].name), saved.body.artifact.filename);
+      assert.equal(await f.portal.evaluate(() => window.events.submit), 0);
+      assert.deepEqual((await f.bridge({ operation: "audit" })).body,
+        { charged_credits: 0, application_status: "ready", field_count: 0 });
+      assert.equal((await message(f.popup, { type: "assistance_fill" })).ok, false);
+      assert.equal(f.uploads.length, 1);
+    } finally { await f.close(); }
+  });
+}
 
 for (const scenario of [{ tamperBinary: true }, { loseArtifact: true }, { tamperAttachmentLease: true }]) {
   test(`installed MV3 v3 refuses uncertain/tampered binary without selection or resend: ${Object.keys(scenario)[0]}`, async () => {

@@ -474,7 +474,7 @@ def create_workspace_source_snapshot(
 
 @router.get("/opportunities/{opportunity_id}/workspace/{collection}", response_model=schemas.WorkspacePageResponse)
 def get_workspace_page(
-    opportunity_id: str, collection: schemas.WorkspaceCollection, response: Response,
+    opportunity_id: str, collection: schemas.WorkspacePageCollection, response: Response,
     limit: int = Query(default=20, ge=1, le=50),
     cursor: str | None = Query(default=None, max_length=1024),
     state: str | None = Query(default=None, max_length=24),

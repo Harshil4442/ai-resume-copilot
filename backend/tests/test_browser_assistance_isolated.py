@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
     encode_dss_signature,
 )
 from fastapi import HTTPException
-from sqlalchemy import JSON, Column, Integer, String, Table, create_engine, or_
+from sqlalchemy import JSON, Column, Integer, LargeBinary, String, Table, create_engine, or_
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -50,11 +50,21 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
 core.User = User
+class Resume(Base):
+    __tablename__ = "resumes"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer)
+    original_filename = Column(String(200))
+    source_format = Column(String(8))
+    source_document = Column(LargeBinary)
+core.Resume = Resume
 class ResumeVersion(Base):
     __tablename__ = "resume_versions"
     id = Column(String(64), primary_key=True)
     user_id = Column(Integer, nullable=False)
     resume_id = Column(Integer, nullable=False)
+    label = Column(String(200))
+    version_number = Column(Integer)
     approval_state = Column(String(16), nullable=False)
     structured_content = Column(JSON, nullable=False)
     evidence_ids = Column(JSON, nullable=False)

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowLeft,
-  ArrowRight,
   BookOpenCheck,
   BrainCircuit,
   BriefcaseBusiness,
@@ -71,6 +70,7 @@ import { useProgressQuery } from "../../../lib/useProgressQuery";
 import type { ResumeSourceFormat } from "../../../lib/types";
 import { parseWorkspaceSkillRoi, useWorkspace, useWorkspacePage, useWorkspaceResumes, workspaceKey, workspaceConnectionKey, type PendingWorkspaceConnection } from "../../../lib/workspacePages";
 import { WorkspaceItemDetails, WorkspacePageControls, WorkspaceRoleBody, WorkspaceVersionDetails } from "../../../components/career/WorkspaceHistory";
+import { InterviewQuestionList, WorkspaceInterviewHistory, type InterviewResult } from "../../../components/career/WorkspaceInterviewHistory";
 import { ResumeSelector, ResumeVersionMetadata } from "../../../components/ResumeSelector";
 
 type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outcome";
@@ -78,18 +78,6 @@ type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" 
 type MatchScope = { ownerKey: string; opportunityId: string; resumeId: number };
 type ScopedMatchRun = { runId: string; scope: MatchScope };
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
-type InterviewResult = {
-  mode?: "curated" | "enhanced";
-  provenance?: "curated" | "generated";
-  opportunity_id: string;
-  questions: {
-    provenance?: "curated" | "generated";
-    question: string;
-    answer: string;
-    answer_state?: "evidence_backed" | "evidence_needed";
-    evidence_ids?: string[];
-  }[];
-};
 type TailorResult = {
   resume_version_id: string;
   version_number: number;
@@ -194,6 +182,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const matchRunId = scopedMatchRun?.runId ?? null;
   const quotedMatchScope = useRef<MatchScope | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
+  const interviewFromSavedLookup = useRef(false);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
   const [learningMatchOpened, setLearningMatchOpened] = useState(false);
   const [reminderMessage, setReminderMessage] = useState("");
@@ -219,6 +208,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const tailoringIntent = useRef<TailoringIntent | null>(null);
 
   const workspace = useWorkspace(ownerKey, opportunityId, tab, authenticated, submittedVersionId || undefined);
+  const supportsInterviewHistory = Boolean(workspace.data?.pages.interview_results);
   const pendingConnection = queryClient.getQueryData<PendingWorkspaceConnection>(workspaceConnectionKey(ownerKey, opportunityId));
   const prefix = workspaceKey(ownerKey, opportunityId);
   const opportunity = { ...workspace, data: workspace.data?.opportunity };
@@ -335,6 +325,12 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   }, [opportunityId, ownerKey, queryClient, tailorRun.data?.status]);
 
   useEffect(() => {
+    if (interviewRun.data?.status === "succeeded" && supportsInterviewHistory && !interviewFromSavedLookup.current) {
+      void queryClient.invalidateQueries({ queryKey: [...workspaceKey(ownerKey, opportunityId), "tab", "interview"] });
+    }
+  }, [interviewRun.data?.id, interviewRun.data?.status, opportunityId, ownerKey, queryClient, supportsInterviewHistory]);
+
+  useEffect(() => {
     let refreshAccount = false;
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
       if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
@@ -415,7 +411,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const interviewAction = useQuotedAnalysis({
     request: { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: "enhanced" } },
     context: reviewContext, selectionKey: `${selectionIdentity}:${interviewMode}`, availability: creditAvailability.data,
-    onRun: (run) => setInterviewRunId(run.id),
+    onRun: (run, reused) => { interviewFromSavedLookup.current = reused && run.status === "succeeded"; setInterviewRunId(run.id); },
   });
   const tailoringAction = useQuotedAnalysis({
     request: { operation: "resume_tailor", opportunity_id: opportunityId, input: { tailoring_scope: tailoringScope } },
@@ -446,6 +442,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
       { "Idempotency-Key": crypto.randomUUID() },
     ),
     onSuccess: (run) => {
+      interviewFromSavedLookup.current = false;
       setInterviewRunId(run.id);
       trackEvent("analysis_run_created", { operation: "interview_questions", estimated_units: run.estimated_units });
     },
@@ -1047,8 +1044,10 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
           {tab === "learning" ? (
             <section>
               <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
-              {unifiedServices && sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
-              {unifiedServices && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }} job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id} availability={creditAvailability.data} /> : null}
+              {sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
+              {sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }}
+                job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id}
+                availability={creditAvailability.data} allowEnhanced={unifiedServices} /> : null}
               {skillRoiLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
               {!skillRoiLoading && !skillRoi && !workspace.isError ? (
                 <div className="mt-7 flex flex-wrap items-center gap-3 text-sm" role="alert">
@@ -1092,43 +1091,19 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
                 </div>
               ) : null}
               {interviewMode === "curated" && curatedAllowance ? <p className="mt-3 text-xs text-muted-foreground">Curated question allowance: up to {curatedAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved questions remain accessible.</p> : null}
-              {unifiedServices ? <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div> : null}
+              <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div>
               <AnalysisRunFeedback run={interviewRun.data} />
               <RunStatusCheck query={interviewRun} label="interview" />
               {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
               {interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
               {interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}
-              <div className="mt-6 space-y-4">
-                {interviewQuestions.map((question, index) => {
-                  const evidenceBacked = question.answer_state === "evidence_backed";
-                  const sourceCount = question.evidence_ids?.length || 0;
-                  return (
-                    <article key={`${index}-${question.question}`} aria-labelledby={`interview-question-${index}`} className="rounded-xl border border-border bg-white p-5 transition-colors hover:border-accent sm:p-6">
-                      <div className="flex items-start gap-3 sm:gap-4">
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-surface font-mono text-sm font-medium tabular-nums text-primary" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                        <div className="min-w-0 flex-1">
-                          <h3 id={`interview-question-${index}`} className="break-words text-base font-semibold leading-6 text-foreground sm:text-lg sm:leading-7">{question.question}</h3>
-                          <StatusBadge className="mt-2" tone={evidenceBacked ? "teal" : "amber"}>{evidenceBacked ? `Evidence-backed · ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}` : "Evidence needed"}</StatusBadge>
-                        </div>
-                      </div>
-                      {question.answer ? (
-                        <div className="mt-5 rounded-lg bg-surface/80 p-4 sm:ml-14 sm:p-5">
-                          <p className="data-label">{evidenceBacked ? "Suggested talking points" : "Preparation guidance"}</p>
-                          <p className="mt-2 max-w-prose whitespace-pre-line break-words text-sm leading-7 text-muted-foreground">{question.answer}</p>
-                        </div>
-                      ) : null}
-                      {!evidenceBacked ? (
-                        <div className="mt-4 flex flex-col items-start gap-3 sm:ml-14 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="max-w-prose text-xs leading-5 text-muted-foreground">Add or approve relevant evidence, then regenerate your questions.</p>
-                          <Button variant="secondary" size="sm" className="shrink-0" onClick={reviewResumeEvidence}>Review resume evidence <ArrowRight size={14} aria-hidden="true" /></Button>
-                        </div>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
+              <InterviewQuestionList questions={interviewQuestions} reviewEvidence={reviewResumeEvidence} />
               {!interviewQuestions.length && !interviewIsRunning && !interviewResult.isLoading && !interviewResult.isError && (!interviewRun.data || interviewRun.data.status === "succeeded") ? (
                 <EmptyState icon={MessageSquareText} title={questions ? "No questions returned" : "Prepare from the actual role"} description={questions ? "Try generating another set of questions for this opportunity." : "Generate questions from the saved job description, then review your evidence before practicing."} />
+              ) : null}
+              {workspace.isSuccess && workspace.data.pages.interview_results ? (
+                <WorkspaceInterviewHistory owner={ownerKey} opportunity={opportunityId} seed={workspace.data.pages.interview_results}
+                  refreshing={workspace.isFetching} refresh={() => workspace.refetch()} />
               ) : null}
             </section>
           ) : null}
