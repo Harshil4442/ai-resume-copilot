@@ -82,6 +82,7 @@ F07_PATHS = (
     "backend/tests/test_qualify_schema27.py", "backend/tests/test_qualify_schema26_retained_v3.py",
     "backend/tests/test_schema27_app_compatibility_postgres.py",
     "backend/tests/test_interview_input_guards.py", "backend/tests/test_interview_input_postgres.py",
+    "backend/tests/test_supported_evaluation_postgres.py",
     "backend/tests/test_credit_release_margin_gate.py",
     "backend/app/domains/credits/payment_expenses.py", "backend/app/domains/credits/payment_funding.py",
     "infra/gcp/payment_funding_operator.py", "backend/tests/test_payment_expenses.py",
