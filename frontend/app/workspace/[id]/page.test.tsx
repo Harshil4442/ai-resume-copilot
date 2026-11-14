@@ -771,6 +771,72 @@ it.each([false, true])("opens an owned saved curated plan with paid credits paus
   expect(state.wire.mock.calls.filter(([url]) => url === savedPath)).toHaveLength(1);
 });
 
+it("asks before loading the next exact saved match when both résumés have a match", async () => {
+  state.tab = "learning";
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) {
+      const workspace = matchWorkspace("current");
+      return Promise.resolve({ ...workspace, opportunity: { ...workspace.opportunity, latest_match_id: resumeId === 1 ? 91 : 92 },
+        skill_roi: { items: [], opportunity_count: 0 } });
+    }
+    if (url.endsWith("/match?resume_id=1")) return Promise.resolve(savedMatch);
+    if (url.endsWith("/match?resume_id=2")) return Promise.resolve({ ...savedMatch, match_id: 92 });
+  });
+  const matches = () => state.wire.mock.calls.map(([url]) => url).filter(url => url.includes("/match?"));
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`]);
+  fireEvent.change(screen.getByRole("combobox", { name: "Resume" }), { target: { value: "2" } });
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Resume" })).toHaveValue("2"));
+  const load = await screen.findByRole("button", { name: "Load saved match for learning strategy" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`]);
+  expect(screen.queryByRole("button", { name: "Find saved curated plan" })).not.toBeInTheDocument();
+  fireEvent.click(load);
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`, `/v1/opportunities/${state.id}/match?resume_id=2`]);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it.each([503, 409])("retries a saved match after HTTP %s using only the needed reads", async (status) => {
+  state.tab = "learning";
+  const matchPath = `/v1/opportunities/${state.id}/match?resume_id=1`;
+  let matchReads = 0;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) return Promise.resolve({ ...matchWorkspace("current"),
+      skill_roi: { items: [], opportunity_count: 0 } });
+    if (url === matchPath) return ++matchReads === 1
+      ? Promise.reject(new ApiError("Saved match unavailable", status, null))
+      : Promise.resolve(savedMatch);
+  });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry saved match" }));
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matchReads).toBe(2);
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(status === 409 ? 2 : 1);
+});
+
+it("never retries an old match after conflict readback confirms another résumé", async () => {
+  state.tab = "learning";
+  let workspaceReads = 0;
+  const matchPath = `/v1/opportunities/${state.id}/match?resume_id=1`;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) {
+      if (workspaceReads++ > 0) resumeId = 2;
+      return Promise.resolve({ ...matchWorkspace(resumeId === 1 ? "current" : "different_resume"),
+        skill_roi: { items: [], opportunity_count: 0 } });
+    }
+    if (url === matchPath) return Promise.reject(new ApiError("Saved match uses another résumé", 409, null));
+  });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry saved match" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Resume" })).toHaveValue("2"));
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/match?"))).toEqual([[matchPath, expect.any(AbortSignal)]]);
+  expect(screen.queryByRole("button", { name: "Find saved curated plan" })).not.toBeInTheDocument();
+});
+
 const rankedSkill = { opportunity_count: 1, items: [{ skill: "postgresql", opportunity_count: 1,
   demand_ratio: 1, evidence_strength: 0, outcome_signal: 0, estimated_hours: 30, score: 93,
   reason: "Appears in the current owned opportunity." }] };

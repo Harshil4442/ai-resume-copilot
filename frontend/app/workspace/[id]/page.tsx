@@ -183,7 +183,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const quotedMatchScope = useRef<MatchScope | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
-  const [learningMatchOpened, setLearningMatchOpened] = useState(false);
+  const [openedLearningMatch, setOpenedLearningMatch] = useState<string | null>(null);
   const [reminderMessage, setReminderMessage] = useState("");
   const [reminderDate, setReminderDate] = useState("");
   const [contactName, setContactName] = useState("");
@@ -293,12 +293,49 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     ? (legacySkillRoiQuery.isSuccess ? legacySkillRoiQuery.data : null)
     : parseWorkspaceSkillRoi(learningWorkspace?.skill_roi);
   const skillRoiLoading = legacySkillRoi && legacySkillRoiQuery.isPending;
-  const learningMatch = useQuery({
-    queryKey: [...prefix, "learning-match", opportunity.data?.resume_id, opportunity.data?.latest_match_id],
-    queryFn: ({ signal }) => apiGet<OpportunityMatch>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/match?resume_id=${opportunity.data!.resume_id}`, signal),
-    enabled: tab === "learning" && learningMatchOpened && workspace.isSuccess && matchSourceState === "current" && Boolean(opportunity.data?.resume_id),
-    retry: retryRead, refetchOnWindowFocus: false, refetchOnReconnect: false,
+  const learningMatchKey = [...prefix, "learning-match"] as const;
+  const learningMatchScope = JSON.stringify([opportunity.data?.resume_id, opportunity.data?.latest_match_id]);
+  const learningMatchOpened = openedLearningMatch === learningMatchScope;
+  const sourceChangeRevision = useRef(0);
+  const connectResume = useMutation({
+    mutationFn: (resumeId: string) => apiPatchJson(`/v1/opportunities/${opportunityId}`, { resume_id: resumeId ? Number(resumeId) : null }),
+    onMutate: () => {
+      sourceChangeRevision.current += 1;
+      return queryClient.cancelQueries({ queryKey: learningMatchKey });
+    },
+    onSuccess: async () => {
+      setSubmittedVersionId(""); setOpenedEvidence(null); setEditingEvidenceId(null); setEditingEvidenceVersion(null);
+      setEvidenceDraft(""); setOpenedTranscription(null); setComparedTranscription(false); setReviewedVersionIds({});
+      setScopedMatchRun(null); setTailorRunId(null); setInterviewRunId(null); setOpenedLearningMatch(null);
+      // Mark the old match stale without fetching it during the source change.
+      await queryClient.invalidateQueries({ queryKey: learningMatchKey, refetchType: "none" });
+      await queryClient.invalidateQueries({ queryKey: prefix,
+        predicate: (query) => query.queryKey[prefix.length] !== "learning-match" });
+    },
   });
+  const learningMatch = useQuery({
+    queryKey: [...learningMatchKey, opportunity.data?.resume_id, opportunity.data?.latest_match_id],
+    queryFn: ({ signal }) => apiGet<OpportunityMatch>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/match?resume_id=${opportunity.data!.resume_id}`, signal),
+    enabled: tab === "learning" && learningMatchOpened && !connectResume.isPending
+      && workspace.isSuccess && matchSourceState === "current" && Boolean(opportunity.data?.resume_id) && !match.data,
+    retry: (count, error) => !(error instanceof ApiError && error.status === 409) && retryRead(count, error),
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
+  });
+  async function loadLearningMatch() {
+    if (!learningMatchOpened) {
+      setOpenedLearningMatch(learningMatchScope);
+      return;
+    }
+    if (learningMatch.error instanceof ApiError && learningMatch.error.status === 409) {
+      const revision = sourceChangeRevision.current;
+      const refresh = await workspace.refetch();
+      const current = refresh.data?.opportunity;
+      if (!refresh.isSuccess || current?.id !== opportunityId || refresh.data?.match
+        || refresh.data?.match_source_state !== "current" || revision !== sourceChangeRevision.current
+        || JSON.stringify([current.resume_id, current.latest_match_id]) !== learningMatchScope) return;
+    }
+    void learningMatch.refetch();
+  }
   const matchRunCurrent = Boolean(scopedMatchRun && workspace.isSuccess
     && scopedMatchRun.scope.ownerKey === ownerKey && scopedMatchRun.scope.opportunityId === opportunityId
     && scopedMatchRun.scope.resumeId === opportunity.data?.resume_id);
@@ -381,15 +418,6 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
       `hirewiz-opportunity-${opportunityId}.json`,
     ),
     onSuccess: () => trackEvent("opportunity_exported", { opportunity_id: opportunityId }),
-  });
-  const connectResume = useMutation({
-    mutationFn: (resumeId: string) => apiPatchJson(`/v1/opportunities/${opportunityId}`, { resume_id: resumeId ? Number(resumeId) : null }),
-    onSuccess: async () => {
-      setSubmittedVersionId(""); setOpenedEvidence(null); setEditingEvidenceId(null); setEditingEvidenceVersion(null);
-      setEvidenceDraft(""); setOpenedTranscription(null); setComparedTranscription(false); setReviewedVersionIds({});
-      setScopedMatchRun(null); setTailorRunId(null); setInterviewRunId(null);
-      await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
-    },
   });
   const reviewContext = {
     resume: sourceResume ? { id: sourceResume.id, filename: sourceResume.filename } : undefined,
@@ -645,8 +673,8 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
 
   const latestMatch = useMemo(() => {
     if (matchRunCurrent && matchRunResult.data?.result) return matchRunResult.data.result as unknown as OpportunityMatch;
-    return match.data || (matchSourceState === "current" && learningMatch.isSuccess ? learningMatch.data : undefined);
-  }, [learningMatch.data, learningMatch.isSuccess, match.data, matchRunCurrent, matchRunResult.data?.result, matchSourceState]);
+    return match.data || (learningMatchOpened && matchSourceState === "current" && learningMatch.isSuccess ? learningMatch.data : undefined);
+  }, [learningMatch.data, learningMatch.isSuccess, learningMatchOpened, match.data, matchRunCurrent, matchRunResult.data?.result, matchSourceState]);
 
   if (opportunity.isLoading) return <main className="app-page"><div className="page-container">{pendingConnection ? <div className="mb-6 space-y-3"><h1 className="font-display text-3xl">{pendingConnection.title}</h1><p role="status">Connected resume #{pendingConnection.resumeId}. Checking this workspace before further actions.</p></div> : null}<LoadingBlock rows={7} /></div></main>;
   if (!opportunity.data) {
@@ -1068,8 +1096,14 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
           {tab === "learning" ? (
             <section>
               <div className="max-w-2xl"><p className="eyebrow">Skill ROI</p><h2 className="font-display mt-2 text-2xl font-normal">What is worth learning next</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Ranked across your active opportunities and approved evidence.</p>{skillAllowance ? <p className="mt-2 text-xs text-muted-foreground">0 credits within an allowance of {skillAllowance.per_account_30_days} new requests per rolling 30 days, subject to available capacity.</p> : null}</div>
-              {sourceResume && matchSourceState === "current" && !latestMatch ? <div className="mt-5 space-y-2"><Button variant="secondary" disabled={learningMatch.isFetching} onClick={() => { if (learningMatch.isError) { void workspace.refetch(); return; } setLearningMatchOpened(true); if (learningMatchOpened) void learningMatch.refetch(); }}>{learningMatch.isError ? "Refresh match context" : "Load saved match for learning strategy"}</Button>{learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}</div> : null}
-              {sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }}
+              {!connectResume.isPending && sourceResume && matchSourceState === "current" && !latestMatch ? (
+                <div className="mt-5 space-y-2">
+                  <Button variant="secondary" disabled={learningMatch.isFetching || workspace.isFetching}
+                    onClick={() => void loadLearningMatch()}>{learningMatchOpened && learningMatch.isError ? "Retry saved match" : "Load saved match for learning strategy"}</Button>
+                  {learningMatchOpened && learningMatch.isError ? <p role="alert" className="text-sm text-coral">The saved match could not be loaded. Retry to check it; this does not generate another match.</p> : null}
+                </div>
+              ) : null}
+              {!connectResume.isPending && sourceResume && latestMatch ? <LearningStrategyPanel resume={{ id: sourceResume.id, filename: sourceResume.filename }}
                 job={{ id: item.id, title: item.title, employer: item.company || undefined }} matchId={latestMatch.match_id}
                 availability={creditAvailability.data} allowEnhanced={unifiedServices} /> : null}
               {skillRoiLoading ? <div className="mt-7"><LoadingBlock rows={5} /></div> : null}
