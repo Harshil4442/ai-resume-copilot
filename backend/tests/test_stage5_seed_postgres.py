@@ -5,10 +5,12 @@ import os
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, text
 
 from scripts.run_stage5_capacity import migrate
 from scripts.stage5_capacity import Plan
+from scripts.stage5_first_minute import Read, order_id, owned_response, seed_pending, upload_id
 from scripts.stage5_resources import Resources, private_json
 from scripts.stage5_seed import owned_opportunity_ids, seed, synthetic_email
 from scripts.stage5_skill_roi import checked_workspace, expected_roi
@@ -26,6 +28,8 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
     from app.domains.career import workspace
     from app.domains.career.evidence_write_fence import SETTING
     from app.domains.credits import service as credits
+    from app.domains.resume_uploads import service as uploads
+    from app.routers import credits as credit_routes
     from tests import test_candidate_production_factory as fixture
 
     resource = Resources(tmp_path / "owned", Path(configured), Path("/unused-for-this-sql-check"))
@@ -47,6 +51,10 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
         assert data["opportunities"] == 100490 and data["candidate_password_accounts"] == 8
         assert data["credit_accounts"] == 10000 * buyers_percent // 100
         assert data["evidence_items"] == 30000
+        pending = seed_pending(engine, Plan(buyers_percent=buyers_percent))
+        assert pending == {"first_minute_pending_payment_orders": 1 if buyers_percent == 20 else 2,
+                           "first_minute_queued_uploads": 2}
+        monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", "true")
         with case.accounts.sessions() as db:
             assert db.scalar(text("SELECT current_setting(:setting, true)"), {"setting": SETTING}) in (None, "")
             assert career.list_opportunities(db, 8, limit=50)[1] == 500
@@ -60,6 +68,16 @@ def test_owned_pg17_migrated_seed_and_real_factory_account_ownership(tmp_path, m
                 assert original["skill_roi"] is None
                 assert combined["skill_roi"] == career.calculate_skill_roi(db, uid).model_dump(mode="json") == expected_roi(uid)
             buyer = 5 if buyers_percent == 20 else 4
+            order = credit_routes._owned_order(db, buyer, order_id(buyer))
+            assert owned_response(Read("payment", buyer, 0), credit_routes._status(db, order, synthetic_email(buyer)),
+                                  buyers_percent)
+            assert owned_response(Read("upload", 2, 5), uploads.status(db, 2, upload_id(2)).model_dump(mode="json"),
+                                  buyers_percent)
+            for read_foreign in (lambda: credit_routes._owned_order(db, 1, order_id(buyer)),
+                                 lambda: uploads.status(db, 1, upload_id(2))):
+                with pytest.raises(HTTPException) as denied:
+                    read_foreign()
+                assert denied.value.status_code == 404
             assert credits.wallet(db, user_id=buyer).available_credits == 90
             assert credits.wallet(db, user_id=1).available_credits == 0
             assert db.execute(text("SELECT count(*) FROM users WHERE password_hash<>''")).scalar_one() == 8
