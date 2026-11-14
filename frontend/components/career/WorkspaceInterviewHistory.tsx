@@ -86,6 +86,9 @@ function SavedInterview({ owner, opportunity, id }: { owner: string; opportunity
     <p>{resultUnavailable(result.error) ? "This saved interview is no longer available." : "Could not load this saved interview."}</p>
     {!resultUnavailable(result.error) ? <Button variant="secondary" size="sm" onClick={() => void result.refetch()}>Retry saved interview</Button> : null}
   </div>;
+  if (result.data.questions.length === 0) {
+    return <p role="status" className="mt-3 text-sm text-muted-foreground">No questions were saved for this interview.</p>;
+  }
   return <>
     <p className="mt-3 text-sm text-muted-foreground">These questions use the résumé and evidence available when they were generated.</p>
     <InterviewQuestionList questions={result.data.questions} />

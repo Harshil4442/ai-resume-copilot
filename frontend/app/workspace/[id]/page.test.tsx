@@ -445,6 +445,23 @@ it("opens an older saved interview directly without billing or progress polling"
   expect(runReads()).toEqual([answerPath, `/v1/analysis-runs/${expired.id}/result`]);
   expect(state.post).not.toHaveBeenCalled();
 });
+it("explains an empty legacy saved interview without starting a new request", async () => {
+  state.tab = "interview";
+  const run = { id: "empty-legacy-interview", completed_at: stamp };
+  const resultPath = `/v1/analysis-runs/${run.id}/result`;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) return Promise.resolve({ ...matchWorkspace("none"), pages: {
+      ...matchWorkspace("none").pages, interview_results: { items: [run], next_cursor: null },
+    } });
+    if (url === resultPath) return Promise.resolve({ ...run, operation: "interview_questions",
+      result: { opportunity_id: state.id, questions: [] } });
+  });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: /Open saved interview from/ }));
+  expect(await screen.findByText("No questions were saved for this interview.")).toBeVisible();
+  expect(state.wire.mock.calls.map(([url]) => url).filter(url => url.startsWith("/v1/analysis-runs/"))).toEqual([resultPath]);
+  expect(state.post).not.toHaveBeenCalled();
+});
 it("keeps a completed exact-result lookup from reloading saved interview history", async () => {
   state.tab = "interview";
   const run = { id: "existing-interview", opportunity_id: state.id, operation: "interview_questions", status: "succeeded",
