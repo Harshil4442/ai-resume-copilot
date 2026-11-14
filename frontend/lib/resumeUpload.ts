@@ -174,7 +174,8 @@ async function reserveDirectUpload(
     stopped(signal);
     const wakeUnconfirmed = error instanceof ControlFailure && error.status === 503
       && error.code === "resume_upload_wake_unavailable";
-    const responseLost = error instanceof TypeError
+    const responseLost = (error instanceof ControlFailure && (error.status === 502 || error.status === 504))
+      || error instanceof TypeError
       || (error instanceof DOMException && error.name === "TimeoutError");
     if (!wakeUnconfirmed && !responseLost) throw error;
     const retryDelay = wakeUnconfirmed ? error.retryAfterMs ?? POLL_MS : POLL_MS;

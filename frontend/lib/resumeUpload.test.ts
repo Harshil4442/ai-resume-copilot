@@ -345,7 +345,7 @@ describe("direct private resume upload contract", () => {
     expect(apiPostForm).not.toHaveBeenCalled(); expect(puts()).toHaveLength(0);
   });
 
-  it.each(["wake acknowledgement", "intent response"])("recovers an uncertain %s with the original key before one PUT", async (failure) => {
+  it.each(["wake acknowledgement", "intent response", "BFF 502", "BFF 504"])("recovers an uncertain %s with the original key before one PUT", async (failure) => {
     vi.useFakeTimers();
     const value = file();
     serve(value);
@@ -354,6 +354,8 @@ describe("direct private resume upload contract", () => {
     fetchMock.mockImplementationOnce(async () => {
       firstRequest();
       if (failure === "intent response") throw new TypeError("synthetic transport loss");
+      if (failure === "BFF 502") return json({ detail: "The backend is unavailable" }, 502);
+      if (failure === "BFF 504") return json({ detail: "The backend request timed out" }, 504);
       return json({ detail: { code: "resume_upload_wake_unavailable" } }, 503, { "Retry-After": "5" });
     });
     const outcome = uploadResumeFile(value);
