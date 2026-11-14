@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from threading import Event
 from uuid import uuid4
 
@@ -16,10 +17,13 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base
 from backend.app.domains.common import utcnow
+from backend.app.domains.dispatch import service as dispatch
+from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import (
     catalogue_search,
     connectors,
     models,
+    service,
     source_revalidation,
     tasks,
 )
@@ -47,7 +51,7 @@ def owned_source_database(monkeypatch):
         "options": f"-csearch_path={schema} -clock_timeout=4000 -cstatement_timeout=10000"})
     try:
         Base.metadata.create_all(engine, tables=[core.User.__table__, models.EmployerSource.__table__,
-                                                 models.EmployerPosting.__table__])
+                                                 models.EmployerPosting.__table__, DispatchOutbox.__table__])
         factory = sessionmaker(bind=engine, autoflush=False)
         monkeypatch.setattr(tasks, "SessionLocal", factory)
         monkeypatch.setattr(tasks.config, "discovery_enabled", lambda: True)
@@ -110,7 +114,6 @@ def _held_source_read(monkeypatch):
 
 @pytest.mark.parametrize("change", ["source-config", "posting-date", "lease-owner"])
 def test_postgres_source_changes_during_http_cannot_commit_or_publish_old_snapshot(owned_source_database, monkeypatch, change):
-    from datetime import UTC, datetime
     factory, cache = owned_source_database
     entered, release, _ = _held_source_read(monkeypatch)
     with factory() as db:
@@ -159,9 +162,83 @@ def test_postgres_competing_refresh_observes_running_lease_without_another_get(o
         assert db.get(models.EmployerSource, "source-owned-pg").scan_token is None
 
 
+def test_periodic_cadence_aligns_utc_and_retains_manual_dispatch_and_existing_retry(owned_source_database, monkeypatch):
+    factory, _ = owned_source_database
+    stamp = datetime(2026, 11, 15, 0, 10, tzinfo=UTC)
+    monkeypatch.setattr(service, "utcnow", lambda: stamp)
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_CADENCE_MINUTES", "15")
+    monkeypatch.setenv("ANALYSIS_TASKS_MODE", "inline")
+    monkeypatch.setattr(dispatch, "SessionLocal", factory)
+    monkeypatch.setattr(dispatch, "utcnow", lambda: stamp)
+    called = []
+    monkeypatch.setattr(tasks, "refresh_source", lambda identity: called.append(identity) or "completed")
+    identity = "source-owned-pg"
+    with factory() as db:
+        db.get(models.EmployerSource, identity).next_refresh_at = stamp - timedelta(minutes=5)
+        db.commit()
+        with monkeypatch.context() as skip:
+            skip.setattr(db, "query", lambda *_: pytest.fail("Periodic source off-window must not touch SQL"))
+            assert service.enqueue_due_sources(db) == 0
+        manual = service.enqueue_source_refresh(db, identity)
+        manual.status = "retry"
+        manual.available_at = stamp + timedelta(minutes=1)
+        db.commit()
+    stamp += timedelta(minutes=5)
+    with factory() as db:
+        assert service.enqueue_due_sources(db) == 0
+        assert db.query(DispatchOutbox).count() == 1
+        assert db.get(models.EmployerSource, identity).next_refresh_at == stamp - timedelta(minutes=10)
+    assert dispatch.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    assert called == [identity]
+
+    with factory() as db:
+        assert service.enqueue_due_sources(db) == 1
+        db.commit()
+        assert service.enqueue_due_sources(db) == 0
+        assert db.query(DispatchOutbox).count() == 2
+    assert dispatch.dispatch_pending() == {"dispatched": 1, "failed": 0}
+    assert called == [identity, identity]
+
+
+def test_periodic_cadence_and_manual_same_window_share_one_event(owned_source_database, monkeypatch):
+    factory, _ = owned_source_database
+    stamp = datetime(2026, 11, 15, 0, 30, tzinfo=UTC)
+    monkeypatch.setattr(service, "utcnow", lambda: stamp)
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_CADENCE_MINUTES", "30")
+    identity = "source-owned-pg"
+    with factory() as db:
+        db.get(models.EmployerSource, identity).next_refresh_at = stamp - timedelta(minutes=1)
+        db.commit()
+    held = Event()
+    release = Event()
+
+    def scheduled():
+        with factory() as db:
+            assert service.enqueue_due_sources(db) == 1
+            held.set()
+            assert release.wait(timeout=5)
+            db.commit()
+
+    def manual():
+        with factory() as db:
+            assert held.wait(timeout=5)
+            return service.enqueue_source_refresh(db, identity).id
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        periodic_task = pool.submit(scheduled)
+        manual_task = pool.submit(manual)
+        assert held.wait(timeout=5)
+        release.set()
+        periodic_task.result(timeout=5)
+        manual_id = manual_task.result(timeout=5)
+    with factory() as db:
+        assert db.query(DispatchOutbox.id).all() == [(manual_id,)]
+
+
 @pytest.mark.parametrize("change", ["configuration", "claim", "checkpoint"])
 def test_postgres_permanent_error_cannot_record_against_changed_source(owned_source_database, monkeypatch, change):
-    from datetime import timedelta
 
     factory, cache = owned_source_database
     def obsolete_failure(_source, **_kwargs):

@@ -1256,7 +1256,14 @@ def create_source(db, admin_id, payload: schemas.SourceCreate):
 
 
 def enqueue_source_refresh(db, identity):
-    source = _source(db, identity)
+    if config.periodic_refresh_cadence_minutes() in (15, 30, 60):
+        # Serialize against scheduled admission for this source without delaying
+        # an operator refresh until the next scheduled window.
+        source = db.query(models.EmployerSource).filter_by(id=identity).with_for_update().one_or_none()
+        if source is None:
+            raise HTTPException(404, "Employer source not found")
+    else:
+        source = _source(db, identity)
     if not source.enabled:
         raise HTTPException(409, "This source is disabled")
     from ..dispatch.service import enqueue
@@ -1271,11 +1278,32 @@ def enqueue_source_refresh(db, identity):
 def enqueue_due_sources(db: Session, limit: int = 100) -> int:
     if not config.discovery_enabled() or not config.periodic_refresh_enabled():
         return 0
+    cadence = config.periodic_refresh_cadence_minutes()
+    if cadence is None:
+        return 0
+    now = utcnow()
+    window = int(now.timestamp()) // 300
+    if window % (cadence // 5):
+        return 0
+    from ..dispatch.models import DispatchOutbox
     from ..dispatch.service import enqueue
-    due = db.query(models.EmployerSource).filter(
-        models.EmployerSource.enabled.is_(True), models.EmployerSource.next_refresh_at <= utcnow(),
-    ).order_by(models.EmployerSource.next_refresh_at).with_for_update(skip_locked=True).limit(min(limit, 500)).all()
-    window = int(utcnow().timestamp()) // 300
+    candidates = db.query(models.EmployerSource).filter(
+        models.EmployerSource.enabled.is_(True), models.EmployerSource.next_refresh_at <= now,
+    )
+    outstanding = None
+    if cadence != 5:
+        outstanding = db.query(DispatchOutbox.aggregate_id).filter(
+            DispatchOutbox.topic == "employer.refresh",
+            DispatchOutbox.status.notin_(("completed", "failed")),
+        )
+        candidates = candidates.filter(~outstanding.filter(DispatchOutbox.aggregate_id == models.EmployerSource.id).exists())
+    due = candidates.order_by(models.EmployerSource.next_refresh_at).with_for_update(skip_locked=True).limit(min(limit, 500)).all()
+    if outstanding is not None and due:
+        # A manual enqueue may have committed after the first read's MVCC
+        # snapshot but before the source locks were acquired.
+        already_queued = {source_id for (source_id,) in
+                          outstanding.filter(DispatchOutbox.aggregate_id.in_([source.id for source in due])).all()}
+        due = [source for source in due if source.id not in already_queued]
     for source in due:
         enqueue(db, topic="employer.refresh", aggregate_id=source.id, payload={"source_id": source.id},
                 key=f"employer.refresh:{source.id}:{window}")
