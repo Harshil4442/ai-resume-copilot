@@ -5,6 +5,7 @@ Set HIREWIZ_SCHEMA27_LOCAL_RESTORE=true with the disposable fixture on port
 Set HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN to a PG17 bin directory for the separate
 physical recovery rehearsal, which creates and owns both temporary clusters.
 Set HIREWIZ_SCHEMA27_LOGICAL_PG_BIN for the populated logical archive rehearsal.
+Set HIREWIZ_SCHEMA27_CANONICAL_PG_BIN for the migration-built variant.
 """
 
 import hashlib
@@ -67,6 +68,10 @@ RESTORE_TABLES = (
     "dispatch_outbox",
 )
 MIGRATION_SEEDS = {"alembic_version", "employer_catalogue_clock"}
+CATALOGUE_COPY_TRIGGERS = (
+    ("employer_sources", "employer_catalogue_source_insert"),
+    ("employer_postings", "employer_catalogue_posting_insert"),
+)
 EMPTY_CATALOGUE_CLOCK = [{
     "id": 1, "watermark": 0, "inventory_state": "sources",
     "source_cursor": None, "posting_cursor": None, "prune_cursor": None,
@@ -111,7 +116,7 @@ def snapshot(engine):
         return tables, sequences
 
 
-def create_data_archive(dump, restore, db_options, source_name, archive, toc):
+def create_data_archive(dump, restore, db_options, source_name, archive, toc, *, excluded_seeds=MIGRATION_SEEDS):
     subprocess.run([dump, "--data-only", "--format=custom", "--no-password",
                     "--file", str(archive), "--dbname", source_name],
                    env=db_options, check=True, timeout=30, capture_output=True)
@@ -120,12 +125,12 @@ def create_data_archive(dump, restore, db_options, source_name, archive, toc):
     excluded, retained = set(), []
     for line in archive_entries.splitlines():
         fields = line.split()
-        if len(fields) >= 7 and fields[3:6] == ["TABLE", "DATA", "public"] and fields[6] in MIGRATION_SEEDS:
+        if len(fields) >= 7 and fields[3:6] == ["TABLE", "DATA", "public"] and fields[6] in excluded_seeds:
             assert fields[6] not in excluded and fields[7:] == ["hirewiz"]
             excluded.add(fields[6])
             continue
         retained.append(line)
-    assert excluded == MIGRATION_SEEDS
+    assert excluded == excluded_seeds
     toc.write_text("\n".join(retained) + "\n")
 
 
@@ -624,6 +629,40 @@ def restore_logical_archive(pg_bin, archive, port, password):
                      env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5", "PGSSLMODE": "disable"})
 
 
+def restore_canonical_archive(pg_bin, archive, toc, port, password):
+    """Restore into a freshly migrated fixture without round-tripping its DDL."""
+    data_sql = archive.with_suffix(".sql")
+    owned_pg_command(pg_bin, "pg_restore", "--data-only", "--exit-on-error", "--use-list", toc,
+                     "--file", data_sql, archive)
+    before_copy = [
+        "SET LOCAL statement_timeout = '15s'", "SET LOCAL lock_timeout = '5s'",
+        f"SET LOCAL {evidence_fence_definition.SETTING} = '{evidence_fence_definition.VERSION}'",
+        "DELETE FROM public.employer_catalogue_clock WHERE id=1 AND watermark=0 AND inventory_state='sources' "
+        "AND source_cursor IS NULL AND posting_cursor IS NULL AND prune_cursor IS NULL",
+    ]
+    before_copy.extend(f"ALTER TABLE public.{table} DISABLE TRIGGER {trigger}"
+                       for table, trigger in CATALOGUE_COPY_TRIGGERS)
+    before_copy.append("""DO $restore_probe$
+      DECLARE rejected_constraint text;
+      BEGIN
+        BEGIN
+          INSERT INTO public.resumes(id,user_id) VALUES (-1,-1);
+          RAISE EXCEPTION 'Foreign-key check was inactive during import';
+        EXCEPTION WHEN foreign_key_violation THEN
+          GET STACKED DIAGNOSTICS rejected_constraint = CONSTRAINT_NAME;
+          IF rejected_constraint <> 'resumes_user_id_fkey' THEN RAISE; END IF;
+        END;
+      END $restore_probe$""")
+    after_copy = ["SET CONSTRAINTS ALL IMMEDIATE"]
+    after_copy.extend(f"ALTER TABLE public.{table} ENABLE TRIGGER {trigger}"
+                      for table, trigger in CATALOGUE_COPY_TRIGGERS)
+    owned_pg_command(pg_bin, "psql", "--host=127.0.0.1", f"--port={port}", "--username=hirewiz",
+                     "--dbname=postgres", "--no-psqlrc", "--no-password", "--single-transaction",
+                     "--set=ON_ERROR_STOP=1", "--command", "; ".join(before_copy), "--file", data_sql,
+                     "--command", "; ".join(after_copy),
+                     env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5", "PGSSLMODE": "disable"})
+
+
 def repair_restored_resume_constraint(db, source_constraint):
     restored = upload_constraint(db)
     assert source_constraint[-1] == SOURCE_CONSTRAINT
@@ -643,15 +682,20 @@ def repair_restored_resume_constraint(db, source_constraint):
 
 
 def test_schema27_physical_recovery_preserves_published_catalogue_and_obligations(record_property, monkeypatch):
-    _rehearse_published_catalogue_recovery(record_property, monkeypatch, logical=False)
+    _rehearse_published_catalogue_recovery(record_property, monkeypatch, method="physical")
 
 
 def test_schema27_logical_archive_preserves_obligations_but_fails_strict_shape(record_property, monkeypatch):
-    _rehearse_published_catalogue_recovery(record_property, monkeypatch, logical=True)
+    _rehearse_published_catalogue_recovery(record_property, monkeypatch, method="logical")
 
 
-def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logical):
-    method = "logical" if logical else "physical"
+def test_schema27_canonical_restore_preserves_published_catalogue_and_obligations(record_property, monkeypatch):
+    _rehearse_published_catalogue_recovery(record_property, monkeypatch, method="canonical")
+
+
+def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, method):
+    physical = method == "physical"
+    canonical = method == "canonical"
     configured = os.getenv(f"HIREWIZ_SCHEMA27_{method.upper()}_PG_BIN")
     if not configured:
         pytest.skip("Requires an explicitly selected local PG17 binary directory")
@@ -659,7 +703,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logi
         pytest.fail("The recovery rehearsal owns local PostgreSQL clusters only")
     pg_bin = Path(configured)
     assert pg_bin.is_absolute()
-    backup_tools = ("pg_dump", "pg_restore") if logical else ("pg_basebackup", "pg_verifybackup")
+    backup_tools = ("pg_basebackup", "pg_verifybackup") if physical else ("pg_dump", "pg_restore", "psql")
     for tool in ("initdb", "pg_ctl", *backup_tools):
         assert "(PostgreSQL) 17." in owned_pg_command(pg_bin, tool, "--version", timeout=5)
 
@@ -681,7 +725,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logi
             source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
-                if logical:
+                if not physical:
                     db.exec_driver_sql("CREATE ROLE owned_archive_reader NOLOGIN")
                     db.exec_driver_sql("GRANT SELECT ON public.employer_catalogue_source_revisions TO owned_archive_reader")
             tables, sequences = expected = snapshot(source)
@@ -691,14 +735,20 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logi
             assert len(tables["employer_catalogue_posting_revisions"]) == 1
             with source.connect() as db:
                 schema27.verify_shape(db)
-                inspect_catalogue = logical_catalogue if logical else physical_catalogue
+                inspect_catalogue = physical_catalogue if physical else logical_catalogue
                 expected_catalogue = inspect_catalogue(db)
                 source_constraint = upload_constraint(db)
                 system_identifier = db.scalar(text("SELECT system_identifier FROM pg_control_system()"))
                 assert db.scalar(text("SHOW data_checksums")) == "on"
                 assert db.scalar(text("SHOW session_replication_role")) == "origin"
             started = time.monotonic()
-            if logical:
+            toc = archive.with_suffix(".list")
+            if canonical:
+                create_data_archive(str(pg_bin / "pg_dump"), str(pg_bin / "pg_restore"),
+                                    {"PGHOST": "127.0.0.1", "PGPORT": str(source_port), "PGUSER": "hirewiz",
+                                     "PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5", "PGSSLMODE": "disable"},
+                                    "postgres", archive, toc, excluded_seeds={"alembic_version"})
+            elif not physical:
                 owned_pg_command(pg_bin, "pg_dump", "--host=127.0.0.1", f"--port={source_port}",
                                  "--username=hirewiz", "--dbname=postgres", "--format=custom", "--file", archive,
                                  "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
@@ -710,19 +760,38 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logi
                              "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
                                                    "PGSSLMODE": "disable"})
                 owned_pg_command(pg_bin, "pg_verifybackup", "--exit-on-error", restored_data)
-            backup_measurement = "owned_logical_backup_seconds" if logical else "owned_physical_backup_verify_seconds"
+            backup_measurement = "owned_physical_backup_verify_seconds" if physical else f"owned_{method}_backup_seconds"
             record_property(backup_measurement, round(time.monotonic() - started, 3))
             assert snapshot(source) == expected
 
         started = time.monotonic()
-        if logical:
+        if not physical:
             init_owned_pg_cluster(pg_bin, restored_data, password)
         with owned_pg_cluster(pg_bin, restored_data, password) as (restored, restored_port):
-            if logical:
+            if not physical:
                 with restored.begin() as db:
                     # Cluster-global roles are external to an ordinary database archive.
                     db.exec_driver_sql("CREATE ROLE owned_restore_oid_gap NOLOGIN")
                     db.exec_driver_sql("CREATE ROLE owned_archive_reader NOLOGIN")
+            if canonical:
+                _migrate(restored, schema27.SCHEMA)
+                before_copy, _ = snapshot(restored)
+                assert {table for table, rows in before_copy.items() if rows} == MIGRATION_SEEDS
+                assert before_copy["alembic_version"] == tables["alembic_version"]
+                assert before_copy["employer_catalogue_clock"] == EMPTY_CATALOGUE_CLOCK
+                with restored.begin() as db:
+                    schema27.verify_shape(db)
+                    db.exec_driver_sql("GRANT SELECT ON public.employer_catalogue_source_revisions TO owned_archive_reader")
+                    assert inspect_catalogue(db) == expected_catalogue
+                restore_canonical_archive(pg_bin, archive, toc, restored_port, password)
+                assert snapshot(restored) == expected
+                with restored.connect() as db:
+                    schema27.verify_shape(db)
+                    assert upload_constraint(db) == source_constraint
+                record_property("owned_canonical_strict_shape_accepted", True)
+                record_property("owned_canonical_foreign_key_active_during_archive_import", True)
+                record_property("owned_canonical_detached_user_triggers", len(CATALOGUE_COPY_TRIGGERS))
+            elif not physical:
                 restore_logical_archive(pg_bin, archive, restored_port, password)
                 assert snapshot(restored) == expected
                 with restored.begin() as db:
@@ -747,22 +816,23 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logi
                     record_property("owned_logical_strict_shape_accepted", False)
             with restored.connect() as db:
                 restored_identifier = db.scalar(text("SELECT system_identifier FROM pg_control_system()"))
-                assert (restored_identifier == system_identifier) is not logical
+                assert (restored_identifier == system_identifier) is physical
                 assert db.scalar(text("SELECT pg_is_in_recovery()")) is False
                 assert db.scalar(text("SHOW session_replication_role")) == "origin"
                 assert db.scalar(text("SHOW data_checksums")) == "on"
                 actual_catalogue = inspect_catalogue(db)
-                if logical:
+                if method == "logical":
                     # Keep the strict failure above. The comparisons below
                     # establish independent ACL, trigger and routine fidelity.
                     assert actual_catalogue[:2] == expected_catalogue[:2]
                     assert actual_catalogue[3:] == expected_catalogue[3:]
+                else:
+                    assert actual_catalogue == expected_catalogue
+                if not physical:
                     assert db.scalar(text("SELECT has_table_privilege('owned_archive_reader',"
                                           "'public.employer_catalogue_source_revisions','SELECT')")) is True
                     assert db.scalar(text("SELECT has_table_privilege('owned_archive_reader',"
                                           "'public.employer_catalogue_source_revisions','UPDATE')")) is False
-                else:
-                    assert actual_catalogue == expected_catalogue
             assert snapshot(restored) == expected
             assert_payment_and_reserve_replay(restored, stamp, capture, reservation_id, source_bytes, credits)
             assert_application_recovery(restored, application_recovery, monkeypatch)
