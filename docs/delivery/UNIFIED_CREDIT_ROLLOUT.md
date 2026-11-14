@@ -21,8 +21,10 @@ Release qualification still requires passing CI and a verified build for the
 final candidate commit.
 
 Last verified production context remains DB8 on committed schema26 with the
-three original services and restored schedules/coordinator, and frontend
-751/Hohsg with companion 0.8.9. The owner original-file review/download,
+three original services and restored schedules/coordinator. The current
+frontend and its independent changes are recorded in the
+[deployment progress](AUTO_APPLY_PROGRESS.md#latest-verified-runtime-and-pending-releases).
+The public companion package is 0.8.9. The owner original-file review/download,
 cancel-before-Fill and exact-device revocation portion is verified. Actual
 Fill/upload/submission, human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 finance/commercial gates and full R03/RTO qualification remain pending.
