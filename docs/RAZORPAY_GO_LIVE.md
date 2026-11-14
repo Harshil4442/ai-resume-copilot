@@ -86,13 +86,23 @@ sanitized evidence while the launcher is running.
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
 verify they settle one credit lot. Check duplicate delivery using the original
 event ID. Observe both a partial and a remaining refund for that order when
-the Test payment method supports them. For another Test order, time callback
-delivery so authenticated provider reconciliation settles the owned order first.
-Verify that a later delivery leaves the settlement intact. Record the case as
-pending if those events arrive before reconciliation and no later delivery can
-be observed. Record only sanitized event status, amount, currency and ledger
-assertions. Remove the Test webhook and stop the temporary receiver when the
-test is complete.
+the Test payment method supports them.
+
+For the reconciliation order, use the private `hold.json` path printed by the
+launcher. Create the file with permissions `0600` using an atomic rename. Before
+completing Test Checkout, set `order` to that exact Razorpay Test order ID. If
+testing refund reconciliation, add `payment` with that exact Test payment ID
+before issuing the Test refund. A refund can contain a payment ID without an
+order ID. Use only the IDs from the dedicated test account and remove the hold
+as soon as reconciliation finishes. The receiver returns 503 for matching
+signed deliveries without storing their bodies. Razorpay can redeliver them
+later, and they must leave the isolated settlement intact. If the payment
+captured before the hold or redelivery is not observed, record the relevant
+case as pending. [Razorpay delivery retries](https://razorpay.com/docs/webhooks/best-practices/)
+
+Record only sanitized event status, amount, currency and ledger assertions.
+Remove the Test webhook and stop the temporary receiver when the test is
+complete.
 
 - [ ] Confirm the public catalog at `GET /api/public/credits/catalog` and the eligible signed-in catalog at `GET /api/v1/credits/catalog` reflect their audience and the checkout state. Both return 404 while the unified rollout is off. The legacy `GET /api/public/billing/catalog` should show checkout closed. During a canary, the signed-out unified catalog must keep checkout closed. Create the owned quote through `POST /api/v1/credits/purchase-quotes` with its SKU and idempotency key. Create the order through `POST /api/v1/credits/orders` with its quote ID, `billing_country=IN` and idempotency key. The server fixes the INR total and eligible services. Verify a valid 15-minute quote across the campaign cutoff and refusal of an expired, foreign or changed quote.
 - [ ] Use `GET /api/v1/credits/recent-order` and `GET /api/v1/credits/orders/{reference}` to recover the owned original. Replaying an interrupted order creation must keep the same attempt. Test an ambiguous or malformed provider response and confirm it blocks a second payable order until the first is reconciled.
