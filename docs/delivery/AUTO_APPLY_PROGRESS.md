@@ -8,9 +8,10 @@ the selected résumé, restores keyboard focus when application review closes,
 and guides users through secure sign-out when their backend session expires.
 Jobs paces its first reads and offers a single retry after a capacity refusal.
 Billing now refreshes legacy balances after a verified refund and shows any
-pending adjustment separately from spendable credits. The merged saved Workspace
+pending adjustment separately from spendable credits. A confirmed inspection failure
+now tells users that their new file was not saved. The merged saved Workspace
 and interview history work has a matching GCP image and staged frontend.
-[Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/c9918a299d638180e9599ecc22ff3adedc87b156) ·
+[Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/987c831fa17d98e6a6b5a2225d55960754006972) ·
 [Merged Workspace changes](https://github.com/Harshil4442/ai-resume-copilot/pull/125)
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
@@ -57,13 +58,13 @@ recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#sche
 |---|---|---|
 | Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
 | Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-d-32d98b931d16-open` | 100% serving on the retained revision. The latest-ready pointer names a different revision. |
-| Production frontend | Source `c9918a299d638180e9599ecc22ff3adedc87b156`, deployment `dpl_BZ3iA1jEMSmFYo3hNHQw7r8qKaVy` | The signed-in Dashboard, saved Jobs and legacy Billing views opened with existing account data. The predecessor paced four Jobs reads that had reached the shared limit. The latest frontend updates the original order and spendable balances after partial and full refund readback, and accepts signed legacy analysis balances in the owned account response. Five browser widths used simulated refund responses. Live checkout remains disabled. |
+| Production frontend | Source `987c831fa17d98e6a6b5a2225d55960754006972`, deployment `dpl_2vM9q17SpzECqWYW1qvy1KpNisxM` | The signed-in Dashboard, saved Jobs and legacy Billing views opened with existing account data. The predecessor paced four Jobs reads that had reached the shared limit. The latest frontend updates the original order and spendable balances after partial and full refund readback, and accepts signed legacy analysis balances in the owned account response. Five browser widths used simulated refund responses. The signed-in résumé page opened and simulated inspection failures displayed the new message. Live checkout remains disabled. |
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. New documents would stop at inspection while definitions are stale. The available production logs contain no upload attempts after expiry. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
 | Bridge application image | PR125 merge `4dc9aea40e11a55f2d137abbdd446edcd9051e98`; image `sha256:08888d36aacf24a8a5cde68935abac7ff69e5fb2c1062badc60786df5a1321a9` | Build `2bccad42-17dd-4f95-adb4-9bfe318739a0` succeeded. The merged tree equals the tested PR tree. All five jobs passed exact main CI, and the stock verifier matched the source, build and image. Cloud Run staging still requires current scanner verification and the reviewed expense and model policies. [Main CI](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43582145259) |
 | Bridge frontend | PR125 merge `4dc9aea40e11a55f2d137abbdd446edcd9051e98`, deployment `dpl_3XeVpMRVV34CAB6HEeHxyMQYqTpL` | The build is ready at the Git main alias. The Workspace and résumé pagination routes require their matching API before canonical promotion. |
-| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The replacement pair remains unpublished. |
+| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. An independently reviewed replacement for the closed pilot is prepared locally. The approved estimate is unpublished and expires on 21 November at 11:20 UTC. |
 
 The PR114 source-image verification record has SHA-256
 `6d851cbaf7077930c7c74c5959479965bc3e037737f261da45a44ff4e27129e2`.
