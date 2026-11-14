@@ -43,10 +43,14 @@ export function readNotificationPreference(signal: AbortSignal) {
   return request("/api/backend/v1/notifications/preferences", signal);
 }
 
-export function changeNotificationPreference(current: NotificationPreference, enabled: boolean, signal: AbortSignal) {
-  return request("/api/backend/v1/notifications/preferences", signal, "PUT", {
+export async function changeNotificationPreference(current: NotificationPreference, enabled: boolean, signal: AbortSignal) {
+  const updated = await request("/api/backend/v1/notifications/preferences", signal, "PUT", {
     expected_generation: current.generation, weekly_digest: enabled, explicit_confirmation: true,
   });
+  if (updated.weekly_digest !== enabled || updated.generation !== current.generation + 1) {
+    throw new NotificationRequestError(null);
+  }
+  return updated;
 }
 
 export async function unsubscribeNotifications(token: string, signal: AbortSignal) {

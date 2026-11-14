@@ -6,16 +6,27 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("bounded non-retrying notification transport", () => {
   it("uses the owner GET and explicit expected-generation PUT without retries", async () => {
-    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(Response.json(off)));
+    const on = { ...off, weekly_digest: true, generation: 8 };
+    const fetcher = vi.fn().mockResolvedValueOnce(Response.json(off)).mockResolvedValueOnce(Response.json(on));
     vi.stubGlobal("fetch", fetcher);
     const signal = new AbortController().signal;
     await readNotificationPreference(signal);
-    await changeNotificationPreference(off, true, signal);
+    await expect(changeNotificationPreference(off, true, signal)).resolves.toEqual(on);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[0][0]).toBe("/api/backend/v1/notifications/preferences");
     const options = fetcher.mock.calls[1][1];
     expect(options.method).toBe("PUT"); expect(options.cache).toBe("no-store");
     expect(JSON.parse(options.body)).toEqual({ expected_generation: 7, weekly_digest: true, explicit_confirmation: true });
+  });
+  it.each([
+    { ...off, generation: 8 },
+    { ...off, generation: 7, weekly_digest: true },
+    { ...off, generation: 9, weekly_digest: true },
+  ])("does not confirm a success-shaped PUT that returned another consent state", async (row) => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json(row));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(changeNotificationPreference(off, true, new AbortController().signal)).rejects.toThrow("could not be confirmed");
+    expect(fetcher).toHaveBeenCalledOnce();
   });
   it("sends public proof only in a POST body with a no-referrer policy", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json(off)); vi.stubGlobal("fetch", fetcher);

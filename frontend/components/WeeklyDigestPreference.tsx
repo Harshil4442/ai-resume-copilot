@@ -57,7 +57,10 @@ function OwnedDigestPreference() {
     {stage === "loading" ? <p className="mt-5 text-sm text-muted-foreground" role="status">Checking your email preference…</p> : null}
     {current ? <>
       <p className="mt-5 text-sm font-semibold">Weekly emails: {current.weekly_digest ? "On" : "Off"}</p>
-      {!current.projection_current ? <p className="mt-2 text-sm leading-6 text-muted-foreground">Your delivery schedule is not current. Review your preference below or refresh its current state.</p> : null}
+      {!current.projection_current ? <div className="mt-2 space-y-2">
+        <p className="text-sm leading-6 text-muted-foreground">Your delivery schedule is not current. Refresh to check its status.</p>
+        <Button variant="secondary" type="button" className="min-h-11" disabled={stage !== "ready"} onClick={manualRefresh}>Refresh current preference</Button>
+      </div> : null}
       <form onSubmit={save} className="mt-4 grid gap-5">
         <label className="flex items-start gap-3 text-sm leading-6">
           <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={draft}
