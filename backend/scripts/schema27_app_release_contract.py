@@ -75,6 +75,8 @@ DIGEST_NAMESPACES = {"HEADS": "v3_digest_consent_heads", "HISTORY": "v3_digest_c
 OLD_COMMANDS = ("ScopedDenial", "ScopedPasswordReset", "ScopedBegin", "ScopedSubmitDeviceEnrollment", "ScopedSubmitBegin",
                 "ScopedPairedDeviceActivation", "ScopedPairedDeviceDenial", "ScopedPairedRevocation")
 F07_PATHS = (
+    "backend/scripts/stage5_first_minute.py", "backend/tests/test_stage5_first_minute.py",
+    "backend/tests/test_stage5_capacity.py",
     "backend/scripts/schema27_app_release_contract.py", "backend/scripts/notification_schema27_contract.py",
     "backend/scripts/notification_schema27_step.py", "backend/scripts/qualify_schema27.py",
     "backend/scripts/qualify_schema26_retained_v3.py", "infra/gcp/schema27_native_migration.py",
