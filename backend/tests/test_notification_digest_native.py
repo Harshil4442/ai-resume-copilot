@@ -43,10 +43,9 @@ def use_intercepted_registry_clock(c, patch):
 def account(c, monkeypatch):
     monkeypatch.setenv("NOTIFICATION_DIGESTS_ENABLED", "true")
     monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
-    with monkeypatch.context() as setup_clock:
-        use_intercepted_registry_clock(c, setup_clock)
-        uid = register(c)
-        login = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    use_intercepted_registry_clock(c, monkeypatch)
+    uid = register(c)
+    login = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
     with c.accounts.sessions() as db:
         revision = revision_from_row(db.get(CandidatePasswordAccount, uid), db.get(User, uid).password_hash)
     native = ConfiguredDigestNative(c.accounts)
@@ -319,16 +318,14 @@ def test_execution_postwitness_closure_never_reaches_provider(configured, monkey
             assert key not in c.objects
             c.objects[key] = closure
 
-    with monkeypatch.context() as send_clock:
-        use_intercepted_registry_clock(c, send_clock)
-        native, _, revision, _ = opt_in(c, monkeypatch)
-        with monkeypatch.context() as injection:
-            injection.setattr(c.native, "mutate", close_after_begin)
-            with pytest.raises(GuardUnavailable, match="The pinned authority has a protected closure"):
-                send(native, revision, lambda: calls.append(1) or result())
-        assert c.objects.pop(key) == closure
-        with pytest.raises(GuardDenied, match="Digest weekly attempt already begun"):
-            send(ConfiguredDigestNative(c.accounts), revision, lambda: calls.append(1) or result())
+    native, _, revision, _ = opt_in(c, monkeypatch)
+    with monkeypatch.context() as injection:
+        injection.setattr(c.native, "mutate", close_after_begin)
+        with pytest.raises(GuardUnavailable, match="The pinned authority has a protected closure"):
+            send(native, revision, lambda: calls.append(1) or result())
+    assert c.objects.pop(key) == closure
+    with pytest.raises(GuardDenied, match="Digest weekly attempt already begun"):
+        send(ConfiguredDigestNative(c.accounts), revision, lambda: calls.append(1) or result())
     assert calls == []
 
 
