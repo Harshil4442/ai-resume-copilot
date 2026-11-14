@@ -26,7 +26,6 @@ from ...domains.employer import (
 )
 from ...domains.resume_uploads import browsing as resume_browsing
 from ...security import (
-    CurrentUserVerification,
     decode_access_token_identity,
     get_current_user,
     get_current_user_verification,
@@ -110,8 +109,7 @@ def list_search_summaries(response: Response, limit: int = Query(10, ge=1, le=20
 @_jobs_bootstrap_reads.get("/bootstrap", response_model=schemas.JobsBootstrapView)
 def get_jobs_bootstrap(
     request: Request, current_resume_id: int | None = Query(default=None, gt=0, lt=2**63),
-    db: Session = Depends(get_db),
-    verified: CurrentUserVerification = Depends(get_current_user_verification),
+    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme),
 ):
     """Initial owned Jobs reads share one fresh account validation."""
     if (any(key != "current_resume_id" for key in request.query_params)
@@ -119,6 +117,7 @@ def get_jobs_bootstrap(
             or request.headers.get("content-encoding") or request.headers.get("transfer-encoding")
             or request.headers.get("content-length", "0") != "0"):
         raise HTTPException(422, "The Jobs overview accepts an empty GET and one optional résumé selection.")
+    verified = get_current_user_verification(token=token, db=db)
     owner_id = verified.user_id
     with db.no_autoflush:
         return schemas.JobsBootstrapView(
@@ -126,7 +125,7 @@ def get_jobs_bootstrap(
                 credential_epoch=verified.credential_epoch, candidate_revision=verified.candidate_revision),
             resumes=resume_browsing.page(db, owner_id, current_id=current_resume_id),
             saved_searches=search_pages.list_summaries(db, owner_id),
-            applications=service.list_application_views(db, owner_id),
+            applications=service.list_bootstrap_application_views(db, owner_id),
         )
 
 

@@ -974,12 +974,45 @@ def list_application_views(db: Session, user_id: int, *, limit: int = 30) -> lis
     return [application_response(db, application) for application in applications]
 
 
-def application_response(db, application):
-    from ..credits import submission as unified
+def list_bootstrap_application_views(db: Session, user_id: int) -> list[dict]:
+    page = db.query(models.EmployerApplication).filter_by(user_id=user_id).order_by(
+        models.EmployerApplication.created_at.desc()).limit(30).subquery()
+    application = aliased(models.EmployerApplication, page)
+    posting, source = models.EmployerPosting, models.EmployerSource
+    artifact, admission = models.SealedApplicationArtifact, models.EmployerAdmission
+    rows = db.query(application, posting, source, artifact, admission).select_from(application).outerjoin(
+        posting, posting.id == application.posting_id,
+    ).outerjoin(
+        source, source.id == posting.source_id,
+    ).outerjoin(
+        artifact, and_(artifact.id == application.artifact_id, artifact.user_id == user_id),
+    ).outerjoin(
+        admission, and_(admission.application_id == application.id, admission.user_id == user_id),
+    ).options(
+        load_only(artifact.sha256, artifact.filename, artifact.size_bytes, artifact.media_type),
+    ).order_by(application.created_at.desc()).all()
+    result = []
+    for row, job, employer_source, sealed, slot in rows:
+        if job is None:
+            raise HTTPException(404, "Job not found")
+        if employer_source is None:
+            raise HTTPException(404, "Employer source not found")
+        if sealed is None:
+            raise HTTPException(404, "Not found")
+        result.append(_application_view(db, row, job, employer_source, sealed, admissions.row_response(slot)))
+    return result
 
+
+def application_response(db, application):
     posting = _posting(db, application.posting_id)
     source = _source(db, posting.source_id)
     artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, application.user_id)
+    return _application_view(db, application, posting, source, artifact, admissions.response(db, application))
+
+
+def _application_view(db, application, posting, source, artifact, admission):
+    from ..credits import submission as unified
+
     result = {key: getattr(application, key) for key in (
         "id", "resume_id", "resume_choice", "resume_version_id", "status", "application_mode", "form", "package_digest", "answers", "consents", "credit_cost", "charged_credits", "receipt", "approval_expires_at", "cancel_requested", "created_at", "updated_at", "opening_key", "employer_key", "admission_snapshot", "pricing_snapshot", "batch_id",
     )}
@@ -991,7 +1024,7 @@ def application_response(db, application):
         "error": {"code": application.error_code, "message": application.error_message} if application.error_code else None,
         "handoff_url": posting.apply_url if application.application_mode == "manual" else None,
         "reserved_credits": 0,
-        "admission": admissions.response(db, application),
+        "admission": admission,
     })
     report = application.receipt if isinstance(application.receipt, dict) and application.receipt.get("source") == "candidate_report" else None
     result["candidate_report"] = copy.deepcopy(report)

@@ -203,6 +203,10 @@ def finish(db, application, outcome, *, proven_not_submitted=False):
 
 def response(db, application):
     row = db.query(models.EmployerAdmission).filter_by(application_id=application.id).first()
+    return row_response(row)
+
+
+def row_response(row):
     return None if not row else {key: getattr(row, key) for key in (
         "id", "state", "admitted_at", "possible_send_at", "settled_at", "release_reason",
     )}
