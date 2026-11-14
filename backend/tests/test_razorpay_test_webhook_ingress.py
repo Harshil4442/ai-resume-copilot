@@ -11,20 +11,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
 
 import pytest
-from backend.app.models import EntitlementLedger, PaymentEvent, PaymentOrder
+from backend.app.domains.credits.models import CreditGrant
+from backend.app.models import EntitlementLedger, PaymentEvent, PaymentOrder, PaymentRefund
 from test_razorpay_billing import (
     TEST_WEBHOOK_SECRET,
     _accepted_legacy_order,
     _capture_payload,
+    _refund_payload,
     _signature,
     client,
     enabled_checkout,
     session_factory,
 )
+from test_unified_credit_payments import start, unified
 
 from scripts import razorpay_test_webhook_ingress as ingress
 
-assert client and session_factory and enabled_checkout
+assert client and session_factory and enabled_checkout and unified
 
 
 class UpstreamHandler(BaseHTTPRequestHandler):
@@ -134,6 +137,68 @@ def test_preserves_paid_webhook_raw_body_and_headers_for_actual_app(
         assert db.query(EntitlementLedger).count() == 1
     assert enabled_checkout == []
     assert capsys.readouterr() == ("", "")
+
+
+def test_unified_pass_capture_and_refunds_through_signed_test_receiver(relay, unified, session_factory, tmp_path):
+    receiver, upstream = relay
+    client, provider_calls = unified
+    upstream.application = client
+    quote, _, checkout = start(client)
+    assert checkout.status_code == 200
+    assert (quote["amount_minor"], quote["credits"]) == (5900, 40)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=checkout.json()["order_id"]).one()
+        provider_order = order.provider_order_id
+        captured = _capture_payload(order)
+        paid = _capture_payload(order, event="order.paid")
+        partial = _refund_payload(order, "rfnd_testpartial", 2950)
+        remaining = _refund_payload(order, "rfnd_testremaining", 2950)
+    payment = captured["payload"]["payment"]["entity"]["id"]
+    rule = tmp_path / "hold.json"
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+
+    def hold(**identities):
+        rule.write_text(json.dumps(identities))
+        rule.chmod(0o600)
+
+    def deliver(event, payload):
+        body = json.dumps(payload).encode()
+        return send(receiver, body=body, headers={
+            "X-Razorpay-Event-Id": event,
+            "X-Razorpay-Signature": _signature(body),
+        })[0]
+
+    def available():
+        response = client.get("/api/v1/credits/wallet")
+        assert response.status_code == 200
+        return response.json()["available_credits"]
+
+    hold(order=provider_order)
+    assert deliver("evt_test_capture", captured) == deliver("evt_test_paid", paid) == 503
+    assert available() == 0
+    rule.unlink()
+    assert deliver("evt_test_capture", captured) == deliver("evt_test_paid", paid) == 200
+    assert deliver("evt_test_capture", captured) == 200
+    assert available() == 40
+
+    hold(payment=payment)
+    assert deliver("evt_test_partial", partial) == 503
+    assert available() == 40
+    rule.unlink()
+    assert deliver("evt_test_partial", partial) == deliver("evt_test_partial", partial) == 200
+    assert available() == 20
+    assert deliver("evt_test_remaining", remaining) == deliver("evt_test_remaining", remaining) == 200
+    assert available() == 0
+
+    with session_factory() as db:
+        assert db.query(PaymentOrder).one().refunded_amount_minor == 5900
+        assert db.query(PaymentEvent).count() == 4
+        assert db.query(PaymentRefund).count() == 2
+        grant = db.query(CreditGrant).one()
+        assert (grant.quantity, grant.remaining_credits) == (40, 0)
+        assert db.query(EntitlementLedger).one().status == "refunded"
+    assert len(provider_calls) == 1
 
 
 @pytest.mark.parametrize("method", ["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT"])
