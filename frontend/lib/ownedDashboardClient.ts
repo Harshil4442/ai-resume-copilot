@@ -1,10 +1,25 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient, type QueryState } from "@tanstack/react-query";
 import { ApiError, apiGet } from "./api";
 import { ownedBootstrapKey } from "./ownedBootstrapClient";
-import { parseOwnedBootstrap } from "./ownedBootstrapContract";
+import { parseOwnedBootstrap, type OwnedBootstrap } from "./ownedBootstrapContract";
 import { parseOwnedDashboard, type OwnedDashboard } from "./ownedDashboardContract";
 
 export const ownedDashboardKey = [...ownedBootstrapKey, "dashboard-v1"] as const;
+const dashboardSeeds = new WeakMap<QueryClient, QueryState<OwnedBootstrap>>();
+
+function retireDashboardSeed(client: QueryClient) {
+  const seed = dashboardSeeds.get(client);
+  dashboardSeeds.delete(client);
+  const current = client.getQueryState<OwnedBootstrap>(ownedBootstrapKey);
+  if (seed && current?.status === "success" && current.fetchStatus === "idle"
+    && current.data === seed.data && current.dataUpdateCount === seed.dataUpdateCount
+    && current.dataUpdatedAt === seed.dataUpdatedAt) {
+    // A new Dashboard attempt may refuse authority. Drop its old projection,
+    // including after invalidation, without starting a read or touching direct data.
+    client.removeQueries({ queryKey: ownedBootstrapKey, exact: true });
+  }
+}
+
 function unavailable(): never { throw new ApiError("Dashboard information could not be verified.", 503, null); }
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
@@ -41,13 +56,28 @@ async function legacyDashboard(signal: AbortSignal): Promise<OwnedDashboard> {
 
 export function ownedDashboardOptions() {
   return queryOptions({ queryKey: ownedDashboardKey, staleTime: 30_000, retry: false,
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal, client }) => {
+      retireDashboardSeed(client);
+      // Nav already creates a disabled bootstrap query on Dashboard. Only seed
+      // that pristine owner-local entry; never replace another read or clear an
+      // invalidation, and never cache identity or authority across requests.
+      const before = client.getQueryState<OwnedBootstrap>(ownedBootstrapKey);
+      const startedAt = Date.now();
       let value: unknown;
       try { value = await apiGet<unknown>("/auth/dashboard", signal); }
       catch (error) {
         if (error instanceof ApiError && error.status === 404) return legacyDashboard(signal);
         throw error;
       }
-      return parseOwnedDashboard(value) || unavailable();
+      const snapshot = parseOwnedDashboard(value) || unavailable();
+      if (!signal.aborted && snapshot.bootstrap.unavailable.length === 0
+        && before?.status === "pending" && before.fetchStatus === "idle"
+        && before.data === undefined && !before.isInvalidated
+        && client.getQueryState(ownedBootstrapKey) === before) {
+        client.setQueryData(ownedBootstrapKey, snapshot.bootstrap, { updatedAt: startedAt });
+        const seed = client.getQueryState<OwnedBootstrap>(ownedBootstrapKey);
+        if (seed) dashboardSeeds.set(client, seed);
+      }
+      return snapshot;
     } });
 }

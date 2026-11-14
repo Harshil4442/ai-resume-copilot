@@ -48,6 +48,8 @@ const publicLinks: NavLink[] = [
   { href: "/contact", label: "Contact", icon: User },
 ];
 
+const authenticationPages = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
+
 const subscribeHydration = () => () => {};
 const clientHydrationSnapshot = () => true;
 const serverHydrationSnapshot = () => false;
@@ -60,24 +62,26 @@ export default function Nav() {
   // Keep unrelated header reads out of the quota-sensitive connection/review path.
   const companionPage = pathname === "/browser-companion";
   const dashboardPage = pathname === "/dashboard";
+  // A refreshed session can authenticate before the sign-in page navigates away.
+  const deferHeaderMetadata = companionPage || authenticationPages.has(pathname);
   const [mobileOpen, setMobileOpen] = useState(false);
   const hydrated = useSyncExternalStore(subscribeHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   const baseProfile = useQuery({
     ...ownerProfileQueryOptions(),
-    enabled: authenticated && !companionPage && !dashboardPage,
+    enabled: authenticated && !deferHeaderMetadata && !dashboardPage,
   });
   const baseFeatures = useQuery({
     ...featureDecisionsOptions(),
-    enabled: authenticated && !companionPage && !dashboardPage,
+    enabled: authenticated && !deferHeaderMetadata && !dashboardPage,
   });
   const dashboard = useQuery({ ...ownedDashboardOptions(), enabled: authenticated && dashboardPage });
   const advisory = dashboard.isError ? undefined : dashboard.data?.bootstrap;
   const profile = dashboardPage ? { data: advisory?.profile ?? undefined } : baseProfile;
   const features = dashboardPage ? { data: advisory?.features ? { features: advisory.features } : undefined } : baseFeatures;
-  const baseAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !companionPage && !dashboardPage });
+  const baseAvailability = useQuery({ ...creditAvailabilityOptions(), enabled: authenticated && !deferHeaderMetadata && !dashboardPage });
   const creditAvailability = dashboardPage ? { data: advisory?.credit_availability, isSuccess: Boolean(advisory?.credit_availability) } : baseAvailability;
-  const unifiedWalletEnabled = !companionPage && creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;
-  const baseWallet = useQuery({ ...creditWalletOptions(), enabled: authenticated && !companionPage && !dashboardPage && unifiedWalletEnabled });
+  const unifiedWalletEnabled = !deferHeaderMetadata && creditAvailability.isSuccess && creditAvailability.data?.catalog_enabled === true;
+  const baseWallet = useQuery({ ...creditWalletOptions(), enabled: authenticated && !deferHeaderMetadata && !dashboardPage && unifiedWalletEnabled });
   const creditWallet = dashboardPage ? { data: advisory?.credit_wallet, isSuccess: Boolean(advisory?.credit_wallet) } : baseWallet;
 
   useEffect(() => {
@@ -99,8 +103,8 @@ export default function Nav() {
   const links = authenticated
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
-  const units = companionPage ? undefined : profile.data?.ai_credits;
-  const serviceCredits = companionPage ? undefined : profile.data?.job_service_credits;
+  const units = deferHeaderMetadata ? undefined : profile.data?.ai_credits;
+  const serviceCredits = deferHeaderMetadata ? undefined : profile.data?.job_service_credits;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-border bg-white/95 backdrop-blur-md">

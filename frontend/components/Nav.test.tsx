@@ -1,17 +1,25 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   get: vi.fn(),
   pathname: "/dashboard",
   authenticated: true,
+  loading: false,
+  owner: "owner-a",
 }));
 vi.mock("../lib/api", async (original) => ({ ...await original<typeof import("../lib/api")>(), apiGet: state.get }));
-vi.mock("next-auth/react", () => ({ useSession: () => ({ status: state.authenticated ? "authenticated" : "unauthenticated" }) }));
+vi.mock("next-auth/react", () => ({
+  SessionProvider: ({ children }: { children: ReactNode }) => children,
+  useSession: () => ({ status: state.loading ? "loading" : state.authenticated ? "authenticated" : "unauthenticated",
+    data: state.authenticated ? { user: { id: state.owner, email: `${state.owner}@example.test` } } : null }),
+}));
 vi.mock("next/navigation", () => ({ usePathname: () => state.pathname }));
 
 import Nav from "./Nav";
+import SessionProviderWrapper from "./SessionProviderWrapper";
 import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
 import { ownedDashboardFixture } from "../lib/fixtures/ownedDashboard";
 import { ownedDashboardKey } from "../lib/ownedDashboardClient";
@@ -31,6 +39,8 @@ function tree(client: QueryClient) {
 beforeEach(() => {
   state.pathname = "/dashboard";
   state.authenticated = true;
+  state.loading = false;
+  state.owner = "owner-a";
   state.get.mockReset();
   state.get.mockImplementation((path: string) => { const value = ownedBootstrapFixture({ profile: account, features: { career_workspace: false } }); return Promise.resolve(path === "/auth/dashboard" ? ownedDashboardFixture(value) : value); });
 });
@@ -88,7 +98,7 @@ describe("connection-page header request budget", () => {
     expect(screen.queryByRole("link", { name: "Workspace" })).not.toBeInTheDocument();
   });
 
-  it.each(["/dashboard", "/employer-jobs", "/browser-companion/details"])("keeps ordinary queries, credit refresh and feature filtering on %s", async (pathname) => {
+  it.each(["/dashboard", "/employer-jobs", "/browser-companion/details", "/login/help", "/register/help", "/forgot-password/help", "/reset-password/help"])("keeps ordinary queries, credit refresh and feature filtering on %s", async (pathname) => {
     state.pathname = pathname;
     const client = createClient();
     render(tree(client));
@@ -99,6 +109,83 @@ describe("connection-page header request budget", () => {
     await act(async () => { window.dispatchEvent(new Event("refresh_analysis_units")); });
     await waitFor(() => expect(state.get.mock.calls.filter(([path]) => path === (state.pathname === "/dashboard" ? "/auth/dashboard" : "/auth/bootstrap"))).toHaveLength(2));
     expect(state.get.mock.calls.some(([path]) => path === "/v1/features")).toBe(false);
+  });
+
+  it.each(["/login", "/register", "/forgot-password", "/reset-password"])("defers header reads during a session refresh on %s", async (pathname) => {
+    state.pathname = pathname;
+    state.authenticated = false;
+    state.loading = true;
+    const client = createClient();
+    const view = render(tree(client));
+    expect(screen.getByRole("link", { name: "Log in" })).toBeInTheDocument();
+    state.loading = false;
+    state.authenticated = true;
+    view.rerender(tree(client));
+    await act(async () => {
+      window.dispatchEvent(new Event("refresh_analysis_units"));
+      window.dispatchEvent(new Event("refresh_unified_credits"));
+      await client.invalidateQueries();
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+    expect(state.get).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Log out" })).toBeInTheDocument();
+    expect(screen.queryByTitle(/analysis units remaining|job service credits|credits available/)).not.toBeInTheDocument();
+  });
+
+  it("starts one owned dashboard read after leaving the authenticated login page", async () => {
+    state.pathname = "/login";
+    const client = createClient();
+    const view = render(tree(client));
+    expect(state.get).not.toHaveBeenCalled();
+    state.pathname = "/dashboard";
+    view.rerender(tree(client));
+    await screen.findByTitle("7 analysis units remaining");
+    expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard"]);
+    expect(screen.queryByRole("link", { name: "Workspace" })).not.toBeInTheDocument();
+  });
+
+  it.each([false, true])("hides cached balances on authentication pages when unified credits are %s", async (catalogEnabled) => {
+    const client = createClient();
+    const value = ownedBootstrapFixture({ profile: account, features: { career_workspace: false },
+      availability: { catalog_enabled: catalogEnabled }, wallet: { schema_version: "unified-credits-v1", server_time: "2026-10-27T00:00:00Z",
+        available_credits: 11, reserved_credits: 0, debt_credits: 0, lots: [] } });
+    client.setQueryData(ownedBootstrapKey, value);
+    client.setQueryData(ownedDashboardKey, ownedDashboardFixture(value));
+    const view = render(tree(client));
+    expect(screen.getByTitle(catalogEnabled ? "11 credits available" : "7 analysis units remaining")).toBeInTheDocument();
+    state.pathname = "/login";
+    view.rerender(tree(client));
+    await act(async () => { window.dispatchEvent(new Event("refresh_analysis_units")); });
+    expect(state.get).not.toHaveBeenCalled();
+    expect(screen.queryByTitle(/analysis units remaining|job service credits|credits available/)).not.toBeInTheDocument();
+    expect(screen.queryByText("View credits")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Log out" })).toBeInTheDocument();
+  });
+
+  it("retains the owner cache boundary while deferring login reads", async () => {
+    state.pathname = "/login";
+    const view = render(<SessionProviderWrapper><Nav /></SessionProviderWrapper>);
+    state.owner = "owner-b";
+    view.rerender(<SessionProviderWrapper><Nav /></SessionProviderWrapper>);
+    expect(state.get).not.toHaveBeenCalled();
+    state.pathname = "/dashboard";
+    view.rerender(<SessionProviderWrapper><Nav /></SessionProviderWrapper>);
+    await screen.findByTitle("7 analysis units remaining");
+    expect(state.get).toHaveBeenCalledTimes(1);
+
+    let finish: (value: unknown) => void = () => {};
+    const nextOwner = new Promise((resolve) => { finish = resolve; });
+    state.get.mockImplementationOnce(() => nextOwner);
+    state.owner = "owner-c";
+    view.rerender(<SessionProviderWrapper><Nav /></SessionProviderWrapper>);
+    expect(screen.queryByTitle("7 analysis units remaining")).not.toBeInTheDocument();
+    await waitFor(() => expect(state.get).toHaveBeenCalledTimes(2));
+    await act(async () => { finish(ownedDashboardFixture(ownedBootstrapFixture({ profile: { ai_credits: 4, job_service_credits: 2 } }))); });
+    await screen.findByTitle("4 analysis units remaining");
+    expect(screen.queryByTitle("7 analysis units remaining")).not.toBeInTheDocument();
+    expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard", "/auth/dashboard"]);
   });
 
   it("keeps public anonymous navigation without private requests", async () => {
