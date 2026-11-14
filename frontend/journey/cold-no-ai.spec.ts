@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { createHash, createHmac } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, request as requestFactory, type Route } from "@playwright/test";
+import { decode, encode } from "next-auth/jwt";
 
 // Disposable CI lab measurements only. No production instrumentation or field-INP claim.
 type PublicLabState = {
@@ -238,6 +239,52 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   const initialProfile = await request.get(`${baseURL}/api/account/profile`);
   expect(initialProfile.ok()).toBeTruthy();
   expect((await initialProfile.json()).ai_credits).toBe(0);
+
+  // Use the real outer session for the candidate just registered by this
+  // fixture. Change only the test bearer expiry to avoid a real-time wait.
+  const sessionSecret = process.env.NEXTAUTH_SECRET!;
+  const bearerSecret = process.env.JWT_SECRET!;
+  expect(sessionSecret).toBe("synthetic-nextauth-browser-secret-over-thirty-two-characters");
+  expect(bearerSecret).toBe("synthetic-browser-jwt-secret-over-thirty-two-characters");
+  expect(new URL(baseURL!).hostname).toBe("127.0.0.1");
+  const sessionToken = await decode({ token: sessionCookies[0].value, secret: sessionSecret });
+  if (typeof sessionToken?.accessToken !== "string" || sessionToken.browserPairingSession) {
+    throw new Error("Expected the owned legacy fixture session");
+  }
+  const [header, encodedClaims] = sessionToken.accessToken.split(".");
+  expect(JSON.parse(Buffer.from(header, "base64url").toString("utf8")).alg).toBe("HS256");
+  const backendClaims = JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8"));
+  expect(backendClaims.sub).toBe(String(sessionToken.hirewizUserId));
+  expect(backendClaims.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  backendClaims.exp = Math.floor(Date.now() / 1000) - 60;
+  const expired = `${header}.${Buffer.from(JSON.stringify(backendClaims)).toString("base64url")}`;
+  const expiredSignature = createHmac("sha256", bearerSecret).update(expired).digest("base64url");
+  const expiredSession = await encode({ token: { ...sessionToken, accessToken: `${expired}.${expiredSignature}` }, secret: sessionSecret, maxAge: 3600 });
+  const recovery = await context.browser()!.newContext({ ignoreHTTPSErrors: true });
+  await recovery.route((url) => url.origin !== baseURL, (route) => route.abort("blockedbyclient"));
+  try {
+    await recovery.addCookies([{ ...sessionCookies[0], value: expiredSession }]);
+    expect((await recovery.request.get(`${baseURL}/api/account/dashboard`)).status()).toBe(401);
+    expect((await recovery.request.get(`${baseURL}/api/backend/v1/employer-jobs/applications`)).status()).toBe(401);
+    const recoveryPage = await recovery.newPage();
+    await recoveryPage.goto(`${baseURL}/dashboard`);
+    await expect(recoveryPage.getByRole("heading", { name: "Sign in again" })).toBeVisible();
+    await recoveryPage.getByRole("link", { name: "Sign out securely" }).click();
+    await expect(recoveryPage).toHaveURL(/\/login$/);
+    expect((await recovery.cookies()).some((cookie) => cookie.name === sessionCookies[0].name)).toBe(false);
+    await recoveryPage.getByLabel("Email address", { exact: true }).fill("candidate.browser@example.com");
+    await recoveryPage.getByLabel("Password", { exact: true }).fill("synthetic-browser-password-123");
+    await recoveryPage.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(recoveryPage).toHaveURL(/\/dashboard$/);
+    await expect(recoveryPage.getByRole("heading", { name: "Sign in again" })).toHaveCount(0);
+    const freshProfile = await recovery.request.get(`${baseURL}/api/account/profile`);
+    expect(freshProfile.status()).toBe(200);
+    expect((await freshProfile.json()).email).toBe("candidate.browser@example.com");
+    expect((await recovery.request.get(`${baseURL}/api/account/dashboard`)).status()).toBe(200);
+  } finally {
+    await recovery.close();
+  }
+
   await expect(page.getByRole("checkbox", { name: /Optional AI skill enrichment/ })).not.toBeChecked();
   await page.locator('input[type="file"]').setInputFiles(process.env.COLD_BROWSER_ORIGINAL!);
   const parseResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/resume/parse") && r.request().method() === "POST");
