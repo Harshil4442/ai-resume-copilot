@@ -47,18 +47,38 @@ the live merchant keys, customer data, production webhook or queue. [Test and
 Live modes](https://razorpay.com/docs/payments/dashboard/test-live-modes/)
 · [Webhook testing](https://razorpay.com/docs/webhooks/validate-test/)
 
-For a local Test API already listening on loopback, run the [Test webhook
-receiver](../backend/scripts/razorpay_test_webhook_ingress.py) from the backend
-directory. Set the upstream port to the disposable API and point the HTTPS
-tunnel only at the receiver's listen port.
+Use a separate checkout without `.env` files and install the locked frontend and
+backend dependencies. Start a disposable UTF-8 PostgreSQL database named
+`hirewiz_admission_test` on loopback port `55433` or `55434`. The launcher uses
+the same disposable PostgreSQL contract as the local browser workflow. Run it
+from the repository root with the backend Python environment.
 
 ```sh
-python -B scripts/razorpay_test_webhook_ingress.py --listen-port 17899 --upstream-port 18000
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout --allow-disposable-postgres
 ```
 
-The receiver relays the raw body and the Razorpay signature and event ID. It
-returns only the HTTP status and keeps no delivery records. Verify that
-`GET /api/health` and unrelated POST paths are refused at the temporary endpoint.
+The default check starts the production Next.js build and FastAPI, registers a
+disposable account, verifies the closed checkout and empty wallet, and checks
+the callback receiver. It has no provider credentials and sends no payment
+requests. When the Test account and webhook secret are authorized, opt in from
+an interactive terminal.
+
+```sh
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout \
+  --allow-disposable-postgres --razorpay-test --minutes 30
+```
+
+Enter the Test key ID, key secret and separate webhook secret at the hidden
+prompts. Open the printed local URL in an isolated browser profile, trust only
+the launcher's loopback certificate for this session, and register a synthetic
+account. Use Razorpay's test payment methods. Point the HTTPS tunnel only at the
+printed loopback [receiver](../backend/scripts/razorpay_test_webhook_ingress.py)
+port and configure the exact printed callback path in the Test dashboard. The
+receiver relays the raw body and the Razorpay signature and event ID. It returns
+only the HTTP status and keeps no delivery records. Verify that `GET /api/health`
+and unrelated POST paths are refused at the public endpoint. The launcher
+stops its local processes and drops only its own schema on exit. Capture
+sanitized evidence while the launcher is running.
 
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
 verify they settle one credit lot. Check duplicate delivery using the original
