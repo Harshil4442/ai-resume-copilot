@@ -12,16 +12,25 @@ import { accountMutationHeaders } from "../lib/accountTransportClient";
 import { applicationSubmissionBilling } from "../lib/browserSubmissionBilling";
 import { type Opportunity } from "../lib/career";
 import { applicationStatusLabels, employerJobsBase, safeEmployerUrl, type EmployerApplication, type JobServiceCatalog, type ResumeChoice } from "../lib/employerJobs";
+import type { JobsFirstPage } from "../lib/employerJobsOverview";
 import { uploadResumeFile, type UploadProgress } from "../lib/resumeUpload";
 import { useProgressQuery } from "../lib/useProgressQuery";
 import { useResumeOptions } from "../lib/resumeOptions";
 import { useResumeVersionOptions } from "../lib/resumeVersionOptions";
+import type { ResumePageResponse } from "../lib/types";
+import type { EmployerJobsRead } from "../lib/useEmployerJobsReads";
 import { ResumeSelector } from "./ResumeSelector";
 import { Button } from "./ui/Button";
 import { ResumeUploadProgress } from "./ResumeUploadProgress";
 import { LoadingBlock } from "./ui/LoadingBlock";
 
-type Props = { id: string; onClose: () => void; onChange: () => void };
+type ApplicationOverview = {
+  catalog: JobServiceCatalog | undefined;
+  resumeFirstPage: JobsFirstPage<ResumePageResponse>;
+  read: EmployerJobsRead;
+  refresh: () => void;
+};
+type Props = { id: string; onClose: () => void; onChange: () => void; overview?: ApplicationOverview };
 
 export function ArtifactPreview({ application, onReady }: { application: EmployerApplication; onReady: (ready: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -57,7 +66,7 @@ export function ArtifactPreview({ application, onReady }: { application: Employe
   </div>;
 }
 
-export default function EmployerApplicationPanel({ id, onClose, onChange }: Props) {
+export default function EmployerApplicationPanel({ id, onClose, onChange, overview }: Props) {
   const { data: session, status: sessionStatus } = useSession();
   const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
   const application = useProgressQuery({
@@ -73,16 +82,16 @@ export default function EmployerApplicationPanel({ id, onClose, onChange }: Prop
     <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="font-display text-2xl sm:text-3xl">Review your application</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Choose the exact file and answers before anything is shared with the employer.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" aria-label="Close application review"><X size={20} /></Button></Dialog.Close></header>
     <div className="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-6">
       {application.pollingPaused && !application.isError ? <div role="status" className="mb-5 space-y-3 text-sm"><p>Automatic status checks are paused. The application may still be in progress.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Check application status</Button></div> : null}
-      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><p className="text-sm">Automatic status checks are paused. Checking status does not repeat an employer action.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${ownerKey}:${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} ownerKey={ownerKey} />}
+      {application.isError ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">{application.error.message}</p><p className="text-sm">Automatic status checks are paused. Checking status does not repeat an employer action.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Retry loading</Button></div> : application.isLoading || !application.data ? <LoadingBlock rows={5} /> : <ApplicationEditor key={`${ownerKey}:${id}:${application.data.package_digest}`} application={application.data} onChange={onChange} ownerKey={ownerKey} overview={overview} />}
     </div>
   </Dialog.Content></Dialog.Portal></Dialog.Root>;
 }
 
-function ApplicationEditor({ application, onChange, ownerKey }: { application: EmployerApplication; onChange: () => void; ownerKey: string }) {
+function ApplicationEditor({ application, onChange, ownerKey, overview }: { application: EmployerApplication; onChange: () => void; ownerKey: string; overview?: ApplicationOverview }) {
   const client = useQueryClient();
   const [resumeId, setResumeId] = useState(String(application.resume_id));
   // Share resume metadata with Employer Jobs in the session owner's QueryClient.
-  const resumeOptions = useResumeOptions({ selectedId: resumeId });
+  const resumeOptions = useResumeOptions({ selectedId: resumeId, firstPage: overview?.resumeFirstPage, read: overview?.read });
   const [choice, setChoice] = useState<ResumeChoice>(application.resume_choice);
   const [versionId, setVersionId] = useState(application.resume_version_id ?? "");
   const [answers, setAnswers] = useState(application.answers);
@@ -105,7 +114,9 @@ function ApplicationEditor({ application, onChange, ownerKey }: { application: E
     uploadController.current?.abort();
   }
 
-  const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
+  const catalogRead = useQuery({ queryKey: ["employer-jobs", "catalog"], enabled: !overview,
+    queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
+  const catalog = overview ? overview.catalog : catalogRead.data;
   const versions = useResumeVersionOptions({ owner: ownerKey, resumeId, currentId: versionId, enabled: choice === "tailored" });
   const billingState = applicationSubmissionBilling(application);
   const creditUnits = billingState === "legacy" ? "service credits" : "unified credits";
@@ -140,13 +151,14 @@ function ApplicationEditor({ application, onChange, ownerKey }: { application: E
       if (!uploadMounted.current || uploadController.current !== controller || controller.signal.aborted) return;
       setResumeId(String(result.resume_id)); setChoice("custom"); setVersionId(""); setDirty(true); setReviewed(false);
       void client.invalidateQueries({ queryKey: ["resumes"] }); setFileError(null);
+      overview?.refresh();
     },
     onError: (error, { controller }) => { if (uploadMounted.current && uploadController.current === controller) setFileError(error.message); },
     onSettled: (_result, _error, { controller }) => { if (uploadMounted.current && uploadController.current === controller) { uploadController.current = null; setUploadProgress(null); } },
   });
   const submit = useMutation({
     mutationFn: async () => {
-      if (billingState !== "legacy" || !reviewed || dirty || !artifactReady || !automatic || application.batch_id || !catalog.data?.auto_submit_enabled || application.missing_fields.length) throw new Error("Save and review the complete application before submitting. Batch members must be queued from their exact batch review.");
+      if (billingState !== "legacy" || !reviewed || dirty || !artifactReady || !automatic || application.batch_id || !catalog?.auto_submit_enabled || application.missing_fields.length) throw new Error("Save and review the complete application before submitting. Batch members must be queued from their exact batch review.");
       const approved = await apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/approve`, { package_digest: application.package_digest, allowed_actions: ["fill", "upload", "submit"] });
       client.setQueryData(["employer-jobs", "application", application.id], approved);
       return apiPostJson<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(application.id)}/execute`, { package_digest: approved.package_digest });
@@ -187,7 +199,7 @@ function ApplicationEditor({ application, onChange, ownerKey }: { application: E
   });
   const pending = save.isPending || upload.isPending || submit.isPending || handoff.isPending || cancel.isPending || reportSubmission.isPending;
   const error = save.error || submit.error || handoff.error || cancel.error || reportSubmission.error;
-  const creditBalance = catalog.data?.balance;
+  const creditBalance = catalog?.balance;
   const enoughCredits = typeof creditBalance === "number" && creditBalance >= application.credit_cost;
 
   async function downloadArtifact() {
@@ -229,7 +241,7 @@ function ApplicationEditor({ application, onChange, ownerKey }: { application: E
     {error ? <p role="alert" className="text-sm leading-6 text-coral">{error.message}</p> : null}
     {!automatic && razorpayBrowserUrl && !immutable ? <section className="rounded-xl border border-border bg-surface p-5" aria-labelledby="browser-assistance-heading"><h3 id="browser-assistance-heading" className="font-semibold">Razorpay / Greenhouse application pilot</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">Your companion shows the supported fields and actions for this Razorpay form. Browser assistance is limited to this employer’s Greenhouse portal. Review the exact file, destination and answers before approving each action. Filling and resume upload do not charge application credits. Where final submission is supported, it requires a separate review and displays its credit reservation before approval.</p>{dirty || !application.artifact ? <p className="mt-3 text-sm text-muted-foreground">Save your package with a retained resume file before starting browser assistance.</p> : <div className="mt-4 flex flex-wrap gap-3"><Button asChild><Link href={`/browser-companion?application=${encodeURIComponent(application.id)}`}>Review browser assistance</Link></Button><Button asChild variant="secondary"><a href={razorpayBrowserUrl} target="_blank" rel="noopener noreferrer">Open Razorpay application<ArrowUpRight size={15} /></a></Button></div>}<div className="mt-4"><p className="text-xs font-semibold">Application ID</p><code className="mt-1 block break-all text-xs">{application.id}</code><Button variant="secondary" size="sm" className="mt-2" onClick={() => void copyApplicationId()}>Copy application ID</Button>{applicationIdCopied ? <p role="status" className="mt-2 text-xs text-primary">Application ID copied.</p> : null}{copyIdError ? <p role="status" className="mt-2 text-xs text-muted-foreground">{copyIdError}</p> : null}</div></section> : null}
     <section className="rounded-xl border border-border bg-surface p-5" aria-labelledby="application-submit-heading"><h3 id="application-submit-heading" className="font-semibold">{automatic ? "Approve this application" : "Continue with the employer"}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{automatic ? `${application.credit_cost} service credits per confirmed complete application. Your file and answers may be saved by the employer as soon as filling or uploading begins.` : "This route uses the employer portal. Preparation is not a submission, and this handoff does not charge automatic-apply credits. Sign in, complete the remaining steps and submit there yourself."}</p>
-      {application.batch_id ? <div className="mt-4 space-y-2"><p className="text-sm leading-6">This application belongs to an exact reviewed batch. Queue it from that batch review. Saving a file or answer change clears this package's approval and requires a new batch review.</p><Link href={`/employer-jobs/batches/${encodeURIComponent(application.batch_id)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-primary underline">Review this application's batch</Link></div> : automatic && !immutable ? <><label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={reviewed} disabled={dirty || !artifactReady || pending || application.missing_fields.length > 0} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed this employer, exact resume, answers and consent choices. I authorize filling, uploading and submitting this application.</span></label><Button className="mt-4 min-h-11 w-full sm:w-auto" onClick={() => submit.mutate()} disabled={!reviewed || dirty || !artifactReady || pending || !enoughCredits || !employerUrl || !catalog.data?.auto_submit_enabled || application.missing_fields.length > 0}>{submit.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}Approve and submit</Button>{!catalog.data?.auto_submit_enabled ? <p className="mt-3 text-xs text-muted-foreground">Automatic submission is not enabled for this service.</p> : !enoughCredits ? <p className="mt-3 text-xs text-muted-foreground">You need {application.credit_cost} service credits. <Link href="/billing" className="underline text-primary">Review credit packs</Link>.</p> : null}</> : !automatic && employerUrl && !immutable ? <div className="mt-4 space-y-4">
+      {application.batch_id ? <div className="mt-4 space-y-2"><p className="text-sm leading-6">This application belongs to an exact reviewed batch. Queue it from that batch review. Saving a file or answer change clears this package's approval and requires a new batch review.</p><Link href={`/employer-jobs/batches/${encodeURIComponent(application.batch_id)}`} className="inline-flex min-h-11 items-center text-sm font-semibold text-primary underline">Review this application's batch</Link></div> : automatic && !immutable ? <><label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={reviewed} disabled={dirty || !artifactReady || pending || application.missing_fields.length > 0} onChange={(event) => setReviewed(event.target.checked)} /><span>I reviewed this employer, exact resume, answers and consent choices. I authorize filling, uploading and submitting this application.</span></label><Button className="mt-4 min-h-11 w-full sm:w-auto" onClick={() => submit.mutate()} disabled={!reviewed || dirty || !artifactReady || pending || !enoughCredits || !employerUrl || !catalog?.auto_submit_enabled || application.missing_fields.length > 0}>{submit.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <ShieldCheck size={16} />}Approve and submit</Button>{!catalog?.auto_submit_enabled ? <p className="mt-3 text-xs text-muted-foreground">Automatic submission is not enabled for this service.</p> : !enoughCredits ? <p className="mt-3 text-xs text-muted-foreground">You need {application.credit_cost} service credits. <Link href="/billing" className="underline text-primary">Review credit packs</Link>.</p> : null}</> : !automatic && employerUrl && !immutable ? <div className="mt-4 space-y-4">
         <dl className="space-y-2 text-xs leading-5" aria-label="Saved handoff package">
           <div><dt className="font-semibold">Chosen file</dt><dd className="break-all">{application.artifact?.filename ?? "Unavailable"} · {application.resume_choice} resume #{application.resume_id}{application.resume_version_id ? ` · version ${application.resume_version_id}` : ""}</dd></div>
           <div><dt className="font-semibold">Exact file SHA-256</dt><dd className="break-all">{application.artifact?.sha256 ?? "Unavailable"}</dd></div>

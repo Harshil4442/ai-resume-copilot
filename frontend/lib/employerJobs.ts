@@ -208,6 +208,14 @@ export type EmployerApplication = {
   admission?: { id: string; state: string; admitted_at: string; possible_send_at: string | null; settled_at: string | null; release_reason: string | null } | null;
 };
 
+export type EmployerApplicationListItem = Pick<EmployerApplication,
+  "id" | "status" | "application_mode" | "batch_id" | "credit_cost" | "package_digest" | "opening_key" | "employer_key" | "pricing_snapshot"> & {
+  posting: Pick<EmployerPosting, "title" | "employer" | "source_id" | "application_mode"> & { has_valid_apply_url: boolean };
+  artifact: Pick<NonNullable<EmployerApplication["artifact"]>, "filename" | "media_type"> | null;
+  admission_snapshot?: Pick<AdmissionQuote, "opening_key" | "employer_key" | "policy_fingerprint" | "expires_at"> | null;
+  has_missing_fields: boolean;
+};
+
 export type EmployerBatchItem = {
   application_id: string; package_digest: string; allowed_actions: ApplicationAction[];
   credit_cost: number; opening_key: string; employer_key: string;
@@ -221,13 +229,15 @@ export type EmployerApplicationBatch = {
   application_statuses: Record<string, EmployerApplication["status"]>;
 };
 
-export function batchEligibility(application: EmployerApplication, catalog: JobServiceCatalog | undefined, now = Date.now()): string | null {
+export function batchEligibility(application: EmployerApplication | EmployerApplicationListItem, catalog: JobServiceCatalog | undefined, now = Date.now()): string | null {
   if (!catalog?.enabled || !catalog.auto_submit_enabled || !catalog.admission_limits) return "Reviewed API batches are not enabled for this service.";
   if (application.application_mode !== "api" || application.posting.application_mode !== "api") return "Use this employer's individual manual handoff.";
   if (!catalog.sources.some((source) => source.id === application.posting.source_id && source.application_mode === "api")) return "This source does not currently offer a permissioned API route.";
-  if (!["ready", "approved"].includes(application.status) || application.missing_fields.length) return "Complete and save this application's answers and consent choices first.";
+  const missingFields = "has_missing_fields" in application ? application.has_missing_fields : application.missing_fields.length > 0;
+  if (!["ready", "approved"].includes(application.status) || missingFields) return "Complete and save this application's answers and consent choices first.";
   if (application.batch_id) return "This application already belongs to a reviewed batch.";
-  if (!application.artifact || !["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(application.artifact.media_type) || !safeEmployerUrl(application.posting.apply_url)) return "The exact retained PDF or DOCX and employer destination must be available.";
+  const validDestination = "has_valid_apply_url" in application.posting ? application.posting.has_valid_apply_url : Boolean(safeEmployerUrl(application.posting.apply_url));
+  if (!application.artifact || !["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(application.artifact.media_type) || !validDestination) return "The exact retained PDF or DOCX and employer destination must be available.";
   if (!application.opening_key || !application.employer_key || !/^[a-f0-9]{64}$/.test(application.package_digest)) return "Refresh this application to obtain its current opening and package quote.";
   const quote = application.admission_snapshot;
   const price = application.pricing_snapshot;

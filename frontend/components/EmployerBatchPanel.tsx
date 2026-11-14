@@ -13,11 +13,11 @@ import { Button } from "./ui/Button";
 import { LoadingBlock } from "./ui/LoadingBlock";
 import { useProgressQuery } from "../lib/useProgressQuery";
 
-type Props = { id?: string; selected?: EmployerApplication[]; onClose: () => void; onChange: () => void };
+type Props = { id?: string; selected?: Pick<EmployerApplication, "id" | "credit_cost">[]; onClose: () => void; onChange: () => void; entryAvailable?: boolean };
 const actions = ["fill", "upload", "submit"] as const;
 const timestamp = (value: string) => new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 
-export default function EmployerBatchPanel({ id, selected = [], onClose, onChange }: Props) {
+export default function EmployerBatchPanel({ id, selected = [], onClose, onChange, entryAvailable = true }: Props) {
   const client = useQueryClient();
   const [batchId, setBatchId] = useState(id);
   const [budget, setBudget] = useState(String(selected.reduce((total, app) => total + app.credit_cost, 0)));
@@ -45,11 +45,11 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
   const maxBudget = Number(budget);
   const validBudget = Number.isInteger(maxBudget) && maxBudget >= total && maxBudget <= (limits?.batch_credit_limit ?? 0);
   const duplicate = new Set(current.map((app) => app.opening_key)).size !== current.length;
-  const quoteReady = loaded && current.length > 0 && !duplicate && current.length <= (limits?.batch_limit ?? 0) && validBudget && current.every((app) => batchEligibility(app, catalog.data, now) === null);
+  const quoteReady = entryAvailable && loaded && current.length > 0 && !duplicate && current.length <= (limits?.batch_limit ?? 0) && validBudget && current.every((app) => batchEligibility(app, catalog.data, now) === null);
   const matches = batch.data?.items.every((item) => batchItemMatches(item, current.find((app) => app.id === item.application_id))) ?? false;
   const unexpired = Boolean(batch.data && Date.parse(batch.data.expires_at) > now && batch.data.items.every((item) => Date.parse(item.admission_snapshot.expires_at) > now));
   const allReviewed = Boolean(batch.data?.items.length && batch.data.items.every((item) => reviews[`${batch.data!.package_digest}:${item.application_id}:${item.package_digest}`]));
-  const enabled = Boolean(catalog.data?.enabled && catalog.data.auto_submit_enabled);
+  const enabled = entryAvailable && Boolean(catalog.data?.enabled && catalog.data.auto_submit_enabled);
   const routesAvailable = current.every((app) => app.application_mode === "api" && app.posting.application_mode === "api" && catalog.data?.sources.some((source) => source.id === app.posting.source_id && source.application_mode === "api"));
   const prepared = current.every((app) => ["ready", "approved"].includes(app.status) && !app.missing_fields.length && (!app.batch_id || app.batch_id === batchId));
   const boundApproval = current.every((app) => app.status === "approved" && app.batch_id === batchId && !app.missing_fields.length);

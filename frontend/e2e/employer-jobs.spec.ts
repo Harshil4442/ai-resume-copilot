@@ -19,13 +19,16 @@ const now = "2026-10-08T10:00:00Z";
 const digest = "a".repeat(64);
 const docxType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const errors = new WeakMap<Page, string[]>();
+const expectedCapacityError = new WeakSet<Page>();
 
 test.beforeEach(({ page }) => {
   const messages: string[] = [];
   errors.set(page, messages);
   page.on("pageerror", (error) => messages.push(error.message));
   page.on("console", (message) => {
-    if (message.type() === "error" && !/Failed to load resource: the server responded with a status of (402|409|503)/.test(message.text())) messages.push(message.text());
+    if (message.type() !== "error" || /Failed to load resource: the server responded with a status of (402|409|503)/.test(message.text())) return;
+    if (/Failed to load resource: the server responded with a status of 429/.test(message.text()) && expectedCapacityError.delete(page)) return;
+    messages.push(message.text());
   });
 });
 test.afterEach(({ page }) => expect(errors.get(page)).toEqual([]));
@@ -178,6 +181,12 @@ function fixture() {
           if (older) expect(older).toBe("resume_fixture_older");
           value = { resumes: older ? [resumes[0]] : [resumes[1]], next_cursor: older ? null : "resume_fixture_older", selected_resume: null };
         } else value = { resumes, next_cursor: null, selected_resume: selected || null };
+      }
+      else if (path === `${base}/bootstrap` && method === "GET") {
+        value = { schema_version: "owned-jobs-bootstrap-v1", catalog,
+          resumes: { resumes: state.lazyResumePages ? [resumes[1]] : resumes, next_cursor: state.lazyResumePages ? "resume_fixture_older" : null, selected_resume: null },
+          saved_searches: { items: searches.slice(0, 10).map((search) => ({ ...searchSummary(search), scope: search.scope ?? {} })), next_cursor: searches.length > 10 ? "history_10" : null },
+          applications: state.applicationsVisible ? [{ ...application, posting: { ...application.posting, has_valid_apply_url: true }, has_missing_fields: application.missing_fields.length > 0 }] : [] };
       }
       else if (path === `${base}/catalog`) value = catalog;
       else if (path === `${base}/credits` && method === "GET") value = { balance: catalog.balance, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null } satisfies ServiceCreditHistoryPage;
@@ -350,10 +359,9 @@ test("account switching clears the previous search, resume cache, and reviewed a
       value = ownedBootstrapFixture({ profile: { email: "b@fixture.example", ai_credits: 9 }, features: { career_workspace: false } });
       expect(parseOwnedBootstrap(value)).not.toBeNull();
     }
-    else if (path === "/resume/page") value = { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }] };
-    else if (path === `${base}/catalog`) value = { ...f.catalog, balance: 37, sources: [] };
-    else if (path === `${base}/searches` || path === `${base}/applications`) value = { items: [] };
-    else if (path === `${base}/search-summaries`) value = { items: [], next_cursor: null };
+    else if (path === `${base}/bootstrap`) value = { schema_version: "owned-jobs-bootstrap-v1", catalog: { ...f.catalog, balance: 37, sources: [] },
+      resumes: { resumes: [{ id: 3, filename: "New-owner-resume.docx", source_available: true, source_format: "docx", created_at: now }], next_cursor: null, selected_resume: null },
+      saved_searches: { items: [], next_cursor: null }, applications: [] };
     else if (path === "/v1/features") value = { features: { career_workspace: { enabled: false } } };
     else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
     else if (path === "/auth/profile") value = { email: "b@fixture.example", tier: "free", ai_credits: 9, job_service_credits: 37 };
@@ -385,9 +393,9 @@ test("account switching clears the previous search, resume cache, and reviewed a
   await expect(resume).toHaveValue("");
   await expect(page.getByLabel("Target role")).toHaveValue("");
   await expect(page.getByText("37", { exact: true })).toBeVisible();
-  expect(nextOwnerRequests.some((r) => r.path === "/resume/page")).toBe(true);
+  expect(nextOwnerRequests.filter((r) => r.path === `${base}/bootstrap`)).toHaveLength(1);
   expect(nextOwnerRequests.some((r) => r.path === "/auth/bootstrap" && r.method === "GET")).toBe(true);
-  expect(nextOwnerRequests.some((r) => r.path === `${base}/catalog`)).toBe(true);
+  expect(nextOwnerRequests.some((r) => r.path === "/resume/page" || r.path === `${base}/catalog`)).toBe(false);
   expect(nextOwnerRequests.some((r) => r.path.includes("app_fixture") || r.method !== "GET")).toBe(false);
   expect(f.requests.some((r) => r.path.endsWith("/approve") || r.path.endsWith("/execute"))).toBe(false);
   await checkLayout(page); expect(f.unexpected).toEqual([]);
@@ -611,6 +619,37 @@ for (const [path, heading, link] of [
     expect(f.unexpected).toEqual([]);
   });
 }
+
+test("Dashboard to Jobs makes one protected Jobs read and honors capacity retry", async ({ page, context, baseURL }) => {
+  const origin = new URL(baseURL!);
+  test.skip(origin.protocol !== "http:" || origin.hostname !== "127.0.0.1", "Requires the owned loopback session fixture");
+  await context.route("**/*", (route) => new URL(route.request().url()).origin === origin.origin ? route.continue() : route.abort());
+  const f = fixture(); await f.install(context, baseURL!);
+  let rejected = 0;
+  await context.route((url) => url.pathname === `/api/backend${base}/bootstrap`, async (route) => {
+    if (rejected++) { await route.fallback(); return; }
+    expectedCapacityError.add(page);
+    await route.fulfill({ status: 429, headers: { "Retry-After": "2", "Cache-Control": "private, no-store" },
+      json: { detail: { code: "NATIVE_METADATA_CAPACITY", message: "Request capacity is temporarily allocated." } } });
+  });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Good to see you, Taylor.", exact: true })).toBeVisible();
+  if (page.viewportSize()!.width < 1280) await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("link", { name: "Jobs", exact: true }).click();
+  const retry = page.getByRole("button", { name: "Retry loading Jobs" });
+  await expect(retry).toBeDisabled();
+  expect(rejected).toBe(1);
+  await expect(retry).toBeEnabled();
+  expect(rejected).toBe(1);
+  await retry.click();
+  await expect(page.getByRole("option", { name: "Taylor-resume.docx · #1", exact: true })).toBeAttached();
+  await expect(page.getByRole("heading", { name: "Your applications" })).toBeVisible();
+  expect(rejected).toBe(2);
+  expect(f.requests.filter(({ path }) => path === `${base}/bootstrap`)).toHaveLength(1);
+  expect(f.requests.filter(({ path }) => ["/resume/page", `${base}/catalog`, `${base}/search-summaries`, `${base}/applications`, "/auth/bootstrap"].includes(path))).toEqual([]);
+  expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+  expect(f.unexpected).toEqual([]);
+});
 
 test("existing dashboard, workspace, resume and billing remain usable at every width", async ({ page, context, baseURL }, testInfo) => {
   const f = fixture(); await f.install(context, baseURL!);

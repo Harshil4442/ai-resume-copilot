@@ -12,6 +12,7 @@ import { captureNotificationUnsubscribeLink } from "../lib/notificationUnsubscri
 import { ownedBootstrapKey } from "../lib/ownedBootstrapClient";
 import { ownedDashboardKey } from "../lib/ownedDashboardClient";
 import { retryRead } from "../lib/readQueryPolicy";
+import { employerJobsOverviewKey } from "../lib/employerJobsOverview";
 
 // Keep these destinations aligned with the authentication matcher in proxy.ts.
 const PRIVATE_ROUTES = ["/dashboard", "/resume", "/jobs", "/employer-jobs", "/workspace", "/market", "/learning", "/profile", "/billing"];
@@ -33,7 +34,7 @@ function OwnerQueryProvider({
           onError(error, query) {
             const key = query.queryKey;
             if (!error || typeof error !== "object" || !("status" in error) || error.status !== 401) return;
-            const isOwnedSnapshot = [ownedBootstrapKey, ownedDashboardKey].some(
+            const isOwnedSnapshot = [ownedBootstrapKey, ownedDashboardKey, employerJobsOverviewKey].some(
               (ownedKey) => key.length === ownedKey.length && ownedKey.every((part, index) => key[index] === part),
             );
             if (isOwnedSnapshot) setAccountDenied(true);

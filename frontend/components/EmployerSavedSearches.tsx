@@ -5,6 +5,7 @@ import { ArrowUpRight, BriefcaseBusiness, Clock3, MapPin, RefreshCw, Search, Shi
 import { useState } from "react";
 
 import { apiGet } from "../lib/api";
+import type { JobsFirstPage } from "../lib/employerJobsOverview";
 import { isEmployerJobsCapacity, type EmployerJobsRead } from "../lib/useEmployerJobsReads";
 import { employerJobsBase, readSavedSearchQuery, readSavedSearchQuote, safeEmployerUrl, savedPreferenceConflicts, savedSearchRole, type EmployerSavedResultPage, type EmployerSearchSummary, type EmployerSearchSummaryPage, type SearchResult } from "../lib/employerJobs";
 import { Button } from "./ui/Button";
@@ -22,25 +23,28 @@ function pageQuery(cursor: string | null): string {
 
 // The shared session owner boundary supplies a fresh QueryClient and remounts
 // page-local state on owner changes. No cross-owner placeholder data is used.
-export function EmployerSearchHistory({ selectedId, onSelect, disabled = false, read = apiGet }: {
+export function EmployerSearchHistory({ selectedId, onSelect, disabled = false, read = apiGet, firstPage }: {
   selectedId: string | undefined;
   onSelect: (summary: EmployerSearchSummary) => void;
   disabled?: boolean;
   read?: EmployerJobsRead;
+  firstPage?: JobsFirstPage<EmployerSearchSummaryPage>;
 }) {
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const cursor = cursors[cursors.length - 1];
-  const history = useQuery({
+  const page = useQuery({
     queryKey: ["employer-jobs", "search-summaries", cursor],
     queryFn: ({ signal }) => read<EmployerSearchSummaryPage>(`${employerJobsBase}/search-summaries?${pageQuery(cursor)}`, signal),
+    enabled: !firstPage || cursor !== null,
   });
+  const history = cursor === null && firstPage ? firstPage : page;
   return <section aria-labelledby="saved-searches-heading">
     <h2 id="saved-searches-heading" className="text-sm font-semibold">Saved searches</h2>
     <p className="mt-2 text-xs leading-5 text-muted-foreground">Opening saved results does not spend credits.</p>
-    {history.isLoading ? <div className="mt-3" role="status" aria-label="Loading saved searches"><LoadingBlock rows={2} /></div>
-      : history.isError && (read === apiGet || !isEmployerJobsCapacity(history.error)) ? <div className="mt-3 text-sm" role="alert"><p>Could not load saved searches.</p><Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => void history.refetch()}>Retry saved searches</Button></div>
+    {history.isPending ? <div className="mt-3" role="status" aria-label="Loading saved searches"><LoadingBlock rows={2} /></div>
+      : history.isError && history !== firstPage && (read === apiGet || !isEmployerJobsCapacity(history.error)) ? <div className="mt-3 text-sm" role="alert"><p>Could not load saved searches.</p><Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => void history.refetch()}>Retry saved searches</Button></div>
         : <><div className="mt-3 grid gap-2">{history.data?.items.map((item) => <button key={item.id} type="button" disabled={disabled} aria-pressed={selectedId === item.id} onClick={() => onSelect(item)} className={`min-h-11 rounded-lg border p-3 text-left text-sm transition-colors hover:border-accent ${selectedId === item.id ? "border-primary" : "border-border"}`}><span className="block break-words font-semibold">{savedSearchRole(item.query)}</span><span className="mt-1 block text-xs text-muted-foreground">{item.status === "preparing" ? "Preparing search" : item.status === "failed" ? "Search failed" : item.status === "cancelled" ? "Search cancelled" : `${item.delivered_count} jobs`} · {dateLabel(item.created_at)}</span>{!readSavedSearchQuery(item.query) ? <span className="mt-1 block text-xs text-muted-foreground">Saved search choices need review.</span> : null}</button>)}</div>
-          {history.isSuccess && !history.data.items.length ? <p className="mt-3 text-xs text-muted-foreground">No saved searches on this page.</p> : null}</>}
+          {history.isSuccess && history.data?.items.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">No saved searches on this page.</p> : null}</>}
     <nav aria-label="Saved search history pages" className="mt-3 flex flex-wrap gap-2">
       <Button variant="secondary" size="sm" className="min-h-11" disabled={cursors.length <= 1 || history.isFetching} onClick={() => setCursors((values) => values.slice(0, -1))}>Previous searches</Button>
       <Button variant="secondary" size="sm" className="min-h-11" disabled={!history.data?.next_cursor || history.isFetching || history.isError} onClick={() => { const next = history.data?.next_cursor; if (next) setCursors((values) => [...values, next]); }}>Next searches</Button>
@@ -85,11 +89,12 @@ export function SavedResultCard({ item, preparing, canPrepare, onPrepare }: {
 }
 
 // Mount with key={search.id} so selecting another search resets its page trail.
-export function EmployerSavedResults({ search, preparing, canPrepare, onPrepare }: {
+export function EmployerSavedResults({ search, preparing, canPrepare, onPrepare, onRefreshHistory }: {
   search: EmployerSearchSummary;
   preparing: boolean;
   canPrepare: boolean;
   onPrepare: (postingId: string) => void;
+  onRefreshHistory?: () => void;
 }) {
   const client = useQueryClient();
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
@@ -102,7 +107,7 @@ export function EmployerSavedResults({ search, preparing, canPrepare, onPrepare 
   const quote = readSavedSearchQuote(saved.scope?.price_quote);
   const conflicts = savedPreferenceConflicts(saved.scope?.known_preference_conflicts);
   return <section aria-labelledby="results-heading">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="eyebrow">Saved search results</p><h2 id="results-heading" className="font-display mt-2 text-3xl">{saved.delivered_count} of {saved.desired_count} requested jobs</h2><p className="mt-2 text-xs text-muted-foreground">{saved.charged_credits} service credits charged · {saved.refunded_credits} returned</p></div><Button variant="secondary" size="sm" className="min-h-11" onClick={() => void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] })}><RefreshCw size={14} />Refresh history</Button></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="eyebrow">Saved search results</p><h2 id="results-heading" className="font-display mt-2 text-3xl">{saved.delivered_count} of {saved.desired_count} requested jobs</h2><p className="mt-2 text-xs text-muted-foreground">{saved.charged_credits} service credits charged · {saved.refunded_credits} returned</p></div><Button variant="secondary" size="sm" className="min-h-11" onClick={onRefreshHistory ?? (() => void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }))}><RefreshCw size={14} />Refresh history</Button></div>
     {quote ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Saved quote: {quote.unit_price} per new job · up to {quote.maximum_credits} service credits for {quote.requested_count} requested jobs.</p> : saved.scope?.price_quote !== undefined ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Original price quote needs review. Saved charges and returned credits are shown above.</p> : null}
     {!readSavedSearchQuery(saved.query) ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Saved search choices need review. Your results and charges are preserved. Choose a resume before preparing an application; review your preferences before starting a new search.</p> : null}
     <p className="mt-3 text-xs leading-5 text-muted-foreground">{conflicts !== null ? `${conflicts} known preference conflicts excluded from ${saved.scope?.catalogue_plan_version ? "eligible indexed postings" : "the bounded candidate set"}.` : "Saved preference metadata needs review."} Missing facts remain visible; results do not certify eligibility.{saved.scope?.candidate_limit_reached === true ? " Only the first 1,000 current candidates were compared. Narrow the role or location to review more." : ""}</p>

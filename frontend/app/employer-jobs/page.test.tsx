@@ -31,12 +31,25 @@ function application(id: string): EmployerApplication {
     charged_credits: 0, requires_user_action: true,
   };
 }
+const overviewPath = "/v1/employer-jobs/bootstrap";
+function overview({ items = [summary()], applications = [], unit = 9, price = "current-price" }: {
+  items?: EmployerSearchSummary[]; applications?: EmployerApplication[]; unit?: number; price?: string;
+} = {}) {
+  const owner = state.owner;
+  return { schema_version: "owned-jobs-bootstrap-v1",
+    catalog: { enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: unit, apply_credits_per_job: 20, pricing_version: price, max_search_jobs: 100, sources: [] },
+    resumes: { resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true, source_format: "pdf", created_at: "2026-10-11T00:00:00Z" }], next_cursor: null, selected_resume: null },
+    saved_searches: { items, next_cursor: null },
+    applications: applications.map((application) => ({ ...application, posting: { ...application.posting, has_valid_apply_url: true }, has_missing_fields: application.missing_fields.length > 0 })),
+  };
+}
 function read(url: string) {
   const owner = state.owner;
   if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { email: `${owner}@example.invalid` } }));
   if (url === "/auth/profile") return Promise.resolve({ email: `${owner}@example.invalid`, ai_credits: 7, job_service_credits: 50 });
   if (url === "/v1/features") return Promise.resolve({ features: {} });
   if (url === "/v1/credits/availability") return Promise.resolve({ catalog_enabled: false, execution_enabled: false, supported_operations: [] });
+  if (url === overviewPath) return Promise.resolve(overview());
   if (url.endsWith("/catalog")) return Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: 9, apply_credits_per_job: 20, pricing_version: "current-price", max_search_jobs: 100, sources: [] });
   if (url === "/resume/page?limit=20") return Promise.resolve({ resumes: [{ id: owner === "one" ? 10 : 20, filename: `original-${owner}.pdf`, source_available: true }] });
   if (url.endsWith("/applications")) return Promise.resolve({ items: [] });
@@ -61,14 +74,42 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); });
 
 describe("employer page saved-search composition", () => {
-  it("queues initial reads and pauses the group until an explicit retry after the capacity window", async () => {
+  it("keeps saved records readable and disables paid search when the refreshed overview is malformed", async () => {
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await screen.findByText("Python Engineer one");
+    fireEvent.change(screen.getByLabelText("Resume"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Target role"), { target: { value: "Backend Engineer" } });
+    fireEvent.change(screen.getByLabelText("Jobs to find"), { target: { value: "3" } });
+    expect(screen.getByRole("button", { name: "Find jobs" })).toBeEnabled();
+    state.get.mockImplementation((url: string) => {
+      if (url !== overviewPath) return read(url);
+      const value = overview();
+      return Promise.resolve({ ...value, catalog: { ...value.catalog, sources: [{ status: "healthy", employer: { malformed: true } }] } });
+    });
+    await act(async () => { await client.invalidateQueries({ queryKey: ["employer-jobs", "bootstrap"], exact: true }); });
+    await screen.findByText("Could not load the Jobs overview.");
+    expect(screen.getByText("Python Engineer one")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Find jobs" })).toBeDisabled();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it("enters secure sign-out after Jobs authorization fails without fetching individual data", async () => {
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.reject(new ApiError("Not authenticated", 401, { detail: "Not authenticated" })) : read(url));
+    render(<SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>);
+    expect(await screen.findByRole("link", { name: "Sign out securely" })).toHaveAttribute("href", "/logout");
+    expect(state.get.mock.calls.map(([url]) => url).filter((url) => url !== "/auth/bootstrap")).toEqual([overviewPath]);
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
+  it("makes one initial Jobs read and pauses until an explicit retry after the capacity window", async () => {
     let rejectFirst!: (error: ApiError) => void;
     const firstRead = new Promise<never>((_, reject) => { rejectFirst = reject; });
     const jobsRead = (url: string) => url === "/resume/page?limit=20" || url.startsWith("/v1/employer-jobs/");
     const requests = () => state.get.mock.calls.map(([url]) => url as string).filter(jobsRead);
     state.get.mockImplementation((url: string) => jobsRead(url) ? firstRead : read(url));
     render(<EmployerJobsPage />, { wrapper: withClient() });
-    await waitFor(() => expect(requests()).toHaveLength(1));
+    await waitFor(() => expect(requests()).toEqual([overviewPath]));
     const initialRequest = requests();
     await act(async () => rejectFirst(new ApiError("Temporarily busy", 429, { detail: { code: "NATIVE_METADATA_CAPACITY" } }, 300)));
     const retry = await screen.findByRole("button", { name: "Retry loading Jobs" });
@@ -83,16 +124,14 @@ describe("employer page saved-search composition", () => {
     expect(requests()).toEqual(initialRequest);
     fireEvent.click(retry);
     await screen.findByText("Python Engineer one");
-    await waitFor(() => expect(requests().slice(1).sort()).toEqual([
-      "/resume/page?limit=20", "/v1/employer-jobs/applications", "/v1/employer-jobs/catalog", "/v1/employer-jobs/search-summaries?limit=10",
-    ]));
+    await waitFor(() => expect(requests()).toEqual([overviewPath, overviewPath]));
     expect(screen.queryByText(/Jobs is temporarily busy/)).toBeNull();
     expect(state.post).not.toHaveBeenCalled();
   });
 
   it("refreshes a changed price without posting again until another explicit click", async () => {
     let catalogReads = 0;
-    state.get.mockImplementation((url: string) => url.endsWith("/catalog") ? Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: ++catalogReads === 1 ? 9 : 10, apply_credits_per_job: 20, pricing_version: catalogReads === 1 ? "current-price" : "renewed-price", max_search_jobs: 100, sources: [] }) : read(url));
+    state.get.mockImplementation((url: string) => url === overviewPath ? Promise.resolve(overview({ unit: ++catalogReads === 1 ? 9 : 10, price: catalogReads === 1 ? "current-price" : "renewed-price" })) : read(url));
     state.post.mockRejectedValueOnce(new ApiError("The search price changed. Refresh and review it.", 409, { detail: { code: "search_price_requires_review" } })).mockResolvedValueOnce({ ...summary(), items: [item()] });
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");
@@ -132,8 +171,8 @@ describe("employer page saved-search composition", () => {
   it("keeps the latest completed selection when an older free progress read finishes late", async () => {
     const pending = { ...summary(), id: "search_pending", status: "preparing", delivered_count: 0, charged_credits: 0, refunded_credits: 0, query: { ...summary().query, role: "Pending search role" } };
     let resolveProgress!: (value: EmployerSearchPreparation) => void;
-    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
-      ? Promise.resolve({ items: [pending, summary()], next_cursor: null })
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.resolve(overview({ items: [pending, summary()] }))
       : url.endsWith("/search-preparations/search_pending") ? new Promise<EmployerSearchPreparation>((resolve) => { resolveProgress = resolve; }) : read(url));
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Pending search role");
@@ -183,8 +222,8 @@ describe("employer page saved-search composition", () => {
   });
 
   it("reuses fresh resume metadata in application review and reloads it on an account switch", async () => {
-    state.get.mockImplementation((url: string) => url.endsWith("/applications")
-      ? Promise.resolve({ items: [application("application_saved")] }) : read(url));
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.resolve(overview({ applications: [application("application_saved")] })) : read(url));
     const tree = () => <SessionProviderWrapper><EmployerJobsPage /></SessionProviderWrapper>;
     const view = render(tree());
     await screen.findByRole("option", { name: "original-one.pdf · #10" });
@@ -192,7 +231,7 @@ describe("employer page saved-search composition", () => {
     await screen.findByRole("dialog", { name: "Review your application" });
     expect(await screen.findByRole("combobox", { name: "Saved original file" })).toHaveValue("10");
     expect(await screen.findByRole("option", { name: "original-one.pdf · #10" })).toBeVisible();
-    const resumeReads = () => state.get.mock.calls.filter(([url]) => url === "/resume/page?limit=20");
+    const resumeReads = () => state.get.mock.calls.filter(([url]) => url === overviewPath);
     expect(resumeReads()).toHaveLength(1);
 
     state.owner = "two";
@@ -227,7 +266,7 @@ describe("employer page saved-search composition", () => {
 
   it("shows and retries the originally accepted maximum after a lost response and a lower current price", async () => {
     let catalogReads = 0;
-    state.get.mockImplementation((url: string) => url.endsWith("/catalog") ? Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: ++catalogReads === 1 ? 9 : 1, apply_credits_per_job: 20, pricing_version: catalogReads === 1 ? "current-price" : "lower-price", max_search_jobs: 100, sources: [] }) : read(url));
+    state.get.mockImplementation((url: string) => url === overviewPath ? Promise.resolve(overview({ unit: ++catalogReads === 1 ? 9 : 1, price: catalogReads === 1 ? "current-price" : "lower-price" })) : read(url));
     state.post.mockRejectedValueOnce(new Error("Synthetic lost response")).mockResolvedValueOnce({ ...summary(), items: [item()] });
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");
@@ -280,8 +319,8 @@ describe("employer page saved-search composition", () => {
   ])("opens saved jobs safely without restoring malformed %s into form state", async (field, value) => {
     const saved = summary();
     (saved.query as unknown as Record<string, unknown>)[field as string] = value;
-    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
-      ? Promise.resolve({ items: [saved], next_cursor: null })
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.resolve(overview({ items: [saved] }))
       : url.includes("/results?") ? Promise.resolve({ search: saved, items: [item()], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Saved search choices need review.");
@@ -299,8 +338,8 @@ describe("employer page saved-search composition", () => {
   it("allows an explicit new resume choice after a damaged saved query, with no implicit application or repricing", async () => {
     const saved = summary();
     (saved.query as unknown as Record<string, unknown>).resume_id = { sentinel: "unusable saved resume" };
-    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
-      ? Promise.resolve({ items: [saved], next_cursor: null })
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.resolve(overview({ items: [saved] }))
       : url.includes("/results?") ? Promise.resolve({ search: saved, items: [item()], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
     state.post.mockResolvedValue(application("explicit_application"));
     render(<EmployerJobsPage />, { wrapper: withClient() });
@@ -320,8 +359,8 @@ describe("employer page saved-search composition", () => {
     const valid = summary();
     const damaged = { ...summary(), id: "damaged_second" };
     (damaged.query as unknown as Record<string, unknown>).role = { sentinel: "nested second query" };
-    state.get.mockImplementation((url: string) => url.includes("search-summaries?")
-      ? Promise.resolve({ items: [valid, damaged], next_cursor: null })
+    state.get.mockImplementation((url: string) => url === overviewPath
+      ? Promise.resolve(overview({ items: [valid, damaged] }))
       : url.includes("/results?") ? Promise.resolve({ search: url.includes("damaged_second") ? damaged : valid, items: [{ ...item(), posting: { ...item().posting, title: url.includes("damaged_second") ? "Second saved job" : "First saved job" } }], total_items: 1, start_index: 0, next_cursor: null, snapshot_version: "saved-v1" }) : read(url));
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");
@@ -376,7 +415,7 @@ it("does not fall back to a legacy paid search when credit availability is unkno
 it("opens a saved unified batch through its free status endpoint without using legacy preparation", async () => {
   const saved = { ...summary(), id: "search_unified", status: "completed", desired_count: 5, delivered_count: 1, charged_credits: 1,
     scope: { billing_currency: "credits", price_quote: { pricing_unit: "completed_batch", maximum_credits: 1, maximum_results: 5 } } };
-  state.get.mockImplementation((url: string) => url.includes("/search-summaries?") ? Promise.resolve({ items: [saved], next_cursor: null })
+  state.get.mockImplementation((url: string) => url === overviewPath ? Promise.resolve(overview({ items: [saved as unknown as EmployerSearchSummary] }))
     : url.endsWith("/discovery-batches/search_unified") ? Promise.resolve({ id: saved.id, status: "completed", billing_currency: "credits", desired_count: 5, delivered_count: 1,
       charged_credits: 1, reserved_credits: 0, refunded_credits: 0, partial_batch: true, maximum_batch_size: 5, scope: saved.scope, items: [item()] }) : read(url));
   render(<EmployerJobsPage />, { wrapper: withClient() }); await screen.findByText("Python Engineer one");
