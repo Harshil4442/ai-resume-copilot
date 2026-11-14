@@ -1,3 +1,4 @@
+import { createHash, webcrypto } from "node:crypto";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +10,10 @@ import { isHostedReceiptReview } from "../lib/browserHostedNetworkReview";
 import countryOptions from "../../backend/app/domains/browser_assistance/hosted_country_options.json";
 
 vi.mock("next-auth/react", () => ({ signIn: vi.fn() }));
-vi.mock("../lib/accountTransportClient", () => ({ accountMutationHeaders: vi.fn() }));
+vi.mock("../lib/accountTransportClient", () => ({
+  accountMutationHeaders: vi.fn(),
+  accountApiPath: (path: string) => `/api/backend${path}`,
+}));
 vi.mock("../lib/api", () => ({ apiDownload: vi.fn() }));
 const identity = "00000000-0000-4000-8000-000000000001";
 const application = "00000000-0000-4000-8000-000000000002";
@@ -688,7 +692,8 @@ describe("candidate reviewed browser assistance", () => {
     expect(screen.getByRole("link", { name: target })).toHaveAttribute("href", target);
     await acceptReview(); expect(approve).toBeEnabled(); await userEvent.click(approve);
     expect(await screen.findByText(/Text assistance approved/)).toBeVisible();
-    expect(apiDownload).toHaveBeenCalledExactlyOnceWith(`/v1/employer-jobs/applications/${application}/artifact`, "Synthetic exact resume.pdf");
+    expect(apiDownload).toHaveBeenCalledExactlyOnceWith(`/v1/employer-jobs/applications/${application}/artifact`,
+      "Synthetic exact resume.pdf", review().payload.artifact, expect.any(AbortSignal));
     expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ identity, confirmed: true, review_digest: "b".repeat(64) });
     expect(request.mock.calls.map(([url]) => url)).toEqual(["/api/browser-assistance/candidate/review", "/api/browser-assistance/candidate/approve"]);
     expect(screen.queryByRole("button", { name: "Approve reviewed text assistance" })).toBeNull();
@@ -714,6 +719,43 @@ describe("candidate reviewed browser assistance", () => {
     await loadReview(); await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Exact file unavailable");
     expect(screen.getByRole("checkbox")).toBeDisabled(); expect(screen.getByRole("button", { name: "Approve reviewed text assistance" })).toBeDisabled(); expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses changed bytes and downloads only the exact file name and bytes after a verified read", async () => {
+    const { apiDownload: actualDownload } = await vi.importActual<typeof import("../lib/api")>("../lib/api");
+    vi.mocked(apiDownload).mockImplementation(actualDownload);
+    vi.stubGlobal("crypto", webcrypto);
+    const downloadLink = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const createUrl = vi.fn(() => "blob:owned-review");
+    vi.stubGlobal("URL", Object.assign(class extends URL {}, { createObjectURL: createUrl, revokeObjectURL: vi.fn() }));
+    const original = "Owned original PDF";
+    const changed = "Owned modified PDF";
+    const file = { filename: "Owned reviewed resume.pdf", media_type: "application/pdf",
+      size_bytes: Buffer.byteLength(original), sha256: createHash("sha256").update(original).digest("hex") };
+    const draft = review();
+    draft.payload.artifact = file;
+    request.mockResolvedValueOnce(Response.json(draft)).mockResolvedValueOnce(new Response(changed, {
+      headers: { "Content-Type": file.media_type, "Content-Disposition": 'inline; filename="New custom file.pdf"' },
+    })).mockResolvedValueOnce(new Response(original, {
+      headers: { "Content-Type": file.media_type, "Content-Disposition": 'inline; filename="Different name.pdf"' },
+    }));
+    await loadReview();
+    await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This file no longer matches the reviewed application.");
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(downloadLink).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve reviewed text assistance" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Download exact review file" }));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toBeEnabled());
+    expect(createUrl).toHaveBeenCalledTimes(1);
+    expect(downloadLink).toHaveBeenCalledTimes(1);
+    expect((downloadLink.mock.contexts[0] as HTMLAnchorElement).download).toBe(file.filename);
+    expect(screen.getByRole("button", { name: "Approve reviewed text assistance" })).toBeDisabled();
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      "/api/browser-assistance/candidate/review", `/api/backend/v1/employer-jobs/applications/${application}/artifact`,
+      `/api/backend/v1/employer-jobs/applications/${application}/artifact`,
+    ]);
   });
 
   it("does not claim approval for a response that replaces the exact reviewed answer payload", async () => {
