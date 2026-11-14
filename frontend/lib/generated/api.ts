@@ -4074,12 +4074,76 @@ export interface components {
             /** Uncertainties */
             uncertainties?: string[];
         };
+        /** JobsApplicationAdmission */
+        JobsApplicationAdmission: {
+            /** Employer Key */
+            employer_key: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Opening Key */
+            opening_key: string;
+            /** Policy Fingerprint */
+            policy_fingerprint: string;
+        };
+        /** JobsApplicationArtifact */
+        JobsApplicationArtifact: {
+            /** Filename */
+            filename: string;
+            /** Media Type */
+            media_type: string;
+        };
+        /** JobsApplicationPosting */
+        JobsApplicationPosting: {
+            /** Application Mode */
+            application_mode: string;
+            /** Employer */
+            employer: string;
+            /** Has Valid Apply Url */
+            has_valid_apply_url: boolean;
+            /** Source Id */
+            source_id: string;
+            /** Title */
+            title: string;
+        };
+        /** JobsApplicationPrice */
+        JobsApplicationPrice: {
+            /** Pricing Version */
+            pricing_version: string;
+            /** Unit Price */
+            unit_price: number;
+        };
+        /** JobsApplicationRow */
+        JobsApplicationRow: {
+            admission_snapshot: components["schemas"]["JobsApplicationAdmission"] | null;
+            /** Application Mode */
+            application_mode: string;
+            artifact: components["schemas"]["JobsApplicationArtifact"];
+            /** Batch Id */
+            batch_id: string | null;
+            /** Credit Cost */
+            credit_cost: number;
+            /** Employer Key */
+            employer_key: string | null;
+            /** Has Missing Fields */
+            has_missing_fields: boolean;
+            /** Id */
+            id: string;
+            /** Opening Key */
+            opening_key: string | null;
+            /** Package Digest */
+            package_digest: string;
+            posting: components["schemas"]["JobsApplicationPosting"];
+            pricing_snapshot: components["schemas"]["JobsApplicationPrice"] | null;
+            /** Status */
+            status: string;
+        };
         /** JobsBootstrapView */
         JobsBootstrapView: {
             /** Applications */
-            applications: {
-                [key: string]: unknown;
-            }[];
+            applications: components["schemas"]["JobsApplicationRow"][];
             /** Catalog */
             catalog: {
                 [key: string]: unknown;

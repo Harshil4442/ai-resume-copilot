@@ -160,14 +160,18 @@ def test_one_fresh_owner_validation_matches_existing_initial_projections(owned_j
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in f.statements)
     assert len(f.statements) == 7
     assert payload["applications"][0]["artifact"]["filename"] == "owner-1.pdf"
-    assert payload["applications"][0]["admission"]["id"] == "admission-1"
-    assert payload["applications"][0]["admission"]["state"] == "released"
+    assert payload["applications"][0]["posting"]["has_valid_apply_url"] is True
     assert "private resume bytes" not in response.text and "do not project result bodies" not in response.text
 
     prefix = "/api/v1/employer-jobs"
     assert f.client.get(prefix + "/catalog", headers=f.headers).json() == payload["catalog"]
     assert f.client.get(prefix + "/search-summaries?limit=10", headers=f.headers).json() == payload["saved_searches"]
-    assert f.client.get(prefix + "/applications", headers=f.headers).json()["items"] == payload["applications"]
+    details = f.client.get(prefix + "/applications", headers=f.headers).json()["items"]
+    assert [item["id"] for item in details] == [item["id"] for item in payload["applications"]]
+    assert details[0]["admission"]["id"] == "admission-1"
+    assert details[0]["posting"]["description"] == "Synthetic role"
+    assert payload["applications"][0]["artifact"] == {"filename": details[0]["artifact"]["filename"],
+        "media_type": details[0]["artifact"]["media_type"]}
     next_page = f.client.get(prefix + "/search-summaries", params={"cursor": payload["saved_searches"]["next_cursor"]}, headers=f.headers)
     assert [row["id"] for row in next_page.json()["items"]] == ["search-1-10", "search-1-11"]
 
@@ -254,16 +258,61 @@ def test_foreign_artifact_cannot_join_an_owned_application(owned_jobs):
     assert "owner-2.pdf" not in result.text
 
 
-def test_bootstrap_application_projection_keeps_existing_unified_hold_checks(monkeypatch):
+def test_bootstrap_application_summary_skips_locks_while_detail_keeps_unified_hold_checks(monkeypatch):
     owned = OwnedSubmit(monkeypatch)
     monkeypatch.setenv("BROWSER_ASSISTANCE_NATIVE_UPLOAD_ENABLED", "true")
     try:
         configure(owned, monkeypatch)
         approve(owned, review(owned))
         expected = service.application_response(owned.db, owned.app)
-        assert service.list_bootstrap_application_views(owned.db, 1) == [expected]
+        with monkeypatch.context() as patch:
+            from backend.app.domains.credits import submission
+
+            def no_lock(*args, **kwargs):
+                pytest.fail("Jobs overview must not lock a live submission reservation")
+
+            patch.setattr(submission, "reservation", no_lock)
+            rows = service.list_bootstrap_application_views(owned.db, 1)
+        assert len(rows) == 1
+        assert rows[0].id == expected["id"] and rows[0].status == expected["status"]
+        assert rows[0].artifact.filename == expected["artifact"]["filename"]
+        assert rows[0].package_digest == expected["package_digest"]
+        assert "reserved_credits" not in rows[0].model_dump()
         assert expected["reserved_credits"] == 3 and expected["billing_currency"] == "credits"
         assert expected["artifact"]["filename"] == "Owned.pdf" and expected["admission"]["state"] == "reserved"
         assert owned.audit()["credits"] == 100 and owned.audit()["native_calls"] == 0
     finally:
         owned.close()
+
+
+def test_bootstrap_projection_preserves_list_decisions_without_large_or_private_detail(owned_jobs):
+    f = owned_jobs
+    with Session(f.engine) as db:
+        job = db.get(models.EmployerPosting, "posting")
+        job.description = "😀" * 100_000
+        job.apply_url = "https://employer.example/" + "a" * 400_000
+        app = db.get(models.EmployerApplication, "application-1-0")
+        app.status = "ready"
+        app.form = {"fields": [{"id": "work_authorization", "required": True}]}
+        app.answers = {"private_note": "Private candidate answer"}
+        app.opening_key, app.employer_key = "a" * 64, "b" * 64
+        app.admission_snapshot = {"opening_key": app.opening_key, "employer_key": app.employer_key,
+            "policy_fingerprint": "f" * 64, "expires_at": "2026-12-31T00:00:00+00:00",
+            "employer": {"private": "Unneeded full policy"}}
+        app.pricing_snapshot = {"unit_price": 0, "pricing_version": "synthetic-cost",
+            "cost_policy_snapshot": {"private": "Unneeded full price"}}
+        db.commit()
+    f.statements.clear()
+    result = f.client.get(BOOTSTRAP, headers=f.headers)
+    assert result.status_code == 200 and len(result.content) < 40_000
+    assert all("employer_postings.description" not in statement and "employer_applications.receipt" not in statement for statement in f.statements)
+    assert all("service_credit_reservations" not in statement and "credit_execution_holds" not in statement for statement in f.statements)
+    row = result.json()["applications"][0]
+    assert row["status"] == "ready" and row["has_missing_fields"] is True
+    assert row["posting"] == {"title": "Engineer", "employer": "Synthetic Employer", "source_id": "source",
+        "has_valid_apply_url": True, "application_mode": "manual"}
+    assert row["pricing_snapshot"] == {"unit_price": 0, "pricing_version": "synthetic-cost"}
+    assert row["admission_snapshot"]["opening_key"] == row["opening_key"]
+    assert row["admission_snapshot"]["employer_key"] == row["employer_key"]
+    assert set(row["admission_snapshot"]) == {"opening_key", "employer_key", "policy_fingerprint", "expires_at"}
+    assert "Private candidate answer" not in result.text and "Unneeded full" not in result.text

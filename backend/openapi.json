@@ -4016,13 +4016,232 @@
         "title": "JobMatchResponse",
         "type": "object"
       },
+      "JobsApplicationAdmission": {
+        "properties": {
+          "employer_key": {
+            "maxLength": 64,
+            "title": "Employer Key",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "opening_key": {
+            "maxLength": 64,
+            "title": "Opening Key",
+            "type": "string"
+          },
+          "policy_fingerprint": {
+            "maxLength": 64,
+            "title": "Policy Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opening_key",
+          "employer_key",
+          "policy_fingerprint",
+          "expires_at"
+        ],
+        "title": "JobsApplicationAdmission",
+        "type": "object"
+      },
+      "JobsApplicationArtifact": {
+        "properties": {
+          "filename": {
+            "maxLength": 240,
+            "title": "Filename",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 160,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "media_type"
+        ],
+        "title": "JobsApplicationArtifact",
+        "type": "object"
+      },
+      "JobsApplicationPosting": {
+        "properties": {
+          "application_mode": {
+            "maxLength": 24,
+            "title": "Application Mode",
+            "type": "string"
+          },
+          "employer": {
+            "maxLength": 200,
+            "title": "Employer",
+            "type": "string"
+          },
+          "has_valid_apply_url": {
+            "title": "Has Valid Apply Url",
+            "type": "boolean"
+          },
+          "source_id": {
+            "maxLength": 64,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "employer",
+          "source_id",
+          "has_valid_apply_url",
+          "application_mode"
+        ],
+        "title": "JobsApplicationPosting",
+        "type": "object"
+      },
+      "JobsApplicationPrice": {
+        "properties": {
+          "pricing_version": {
+            "maxLength": 160,
+            "title": "Pricing Version",
+            "type": "string"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unit_price",
+          "pricing_version"
+        ],
+        "title": "JobsApplicationPrice",
+        "type": "object"
+      },
+      "JobsApplicationRow": {
+        "properties": {
+          "admission_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobsApplicationAdmission"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "application_mode": {
+            "maxLength": 24,
+            "title": "Application Mode",
+            "type": "string"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/JobsApplicationArtifact"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "credit_cost": {
+            "title": "Credit Cost",
+            "type": "integer"
+          },
+          "employer_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employer Key"
+          },
+          "has_missing_fields": {
+            "title": "Has Missing Fields",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "opening_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Key"
+          },
+          "package_digest": {
+            "maxLength": 64,
+            "title": "Package Digest",
+            "type": "string"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/JobsApplicationPosting"
+          },
+          "pricing_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobsApplicationPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "maxLength": 32,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "application_mode",
+          "batch_id",
+          "credit_cost",
+          "package_digest",
+          "opening_key",
+          "employer_key",
+          "has_missing_fields",
+          "posting",
+          "artifact",
+          "admission_snapshot",
+          "pricing_snapshot"
+        ],
+        "title": "JobsApplicationRow",
+        "type": "object"
+      },
       "JobsBootstrapView": {
         "properties": {
           "applications": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/JobsApplicationRow"
             },
+            "maxItems": 30,
             "title": "Applications",
             "type": "array"
           },

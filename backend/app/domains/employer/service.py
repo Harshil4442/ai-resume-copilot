@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import LargeBinary, Text, and_, cast, func, literal_column, or_, select, text, true
 from sqlalchemy.orm import Session, aliased, load_only
 
@@ -974,45 +975,77 @@ def list_application_views(db: Session, user_id: int, *, limit: int = 30) -> lis
     return [application_response(db, application) for application in applications]
 
 
-def list_bootstrap_application_views(db: Session, user_id: int) -> list[dict]:
-    page = db.query(models.EmployerApplication).filter_by(user_id=user_id).order_by(
-        models.EmployerApplication.created_at.desc()).limit(30).subquery()
-    application = aliased(models.EmployerApplication, page)
+def _has_http_destination(value: str) -> bool:
+    try:
+        destination = urlsplit(value)
+        port = destination.port
+    except ValueError:
+        return False
+    return destination.scheme in {"http", "https"} and bool(destination.hostname) and (
+        port is None or 0 <= port <= 65535
+    )
+
+
+def _initial_application_quote[Quote: BaseModel](schema: type[Quote], value: object) -> Quote | None:
+    if value is None:
+        return None
+    try:
+        return schema.model_validate(value)
+    except ValidationError:
+        return None  # Incomplete historic quotes cannot be used for batch review.
+
+
+def list_bootstrap_application_views(db: Session, user_id: int) -> list[schemas.JobsApplicationRow]:
+    # Initial cards use only display metadata and inputs for advisory batch eligibility.
+    # Exact application detail still validates retained funds via the existing locked reader.
+    row = models.EmployerApplication
+    page = db.query(row.id, row.status, row.application_mode, row.batch_id, row.credit_cost,
+        row.package_digest, row.opening_key, row.employer_key, row.form, row.answers, row.consents,
+        row.admission_snapshot, row.pricing_snapshot, row.created_at, row.posting_id, row.artifact_id,
+    ).filter(row.user_id == user_id).order_by(row.created_at.desc()).limit(30).subquery()
+    application = aliased(row, page)
     posting, source = models.EmployerPosting, models.EmployerSource
-    artifact, admission = models.SealedApplicationArtifact, models.EmployerAdmission
-    rows = db.query(application, posting, source, artifact, admission).select_from(application).outerjoin(
+    artifact = models.SealedApplicationArtifact
+    rows = db.query(application, posting, source, artifact).select_from(application).outerjoin(
         posting, posting.id == application.posting_id,
     ).outerjoin(
         source, source.id == posting.source_id,
     ).outerjoin(
         artifact, and_(artifact.id == application.artifact_id, artifact.user_id == user_id),
-    ).outerjoin(
-        admission, and_(admission.application_id == application.id, admission.user_id == user_id),
     ).options(
-        load_only(artifact.sha256, artifact.filename, artifact.size_bytes, artifact.media_type),
+        load_only(application.status, application.application_mode, application.batch_id, application.credit_cost,
+            application.package_digest, application.opening_key, application.employer_key, application.form,
+            application.answers, application.consents, application.admission_snapshot, application.pricing_snapshot),
+        load_only(posting.title, posting.employer, posting.source_id, posting.apply_url),
+        load_only(artifact.filename, artifact.media_type),
     ).order_by(application.created_at.desc()).all()
     result = []
-    for row, job, employer_source, sealed, slot in rows:
+    for item, job, employer_source, sealed in rows:
         if job is None:
             raise HTTPException(404, "Job not found")
         if employer_source is None:
             raise HTTPException(404, "Employer source not found")
         if sealed is None:
             raise HTTPException(404, "Not found")
-        result.append(_application_view(db, row, job, employer_source, sealed, admissions.row_response(slot)))
+        result.append(schemas.JobsApplicationRow(
+            id=item.id, status=item.status, application_mode=item.application_mode, batch_id=item.batch_id,
+            credit_cost=item.credit_cost, package_digest=item.package_digest, opening_key=item.opening_key,
+            employer_key=item.employer_key, has_missing_fields=bool(missing_fields(item)),
+            posting=schemas.JobsApplicationPosting(title=job.title, employer=job.employer, source_id=job.source_id,
+                has_valid_apply_url=_has_http_destination(job.apply_url), application_mode=_source_mode(employer_source)),
+            artifact=schemas.JobsApplicationArtifact(filename=sealed.filename, media_type=sealed.media_type),
+            admission_snapshot=_initial_application_quote(schemas.JobsApplicationAdmission, item.admission_snapshot),
+            pricing_snapshot=_initial_application_quote(schemas.JobsApplicationPrice, item.pricing_snapshot),
+        ))
     return result
 
 
 def application_response(db, application):
+    from ..credits import submission as unified
+
     posting = _posting(db, application.posting_id)
     source = _source(db, posting.source_id)
     artifact = _owned(db, models.SealedApplicationArtifact, application.artifact_id, application.user_id)
-    return _application_view(db, application, posting, source, artifact, admissions.response(db, application))
-
-
-def _application_view(db, application, posting, source, artifact, admission):
-    from ..credits import submission as unified
-
     result = {key: getattr(application, key) for key in (
         "id", "resume_id", "resume_choice", "resume_version_id", "status", "application_mode", "form", "package_digest", "answers", "consents", "credit_cost", "charged_credits", "receipt", "approval_expires_at", "cancel_requested", "created_at", "updated_at", "opening_key", "employer_key", "admission_snapshot", "pricing_snapshot", "batch_id",
     )}
@@ -1024,7 +1057,7 @@ def _application_view(db, application, posting, source, artifact, admission):
         "error": {"code": application.error_code, "message": application.error_message} if application.error_code else None,
         "handoff_url": posting.apply_url if application.application_mode == "manual" else None,
         "reserved_credits": 0,
-        "admission": admission,
+        "admission": admissions.response(db, application),
     })
     report = application.receipt if isinstance(application.receipt, dict) and application.receipt.get("source") == "candidate_report" else None
     result["candidate_report"] = copy.deepcopy(report)

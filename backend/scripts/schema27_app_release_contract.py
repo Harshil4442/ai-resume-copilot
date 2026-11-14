@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '34810ef9515995609c2b7d61d924e6b7b8e125deb132eb9e63ea3e5e7074d9c6'
+CANDIDATE_APP_SHA256 = 'b1210f21b68b57baebd85cfb8fe96823b5bdf080ca7f7eb08539b31a95a4cd48'
 CANDIDATE_APP_FILES = 313
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -50,7 +50,12 @@ NEW_HTTP_PATHS = {
     "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": "ce7b8e566f8d9d169ad1e29455fe2d247eb23d9f16c10ff4cc6cbd9aca59fa1c",
 }
 NEW_HTTP_SCHEMAS = {
-    "JobsBootstrapView": "04537115b515a3cea7a910061e237da6589b08f5f0da1d408114ea8b95772a7d",
+    "JobsApplicationAdmission": "8d0f05405d0d888a1ef89bca6e2eb0484b70a2ff69e1399134050957650d29e0",
+    "JobsApplicationArtifact": "8adad70dc819fae25b7eb7e8cca231f158fd1803f1364011d6c1a84c0686a636",
+    "JobsApplicationPosting": "65f10aad2d7ef78ca1ff37ce64e71a707ef904f6caf6e5139558bee7dd2f8520",
+    "JobsApplicationPrice": "d5ce7a2fc309ab8c9533f59853293d43ea7653b0d50f30f1b6ace53b304a5f07",
+    "JobsApplicationRow": "d283547aafff85c9854afc5eb43645947748bfff85a5d4cebff538f75ee3c690",
+    "JobsBootstrapView": "7ef4a9c964613a30964c1745e6bf76ceda6be676c411d11ef04d0b63710c3f68",
     "PreferenceChange": "f836f891975e90293310e2b7ed501a2ad5e41d7ad80d8f46a74dcdcd5419a072",
     "PreferenceResponse": "10ad227d9d00a4a1dbcf928fed2047bfc30e9d2ca56715cb07318a3fa91c813b",
     "UnsubscribeRequest": "a87c23e73f8c868aaf837fcc755f290412fbecb636f714bd41b042badff0de6a",
