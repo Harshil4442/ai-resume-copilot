@@ -38,7 +38,7 @@ function definitelyUnstarted(error: unknown) {
 /** Mount by selected saved-search ID; parent locks history while an intent is unresolved. */
 export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplication, onPrepare, onResume, onLockChange, resumeFirstPage, readResumes, onRefreshHistory, canPrepare = true }: {
   enabled: boolean; initialSearch?: EmployerSearchSummary | null;
-  preparingApplication: boolean; onPrepare: (postingId: string, resumeId: number) => void;
+  preparingApplication: boolean; onPrepare: (postingId: string, resumeId: number, trigger: HTMLButtonElement) => void;
   onResume: (resumeId: string) => void; onLockChange: (locked: boolean) => void;
   resumeFirstPage?: JobsFirstPage<ResumePageResponse>; readResumes?: EmployerJobsRead; onRefreshHistory?: () => void; canPrepare?: boolean;
 }) {
@@ -122,7 +122,7 @@ export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplica
           {batch.status === "preparing" ? <Button className="mt-4" variant="secondary" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? "Cancelling…" : "Cancel search"}</Button> : null}
           {cancel.isError ? <p role="alert" className="mt-3 text-sm text-coral">{cancel.error.message} Check the saved search status before taking another action.</p> : null}
         </div>
-        {batch.items.map((item, index) => <SavedResultCard key={index} item={item as unknown as SearchResult} preparing={preparingApplication} canPrepare={canPrepare && Boolean(resumeId)} onPrepare={(postingId) => onPrepare(postingId, Number(resumeId))} />)}
+        {batch.items.map((item, index) => <SavedResultCard key={index} item={item as unknown as SearchResult} preparing={preparingApplication} canPrepare={canPrepare && Boolean(resumeId)} onPrepare={(postingId, trigger) => onPrepare(postingId, Number(resumeId), trigger)} />)}
       </section> : !review && !pending ? <p className="text-sm leading-6 text-muted-foreground">Choose your resume and preferences, then review the exact service quote. Opening a saved search below is free.</p> : null}
     </div>
   </section>;

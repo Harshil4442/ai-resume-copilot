@@ -68,7 +68,7 @@ export function SavedResultCard({ item, preparing, canPrepare, onPrepare }: {
   item: SearchResult;
   preparing: boolean;
   canPrepare: boolean;
-  onPrepare: (postingId: string) => void;
+  onPrepare: (postingId: string, trigger: HTMLButtonElement) => void;
 }) {
   if (!readableResult(item)) return <article className="surface min-w-0 p-5 sm:p-6"><h3 className="text-lg font-semibold">Saved job details need review</h3><p className="mt-2 text-sm text-muted-foreground">This saved entry could not be displayed safely. Its position and original search charges are preserved; no new search or application was started.</p></article>;
   const { posting, fit } = item;
@@ -84,7 +84,7 @@ export function SavedResultCard({ item, preparing, canPrepare, onPrepare }: {
     {preference_evaluation && Object.values(preference_evaluation.states).includes("match") ? <p className="mt-3 text-xs leading-5 text-primary">Employer facts match these choices: {Object.entries(preference_evaluation.states).filter(([, state]) => state === "match").map(([name]) => name.replaceAll("_", " ")).join(", ")}. Review remaining requirements with the employer.</p> : null}
     {preference_evaluation?.messages.length ? <div className="mt-4 rounded-lg border border-border p-3"><p className="text-xs font-semibold">Preferences to review</p><ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">{preference_evaluation.messages.map((message, index) => <li key={`${index}:${message}`}>{message}</li>)}</ul></div> : null}
     {rawPreferences && !preference_evaluation ? <p className="mt-3 text-xs leading-5 text-muted-foreground">Saved job preferences need review. Check the employer requirements before preparing an application.</p> : null}
-    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="inline-flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck size={14} />Employer origin checked · {posting.application_mode === "api" ? "Automatic application review available" : "Employer portal handoff"}</p><div className="flex flex-wrap gap-2">{employerUrl ? <Button asChild variant="secondary" size="sm" className="min-h-11"><a href={employerUrl} target="_blank" rel="noopener noreferrer">View employer job<ArrowUpRight size={14} /></a></Button> : null}<Button size="sm" className="min-h-11" disabled={preparing || !canPrepare} onClick={() => onPrepare(posting.id)}>Prepare application</Button></div></div>
+    <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="inline-flex items-center gap-2 text-xs text-muted-foreground"><ShieldCheck size={14} />Employer origin checked · {posting.application_mode === "api" ? "Automatic application review available" : "Employer portal handoff"}</p><div className="flex flex-wrap gap-2">{employerUrl ? <Button asChild variant="secondary" size="sm" className="min-h-11"><a href={employerUrl} target="_blank" rel="noopener noreferrer">View employer job<ArrowUpRight size={14} /></a></Button> : null}<Button size="sm" className="min-h-11" disabled={preparing || !canPrepare} onClick={(event) => onPrepare(posting.id, event.currentTarget)}>Prepare application</Button></div></div>
   </article>;
 }
 
@@ -93,7 +93,7 @@ export function EmployerSavedResults({ search, preparing, canPrepare, onPrepare,
   search: EmployerSearchSummary;
   preparing: boolean;
   canPrepare: boolean;
-  onPrepare: (postingId: string) => void;
+  onPrepare: (postingId: string, trigger: HTMLButtonElement) => void;
   onRefreshHistory?: () => void;
 }) {
   const client = useQueryClient();

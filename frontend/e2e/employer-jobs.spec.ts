@@ -445,6 +445,35 @@ test("tailored or custom file choices are saved explicitly before use", async ({
   expect(f.requests.filter((r) => r.method === "PUT").at(-1)?.body).toMatchObject({ resume_choice: "custom", resume_id: 2, resume_version_id: null }); expect(f.requests.some((r) => r.path.endsWith("/approve"))).toBe(false); expect(f.unexpected).toEqual([]);
 });
 
+test("keyboard users return to the application they opened after closing review", async ({ page, context, baseURL }) => {
+  const f = fixture(); f.state.applicationsVisible = true;
+  await f.install(context, baseURL!); await page.goto("/employer-jobs");
+  const launch = page.getByRole("button", { name: /Backend Engineer Example Studio/ });
+  await launch.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Review your application" });
+  await expect(dialog.getByRole("button", { name: "Close application review" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(launch).toBeFocused();
+  expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+  expect(f.unexpected).toEqual([]);
+});
+
+test("keyboard users return to the search result after closing a newly prepared application", async ({ page, context, baseURL }) => {
+  const f = fixture(); await f.install(context, baseURL!); await searchOne(page);
+  const prepare = page.getByRole("button", { name: "Prepare application", exact: true });
+  await prepare.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Review your application" });
+  await expect(dialog.getByRole("button", { name: "Close application review" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(prepare).toBeFocused();
+  expect(f.requests.filter(({ method, path }) => method !== "GET" && path !== `${base}/searches`).map(({ path }) => path)).toEqual([`${base}/applications`]);
+  expect(f.unexpected).toEqual([]);
+});
+
 test("manual handoff never claims submission and unknown outcome cannot be resent", async ({ page, context, baseURL }) => {
   const f = fixture(); f.state.applicationsVisible = true; f.application.application_mode = "manual"; f.application.status = "manual_handoff"; await f.install(context, baseURL!); await page.goto("/employer-jobs"); await page.getByRole("button", { name: /Backend Engineer Example Studio/ }).click(); const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("link", { name: "Open employer application" })).toHaveAttribute("href", "https://employer.example/apply/123"); await expect(dialog.getByText(/Preparation is not a submission/)).toBeVisible(); await expect(dialog.getByRole("button", { name: "Approve and submit" })).toHaveCount(0); await dialog.getByRole("button", { name: "Close application review" }).click();
