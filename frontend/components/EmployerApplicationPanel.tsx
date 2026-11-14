@@ -21,7 +21,7 @@ import { Button } from "./ui/Button";
 import { ResumeUploadProgress } from "./ResumeUploadProgress";
 import { LoadingBlock } from "./ui/LoadingBlock";
 
-type Props = { id: string; onClose: () => void; onChange: () => void };
+type Props = { id: string; onClose: () => void; onChange: () => void; returnFocusTo?: () => HTMLElement | null };
 
 export function ArtifactPreview({ application, onReady }: { application: EmployerApplication; onReady: (ready: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function ArtifactPreview({ application, onReady }: { application: Employe
   </div>;
 }
 
-export default function EmployerApplicationPanel({ id, onClose, onChange }: Props) {
+export default function EmployerApplicationPanel({ id, onClose, onChange, returnFocusTo }: Props) {
   const { data: session, status: sessionStatus } = useSession();
   const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
   const application = useProgressQuery({
@@ -69,7 +69,14 @@ export default function EmployerApplicationPanel({ id, onClose, onChange }: Prop
   useEffect(() => {
     if (status && ["confirmed", "failed", "cancelled", "user_reported"].includes(status)) onChange();
   }, [status, onChange]);
-  return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm" /><Dialog.Content className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] w-auto max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6 sm:top-[5vh] sm:max-h-[90dvh]">
+  return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm" /><Dialog.Content
+    className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] w-auto max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6 sm:top-[5vh] sm:max-h-[90dvh]"
+    onCloseAutoFocus={(event) => {
+      const target = returnFocusTo?.();
+      if (!target?.isConnected) return;
+      event.preventDefault();
+      target.focus();
+    }}>
     <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="font-display text-2xl sm:text-3xl">Review your application</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Choose the exact file and answers before anything is shared with the employer.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" aria-label="Close application review"><X size={20} /></Button></Dialog.Close></header>
     <div className="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-6">
       {application.pollingPaused && !application.isError ? <div role="status" className="mb-5 space-y-3 text-sm"><p>Automatic status checks are paused. The application may still be in progress.</p><Button variant="secondary" disabled={application.isFetching} onClick={() => void application.refetch()}>Check application status</Button></div> : null}

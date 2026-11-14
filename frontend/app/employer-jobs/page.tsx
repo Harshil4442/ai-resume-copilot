@@ -58,6 +58,8 @@ export default function EmployerJobsPage() {
   const preparationChecks = useRef({ id: null as string | null, attempt: 0, reads: 0 });
   const pageVisible = usePageVisible();
   const [applicationId, setApplicationId] = useState<string | null>(null);
+  const applicationTrigger = useRef<HTMLButtonElement | null>(null);
+  const applicationsHeading = useRef<HTMLHeadingElement | null>(null);
   const [selectedApplications, setSelectedApplications] = useState<string[]>([]);
   const [batchReview, setBatchReview] = useState<{ id?: string; selected?: EmployerApplication[] } | null>(null);
   const applicationIntent = useRef<{ fingerprint: string; key: string } | null>(null);
@@ -172,17 +174,28 @@ export default function EmployerJobsPage() {
     },
   });
   const prepare = useMutation({
-    mutationFn: (selection: string | { postingId: string; resumeId: number }) => {
-      const postingId = typeof selection === "string" ? selection : selection.postingId;
-      const chosenResumeId = typeof selection === "string" ? Number(resumeId) : selection.resumeId;
+    mutationFn: ({ postingId, resumeId: chosenResumeId }: { postingId: string; resumeId: number }) => {
       if (!chosenResumeId) throw new Error("Choose a resume for this application.");
       const payload = { posting_id: postingId, resume_id: chosenResumeId, resume_choice: "original" };
       const fingerprint = JSON.stringify(payload);
       if (applicationIntent.current?.fingerprint !== fingerprint) applicationIntent.current = { fingerprint, key: crypto.randomUUID() };
       return apiPostJson<EmployerApplication>(`${employerJobsBase}/applications`, { ...payload, idempotency_key: applicationIntent.current.key });
     },
-    onSuccess: (application) => { applicationIntent.current = null; client.setQueryData(["employer-jobs", "application", application.id], application); setApplicationId(application.id); void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] }); },
+    onSuccess: (application) => { applicationIntent.current = null; client.setQueryData(["employer-jobs", "application", application.id], application); void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] }); },
   });
+  function openApplication(id: string, trigger: HTMLButtonElement) {
+    applicationTrigger.current = trigger;
+    setApplicationId(id);
+  }
+  function prepareApplication(postingId: string, selectedResumeId: number, trigger: HTMLButtonElement) {
+    prepare.mutate({ postingId, resumeId: selectedResumeId }, {
+      onSuccess: (application) => openApplication(application.id, trigger),
+    });
+  }
+  function applicationFocusTarget() {
+    const trigger = applicationTrigger.current;
+    return trigger?.isConnected && !trigger.disabled ? trigger : applicationsHeading.current;
+  }
   const selectedPackages = (applications.data?.items ?? []).filter((app) => selectedApplications.includes(app.id));
   const selectionValid = selectedPackages.length > 0 && selectedPackages.length === selectedApplications.length && selectedPackages.every((app) => batchEligibility(app, catalog.data) === null);
 
@@ -191,7 +204,7 @@ export default function EmployerJobsPage() {
       <div><p className="eyebrow">Employer discovery pilot · 20 reviewed origins</p><h1 className="font-display mt-2 text-4xl font-normal sm:text-5xl">Find your next role. Apply with control.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Search available postings within our 20 reviewed employer origins and compare your skills. Candidate-reviewed browser assistance is limited to Razorpay’s Greenhouse portal; other employers use a manual portal handoff.</p></div>
       <div className="surface p-4"><p className="data-label">{unified ? "Credits" : "Legacy service credits"}</p><p className="mt-1 text-2xl font-semibold text-primary">{unified ? wallet.data?.available_credits ?? "—" : catalog.data?.balance ?? "—"}</p><Link href="/billing" className="mt-2 inline-block text-sm font-semibold text-primary underline underline-offset-4">Buy credits</Link></div>
     </header>
-    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} enabled={isCreditOperationAvailable(availability.data, "job_discovery_batch")} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={(postingId, resumeId) => prepare.mutate({ postingId, resumeId })} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
+    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} enabled={isCreditOperationAvailable(availability.data, "job_discovery_batch")} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={prepareApplication} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
     <div className="mt-8 grid min-w-0 gap-8 xl:grid-cols-[340px_minmax(0,1fr)]">
       <aside className="min-w-0 space-y-5">
         {legacyAvailable && !unifiedHistory ? <form className="surface p-5 sm:p-6" onSubmit={(event) => { event.preventDefault(); search.mutate(); }} aria-labelledby="search-heading">
@@ -229,20 +242,20 @@ export default function EmployerJobsPage() {
           {preparationError ? <div role="alert" className="mt-4 text-sm leading-6"><p>{preparationError}</p><p className="mt-2">Automatic checks are paused. This status read will not restart the search or charge again.</p><Button type="button" variant="secondary" className="mt-3 min-h-11" onClick={() => { setPreparationError(null); setPreparationRetry((value) => value + 1); }}>Retry search status</Button></div> : searchPreparing ? <div className="mt-4" role="status" aria-label="Search preparation in progress"><LoaderCircle size={20} className="animate-spin" /></div> : <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => { setPreparation(null); setPreparationError(null); }}>Return to saved results</Button>}
           {searchPreparing && preparation.status !== "completed" ? <Button type="button" variant="secondary" className="mt-4 min-h-11" disabled={cancelSearch.isPending} onClick={() => cancelSearch.mutate()}>{cancelSearch.isPending ? "Cancelling search…" : "Cancel search"}</Button> : null}
           {cancelSearch.isError ? <p role="alert" className="mt-3 text-sm leading-6">{cancelSearch.error.message}</p> : null}
-        </section> : activeSearch ? <EmployerSavedResults key={activeSearch.id} search={activeSearch} preparing={prepare.isPending} canPrepare={Boolean(resumeId)} onPrepare={(postingId) => prepare.mutate(postingId)} /> : unified || unifiedHistory ? null : <EmptyState icon={Search} title="Search with your resume and preferences" description="Choose how many verified jobs to find. Review the service credit price before starting." />}
-        <section aria-labelledby="applications-heading" className="border-t border-border pt-7"><h2 id="applications-heading" className="font-display text-2xl">Your applications</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Each job keeps its own resume choice, review and submission status.</p>
+        </section> : activeSearch ? <EmployerSavedResults key={activeSearch.id} search={activeSearch} preparing={prepare.isPending} canPrepare={Boolean(resumeId)} onPrepare={(postingId, trigger) => prepareApplication(postingId, Number(resumeId), trigger)} /> : unified || unifiedHistory ? null : <EmptyState icon={Search} title="Search with your resume and preferences" description="Choose how many verified jobs to find. Review the service credit price before starting." />}
+        <section aria-labelledby="applications-heading" className="border-t border-border pt-7"><h2 id="applications-heading" ref={applicationsHeading} tabIndex={-1} className="font-display text-2xl">Your applications</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Each job keeps its own resume choice, review and submission status.</p>
           <div className="mt-5 space-y-3 rounded-xl border border-border bg-surface p-4"><h3 className="font-semibold">Review a fixed application batch</h3><p className="text-xs leading-5 text-muted-foreground">Select complete applications supported by a permissioned API, then review every exact job, file, answer, action and fixed service credit price. The current manual sources use individual employer handoffs.</p>{catalog.data?.admission_limits ? <p className="text-xs leading-5">Maximum {catalog.data.admission_limits.batch_limit} jobs and {catalog.data.admission_limits.batch_credit_limit} service credits per batch. Approval never includes future jobs.</p> : null}<Button variant="secondary" className="min-h-11 w-full sm:w-auto" disabled={!selectionValid || applications.isFetching} onClick={() => setBatchReview({ selected: selectedPackages })}>Review selected batch ({selectedPackages.length})</Button>{!catalog.data?.auto_submit_enabled ? <p className="text-xs leading-5 text-muted-foreground">API batch submission is currently disabled.</p> : null}</div>
           {applications.isLoading ? <div className="mt-4"><LoadingBlock rows={2} /></div> : applications.isError ? <div className="mt-4 flex items-center gap-3 text-sm" role="alert"><CircleAlert size={16} /><p>Could not load applications.</p><Button variant="secondary" size="sm" onClick={() => void applications.refetch()}>Retry</Button></div> : <div className="mt-4 divide-y divide-border">{applications.data?.items.map((application) => {
             const ineligible = batchEligibility(application, catalog.data);
             return <div key={application.id} className="min-w-0 py-4">
-              <button type="button" onClick={() => setApplicationId(application.id)} className="flex min-h-11 w-full flex-wrap items-start justify-between gap-3 py-2 text-left hover:bg-surface"><span className="min-w-0"><span className="block break-words text-sm font-semibold">{application.posting.title}</span><span className="mt-1 block text-xs text-muted-foreground">{application.posting.employer}</span></span><span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${application.status === "confirmed" ? "text-primary" : "text-muted-foreground"}`}>{application.status === "confirmed" ? <CheckCircle2 size={14} /> : null}{applicationStatusLabels[application.status]}</span></button>
+              <button type="button" onClick={(event) => openApplication(application.id, event.currentTarget)} className="flex min-h-11 w-full flex-wrap items-start justify-between gap-3 py-2 text-left hover:bg-surface"><span className="min-w-0"><span className="block break-words text-sm font-semibold">{application.posting.title}</span><span className="mt-1 block text-xs text-muted-foreground">{application.posting.employer}</span></span><span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${application.status === "confirmed" ? "text-primary" : "text-muted-foreground"}`}>{application.status === "confirmed" ? <CheckCircle2 size={14} /> : null}{applicationStatusLabels[application.status]}</span></button>
               {application.batch_id ? <Button variant="ghost" className="mt-2 min-h-11" onClick={() => setBatchReview({ id: application.batch_id! })}>View this application's batch</Button> : application.application_mode === "api" ? <label className="mt-2 flex min-h-11 items-start gap-3 text-xs leading-5"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={selectedApplications.includes(application.id)} disabled={Boolean(ineligible)} onChange={(event) => setSelectedApplications((previous) => event.target.checked ? [...previous, application.id] : previous.filter((value) => value !== application.id))} /><span>Select {application.posting.title} for exact batch review{ineligible ? <span className="mt-1 block text-muted-foreground">{ineligible}</span> : <span className="mt-1 block text-muted-foreground">{application.credit_cost} service credits · {application.artifact?.filename}</span>}</span></label> : <p className="mt-2 text-xs leading-5 text-muted-foreground">Individual manual handoff. This employer is not included in API batches.</p>}
             </div>;
           })}{!applications.data?.items.length ? <p className="py-5 text-sm text-muted-foreground">Prepare a result above to begin. Nothing is submitted when you search.</p> : null}</div>}
         </section>
       </div>
     </div>
-    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} /> : null}
+    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} returnFocusTo={applicationFocusTarget} /> : null}
     {batchReview ? <BatchPanel key={batchReview.id ?? selectedApplications.join(":")} {...batchReview} onClose={() => { setBatchReview(null); setSelectedApplications([]); refreshBalances(); }} onChange={refreshBalances} /> : null}
   </div></main>;
 }

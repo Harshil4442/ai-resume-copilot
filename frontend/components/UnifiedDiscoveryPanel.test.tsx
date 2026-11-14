@@ -79,5 +79,7 @@ it("rejects a quote that expands the approved batch or increases the price", asy
 
 it("prepares a selected result with this form's exact resume choice", async () => {
   const prepare = vi.fn(); view({ onPrepare: prepare }); fireEvent.click(await review()); await screen.findByText("1 credit charged · 0 held · 0 restored");
-  fireEvent.click(screen.getAllByRole("button", { name: "Prepare application" })[0]); expect(prepare).toHaveBeenCalledExactlyOnceWith("job_one", 1);
+  const trigger = screen.getAllByRole("button", { name: "Prepare application" })[0];
+  fireEvent.click(trigger);
+  expect(prepare).toHaveBeenCalledExactlyOnceWith("job_one", 1, trigger);
 });
