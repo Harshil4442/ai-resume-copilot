@@ -4,6 +4,7 @@ Set HIREWIZ_SCHEMA27_LOCAL_RESTORE=true with the disposable fixture on port
 55435. The historical CI transfer clients intentionally allow only schema9.
 Set HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN to a PG17 bin directory for the separate
 physical recovery rehearsal, which creates and owns both temporary clusters.
+Set HIREWIZ_SCHEMA27_LOGICAL_PG_BIN for the populated logical archive rehearsal.
 """
 
 import hashlib
@@ -584,30 +585,90 @@ def physical_catalogue(db):
     )
 
 
+def logical_catalogue(db):
+    """Compare identities, definitions and ACLs whose OIDs change after import."""
+    queries = (
+        "SELECT nspname,pg_get_userbyid(nspowner),nspacl FROM pg_namespace WHERE nspname='public'",
+        "SELECT relname,relkind,pg_get_userbyid(relowner),relacl FROM pg_class "
+        "WHERE relnamespace='public'::regnamespace ORDER BY relname",
+        "SELECT conrelid::regclass::text,conname,convalidated,pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE connamespace='public'::regnamespace ORDER BY 1,2",
+        "SELECT tgrelid::regclass::text,tgname,tgenabled,pg_get_triggerdef(oid) FROM pg_trigger "
+        "WHERE NOT tgisinternal AND tgrelid IN (SELECT oid FROM pg_class "
+        "WHERE relnamespace='public'::regnamespace) ORDER BY 1,2",
+        "SELECT tgrelid::regclass::text,tgconstrrelid::regclass::text,tgenabled,"
+        "pg_get_constraintdef(tgconstraint),tgfoid::regproc::text,tgtype,tgdeferrable,tginitdeferred "
+        "FROM pg_trigger WHERE tgisinternal AND tgrelid IN (SELECT oid FROM pg_class "
+        "WHERE relnamespace='public'::regnamespace) ORDER BY 1,2,3,4,5,6,7,8",
+        "SELECT oid::regprocedure::text,pg_get_userbyid(proowner),proacl,pg_get_functiondef(oid) "
+        "FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY 1",
+    )
+    return tuple(db.exec_driver_sql(query).all() for query in queries)
+
+
+def init_owned_pg_cluster(pg_bin, data, password):
+    password_file = data.parent / "password"
+    with os.fdopen(os.open(password_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
+        stream.write(password + "\n")
+    try:
+        owned_pg_command(pg_bin, "initdb", "--pgdata", data, "--username=hirewiz",
+                         "--auth-local=reject", "--auth-host=scram-sha-256", "--pwfile", password_file,
+                         "--no-locale", "--encoding=UTF8", "--data-checksums")
+    finally:
+        password_file.unlink()
+
+
+def restore_logical_archive(pg_bin, archive, port, password):
+    owned_pg_command(pg_bin, "pg_restore", "--host=127.0.0.1", f"--port={port}", "--username=hirewiz",
+                     "--dbname=postgres", "--single-transaction", "--exit-on-error", "--no-password", archive,
+                     env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5", "PGSSLMODE": "disable"})
+
+
+def repair_restored_resume_constraint(db, source_constraint):
+    restored = upload_constraint(db)
+    assert source_constraint[-1] == SOURCE_CONSTRAINT
+    assert restored[:-1] == source_constraint[:-1]
+    if restored == source_constraint:
+        return
+    assert restored[-1] == RESTORED_CONSTRAINT
+    with pytest.raises(schema27.before.reset21.previous.Schema20Denied,
+                       match="^schema20_upload_format_constraint_mismatch$"):
+        schema27.verify_shape(db)
+    # The precise predicate in migration 20261023_0020 avoids a second
+    # round trip through pg_get_constraintdef's non-canonical cast expression.
+    db.exec_driver_sql("ALTER TABLE public.resume_uploads DROP CONSTRAINT ck_resume_upload_format, "
+                       "ADD CONSTRAINT ck_resume_upload_format "
+                       "CHECK (source_format IN ('pdf','docx','tex','texzip'))")
+    assert upload_constraint(db) == source_constraint
+
+
 def test_schema27_physical_recovery_preserves_published_catalogue_and_obligations(record_property, monkeypatch):
-    configured = os.getenv("HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN")
+    _rehearse_published_catalogue_recovery(record_property, monkeypatch, logical=False)
+
+
+def test_schema27_logical_archive_preserves_obligations_but_fails_strict_shape(record_property, monkeypatch):
+    _rehearse_published_catalogue_recovery(record_property, monkeypatch, logical=True)
+
+
+def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, logical):
+    method = "logical" if logical else "physical"
+    configured = os.getenv(f"HIREWIZ_SCHEMA27_{method.upper()}_PG_BIN")
     if not configured:
         pytest.skip("Requires an explicitly selected local PG17 binary directory")
     if os.getenv("GITHUB_ACTIONS") == "true":
-        pytest.fail("The physical recovery rehearsal owns local PostgreSQL clusters only")
+        pytest.fail("The recovery rehearsal owns local PostgreSQL clusters only")
     pg_bin = Path(configured)
     assert pg_bin.is_absolute()
-    for tool in ("initdb", "pg_ctl", "pg_basebackup", "pg_verifybackup"):
+    backup_tools = ("pg_dump", "pg_restore") if logical else ("pg_basebackup", "pg_verifybackup")
+    for tool in ("initdb", "pg_ctl", *backup_tools):
         assert "(PostgreSQL) 17." in owned_pg_command(pg_bin, tool, "--version", timeout=5)
 
-    with tempfile.TemporaryDirectory(prefix="hirewiz-physical-") as owned:
+    with tempfile.TemporaryDirectory(prefix=f"hirewiz-{method}-") as owned:
         root = Path(owned).resolve()
-        password_file = root / "password"
         password = secrets.token_hex(24)
-        with os.fdopen(os.open(password_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
-            stream.write(password + "\n")
         source_data, restored_data = root / "source", root / "restored"
-        try:
-            owned_pg_command(pg_bin, "initdb", "--pgdata", source_data, "--username=hirewiz",
-                             "--auth-local=reject", "--auth-host=scram-sha-256", "--pwfile", password_file,
-                             "--no-locale", "--encoding=UTF8", "--data-checksums")
-        finally:
-            password_file.unlink()
+        init_owned_pg_cluster(pg_bin, source_data, password)
+        archive = root / "owned-catalogue.dump"
         stamp = datetime.now(UTC) - timedelta(seconds=1)
         with owned_pg_cluster(pg_bin, source_data, password) as (source, source_port):
             _migrate(source, schema27.SCHEMA)
@@ -620,34 +681,88 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
             source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
+                if logical:
+                    db.exec_driver_sql("CREATE ROLE owned_archive_reader NOLOGIN")
+                    db.exec_driver_sql("GRANT SELECT ON public.employer_catalogue_source_revisions TO owned_archive_reader")
             tables, sequences = expected = snapshot(source)
             assert {(row["valid_from"], row["valid_to"], row["enabled"])
                     for row in tables["employer_catalogue_source_revisions"]} == {(1, 3, True), (3, None, False)}
             assert tables["employer_catalogue_clock"][0]["watermark"] == 3
             assert len(tables["employer_catalogue_posting_revisions"]) == 1
             with source.connect() as db:
-                expected_catalogue = physical_catalogue(db)
+                schema27.verify_shape(db)
+                inspect_catalogue = logical_catalogue if logical else physical_catalogue
+                expected_catalogue = inspect_catalogue(db)
+                source_constraint = upload_constraint(db)
                 system_identifier = db.scalar(text("SELECT system_identifier FROM pg_control_system()"))
                 assert db.scalar(text("SHOW data_checksums")) == "on"
                 assert db.scalar(text("SHOW session_replication_role")) == "origin"
             started = time.monotonic()
-            owned_pg_command(pg_bin, "pg_basebackup", "--host=127.0.0.1", f"--port={source_port}",
+            if logical:
+                owned_pg_command(pg_bin, "pg_dump", "--host=127.0.0.1", f"--port={source_port}",
+                                 "--username=hirewiz", "--dbname=postgres", "--format=custom", "--file", archive,
+                                 "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
+                                                       "PGSSLMODE": "disable"})
+            else:
+                owned_pg_command(pg_bin, "pg_basebackup", "--host=127.0.0.1", f"--port={source_port}",
                              "--username=hirewiz", "--pgdata", restored_data, "--format=plain",
                              "--wal-method=stream", "--checkpoint=fast", "--manifest-checksums=SHA256",
                              "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
                                                    "PGSSLMODE": "disable"})
-            owned_pg_command(pg_bin, "pg_verifybackup", "--exit-on-error", restored_data)
-            record_property("owned_physical_backup_verify_seconds", round(time.monotonic() - started, 3))
+                owned_pg_command(pg_bin, "pg_verifybackup", "--exit-on-error", restored_data)
+            backup_measurement = "owned_logical_backup_seconds" if logical else "owned_physical_backup_verify_seconds"
+            record_property(backup_measurement, round(time.monotonic() - started, 3))
             assert snapshot(source) == expected
 
         started = time.monotonic()
-        with owned_pg_cluster(pg_bin, restored_data, password) as (restored, _):
+        if logical:
+            init_owned_pg_cluster(pg_bin, restored_data, password)
+        with owned_pg_cluster(pg_bin, restored_data, password) as (restored, restored_port):
+            if logical:
+                with restored.begin() as db:
+                    # Cluster-global roles are external to an ordinary database archive.
+                    db.exec_driver_sql("CREATE ROLE owned_restore_oid_gap NOLOGIN")
+                    db.exec_driver_sql("CREATE ROLE owned_archive_reader NOLOGIN")
+                restore_logical_archive(pg_bin, archive, restored_port, password)
+                assert snapshot(restored) == expected
+                with restored.begin() as db:
+                    repair_restored_resume_constraint(db, source_constraint)
+                    obtained_catalogue = inspect_catalogue(db)
+                    before_checks = {(table, name): (validated, expression)
+                                     for table, name, validated, expression in expected_catalogue[2]}
+                    after_checks = {(table, name): (validated, expression)
+                                    for table, name, validated, expression in obtained_catalogue[2]}
+                    assert before_checks.keys() == after_checks.keys()
+                    drift = [key for key in before_checks if before_checks[key] != after_checks[key]]
+                    assert {("password_reset_tokens", "ck_password_reset_purpose"),
+                            ("password_reset_tokens", "ck_password_reset_status")} <= set(drift)
+                    for key in drift:
+                        before, after = before_checks[key], after_checks[key]
+                        assert before[0] is after[0] is True
+                        assert before[1].startswith("CHECK (") and after[1].startswith("CHECK (")
+                    record_property("owned_logical_changed_check_definitions", len(drift))
+                    with pytest.raises(schema27.before.Schema26Denied,
+                                       match="^schema26_reset_purpose_or_status_check_mismatch$"):
+                        schema27.verify_shape(db)
+                    record_property("owned_logical_strict_shape_accepted", False)
             with restored.connect() as db:
-                assert db.scalar(text("SELECT system_identifier FROM pg_control_system()")) == system_identifier
+                restored_identifier = db.scalar(text("SELECT system_identifier FROM pg_control_system()"))
+                assert (restored_identifier == system_identifier) is not logical
                 assert db.scalar(text("SELECT pg_is_in_recovery()")) is False
                 assert db.scalar(text("SHOW session_replication_role")) == "origin"
                 assert db.scalar(text("SHOW data_checksums")) == "on"
-                assert physical_catalogue(db) == expected_catalogue
+                actual_catalogue = inspect_catalogue(db)
+                if logical:
+                    # Keep the strict failure above. The comparisons below
+                    # establish independent ACL, trigger and routine fidelity.
+                    assert actual_catalogue[:2] == expected_catalogue[:2]
+                    assert actual_catalogue[3:] == expected_catalogue[3:]
+                    assert db.scalar(text("SELECT has_table_privilege('owned_archive_reader',"
+                                          "'public.employer_catalogue_source_revisions','SELECT')")) is True
+                    assert db.scalar(text("SELECT has_table_privilege('owned_archive_reader',"
+                                          "'public.employer_catalogue_source_revisions','UPDATE')")) is False
+                else:
+                    assert actual_catalogue == expected_catalogue
             assert snapshot(restored) == expected
             assert_payment_and_reserve_replay(restored, stamp, capture, reservation_id, source_bytes, credits)
             assert_application_recovery(restored, application_recovery, monkeypatch)
@@ -655,6 +770,10 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
             record_property("owned_unknown_application_employer_calls", 0)
             assert snapshot(restored) == expected
             with restored.connect() as db:
+                with pytest.raises(IntegrityError) as invalid_format, db.begin_nested():
+                    db.execute(text("UPDATE public.resume_uploads SET source_format='zip'"))
+                assert isinstance(invalid_format.value.orig, CheckViolation)
+                assert invalid_format.value.orig.diag.constraint_name == "ck_resume_upload_format"
                 with pytest.raises(DBAPIError) as denied, db.begin_nested():
                     db.execute(text("UPDATE public.evidence_items SET title='Unversioned update'"))
                 assert isinstance(denied.value.orig, InsufficientPrivilege)
@@ -669,6 +788,6 @@ def test_schema27_physical_recovery_preserves_published_catalogue_and_obligation
                 )).all() == [(1, 3, True), (3, 4, False), (4, None, True)]
                 db.rollback()
             assert snapshot(restored) == expected
-            record_property("owned_physical_start_and_verify_seconds", round(time.monotonic() - started, 3))
-        record_property("owned_physical_public_tables", len(tables))
-        record_property("owned_physical_public_sequences", len(sequences))
+            record_property(f"owned_{method}_start_and_verify_seconds", round(time.monotonic() - started, 3))
+        record_property(f"owned_{method}_public_tables", len(tables))
+        record_property(f"owned_{method}_public_sequences", len(sequences))
