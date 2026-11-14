@@ -472,6 +472,16 @@ def create_workspace_source_snapshot(
     return workspace.source_snapshot(db, current_user.id, opportunity_id)
 
 
+@router.post("/opportunities/{opportunity_id}/workspace/source-snapshot/selected", response_model=schemas.ResumeVersionResponse, status_code=201)
+def create_workspace_selected_source_snapshot(
+    opportunity_id: str, payload: schemas.WorkspaceSourceSnapshotCreate, response: Response,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "private, no-store"
+    return workspace.source_snapshot(db, current_user.id, opportunity_id,
+        expected_resume_id=payload.expected_resume_id)
+
+
 @router.get("/opportunities/{opportunity_id}/workspace/{collection}", response_model=schemas.WorkspacePageResponse)
 def get_workspace_page(
     opportunity_id: str, collection: schemas.WorkspacePageCollection, response: Response,

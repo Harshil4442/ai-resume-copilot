@@ -10680,6 +10680,22 @@
         ],
         "title": "WorkspaceResponse",
         "type": "object"
+      },
+      "WorkspaceSourceSnapshotCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_resume_id": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Expected Resume Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_resume_id"
+        ],
+        "title": "WorkspaceSourceSnapshotCreate",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -20747,6 +20763,63 @@
           }
         ],
         "summary": "Create Workspace Source Snapshot",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/source-snapshot/selected": {
+      "post": {
+        "operationId": "create_workspace_selected_source_snapshot_api_v1_opportunities__opportunity_id__workspace_source_snapshot_selected_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSourceSnapshotCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Workspace Selected Source Snapshot",
         "tags": [
           "career-workspace"
         ]

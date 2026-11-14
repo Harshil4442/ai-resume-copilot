@@ -636,9 +636,24 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     },
   });
   const createVersion = useMutation({
-    mutationFn: () => {
-      if (!opportunity.data?.resume_id || !sourceReady || !sourceResume?.source_format) throw new Error("Connect a resume with its original file first.");
-      return apiPostJson<ResumeVersion>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/workspace/source-snapshot`, {});
+    mutationFn: async () => {
+      if (!opportunity.data?.resume_id || !sourceReady || sourceResume?.id !== opportunity.data.resume_id) throw new Error("Connect a resume with its original file first.");
+      try {
+        return await apiPostJson<ResumeVersion>(`/v1/opportunities/${encodeURIComponent(opportunityId)}/workspace/source-snapshot/selected`, {
+          expected_resume_id: sourceResume.id,
+        });
+      } catch (error) {
+        if (error instanceof ApiError && [404, 405].includes(error.status)) {
+          throw new Error("Could not save a snapshot of the selected resume. Refresh the workspace or try again later.");
+        }
+        throw error;
+      }
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 409
+          && (error.detail as { detail?: { code?: unknown } } | null)?.detail?.code === "source_snapshot_resume_changed") {
+        await queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
+      }
     },
     onSuccess: async () => {
       trackEvent("resume_version_created", { opportunity_id: opportunityId });

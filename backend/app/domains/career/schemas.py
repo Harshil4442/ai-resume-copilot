@@ -244,6 +244,10 @@ class TranscriptionReviewAction(StrictModel):
     evidence_text: str = Field(min_length=2, max_length=20_000)
 
 
+class WorkspaceSourceSnapshotCreate(StrictModel):
+    expected_resume_id: int = Field(strict=True, gt=0, le=2_147_483_647)
+
+
 class ResumeVersionCreate(StrictModel):
     resume_id: int
     opportunity_id: str | None = Field(default=None, max_length=64)

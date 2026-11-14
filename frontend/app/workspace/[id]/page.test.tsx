@@ -524,6 +524,32 @@ it("keeps snapshots accessible when no paid route is qualified", async () => {
   expect(screen.getByRole("button", { name: "Save source snapshot" })).toBeEnabled(); expect(state.post).not.toHaveBeenCalled();
 });
 
+it("requires a new snapshot click after the shown resume changed in another tab", async () => {
+  enableCreditExecution([]);
+  state.post.mockRejectedValueOnce(new ApiError("The connected resume changed. Review the current resume before saving a source snapshot.",
+    409, { detail: { code: "source_snapshot_resume_changed" } })).mockResolvedValueOnce({ resume_id: 2 });
+  await page();
+  const select = screen.getByRole("combobox", { name: "Resume" });
+  expect(select).toHaveValue("1");
+  resumeId = 2;
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  expect(await screen.findByText(/The connected resume changed/)).toBeVisible();
+  await waitFor(() => expect(select).toHaveValue("2"));
+  const path = `/v1/opportunities/${state.id}/workspace/source-snapshot/selected`;
+  expect(state.post.mock.calls).toEqual([[path, { expected_resume_id: 1 }]]);
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  await waitFor(() => expect(state.post.mock.calls).toEqual([[path, { expected_resume_id: 1 }], [path, { expected_resume_id: 2 }]]));
+});
+
+it("never falls back to an unbound snapshot when the API has not been updated", async () => {
+  enableCreditExecution([]);
+  state.post.mockRejectedValueOnce(new ApiError("Method Not Allowed", 405, null));
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  expect(await screen.findByText(/Could not save a snapshot of the selected resume/)).toBeVisible();
+  expect(state.post.mock.calls).toEqual([[`/v1/opportunities/${state.id}/workspace/source-snapshot/selected`, { expected_resume_id: 1 }]]);
+});
+
 
 it("allows a fresh review only after an explicit no-run quote rejection", async () => {
   enableCreditExecution(); const original = state.post.getMockImplementation()!;

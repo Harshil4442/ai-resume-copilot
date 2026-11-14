@@ -146,6 +146,13 @@ from the bridge API. Keep the current frontend serving while staging the bridge.
 Use the bridge controller's fresh scanner and reviewed funding checks before
 creating candidate revisions, even at zero traffic.
 
+Deploy the API that supports `POST /workspace/source-snapshot/selected`
+before promoting the frontend that uses it. The request must identify the
+résumé shown in the Workspace. If another tab changes the connected résumé, the
+API returns a conflict and creates no version. If the new route is unavailable,
+the frontend reports the failure and sends no request to the older snapshot
+route. Restore the previous frontend first if this API must be rolled back.
+
 The current frontend still reads the legacy résumé and workspace routes. Before
 moving API traffic, use the verified read-only database observer to count groups
 above the legacy limits. Check résumés by owner (500), activity, contacts,
