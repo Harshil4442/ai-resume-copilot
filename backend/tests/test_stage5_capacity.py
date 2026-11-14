@@ -30,6 +30,7 @@ from scripts.stage5_resources import (
     EMULATOR_REPO_DIGEST,
     FORBIDDEN_PORTS,
     Resources,
+    distinct_owned_ports,
     effective_publication,
     internal_endpoint,
     pinned_emulator_configuration,
@@ -527,6 +528,34 @@ def test_no_configurable_provider_destination_and_no_payment_mutation_path():
     assert PATHS == ("/api/auth/dashboard", "/api/resume/page?limit=20", "/api/v1/opportunities/page?limit=20",
                      "/api/v1/skill-roi", "/api/v1/credits/wallet")
     assert unused_port() not in FORBIDDEN_PORTS
+
+
+def test_port_set_holds_each_socket_until_all_distinct_ports_are_selected(monkeypatch):
+    from scripts import stage5_resources
+
+    bound = set()
+    attempts = []
+
+    class KernelSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            bound.remove(self.port)
+
+        def bind(self, address):
+            assert address == ("127.0.0.1", 0)
+            self.port = next(port for port in (55433, 55434, 40507, 40508, 40509) if port not in bound)
+            bound.add(self.port)
+            attempts.append(self.port)
+
+        def getsockname(self):
+            return "127.0.0.1", self.port
+
+    monkeypatch.setattr(stage5_resources.socket, "socket", KernelSocket)
+    assert distinct_owned_ports() == (40507, 40508, 40509)
+    assert attempts == [55433, 55434, 40507, 40508, 40509]
+    assert not bound
 
 
 def test_private_reports_create_only_and_no_secret_overwrite(tmp_path):
