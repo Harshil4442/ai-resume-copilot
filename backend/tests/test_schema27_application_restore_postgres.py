@@ -31,9 +31,18 @@ from backend.app.domains.career import service as career_service
 from backend.app.domains.credits import service
 from backend.app.domains.credits.models import CreditExecutionAttempt, CreditExecutionHold
 from backend.app.domains.dispatch.models import DispatchOutbox
-from backend.app.domains.employer import admissions, artifacts, connectors, tasks
+from backend.app.domains.employer import (
+    admissions,
+    artifacts,
+    catalogue_search,
+    connectors,
+    search_pages,
+    tasks,
+)
+from backend.app.domains.employer import config as employer_config
 from backend.app.domains.employer import credits as employer_credits
 from backend.app.domains.employer import models as employer_models
+from backend.app.domains.employer import schemas as employer_schemas
 from backend.app.domains.employer import service as employer_service
 from backend.app.domains.resume_uploads.models import ResumeUpload
 from backend.app.models import (
@@ -303,7 +312,7 @@ def seed_application_recovery(engine, stamp):
         return application_id, original, rendered.content, balance - reservation.reserved_amount
 
 
-def assert_application_recovery(engine, expected, monkeypatch):
+def assert_application_recovery(engine, expected, monkeypatch, *, subsequent_search_credits=0):
     application_id, original, approved_pdf, remaining = expected
 
     def deny_transport(*_args, **_kwargs):
@@ -337,7 +346,7 @@ def assert_application_recovery(engine, expected, monkeypatch):
         assert application.charged_credits == reservation.committed_amount == reservation.released_amount == 0
         assert reservation.state == "reserved" and reservation.reserved_amount == 5
         assert (event.event_type, event.amount, event.balance_after) == ("reserve", -5, remaining)
-        assert db.get(User, 1).job_service_credits == remaining
+        assert db.get(User, 1).job_service_credits == remaining - subsequent_search_credits
 
         # A replacement cannot bypass the retained possible-send claim for the same opening.
         replacement = employer_models.EmployerApplication(
@@ -350,6 +359,52 @@ def assert_application_recovery(engine, expected, monkeypatch):
         with pytest.raises(HTTPException) as conflict:
             admissions.reserve(db, replacement, source)
         assert conflict.value.status_code == 409 and conflict.value.detail["code"] == "canonical_opening_conflict"
+
+
+def seed_saved_search_recovery(engine, monkeypatch):
+    monkeypatch.setenv("EMPLOYER_DISCOVERY_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_FULL_CATALOGUE_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("EMPLOYER_PAID_HISTORY_MODE", "indexed")
+    with Session(engine, autoflush=False) as db:
+        db.add(User(id=2, email="archive-other-owner@example.test"))
+        db.commit()
+        prices = employer_config.prices()
+        unit_price = prices["search_credits_per_job"]
+        payload = employer_schemas.SearchCreate(
+            resume_id=2, role="Software engineer", desired_count=1, idempotency_key="owned-proof-search",
+            accepted_quote=employer_schemas.SearchPriceAcceptance(
+                pricing_version=prices["pricing_version"], unit_price=unit_price, maximum_credits=unit_price),
+        )
+        identity = employer_service.create_search(db, 1, payload).id
+        assert catalogue_search.execute_plan(db, identity) == "completed"
+        page = search_pages.saved_results(db, 1, identity)
+        assert page.total_items == 1 and page.items[0].posting["id"] == "owned-posting"
+        assert page.search.charged_credits == unit_price
+        return payload, identity, page
+
+
+def assert_saved_search_recovery(engine, expected):
+    payload, identity, page = expected
+    with Session(engine, autoflush=False) as db:
+        assert search_pages.saved_results(db, 1, identity) == page
+        with pytest.raises(HTTPException) as refused:
+            search_pages.saved_results(db, 2, identity)
+        assert refused.value.status_code == 404
+        assert refused.value.detail["code"] == "saved_search_not_found"
+        snapshot_id = db.get(employer_models.EmployerSearch, identity).native_snapshot_id
+        assert isinstance(snapshot_id, str)
+        archived = db.query(employer_models.EmployerPaidDeliveryHistory).filter_by(search_id=identity).one()
+        assert archived.state == "proven" and archived.identity_proof["native_snapshot_id"] == snapshot_id
+        item = db.get(employer_models.EmployerCatalogueSnapshotItem, (snapshot_id, 0))
+        assert item.user_id == 1 and item.proof_state == "proven"
+        assert item.item_digest == archived.identity_proof["native_item_digest"]
+        with pytest.raises(DBAPIError) as immutable, db.begin_nested():
+            db.execute(text("UPDATE public.employer_catalogue_snapshot_items SET unit_price=999 WHERE snapshot_id=:id"),
+                       {"id": snapshot_id})
+        assert immutable.value.orig.diag.message_primary == "Proven saved-search item is immutable"
+        assert employer_service.create_search(db, 1, payload).id == identity
+        assert catalogue_search.execute_plan(db, identity) == "completed"
+        assert search_pages.saved_results(db, 1, identity) == page
 
 
 def test_schema27_restore_preserves_active_obligations_and_payment_replay(tmp_path, record_property):
@@ -629,14 +684,46 @@ def restore_logical_archive(pg_bin, archive, port, password):
                      env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5", "PGSSLMODE": "disable"})
 
 
+def replay_saved_search_proof(data_sql):
+    """Place the saved-search COPY blocks in native proof order."""
+    lines = data_sql.read_text().splitlines(keepends=True)
+
+    def copy_block(table):
+        start, = (offset for offset, line in enumerate(lines) if line.startswith(f"COPY public.{table} ("))
+        end = lines.index("\\.\n", start) + 1
+        return start, end
+
+    snapshot_start, _ = copy_block("employer_catalogue_snapshots")
+    lines[snapshot_start] = lines[snapshot_start].replace("COPY public.employer_catalogue_snapshots", "COPY pg_temp.archive_snapshots", 1)
+    search_start, search_end = copy_block("employer_searches")
+    item_start, item_end = copy_block("employer_catalogue_snapshot_items")
+    assert snapshot_start < search_start < search_end < item_start < item_end
+    for prerequisite in ("employer_catalogue_source_revisions", "employer_catalogue_posting_revisions"):
+        assert search_end < copy_block(prerequisite)[0] < item_start
+    building = """INSERT INTO public.employer_catalogue_snapshots
+      (id,user_id,preparation_id,query,items,state,item_count,snapshot_digest,history_generation,created_at)
+      SELECT id,user_id,preparation_id,query,
+        CASE WHEN state='proven' THEN NULL ELSE items END,'building',item_count,
+        CASE WHEN state='proven' THEN NULL ELSE snapshot_digest END,history_generation,created_at
+      FROM pg_temp.archive_snapshots;\n"""
+    publish = """UPDATE public.employer_catalogue_snapshots AS live
+      SET items=archived.items,state=archived.state,snapshot_digest=archived.snapshot_digest
+      FROM pg_temp.archive_snapshots AS archived
+      WHERE live.id=archived.id AND live.user_id=archived.user_id AND archived.state='proven';\n"""
+    data_sql.write_text("".join([*lines[:search_start], *lines[search_end:item_start], building,
+                                 *lines[item_start:item_end], publish, *lines[search_start:search_end], *lines[item_end:]]))
+
+
 def restore_canonical_archive(pg_bin, archive, toc, port, password):
     """Restore into a freshly migrated fixture without round-tripping its DDL."""
     data_sql = archive.with_suffix(".sql")
     owned_pg_command(pg_bin, "pg_restore", "--data-only", "--exit-on-error", "--use-list", toc,
                      "--file", data_sql, archive)
+    replay_saved_search_proof(data_sql)
     before_copy = [
         "SET LOCAL statement_timeout = '15s'", "SET LOCAL lock_timeout = '5s'",
         f"SET LOCAL {evidence_fence_definition.SETTING} = '{evidence_fence_definition.VERSION}'",
+        "CREATE TEMP TABLE archive_snapshots (LIKE public.employer_catalogue_snapshots) ON COMMIT DROP",
         "DELETE FROM public.employer_catalogue_clock WHERE id=1 AND watermark=0 AND inventory_state='sources' "
         "AND source_cursor IS NULL AND posting_cursor IS NULL AND prune_cursor IS NULL",
     ]
@@ -721,6 +808,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                 db.commit()
             publish_employer(source)
             application_recovery = seed_application_recovery(source, stamp)
+            saved_search = seed_saved_search_recovery(source, monkeypatch) if canonical else None
             # The later synthetic payment and model rows must not fund the earlier accepted application.
             source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
             with source.begin() as db:
@@ -835,7 +923,12 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                                           "'public.employer_catalogue_source_revisions','UPDATE')")) is False
             assert snapshot(restored) == expected
             assert_payment_and_reserve_replay(restored, stamp, capture, reservation_id, source_bytes, credits)
-            assert_application_recovery(restored, application_recovery, monkeypatch)
+            assert_application_recovery(restored, application_recovery, monkeypatch,
+                                        subsequent_search_credits=saved_search[2].search.charged_credits if saved_search else 0)
+            if saved_search is not None:
+                assert_saved_search_recovery(restored, saved_search)
+                record_property("owned_canonical_native_saved_search_items", saved_search[2].total_items)
+                record_property("owned_canonical_saved_search_authority_and_replay", True)
             record_property("owned_unknown_application_redeliveries", 2)
             record_property("owned_unknown_application_employer_calls", 0)
             assert snapshot(restored) == expected

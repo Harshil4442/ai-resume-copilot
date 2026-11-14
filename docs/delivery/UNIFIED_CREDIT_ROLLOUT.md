@@ -538,9 +538,12 @@ key is exercised while the two triggers are paused, and the evidence writer
 uses its existing version contract. The strict verifier accepts the restored
 database. Table contents, sequences, trigger and routine definitions, constraint
 definitions, the test reader's ACLs, and payment and application replay match.
-The fixture includes published source and posting history, with no populated
-saved-search proof snapshots. Production roles and broader data recovery remain
-outside this local test.
+The fixture also restores a completed one-job search and its original paid
+history. The saved-search triggers validate the archived item, prove the original
+snapshot and authorize publication to its owner in their normal order. The owner
+can read the same result, another user is refused, and replay leaves the ledger
+unchanged. Production roles and broader data recovery remain outside this local
+test.
 
 The owned physical recovery test uses PostgreSQL 17 `pg_basebackup` with
 streamed WAL and `pg_verifybackup`. Start it only with an explicitly selected
