@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ owner: "one", session: { status: "authenticated", data: { user: { id: "one" } } } as { status: string; data: { user: { id: string } } | null }, get: vi.fn(), post: vi.fn() }));
-vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post, ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown) { super(message); } } }));
+vi.mock("../../lib/api", () => ({ apiGet: state.get, apiPostJson: state.post, ApiError: class extends Error { constructor(message: string, public status: number, public detail: unknown, public retryAfterMs: number | null = null) { super(message); } } }));
 vi.mock("next-auth/react", () => ({ SessionProvider: ({ children }: { children: React.ReactNode }) => children, useSession: () => state.session }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/employer-jobs" }));
 vi.mock("next/dynamic", () => ({ default: () => ({ id }: { id: string }) => <div data-testid="application-panel">Review application {id}</div> }));
@@ -52,6 +52,35 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); });
 
 describe("employer page saved-search composition", () => {
+  it("queues initial reads and pauses the group until an explicit retry after the capacity window", async () => {
+    let rejectFirst!: (error: ApiError) => void;
+    const firstRead = new Promise<never>((_, reject) => { rejectFirst = reject; });
+    const jobsRead = (url: string) => url === "/resume/list" || url.startsWith("/v1/employer-jobs/");
+    const requests = () => state.get.mock.calls.map(([url]) => url as string).filter(jobsRead);
+    state.get.mockImplementation((url: string) => jobsRead(url) ? firstRead : read(url));
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    await waitFor(() => expect(requests()).toHaveLength(1));
+    const initialRequest = requests();
+    await act(async () => rejectFirst(new ApiError("Temporarily busy", 429, { detail: { code: "NATIVE_METADATA_CAPACITY" } }, 300)));
+    const retry = await screen.findByRole("button", { name: "Retry loading Jobs" });
+    expect(retry).toBeDisabled();
+    expect(screen.getByText(/Jobs is temporarily busy/)).toBeInTheDocument();
+    expect(screen.queryByText("No saved searches on this page.")).toBeNull();
+    expect(screen.queryByText(/Prepare a result above to begin/)).toBeNull();
+    await act(async () => { await client.invalidateQueries({ queryKey: ["employer-jobs"] }); });
+    expect(requests()).toEqual(initialRequest);
+    state.get.mockImplementation(read);
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(requests()).toEqual(initialRequest);
+    fireEvent.click(retry);
+    await screen.findByText("Python Engineer one");
+    await waitFor(() => expect(requests().slice(1).sort()).toEqual([
+      "/resume/list", "/v1/employer-jobs/applications", "/v1/employer-jobs/catalog", "/v1/employer-jobs/search-summaries?limit=10",
+    ]));
+    expect(screen.queryByText(/Jobs is temporarily busy/)).toBeNull();
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
   it("refreshes a changed price without posting again until another explicit click", async () => {
     let catalogReads = 0;
     state.get.mockImplementation((url: string) => url.endsWith("/catalog") ? Promise.resolve({ enabled: true, auto_submit_enabled: false, balance: 50, search_credits_per_job: ++catalogReads === 1 ? 9 : 10, apply_credits_per_job: 20, pricing_version: catalogReads === 1 ? "current-price" : "renewed-price", max_search_jobs: 100, sources: [] }) : read(url));
