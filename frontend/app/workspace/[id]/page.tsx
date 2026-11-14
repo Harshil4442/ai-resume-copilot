@@ -182,7 +182,6 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const matchRunId = scopedMatchRun?.runId ?? null;
   const quotedMatchScope = useRef<MatchScope | null>(null);
   const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
-  const interviewFromSavedLookup = useRef(false);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
   const [learningMatchOpened, setLearningMatchOpened] = useState(false);
   const [reminderMessage, setReminderMessage] = useState("");
@@ -203,6 +202,8 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const [comparedTranscription, setComparedTranscription] = useState(false);
   const [reviewedVersionIds, setReviewedVersionIds] = useState<Record<string, boolean>>({});
   const trackedTerminalRuns = useRef(new Set<string>());
+  // Once we observe active work, a later saved lookup must still let it finish normally.
+  const resultLookupHistory = useRef(new Map<string, "tracked" | "already-complete">());
   const resumeTabRef = useRef<HTMLButtonElement>(null);
   const resumeSelectRef = useRef<HTMLSelectElement>(null);
   const tailoringIntent = useRef<TailoringIntent | null>(null);
@@ -313,19 +314,19 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   }, [opportunityId, ownerKey, queryClient, workspace.isSuccess]);
 
   useEffect(() => {
-    if (matchRun.data?.status === "succeeded") {
+    if (matchRun.data?.status === "succeeded" && resultLookupHistory.current.get(matchRun.data.id) !== "already-complete") {
       void queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     }
-  }, [matchRun.data?.status, opportunityId, ownerKey, queryClient]);
+  }, [matchRun.data?.id, matchRun.data?.status, opportunityId, ownerKey, queryClient]);
 
   useEffect(() => {
-    if (tailorRun.data?.status === "succeeded") {
+    if (tailorRun.data?.status === "succeeded" && resultLookupHistory.current.get(tailorRun.data.id) !== "already-complete") {
       void queryClient.invalidateQueries({ queryKey: workspaceKey(ownerKey, opportunityId) });
     }
-  }, [opportunityId, ownerKey, queryClient, tailorRun.data?.status]);
+  }, [opportunityId, ownerKey, queryClient, tailorRun.data?.id, tailorRun.data?.status]);
 
   useEffect(() => {
-    if (interviewRun.data?.status === "succeeded" && supportsInterviewHistory && !interviewFromSavedLookup.current) {
+    if (interviewRun.data?.status === "succeeded" && supportsInterviewHistory && resultLookupHistory.current.get(interviewRun.data.id) !== "already-complete") {
       void queryClient.invalidateQueries({ queryKey: [...workspaceKey(ownerKey, opportunityId), "tab", "interview"] });
     }
   }, [interviewRun.data?.id, interviewRun.data?.status, opportunityId, ownerKey, queryClient, supportsInterviewHistory]);
@@ -333,7 +334,8 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   useEffect(() => {
     let refreshAccount = false;
     for (const run of [matchRun.data, interviewRun.data, tailorRun.data]) {
-      if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)) continue;
+      if (!run || !terminal.has(run.status) || trackedTerminalRuns.current.has(run.id)
+        || resultLookupHistory.current.get(run.id) === "already-complete") continue;
       trackedTerminalRuns.current.add(run.id);
       refreshAccount = true;
       trackEvent(run.status === "succeeded" ? "analysis_completed" : "analysis_failed", {
@@ -394,12 +396,22 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     job: opportunity.data ? { id: opportunityId, title: opportunity.data.title, employer: opportunity.data.company || undefined } : undefined,
   };
   const selectionIdentity = JSON.stringify({ opportunity: opportunity.data, evidence: evidence.data });
+  function rememberObservedRun(run: AnalysisRun, reused = false) {
+    if (!reused || !terminal.has(run.status)) {
+      resultLookupHistory.current.set(run.id, "tracked");
+    } else if (!resultLookupHistory.current.has(run.id)) {
+      resultLookupHistory.current.set(run.id, "already-complete");
+    }
+  }
   const matchAction = useQuotedAnalysis({
     request: { operation: "job_match", opportunity_id: opportunityId, input: { resume_id: opportunity.data?.resume_id, mode: "enhanced" } },
     context: reviewContext, selectionKey: JSON.stringify([ownerKey, opportunityId, opportunity.data?.resume_id, selectionIdentity, matchMode]), availability: creditAvailability.data,
-    onRun: (run) => {
+    onRun: (run, reused) => {
       const scope = quotedMatchScope.current;
-      if (scope && run.operation === "job_match" && run.opportunity_id === scope.opportunityId) setScopedMatchRun({ runId: run.id, scope });
+      if (scope && run.operation === "job_match" && run.opportunity_id === scope.opportunityId) {
+        rememberObservedRun(run, reused);
+        setScopedMatchRun({ runId: run.id, scope });
+      }
     },
   });
   function requestQuotedMatch(action: "requestQuote" | "loadSaved") {
@@ -411,13 +423,19 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const interviewAction = useQuotedAnalysis({
     request: { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: "enhanced" } },
     context: reviewContext, selectionKey: `${selectionIdentity}:${interviewMode}`, availability: creditAvailability.data,
-    onRun: (run, reused) => { interviewFromSavedLookup.current = reused && run.status === "succeeded"; setInterviewRunId(run.id); },
+    onRun: (run, reused) => {
+      rememberObservedRun(run, reused);
+      setInterviewRunId(run.id);
+    },
   });
   const tailoringAction = useQuotedAnalysis({
     request: { operation: "resume_tailor", opportunity_id: opportunityId, input: { tailoring_scope: tailoringScope } },
     context: { ...reviewContext, details: [{ label: "Tailoring scope", value: tailoringScope === "extended" ? "Extended — review the supported limits in the quote" : "Standard" }] },
     selectionKey: `${selectionIdentity}:${tailoringScope}`, availability: creditAvailability.data,
-    onRun: (run) => setTailorRunId(run.id),
+    onRun: (run, reused) => {
+      rememberObservedRun(run, reused);
+      setTailorRunId(run.id);
+    },
   });
   const startMatch = useMutation({
     mutationFn: async () => {
@@ -431,7 +449,10 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
       return { run, scope };
     },
     onSuccess: ({ run, scope }) => {
-      if (run.operation === "job_match" && run.opportunity_id === scope.opportunityId) setScopedMatchRun({ runId: run.id, scope });
+      if (run.operation === "job_match" && run.opportunity_id === scope.opportunityId) {
+        rememberObservedRun(run);
+        setScopedMatchRun({ runId: run.id, scope });
+      }
       trackEvent("analysis_run_created", { operation: "job_match", estimated_units: run.estimated_units });
     },
   });
@@ -442,7 +463,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
       { "Idempotency-Key": crypto.randomUUID() },
     ),
     onSuccess: (run) => {
-      interviewFromSavedLookup.current = false;
+      rememberObservedRun(run);
       setInterviewRunId(run.id);
       trackEvent("analysis_run_created", { operation: "interview_questions", estimated_units: run.estimated_units });
     },
@@ -460,7 +481,10 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     },
     onSuccess: (run, intent) => {
       if (tailoringIntent.current === intent) tailoringIntent.current = null;
-      if (intent.opportunityId === opportunityId && intent.resumeId === opportunity.data?.resume_id) setTailorRunId(run.id);
+      if (intent.opportunityId === opportunityId && intent.resumeId === opportunity.data?.resume_id) {
+        rememberObservedRun(run);
+        setTailorRunId(run.id);
+      }
       trackEvent("analysis_run_created", { operation: "resume_tailor", estimated_units: run.estimated_units });
     },
     onError: (error, intent) => {
