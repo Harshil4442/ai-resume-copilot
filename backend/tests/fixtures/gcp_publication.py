@@ -36,18 +36,28 @@ from app.domains.recovery.gcp_publication_contracts import (
 from app.domains.recovery.gcp_rpc import FirestoreRpc
 
 
-def publication_for(target, journal_bucket, *, active=None):
+def publication_for(target, journal_bucket, *, active=None, firestore_client=None):
     from test_gcp_journal_sdk import response
 
-    endpoint = local_firestore_endpoint()
-    channel = grpc.insecure_channel(endpoint)
-    grpc.channel_ready_future(channel).result(timeout=3.0)
-    atexit.register(channel.close)
-    client = FirestoreClient(
-        transport=FirestoreGrpcTransport(
-            host=endpoint, channel=channel, credentials=AnonymousCredentials()
+    if firestore_client is None:
+        endpoint = local_firestore_endpoint()
+        channel = grpc.insecure_channel(endpoint)
+        ready = grpc.channel_ready_future(channel)
+        try:
+            ready.result(timeout=3.0)
+        except grpc.FutureTimeoutError:
+            channel.close()
+            raise
+        finally:
+            ready.cancel()
+        atexit.register(channel.close)
+        firestore_client = FirestoreClient(
+            transport=FirestoreGrpcTransport(
+                host=endpoint, channel=channel, credentials=AnonymousCredentials()
+            )
         )
-    )
+    # The gRPC transport is independent of the database resource on each RPC.
+    # A pairing fixture can reuse its already verified local emulator channel.
     native = RegistryPin(
         database=f"projects/hirewiz-local-authority/databases/publication-{uuid4().hex[:12]}",
         database_uid=uuid4(),
@@ -70,7 +80,7 @@ def publication_for(target, journal_bucket, *, active=None):
                 type_=Database.DatabaseType.FIRESTORE_NATIVE,
             )
 
-    rpc = FirestoreRpc(client, Admin(), database_resource=native.database, rpc_timeout=5.0)
+    rpc = FirestoreRpc(firestore_client, Admin(), database_resource=native.database, rpc_timeout=5.0)
     if active is not None:
         begin, commit, rollback = rpc.begin, rpc.commit, rpc.rollback
 
