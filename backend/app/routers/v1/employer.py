@@ -120,9 +120,11 @@ def get_jobs_bootstrap(
     verified = get_current_user_verification(token=token, db=db)
     owner_id = verified.user_id
     with db.no_autoflush:
+        # Keep catalog timestamps in the same wire format as the standalone route.
+        catalog = jsonable_encoder(service.catalog_for_verified_subject(db, owner_id,
+            credential_epoch=verified.credential_epoch, candidate_revision=verified.candidate_revision))
         return schemas.JobsBootstrapView(
-            catalog=service.catalog_for_verified_subject(db, owner_id,
-                credential_epoch=verified.credential_epoch, candidate_revision=verified.candidate_revision),
+            catalog=catalog,
             resumes=resume_browsing.page(db, owner_id, current_id=current_resume_id),
             saved_searches=search_pages.list_summaries(db, owner_id),
             applications=service.list_bootstrap_application_views(db, owner_id),
