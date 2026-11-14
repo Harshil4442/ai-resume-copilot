@@ -39,7 +39,8 @@ def test_plan_preview_is_dependency_free_and_mode_is_exclusive(tmp_path):
     assert subprocess.run(base + ["--fresh-window"], capture_output=True, timeout=10, cwd=tmp_path).returncode == 2
 
 
-@pytest.mark.parametrize("case", ["valid", "wrong_body", "wrong_retry", "wrong_sql", "wrong_preflight", "wrong_cache"])
+@pytest.mark.parametrize("case", ["valid", "wrong_body", "wrong_retry", "wrong_sql", "wrong_preflight", "wrong_cache",
+                                  "contradictory_cache"])
 def test_measure_keeps_each_outcome_and_checks_capacity_contract(monkeypatch, case):
     async def exercise():
         loop = asyncio.get_running_loop()
@@ -84,8 +85,9 @@ def test_measure_keeps_each_outcome_and_checks_capacity_contract(monkeypatch, ca
                 counters.add("synthetic_admin_list_databases", 2)
                 if case == "wrong_sql":
                     counters.add("sql_UPDATE")
+                cache = "public, private, no-store" if case == "contradictory_cache" else "private, no-store"
                 return httpx.Response(200, json={"actor": actor if case != "wrong_body" else 99},
-                    headers={"Cache-Control": "private, no-store"} if case != "wrong_cache" else {})
+                    headers={"Cache-Control": cache} if case != "wrong_cache" else {})
             refused += 1
             return httpx.Response(429, json={"detail": {"code": "NATIVE_METADATA_CAPACITY",
                 "message": "Request capacity is temporarily allocated. Please try again later."}},
@@ -110,3 +112,28 @@ def test_measure_keeps_each_outcome_and_checks_capacity_contract(monkeypatch, ca
     validation = diagnostic.validate(report, controls, 25)
     assert validation["passed"] is (case == "valid")
     assert validation["production_capacity_qualified"] is False
+
+
+def test_owned_controls_require_strict_cache_without_inventing_foreign_contract():
+    seen = []
+
+    def response(request):
+        actor = int(request.headers["authorization"].removeprefix("Bearer synthetic-"))
+        seen.append(actor)
+        if actor == 1:
+            return httpx.Response(404)
+        if actor == 2:
+            return httpx.Response(200, json={"upload_id": diagnostic.upload_id(2), "state": "queued",
+                "error_code": None, "resume": None}, headers={"cache-control": "public, private, no-store"})
+        order = diagnostic.order_id(actor)
+        return httpx.Response(200, json={"schema_version": "unified-credits-v1", "order_id": order,
+            "status": "pending", "payment_status": "client_confirmed", "provider_order_id": None,
+            "fulfilled": False, "checkout_available": False, "amount_minor": 7900, "refunded_amount_minor": 0,
+            "currency": "INR", "accepted_quote": {"quote_id": f"{order}-quote", "credits": 40}},
+            headers={"cache-control": "no-store, private"})
+
+    with httpx.Client(transport=httpx.MockTransport(response), base_url="https://127.0.0.1:59999") as client:
+        controls = diagnostic.control_reads(client, {uid: f"synthetic-{uid}" for uid in range(1, 9)}, 20)
+    assert len(seen) == 5
+    assert controls == {"foreign_workspace_status": 404, "foreign_order_status": 404, "foreign_upload_status": 404,
+        "owned_pending_order_valid": True, "owned_queued_upload_valid": False}

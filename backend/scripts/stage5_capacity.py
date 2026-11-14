@@ -120,15 +120,18 @@ def summarize(rows: list[dict]) -> dict:
     }
 
 
-def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> bool:
+def private_no_store(headers) -> bool:
     cache = headers.get("cache-control")
     directives = cache.split(",") if type(cache) is str else []
+    return len(directives) == 2 and {directive.strip(" \t").lower() for directive in directives} == {"private", "no-store"}
+
+
+def expected_capacity_refusal(mode: str, status: int, body: object, headers) -> bool:
     return (mode in {"list_governed_40", FRESH_WINDOW_MODE} and status == 429
         and body == {"detail": {"code": "NATIVE_METADATA_CAPACITY",
             "message": "Request capacity is temporarily allocated. Please try again later."}}
         and headers.get("retry-after") == "60"
-        and len(directives) == 2
-        and {directive.strip(" \t").lower() for directive in directives} == {"private", "no-store"}
+        and private_no_store(headers)
         and headers.get("pragma") == "no-cache")
 
 
@@ -158,7 +161,8 @@ def workload_validation(results: list[dict], *, requests_per_phase: int, preflig
             failures["request_indices"] += 1
         if fresh_window and phase.get("state") != "not_started_deadline":
             cooldown = phase.get("cooldown_seconds_before_phase")
-            if type(cooldown) not in (int, float) or not math.isfinite(cooldown) or cooldown < FRESH_WINDOW_COOLDOWN_SECONDS:
+            if (not isinstance(cooldown, (int, float)) or isinstance(cooldown, bool)
+                or not math.isfinite(cooldown) or cooldown < FRESH_WINDOW_COOLDOWN_SECONDS):
                 failures["fresh_window_cooldown"] += 1
             peak = phase.get("actual_peak_inflight_http")
             cap = phase.get("concurrency")
