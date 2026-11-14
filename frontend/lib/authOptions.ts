@@ -16,6 +16,19 @@ type BackendAuthToken = {
   browser_pairing_session?: unknown;
 };
 
+function backendSessionExpired(accessToken: string | undefined, now = Date.now()) {
+  // This is a display restriction on an already protected NextAuth session.
+  // The backend remains responsible for verifying the bearer and current access.
+  const parts = accessToken?.split(".");
+  if (parts?.length !== 3 || parts[1].length > 4096 || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return false;
+  try {
+    const exp: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))?.exp;
+    return typeof exp === "number" && Number.isSafeInteger(exp) && exp > 0 && exp <= Math.floor(now / 1000);
+  } catch {
+    return false;
+  }
+}
+
 class EnrolledSignInRequiredError extends Error {
   // NextAuth's OAuth callback maps this fixed name to OAuthAccountNotLinked.
   name = "AccountNotLinkedError";
@@ -167,6 +180,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user && token.hirewizUserId) {
         session.user.id = String(token.hirewizUserId);
       }
+      if (backendSessionExpired(token.accessToken)) session.reauthenticationRequired = true;
       return session;
     },
   },

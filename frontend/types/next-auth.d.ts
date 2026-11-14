@@ -2,6 +2,7 @@ import type { DefaultSession, DefaultUser } from "next-auth";
 
 declare module "next-auth" {
   interface Session {
+    reauthenticationRequired?: true;
     user: {
       id: string;
     } & DefaultSession["user"];
