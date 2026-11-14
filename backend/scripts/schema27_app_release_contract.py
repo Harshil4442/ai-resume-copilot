@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'ec2ff98e1eb208ce6e9428b8f44f9b3fda86191bcb8ec6448d846461e5b5f461'
+CANDIDATE_APP_SHA256 = '098ce4deba8792d05d3a9302411dc273ee8c3fddfc409a11f6d339241fa26f81'
 CANDIDATE_APP_FILES = 313
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -42,6 +42,7 @@ HISTORICAL_CURRENT_IGNORES = (*v3.HISTORICAL_CURRENT_IGNORES,
 NEW_HTTP_PATHS = {
     "/api/recommendations/match_strategy/saved": "84cb75fbecc4fc9ba2f7cea63a5a461cf2c382e3094998065f27bbadcb1e4d3f",
     "/api/public/notifications/unsubscribe": "c2d58bafabeb58932448485c133bd4a7613f3c134a48fa6d502d2cfda5fe2044",
+    "/api/v1/employer-jobs/bootstrap": "7214b6a32145394e0bdc3401c13bae629b8dec5b3b6412a4e56555b30e8d0ba3",
     "/api/v1/notifications/preferences": "8bca55f75a9c5e9c67713554f1bea9d6fedf31cfef85fbea5066ebf7cea46cb4",
     "/api/v1/opportunities/page": "29f1a35114d7cf58e15d0816b6dcda425b4098c745bb18b64bbc15d08407f8a4",
     # Optional learning projection. Keep the retained v3 route pin immutable.
@@ -49,6 +50,7 @@ NEW_HTTP_PATHS = {
     "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": "ce7b8e566f8d9d169ad1e29455fe2d247eb23d9f16c10ff4cc6cbd9aca59fa1c",
 }
 NEW_HTTP_SCHEMAS = {
+    "JobsBootstrapView": "04537115b515a3cea7a910061e237da6589b08f5f0da1d408114ea8b95772a7d",
     "PreferenceChange": "f836f891975e90293310e2b7ed501a2ad5e41d7ad80d8f46a74dcdcd5419a072",
     "PreferenceResponse": "10ad227d9d00a4a1dbcf928fed2047bfc30e9d2ca56715cb07318a3fa91c813b",
     "UnsubscribeRequest": "a87c23e73f8c868aaf837fcc755f290412fbecb636f714bd41b042badff0de6a",
@@ -124,6 +126,7 @@ F07_PATHS = (
     "frontend/app/workspace/[id]/page.tsx", "frontend/app/workspace/[id]/page.test.tsx",
     "frontend/components/career/WorkspaceInterviewHistory.tsx", "frontend/lib/useQuotedAnalysis.ts",
     "frontend/lib/workspacePages.ts",
+    "backend/tests/test_employer_jobs_bootstrap.py",
 )
 
 

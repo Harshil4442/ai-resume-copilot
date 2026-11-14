@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
+from ...schemas import ResumePageResponse
 from .search_preferences import SearchPreferencesV1
 
 
@@ -51,6 +52,14 @@ class SearchSummary(BaseModel):
 class SearchSummaryPage(BaseModel):
     items: list[SearchSummary]
     next_cursor: str | None
+
+
+class JobsBootstrapView(BaseModel):
+    schema_version: Literal["owned-jobs-bootstrap-v1"] = "owned-jobs-bootstrap-v1"
+    catalog: dict[str, Any]
+    resumes: ResumePageResponse
+    saved_searches: SearchSummaryPage
+    applications: list[dict[str, Any]]
 
 
 class SavedSearchResult(BaseModel):

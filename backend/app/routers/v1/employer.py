@@ -24,7 +24,14 @@ from ...domains.employer import (
 from ...domains.employer import (
     credit_history as service_credit_history,
 )
-from ...security import decode_access_token_identity, get_current_user, oauth2_scheme
+from ...domains.resume_uploads import browsing as resume_browsing
+from ...security import (
+    CurrentUserVerification,
+    decode_access_token_identity,
+    get_current_user,
+    get_current_user_verification,
+    oauth2_scheme,
+)
 from .admin import require_admin
 
 router = APIRouter(prefix="/employer-jobs", tags=["employer-jobs"])
@@ -32,6 +39,10 @@ router = APIRouter(prefix="/employer-jobs", tags=["employer-jobs"])
 
 class _PrivateSavedSearchReadRoute(APIRoute):
     """Keep personal saved-search responses, including validation errors, private."""
+
+    validation_message = "Invalid saved-search page request. Check the page size, cursor and saved search."
+    validation_code = "invalid_search_page_request"
+
     def get_route_handler(self):
         original = super().get_route_handler()
 
@@ -40,8 +51,7 @@ class _PrivateSavedSearchReadRoute(APIRoute):
                 response = await original(request)
             except RequestValidationError:
                 response = JSONResponse(status_code=422, content={"detail": [{
-                    "loc": ["request"], "msg": "Invalid saved-search page request. Check the page size, cursor and saved search.",
-                    "type": "invalid_search_page_request",
+                    "loc": ["request"], "msg": self.validation_message, "type": self.validation_code,
                 }]})
             except HTTPException as exc:
                 exc.headers = {**(exc.headers or {}), "Cache-Control": "private, no-store"}
@@ -53,6 +63,14 @@ class _PrivateSavedSearchReadRoute(APIRoute):
 
 
 _saved_search_reads = APIRouter(route_class=_PrivateSavedSearchReadRoute)
+
+
+class _PrivateJobsBootstrapRoute(_PrivateSavedSearchReadRoute):
+    validation_message = "Invalid Jobs overview request. Check the résumé selection."
+    validation_code = "invalid_jobs_bootstrap_request"
+
+
+_jobs_bootstrap_reads = APIRouter(route_class=_PrivateJobsBootstrapRoute)
 
 
 @router.get("/catalog")
@@ -89,6 +107,29 @@ def list_search_summaries(response: Response, limit: int = Query(10, ge=1, le=20
     return search_pages.list_summaries(db, user.id, limit=limit, cursor=cursor)
 
 
+@_jobs_bootstrap_reads.get("/bootstrap", response_model=schemas.JobsBootstrapView)
+def get_jobs_bootstrap(
+    request: Request, current_resume_id: int | None = Query(default=None, gt=0, lt=2**63),
+    db: Session = Depends(get_db),
+    verified: CurrentUserVerification = Depends(get_current_user_verification),
+):
+    """Initial owned Jobs reads share one fresh account validation."""
+    if (any(key != "current_resume_id" for key in request.query_params)
+            or len(request.query_params.getlist("current_resume_id")) > 1
+            or request.headers.get("content-encoding") or request.headers.get("transfer-encoding")
+            or request.headers.get("content-length", "0") != "0"):
+        raise HTTPException(422, "The Jobs overview accepts an empty GET and one optional résumé selection.")
+    owner_id = verified.user_id
+    with db.no_autoflush:
+        return schemas.JobsBootstrapView(
+            catalog=service.catalog_for_verified_subject(db, owner_id,
+                credential_epoch=verified.credential_epoch, candidate_revision=verified.candidate_revision),
+            resumes=resume_browsing.page(db, owner_id, current_id=current_resume_id),
+            saved_searches=search_pages.list_summaries(db, owner_id),
+            applications=service.list_application_views(db, owner_id),
+        )
+
+
 @_saved_search_reads.get("/search-preparations/{identity}")
 def get_search_preparation(response: Response, identity: str = Path(min_length=1, max_length=64),
                            db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
@@ -114,6 +155,7 @@ def get_saved_search_results(response: Response, identity: str = Path(min_length
 
 
 router.include_router(_saved_search_reads)
+router.include_router(_jobs_bootstrap_reads)
 
 
 @router.get("/searches/{identity}")
@@ -128,8 +170,7 @@ def create_application(payload: schemas.ApplicationCreate, db: Session = Depends
 
 @router.get("/applications")
 def list_applications(limit: int = Query(30, ge=1, le=100), db: Session = Depends(get_db), user: core.User = Depends(get_current_user)):
-    applications = db.query(models.EmployerApplication).filter_by(user_id=user.id).order_by(models.EmployerApplication.created_at.desc()).limit(limit).all()
-    return {"items": [service.application_response(db, application) for application in applications]}
+    return {"items": service.list_application_views(db, user.id, limit=limit)}
 
 
 @router.get("/applications/{identity}")

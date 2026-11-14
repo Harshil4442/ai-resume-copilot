@@ -95,7 +95,8 @@ def catalog(db, user_id):
         return _catalog_response(user.job_service_credits, sources)
 
 
-def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=None, native_validated: bool = False):
+def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=None, native_validated: bool = False,
+                                 candidate_revision: tuple[str, int] | None = None):
     """Read owner existence/balance and bounded sources in one fresh SQL snapshot.
 
     The route validates the JWT first. This advisory read never replaces financial
@@ -109,15 +110,23 @@ def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=
             models.EmployerSource.enabled.is_(True),
         ).order_by(models.EmployerSource.employer, models.EmployerSource.id).limit(500).subquery()
         source = aliased(models.EmployerSource, bounded)
+        account = core.CandidatePasswordAccount
         rows = db.query(core.User.id, core.User.job_service_credits, source, core.User.credential_epoch,
-                        core.CandidatePasswordAccount.user_id).select_from(
+                        account.user_id, account.account_binding_id, account.auth_generation, account.state).select_from(
             core.User,
-        ).outerjoin(core.CandidatePasswordAccount, core.CandidatePasswordAccount.user_id == core.User.id).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
+        ).outerjoin(account, account.user_id == core.User.id).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
             source.employer, source.id,
         ).populate_existing().all()
-    if (not rows or rows[0][4] is not None and not native_validated
-            or rows[0][4] is None and int(rows[0][3] or 0) > 0
-            and (type(credential_epoch) is not int or credential_epoch != rows[0][3])):
+    if not rows:
+        raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    _, _, _, actual_epoch, mapped_id, binding_id, generation, state = rows[0]
+    if candidate_revision is not None:
+        admissible = state == "ACTIVE" and candidate_revision == (binding_id, generation)
+    elif mapped_id is not None:
+        admissible = native_validated
+    else:
+        admissible = int(actual_epoch or 0) <= 0 or (type(credential_epoch) is int and credential_epoch == actual_epoch)
+    if not admissible:
         raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
     with catalog_span("catalog_owner_lookup"):
         balance = rows[0][1]
@@ -957,6 +966,12 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
         artifacts.attach_upload(db, upload_id, user_id=user_id)
         db.commit()
         return application
+
+
+def list_application_views(db: Session, user_id: int, *, limit: int = 30) -> list[dict]:
+    applications = db.query(models.EmployerApplication).filter_by(user_id=user_id).order_by(
+        models.EmployerApplication.created_at.desc()).limit(limit).all()
+    return [application_response(db, application) for application in applications]
 
 
 def application_response(db, application):

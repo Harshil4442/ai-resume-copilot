@@ -1903,6 +1903,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/employer-jobs/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Jobs Bootstrap
+         * @description Initial owned Jobs reads share one fresh account validation.
+         */
+        get: operations["get_jobs_bootstrap_api_v1_employer_jobs_bootstrap_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/employer-jobs/catalog": {
         parameters: {
             query?: never;
@@ -4053,6 +4073,25 @@ export interface components {
             }[];
             /** Uncertainties */
             uncertainties?: string[];
+        };
+        /** JobsBootstrapView */
+        JobsBootstrapView: {
+            /** Applications */
+            applications: {
+                [key: string]: unknown;
+            }[];
+            /** Catalog */
+            catalog: {
+                [key: string]: unknown;
+            };
+            resumes: components["schemas"]["ResumePageResponse"];
+            saved_searches: components["schemas"]["SearchSummaryPage"];
+            /**
+             * Schema Version
+             * @default owned-jobs-bootstrap-v1
+             * @constant
+             */
+            schema_version: "owned-jobs-bootstrap-v1";
         };
         /** LearningPriority */
         LearningPriority: {
@@ -11272,6 +11311,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_jobs_bootstrap_api_v1_employer_jobs_bootstrap_get: {
+        parameters: {
+            query?: {
+                current_resume_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobsBootstrapView"];
                 };
             };
             /** @description Validation Error */

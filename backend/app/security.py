@@ -1,5 +1,6 @@
 import os
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
@@ -111,11 +112,19 @@ def decode_access_token_user_id(token: str) -> int:
     return decode_access_token_identity(token)[0]
 
 
-def get_current_user(
+@dataclass(frozen=True)
+class CurrentUserVerification:
+    user: User
+    user_id: int
+    credential_epoch: int | None
+    candidate_revision: tuple[str, int] | None
+
+
+def get_current_user_verification(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
-) -> User:
-    user_id = decode_access_token_user_id(token)
+) -> CurrentUserVerification:
+    user_id, claims = decode_access_token_identity(token)
 
     if current_catalog_timing() is not None:
         with catalog_span("db_acquire"):
@@ -135,26 +144,31 @@ def get_current_user(
     from .routers.native_metadata_http import metadata_http_error
 
     account = mapped_account(db, user_id)
+    epoch = claims.get("credential_epoch")
+    candidate_revision = None
     if account is None and int(user.credential_epoch or 0) > 0:
-        try:
-            claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            epoch = claims.get("credential_epoch")
-            if type(epoch) is not int or epoch != user.credential_epoch:
-                raise ValueError("Stale credential epoch")
-        except (JWTError, ValueError):
-            raise HTTPException(status_code=401, detail="Not authenticated") from None
+        if type(epoch) is not int or epoch != user.credential_epoch:
+            raise HTTPException(status_code=401, detail="Not authenticated")
     if account is not None:
         if account.state != "ACTIVE":
             raise HTTPException(status_code=401, detail="Not authenticated")
         try:
-            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            context, generation = context_from_claims(payload, candidate_id=user_id)
+            context, generation = context_from_claims(claims, candidate_id=user_id)
             db.rollback()  # Independent current authority IO does not hold a SQL transaction.
             production_candidate_accounts().validate(context, auth_generation=generation)
+            candidate_revision = (str(context.account_binding_id), generation)
         except MetadataAdmissionError as exc:
             raise metadata_http_error(exc) from None
         except GuardDenied:
             raise HTTPException(status_code=401, detail="Not authenticated") from None
         except GuardUnavailable:
             raise HTTPException(status_code=503, detail="Candidate account lifetime is unavailable") from None
-    return user
+    return CurrentUserVerification(user=user, user_id=user_id, credential_epoch=epoch if type(epoch) is int else None,
+                                   candidate_revision=candidate_revision)
+
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    return get_current_user_verification(token=token, db=db).user

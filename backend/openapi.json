@@ -4016,6 +4016,43 @@
         "title": "JobMatchResponse",
         "type": "object"
       },
+      "JobsBootstrapView": {
+        "properties": {
+          "applications": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Applications",
+            "type": "array"
+          },
+          "catalog": {
+            "additionalProperties": true,
+            "title": "Catalog",
+            "type": "object"
+          },
+          "resumes": {
+            "$ref": "#/components/schemas/ResumePageResponse"
+          },
+          "saved_searches": {
+            "$ref": "#/components/schemas/SearchSummaryPage"
+          },
+          "schema_version": {
+            "const": "owned-jobs-bootstrap-v1",
+            "default": "owned-jobs-bootstrap-v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog",
+          "resumes",
+          "saved_searches",
+          "applications"
+        ],
+        "title": "JobsBootstrapView",
+        "type": "object"
+      },
       "LearningPriority": {
         "properties": {
           "current_status": {
@@ -18297,6 +18334,63 @@
           }
         ],
         "summary": "Report Manual Submission",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
+    "/api/v1/employer-jobs/bootstrap": {
+      "get": {
+        "description": "Initial owned Jobs reads share one fresh account validation.",
+        "operationId": "get_jobs_bootstrap_api_v1_employer_jobs_bootstrap_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "current_resume_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9223372036854775808,
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Resume Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsBootstrapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Jobs Bootstrap",
         "tags": [
           "employer-jobs"
         ]

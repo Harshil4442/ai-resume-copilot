@@ -110,7 +110,7 @@ def test_new_family_is_not_the_neverqualified294_or_retained_producer():
     assert c.app_digest(app) == c.CANDIDATE_APP_SHA256
     assert c.HTTP_PATHS == c.v3.HTTP_PATHS | c.NEW_HTTP_PATHS
     assert c.HTTP_SCHEMAS == c.v3.HTTP_SCHEMAS | c.NEW_HTTP_SCHEMAS
-    assert len(c.NEW_HTTP_PATHS) == 6 and len(c.NEW_HTTP_SCHEMAS) == 9
+    assert len(c.NEW_HTTP_PATHS) == 7 and len(c.NEW_HTTP_SCHEMAS) == 10
     assert c.HISTORICAL_CURRENT_IGNORES[-3:] == ("tests/test_schema25_app_compatibility_v3_postgres.py",
         "tests/test_schema25_app_protocol_v3.py", "tests/test_schema25_app_rolling_v3.py")
 
