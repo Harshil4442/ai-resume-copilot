@@ -84,9 +84,23 @@ stops its local processes and drops only its own schema on exit. Capture
 sanitized evidence while the launcher is running.
 
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
-verify they settle one credit lot. Check duplicate delivery using the original
-event ID. Observe both a partial and a remaining refund for that order when
-the Test payment method supports them.
+verify they settle one credit lot. To verify a genuine Razorpay retry, atomically
+write `{"ack_loss_order":"order_<exact-Test-order-ID>"}` to the printed private
+`hold.json` with mode `0600` before paying. Use this rule by itself. For the first
+matching signed `order.paid` with an event ID, the receiver returns 503 only after
+the local billing handler confirms that the event committed. Its empty,
+order-specific marker keeps that response one-shot across receiver restarts.
+Leave the receiver and webhook running, and verify one recorded event and one
+credit lot after Razorpay retries the original event ID. If the retry is not
+observed, record it as pending. Remove the rule before testing partial and
+remaining refunds, when the Test payment method supports them.
+
+If a previous lab runner is already active, a second receiver can target that
+runner's verified loopback API port directly. Use a new loopback receiver port,
+its own private control directory and the same dedicated Test webhook secret.
+Point the Test tunnel at that receiver only. The previous receiver discards the
+application response needed to distinguish a commit from a duplicate, so avoid
+chaining the receivers.
 
 For the reconciliation order, use the private `hold.json` path printed by the
 launcher. Create the file with permissions `0600` using an atomic rename. Before

@@ -40,14 +40,17 @@ class UpstreamHandler(BaseHTTPRequestHandler):
             return
         if server.application is None:
             status = server.response_status
+            response_body = b"private upstream response"
         else:
             reply = server.application.post(self.path, content=body, headers=dict(self.headers))
             status = reply.status_code
+            response_body = reply.content
         self.send_response(status)
         self.send_header("Location", "/must-not-follow")
         self.send_header("Set-Cookie", "must-not-relay=private")
+        self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
-        self.wfile.write(b"private upstream response")
+        self.wfile.write(response_body)
 
     def log_message(self, format, *args):
         pass
@@ -198,6 +201,60 @@ def test_unified_pass_capture_and_refunds_through_signed_test_receiver(relay, un
         grant = db.query(CreditGrant).one()
         assert (grant.quantity, grant.remaining_credits) == (40, 0)
         assert db.query(EntitlementLedger).one().status == "refunded"
+    assert len(provider_calls) == 1
+
+
+def test_loses_only_one_ack_after_durable_test_order_settlement(relay, unified, session_factory, tmp_path):
+    receiver, upstream = relay
+    client, provider_calls = unified
+    upstream.application = client
+    _, _, checkout = start(client)
+    assert checkout.status_code == 200
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=checkout.json()["order_id"]).one()
+        provider_order = order.provider_order_id
+        paid = _capture_payload(order, event="order.paid")
+        captured = _capture_payload(order)
+
+    tmp_path.chmod(0o700)
+    control = tmp_path / "hold.json"
+    control.write_text(json.dumps({"ack_loss_order": provider_order}))
+    control.chmod(0o600)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    body = json.dumps(paid).encode()
+    headers = {"X-Razorpay-Signature": _signature(body), "X-Razorpay-Event-Id": "evt_earned_retry"}
+    capture = json.dumps(captured).encode()
+    capture_headers = {"X-Razorpay-Signature": _signature(capture), "X-Razorpay-Event-Id": "evt_other_kind"}
+    assert send(receiver, body=body, headers=headers | {"X-Razorpay-Signature": "0" * 64})[0] == 400
+    assert send(receiver, body=body, headers={"X-Razorpay-Signature": _signature(body)})[0] == 400
+    incorrect = json.loads(body)
+    incorrect["payload"]["order"]["entity"]["amount_due"] = 1
+    rejected = json.dumps(incorrect).encode()
+    bad_headers = {"X-Razorpay-Signature": _signature(rejected), "X-Razorpay-Event-Id": "evt_rejected"}
+    assert send(receiver, body=rejected, headers=bad_headers)[0] == 400
+    assert send(receiver, body=rejected, headers=bad_headers)[0] == 200
+    assert list(tmp_path.iterdir()) == [control]
+    with session_factory() as db:
+        assert db.query(CreditGrant).count() == 0
+
+    assert send(receiver, body=body, headers=headers)[0] == 503
+    with session_factory() as db:
+        original = db.query(PaymentEvent).filter_by(provider_event_id="evt_earned_retry").one()
+        assert (original.processing_status, original.event_type) == ("processed", "order.paid")
+        assert db.query(PaymentOrder).one().status == "paid"
+        assert db.query(CreditGrant).one().quantity == 40
+
+    marker = tmp_path / f"ack-loss-{hashlib.sha256(provider_order.encode()).hexdigest()}.used"
+    assert marker.read_bytes() == b"" and (marker.stat().st_mode & 0o777) == 0o600
+    assert send(receiver, body=capture, headers=capture_headers)[0] == 200
+    with running(ingress.WebhookIngress(0, upstream.server_port,
+            hold=ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET))) as restarted:
+        assert send(restarted, body=body, headers=headers)[0] == 200
+        # A second processed delivery also leaves the one-shot marker alone.
+        assert send(restarted, body=body, headers=headers | {"X-Razorpay-Event-Id": "evt_same_order"})[0] == 200
+    with session_factory() as db:
+        assert db.query(PaymentEvent).count() == 4
+        assert db.query(CreditGrant).one().remaining_credits == 40
     assert len(provider_calls) == 1
 
 
