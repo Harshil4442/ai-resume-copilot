@@ -189,7 +189,7 @@ only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
 workflow runs only the reviewed owned-local experiments. Its PR trigger names
-only thirteen finite Stage5 tooling/config/test paths, so this Linux validation
+only explicitly enumerated Stage5 tooling/config/test and supporting runtime paths, so this Linux validation
 can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
 provides PG16, so no host17 path is assumed. The source build uses the
@@ -297,6 +297,41 @@ synthetic buyer cohorts. Each completed all eight journeys per arm, moving
 from 16 to eight HTTP responses and from 32 to 16 intercepted Admin Lists.
 There were zero provider calls. The [default workload](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469626412)
 also reproduced its existing response counts in both cohorts.
+
+## First-minute overlap of authenticated reads
+
+Use `--first-minute` with the existing runner, or select only `first_minute` in
+the owned-local workflow dispatch. Its dependency-free plan prints the exact
+request ceiling before execution. This mode runs the normal authenticated
+Dashboard, Workspace, unified order-status and upload-status GET routes using
+fixture-owned accounts. The sink is the same local TLS Redis governor and
+Firestore emulator as the existing workload. First-minute control reads check
+that another actor cannot read the fixture Workspace, order or upload and that
+the correct owners see the expected pending order and queued upload.
+
+The window cools down naturally for at least 61 seconds and then offers 37 or
+41 scheduled reads, depending on the synthetic buyer cohort. There are up to
+eight control reads and at most eight concurrent measured reads. Pending orders
+and queued upload rows are seeded in the isolated migrated database before the
+server enforces read-only transactions. The diagnostic uses the first-minute
+visible polling schedules of 0/5/15/35 seconds for payment and 5/15/35 seconds
+for an already-queued upload. A valid refusal stops that payment stream or moves
+the upload beyond the measured window via its 60-second retry delay. Fixed
+Dashboard and Workspace arrivals continue to measure shared-budget contention.
+
+The report preserves planned, sent, completed, refused and suppressed reads by
+journey. It includes observed tail latency, response byte totals, exact
+Retry-After validation and one counter sample per second. Redis INFO sampling
+adds one local command per observation. Success requires exhausting the same
+40-call shared List allowance and observing controlled refusal with no Get
+fallback or SQL mutation during measurement. Because one request can consume
+its first List before another uses the final allowance, success counts may vary.
+Owned success responses, including the three positive preflight controls, must
+carry exactly the `private` and `no-store` cache directives. Negative ownership
+controls check the route's promised response status.
+This is a bounded diagnostic with fixed arrival offsets and synthetic external
+responses. It does not measure browser network timing or production peak
+capacity, and it creates no provider order or upload object.
 
 ## Original acceptance remains open
 

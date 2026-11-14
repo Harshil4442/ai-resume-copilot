@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import IO
 from uuid import uuid4
@@ -71,14 +72,30 @@ def effective_publication(container, port):
     return True
 
 
-def unused_port() -> int:
+def unused_port(*, excluded: frozenset[int] = FORBIDDEN_PORTS) -> int:
     for _ in range(20):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        if port not in FORBIDDEN_PORTS:
-            return port
+            if port not in excluded:
+                return port
     raise RuntimeError("No eligible owned port")
+
+
+def distinct_owned_ports() -> tuple[int, int, int]:
+    # Keep eligible sockets bound while selecting the set. Closing each one
+    # early lets the kernel immediately reuse the same port for the next role.
+    selected: list[int] = []
+    with ExitStack() as reservations:
+        for _ in range(20):
+            listener = reservations.enter_context(socket.socket())
+            listener.bind(("127.0.0.1", 0))
+            port = listener.getsockname()[1]
+            if port not in FORBIDDEN_PORTS:
+                selected.append(port)
+                if len(selected) == 3:
+                    return selected[0], selected[1], selected[2]
+    raise RuntimeError("No eligible owned port set")
 
 
 def private_json(path: Path, data) -> None:
@@ -103,9 +120,7 @@ class Resources:
         self.network_id: str | None = None
         self.pg_data: Path | None = None
         self.pg_system_identifier: str | None = None
-        self.pg_port, self.emulator_port, self.api_port = unused_port(), unused_port(), unused_port()
-        if len({self.pg_port, self.emulator_port, self.api_port}) != 3:
-            raise RuntimeError("Owned port collision")
+        self.pg_port, self.emulator_port, self.api_port = distinct_owned_ports()
         # No inherited SDK credentials, proxies, application configuration or shell profile.
         self.env = {k: v for k, v in os.environ.items() if k in {"PATH", "TMPDIR", "LANG"}}
         self.env["HOME"] = str(directory)
@@ -235,9 +250,7 @@ class Resources:
                     network_id=self.network_id, nonce=self.nonce)
                 with socket.create_connection(target, timeout=2):
                     pass
-                self.emulator_port = unused_port()
-                if self.emulator_port in {self.pg_port, self.api_port}:
-                    raise RuntimeError("Owned relay port collision")
+                self.emulator_port = unused_port(excluded=FORBIDDEN_PORTS | {self.pg_port, self.api_port})
                 config = {"target_ip": target[0], "subnet": subnet, "target_port": 8080,
                           "listen_port": self.emulator_port, "nonce": self.nonce,
                           "network_id": self.network_id, "container_id": self.container_id}

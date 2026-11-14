@@ -30,6 +30,7 @@ from scripts.stage5_resources import (
     EMULATOR_REPO_DIGEST,
     FORBIDDEN_PORTS,
     Resources,
+    distinct_owned_ports,
     effective_publication,
     internal_endpoint,
     pinned_emulator_configuration,
@@ -529,6 +530,34 @@ def test_no_configurable_provider_destination_and_no_payment_mutation_path():
     assert unused_port() not in FORBIDDEN_PORTS
 
 
+def test_port_set_holds_each_socket_until_all_distinct_ports_are_selected(monkeypatch):
+    from scripts import stage5_resources
+
+    bound = set()
+    attempts = []
+
+    class KernelSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            bound.remove(self.port)
+
+        def bind(self, address):
+            assert address == ("127.0.0.1", 0)
+            self.port = next(port for port in (55433, 55434, 40507, 40508, 40509) if port not in bound)
+            bound.add(self.port)
+            attempts.append(self.port)
+
+        def getsockname(self):
+            return "127.0.0.1", self.port
+
+    monkeypatch.setattr(stage5_resources.socket, "socket", KernelSocket)
+    assert distinct_owned_ports() == (40507, 40508, 40509)
+    assert attempts == [55433, 55434, 40507, 40508, 40509]
+    assert not bound
+
+
 def test_private_reports_create_only_and_no_secret_overwrite(tmp_path):
     path = tmp_path / "report.json"
     private_json(path, {"numeric": 1})
@@ -720,9 +749,11 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 19 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 21 and "backend/app/**" not in trigger["paths"]
     assert "backend/scripts/stage5_skill_roi.py" in trigger["paths"]
     assert "backend/tests/test_stage5_skill_roi.py" in trigger["paths"]
+    assert "backend/scripts/stage5_first_minute.py" in trigger["paths"]
+    assert "backend/tests/test_stage5_first_minute.py" in trigger["paths"]
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -746,6 +777,7 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9" in runs
     assert "run_stage5_capacity.py --execute" in runs
     assert "--skill-roi-journey" in runs and "test_stage5_skill_roi.py" in runs
+    assert "--first-minute" in runs and "test_stage5_first_minute.py" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
     assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)
