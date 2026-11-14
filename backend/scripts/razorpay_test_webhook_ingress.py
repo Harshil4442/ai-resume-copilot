@@ -11,10 +11,14 @@ import os
 import re
 import socket
 import stat
+import tempfile
 import time
+from contextlib import suppress
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Timer
+from typing import Literal
 
 LOOPBACK = "127.0.0.1"
 WEBHOOK_PATH = "/api/billing/webhooks/razorpay"
@@ -23,6 +27,13 @@ MAX_BODY_BYTES = 1_000_000
 REQUEST_TIMEOUT_SECONDS = 2.0
 UPSTREAM_TIMEOUT_SECONDS = 2.0
 HELD_EVENTS = frozenset({"order.paid", "payment.captured", "refund.processed"})
+SettlementReply = Literal["processed", "duplicate"]
+
+
+@dataclass(frozen=True)
+class AckLossAttempt:
+    order_digest: str
+    event_digest: str
 
 
 class TestDeliveryHold:
@@ -34,7 +45,7 @@ class TestDeliveryHold:
         self.directory = directory
         self.secret = secret.encode()
 
-    def check(self, body: bytes, headers: dict[str, str]) -> tuple[int | None, str | None]:
+    def check(self, body: bytes, headers: dict[str, str]) -> tuple[int | None, AckLossAttempt | None]:
         path = self.directory / "hold.json"
         try:
             descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
@@ -72,7 +83,10 @@ class TestDeliveryHold:
                 event_id = headers.get("X-Razorpay-Event-Id", "")
                 if (event["event"] == "order.paid" and order.get("id") == rules["ack_loss_order"]
                         and 1 <= len(event_id) <= 160 and event_id == event_id.strip()):
-                    return None, rules["ack_loss_order"]
+                    return None, AckLossAttempt(
+                        hashlib.sha256(rules["ack_loss_order"].encode()).hexdigest(),
+                        hashlib.sha256(event_id.encode()).hexdigest(),
+                    )
                 return None, None
 
             payment = payload.get("payment", {}).get("entity", {})
@@ -85,16 +99,38 @@ class TestDeliveryHold:
             return None, None
         return None, None
 
-    def claim_ack_loss(self, order_id: str) -> bool:
-        order_digest = hashlib.sha256(order_id.encode()).hexdigest()
-        marker = self.directory / f"ack-loss-{order_digest}.used"
-        # An empty exclusive marker keeps the rule one-shot across receiver restarts.
+    def _write_receipt(self, marker: Path, digest: bytes) -> bool:
+        # Exclusive link makes the complete receipt visible atomically and keeps
+        # the rule one-shot across restarts. The original empty marker still wins.
+        temporary = None
         try:
-            descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-            os.close(descriptor)
+            with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as file:
+                temporary = Path(file.name)
+                file.write(digest)
+            os.link(temporary, marker, follow_symlinks=False)
         except OSError:
             return False
+        finally:
+            if temporary is not None:
+                with suppress(OSError):
+                    temporary.unlink()
         return True
+
+    def note_settlement(self, attempt: AckLossAttempt, outcome: SettlementReply) -> bool:
+        marker = self.directory / f"ack-loss-{attempt.order_digest}.used"
+        digest = attempt.event_digest.encode("ascii")
+        if outcome == "processed":
+            return self._write_receipt(marker, digest)
+        try:
+            descriptor = os.open(marker, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            with os.fdopen(descriptor, "rb") as file:
+                metadata = os.fstat(file.fileno())
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_mode & 0o077 or file.read(65) != digest:
+                    return False
+        except OSError:
+            return False
+        self._write_receipt(marker.with_suffix(".replayed"), digest)
+        return False
 
 
 def close_stream(stream: socket.socket) -> None:
@@ -186,28 +222,33 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
         self.request_timer.cancel()
         hold = self.server.hold
-        refused, ack_loss_order = hold.check(body, headers) if hold is not None else (None, None)
+        refused, acknowledgement = hold.check(body, headers) if hold is not None else (None, None)
         if refused is not None:
             self.send_error(refused)
             return
-        status, processed = forward_webhook(self.server.upstream_port, body, headers,
-                                            confirm_processed=ack_loss_order is not None)
-        if processed and hold is not None and ack_loss_order is not None and hold.claim_ack_loss(ack_loss_order):
+        status, outcome = forward_webhook(self.server.upstream_port, body, headers,
+                                          inspect_settlement=acknowledgement is not None)
+        if outcome and hold is not None and acknowledgement is not None and hold.note_settlement(acknowledgement, outcome):
             status = 503
         self.send_error(status)
 
 
-def _processed_reply(response: http.client.HTTPResponse) -> bool:
+def _settlement_reply(response: http.client.HTTPResponse) -> SettlementReply | None:
     try:
         raw = response.read(129)
         result = json.loads(raw) if len(raw) <= 128 else None
     except (ValueError, OSError, http.client.HTTPException, RecursionError):
-        return False
-    return isinstance(result, dict) and result.get("ok") is True and result.get("status") == "processed"
+        return None
+    if isinstance(result, dict) and result.get("ok") is True:
+        if result.get("status") == "processed":
+            return "processed"
+        if result.get("status") == "duplicate":
+            return "duplicate"
+    return None
 
 
 def forward_webhook(port: int, body: bytes, headers: dict[str, str], *,
-                    confirm_processed: bool = False) -> tuple[int, bool]:
+                    inspect_settlement: bool = False) -> tuple[int, SettlementReply | None]:
     """Relay once and check the app's tiny processing result only when armed."""
     deadline = time.monotonic() + UPSTREAM_TIMEOUT_SECONDS
     connection = http.client.HTTPConnection(LOOPBACK, port, timeout=UPSTREAM_TIMEOUT_SECONDS)
@@ -217,18 +258,18 @@ def forward_webhook(port: int, body: bytes, headers: dict[str, str], *,
         stream = connection.sock
         remaining = deadline - time.monotonic()
         if stream is None or remaining <= 0:
-            return 504, False
+            return 504, None
         timer = Timer(remaining, close_stream, (stream,))
         timer.daemon = True
         timer.start()
         connection.request("POST", WEBHOOK_PATH, body=body, headers=headers)
         response = connection.getresponse()
         status = response.status if 200 <= response.status <= 599 else 502
-        return status, confirm_processed and 200 <= status < 300 and _processed_reply(response)
+        return status, _settlement_reply(response) if inspect_settlement and 200 <= status < 300 else None
     except TimeoutError:
-        return 504, False
+        return 504, None
     except (ValueError, OSError, http.client.HTTPException):
-        return (504 if time.monotonic() >= deadline else 502), False
+        return (504 if time.monotonic() >= deadline else 502), None
     finally:
         if timer is not None:
             timer.cancel()
