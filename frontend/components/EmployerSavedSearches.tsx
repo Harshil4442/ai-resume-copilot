@@ -5,6 +5,7 @@ import { ArrowUpRight, BriefcaseBusiness, Clock3, MapPin, RefreshCw, Search, Shi
 import { useState } from "react";
 
 import { apiGet } from "../lib/api";
+import { isEmployerJobsCapacity, type EmployerJobsRead } from "../lib/useEmployerJobsReads";
 import { employerJobsBase, readSavedSearchQuery, readSavedSearchQuote, safeEmployerUrl, savedPreferenceConflicts, savedSearchRole, type EmployerSavedResultPage, type EmployerSearchSummary, type EmployerSearchSummaryPage, type SearchResult } from "../lib/employerJobs";
 import { Button } from "./ui/Button";
 import { EmptyState } from "./ui/EmptyState";
@@ -21,24 +22,25 @@ function pageQuery(cursor: string | null): string {
 
 // The shared session owner boundary supplies a fresh QueryClient and remounts
 // page-local state on owner changes. No cross-owner placeholder data is used.
-export function EmployerSearchHistory({ selectedId, onSelect, disabled = false }: {
+export function EmployerSearchHistory({ selectedId, onSelect, disabled = false, read = apiGet }: {
   selectedId: string | undefined;
   onSelect: (summary: EmployerSearchSummary) => void;
   disabled?: boolean;
+  read?: EmployerJobsRead;
 }) {
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const cursor = cursors[cursors.length - 1];
   const history = useQuery({
     queryKey: ["employer-jobs", "search-summaries", cursor],
-    queryFn: ({ signal }) => apiGet<EmployerSearchSummaryPage>(`${employerJobsBase}/search-summaries?${pageQuery(cursor)}`, signal),
+    queryFn: ({ signal }) => read<EmployerSearchSummaryPage>(`${employerJobsBase}/search-summaries?${pageQuery(cursor)}`, signal),
   });
   return <section aria-labelledby="saved-searches-heading">
     <h2 id="saved-searches-heading" className="text-sm font-semibold">Saved searches</h2>
     <p className="mt-2 text-xs leading-5 text-muted-foreground">Opening saved results does not spend credits.</p>
     {history.isLoading ? <div className="mt-3" role="status" aria-label="Loading saved searches"><LoadingBlock rows={2} /></div>
-      : history.isError ? <div className="mt-3 text-sm" role="alert"><p>Could not load saved searches.</p><Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => void history.refetch()}>Retry saved searches</Button></div>
+      : history.isError && (read === apiGet || !isEmployerJobsCapacity(history.error)) ? <div className="mt-3 text-sm" role="alert"><p>Could not load saved searches.</p><Button variant="secondary" size="sm" className="mt-2 min-h-11" onClick={() => void history.refetch()}>Retry saved searches</Button></div>
         : <><div className="mt-3 grid gap-2">{history.data?.items.map((item) => <button key={item.id} type="button" disabled={disabled} aria-pressed={selectedId === item.id} onClick={() => onSelect(item)} className={`min-h-11 rounded-lg border p-3 text-left text-sm transition-colors hover:border-accent ${selectedId === item.id ? "border-primary" : "border-border"}`}><span className="block break-words font-semibold">{savedSearchRole(item.query)}</span><span className="mt-1 block text-xs text-muted-foreground">{item.status === "preparing" ? "Preparing search" : item.status === "failed" ? "Search failed" : item.status === "cancelled" ? "Search cancelled" : `${item.delivered_count} jobs`} · {dateLabel(item.created_at)}</span>{!readSavedSearchQuery(item.query) ? <span className="mt-1 block text-xs text-muted-foreground">Saved search choices need review.</span> : null}</button>)}</div>
-          {!history.data?.items.length ? <p className="mt-3 text-xs text-muted-foreground">No saved searches on this page.</p> : null}</>}
+          {history.isSuccess && !history.data.items.length ? <p className="mt-3 text-xs text-muted-foreground">No saved searches on this page.</p> : null}</>}
     <nav aria-label="Saved search history pages" className="mt-3 flex flex-wrap gap-2">
       <Button variant="secondary" size="sm" className="min-h-11" disabled={cursors.length <= 1 || history.isFetching} onClick={() => setCursors((values) => values.slice(0, -1))}>Previous searches</Button>
       <Button variant="secondary" size="sm" className="min-h-11" disabled={!history.data?.next_cursor || history.isFetching || history.isError} onClick={() => { const next = history.data?.next_cursor; if (next) setCursors((values) => [...values, next]); }}>Next searches</Button>
