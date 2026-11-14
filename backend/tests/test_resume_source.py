@@ -150,11 +150,13 @@ def test_upload_retains_exact_source_and_exposes_private_metadata(monkeypatch, s
         engine.dispose()
 
 
-@pytest.mark.parametrize("flag", ["false", "0", "False", ""])
-def test_legacy_parse_closes_before_read_scan_save_or_charge(monkeypatch, flag):
+@pytest.mark.parametrize("flag", ["RESUME_DIRECT_UPLOAD_ENABLED", "RESUME_UPLOAD_ADMISSION_ENABLED"])
+@pytest.mark.parametrize("value", ["false", "0", "False", ""])
+def test_legacy_parse_closes_before_read_scan_save_or_charge(monkeypatch, flag, value):
     from starlette.datastructures import UploadFile as StarletteUploadFile
 
-    monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", flag)
+    monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv(flag, value)
 
     async def unexpected_read(_self, *_args, **_kwargs):
         raise AssertionError("closed admission must not read the upload")
