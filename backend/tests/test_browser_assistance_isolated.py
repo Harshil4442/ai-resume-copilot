@@ -77,6 +77,7 @@ core.ResumeVersion, core.EvidenceItem = ResumeVersion, EvidenceItem
 sys.modules[core.__name__] = core
 common = load(PREFIX + ".domains.common", ROOT / "domains/common.py")
 employer = load(PREFIX + ".domains.employer.models", ROOT / "domains/employer/models.py")
+load(PREFIX + ".schemas", ROOT / "schemas.py")
 load(PREFIX + ".domains.employer.search_preferences", ROOT / "domains/employer/search_preferences.py")
 employer_schemas = load(PREFIX + ".domains.employer.schemas", ROOT / "domains/employer/schemas.py")
 employer_service = types.ModuleType(PREFIX + ".domains.employer.service")
