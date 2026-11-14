@@ -10,7 +10,7 @@ import { isFiniteBundleSku } from "../../lib/billingProducts";
 import { formatCreditPrice, isUnifiedPassSku } from "../../lib/unifiedCredits";
 import { Button } from "../ui/Button";
 import { ServiceCreditHistory } from "./ServiceCreditHistory";
-import { loadHostedCheckout } from "./hostedCheckout";
+import { HostedCheckoutLoadError, loadHostedCheckout } from "./hostedCheckout";
 
 type LegacyQuote = { catalog_version: string; amount_minor: number; currency: "INR"; job_service_credits: number; analysis_units: number };
 type LegacyOrder = {
@@ -177,11 +177,11 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       if (result.order_id !== order.order_id || result.provider !== "razorpay" || result.provider_order_id !== order.provider_order_id
         || !result.key_id || result.currency !== accepted.currency || result.amount_minor !== accepted.amount_minor
         || !sameQuote(result.accepted_quote, accepted)) throw new Error("The original checkout terms could not be verified. No checkout opened.");
-      await loadHostedCheckout();
-      if (!mounted.current || !window.Razorpay) return;
+      const Razorpay = await loadHostedCheckout();
+      if (!mounted.current) return;
       let callbackReceived = false;
       let checkoutDismissed = false;
-      const checkout = new window.Razorpay({ key: result.key_id, amount: result.amount_minor, currency: result.currency,
+      const checkout = new Razorpay({ key: result.key_id, amount: result.amount_minor, currency: result.currency,
         name: result.name, description: result.description, order_id: result.provider_order_id, prefill: result.prefill,
         handler: (callback) => {
           if (callbackReceived || !mounted.current) return;
@@ -203,6 +203,10 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       checkout.open();
     } catch (failure) {
       if (!mounted.current) return;
+      if (failure instanceof HostedCheckoutLoadError) {
+        setCheckoutStatusRequired(order.order_id);
+        setIndiaConfirmed(false);
+      }
       const detail = failure instanceof ApiError ? (failure.detail as { detail?: { code?: string; order_id?: string } })?.detail : null;
       if (detail?.code === "billing_order_requires_status" && detail.order_id === order.order_id) {
         try {
