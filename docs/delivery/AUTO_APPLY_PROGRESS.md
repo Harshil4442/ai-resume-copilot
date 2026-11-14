@@ -33,7 +33,10 @@ commercial/finance gates and full R03/RTO qualification remain pending.
 Razorpay acknowledged HireWiz’s request for written confirmation of the proposed
 credit passes and candidate-reviewed application assistance. Merchant-scope
 confirmation and Razorpay Test evidence for capture, refunds and reconciliation
-remain pending.
+remain pending. The isolated receiver can withhold signed callbacks for an exact
+Test order so recovery can be exercised before Razorpay redelivers them. A
+synthetic held callback produced zero ledger changes, then settled exactly once
+after release and replay. [Test checkout tooling](https://github.com/Harshil4442/ai-resume-copilot/pull/126)
 
 The production shadow observation for 6–13 November UTC completed under the
 read-only database role. The window contained no qualifying operations or
