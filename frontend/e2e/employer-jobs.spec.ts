@@ -46,12 +46,16 @@ function fixture() {
   const catalog: JobServiceCatalog = { enabled: true, auto_submit_enabled: true, search_credits_per_job: 2, apply_credits_per_job: 7, pricing_version: "fixture-price", max_search_jobs: 20, balance: 100, sources: [{ id: "src_fixture", employer: "Example Studio", platform: "greenhouse", careers_url: "https://employer.example/careers", last_success_at: now, status: "healthy", application_mode: "api" }] };
   const posting = { id: "job_fixture", source_id: "src_fixture", external_id: "123", title: "Backend Engineer", employer: "Example Studio", location: "Remote", description: "Build reliable Python and PostgreSQL services.", canonical_url: "https://employer.example/careers/123", apply_url: "https://employer.example/apply/123", platform: "greenhouse", publication_at: null, last_checked_at: now, application_mode: "api" };
   const application: EmployerApplication = { id: "app_fixture", status: "needs_action", application_mode: "api", posting, resume_id: 1, resume_choice: "original", resume_version_id: null, form: { version: "fixture-v1", fields: [{ id: "name", label: "Full name", type: "text", required: true, options: [] }, { id: "work", label: "Work authorization", type: "single_select", required: true, options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }] }], consents: [{ id: "privacy", label: "Employer privacy consent", required: true, policy_url: "https://employer.example/privacy" }] }, package_digest: digest, artifact: { sha256: "b".repeat(64), filename: "Taylor-resume.docx", size_bytes: 1000, media_type: docxType, preview_url: "unused" }, answers: {}, consents: {}, missing_fields: ["name", "work", "privacy"], credit_cost: 7, charged_credits: 0, requires_user_action: true, error: null };
-  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false, savedResultsUnavailable: false, lazyResumePages: false };
+  const state = { searchFailures: 0, prepareFailures: 0, executeOutcome: "confirmed" as EmployerApplication["status"], premium: false, recentPaidPack: false, applicationsVisible: false, badPdf: false, savedResultsUnavailable: false, lazyResumePages: false, savedCuratedLearning: false };
   const requests: { path: string; method: string; body: Record<string, unknown>; query: string }[] = [];
   const unexpected: string[] = [];
   const searches: EmployerSearch[] = [];
   const runs: Record<string, unknown>[] = [];
   const opportunity = { id: "opp_existing_fixture", title: "Backend Engineer", company: "Example Studio", location: "Remote", priority: "medium", stage: "saved" as const, source: "manual", source_url: null, compensation: null, deadline_at: null, archived_at: null, created_at: now, updated_at: now, resume_id: 1, latest_match_id: null, latest_analysis_run_id: null, next_action: null, notes: "", outcome: null, outcome_notes: null, outcome_at: null, job_description: posting.description, job_snapshot: {}, activity: [], contacts: [], reminders: [], resume_versions: [] };
+  const savedMatch = { match_id: 5, match_score: 88, grade: "A", required_skills: ["PostgreSQL"], full_matches: ["PostgreSQL"],
+    partial_matches: [], true_gaps: [], skill_verification_rate: 100, dimensions: [],
+    fit_summary: "Owned saved match for the original résumé.", improvement_tips: [], created_at: now, mode: "basic" };
+  const curatedSummary = "Practice writing reliable database migrations.";
   const workspaceRows: components["schemas"]["OpportunityPageItem"][] = [{ id: opportunity.id,
     title: opportunity.title, company: opportunity.company, location: opportunity.location, stage: opportunity.stage,
     priority: "medium", next_action: opportunity.next_action, updated_at: opportunity.updated_at }];
@@ -64,8 +68,11 @@ function fixture() {
   function workspaceValue(tab: string) {
     const { job_description, job_snapshot, notes, outcome_notes, activity, contacts, reminders, resume_versions, ...header } = opportunity;
     void job_description; void job_snapshot; void notes; void outcome_notes; void activity; void contacts; void reminders; void resume_versions;
-    return { opportunity: header, resumes: { resumes, next_cursor: null, selected_resume: resumes.find((resume) => resume.id === opportunity.resume_id) || null },
-      match: null, match_source_state: "none", pages: { resume_versions: { items: [], next_cursor: null },
+    return { opportunity: state.savedCuratedLearning ? { ...header, latest_match_id: savedMatch.match_id } : header,
+      resumes: { resumes, next_cursor: null, selected_resume: resumes.find((resume) => resume.id === opportunity.resume_id) || null },
+      match: null, match_source_state: !state.savedCuratedLearning ? "none" : opportunity.resume_id === 1 ? "current" : "different_resume",
+      ...(state.savedCuratedLearning && tab === "learning" ? { skill_roi: { items: [], opportunity_count: 1 } } : {}),
+      pages: { resume_versions: { items: [], next_cursor: null },
         ...(tab === "resume" ? { evidence: { items: [], next_cursor: null } } : {}),
         ...(tab === "overview" ? { contacts: { items: [], next_cursor: null }, reminders: { items: [], next_cursor: null } } : {}),
         ...(tab === "activity" ? { activity: { items: [], next_cursor: null } } : {}) },
@@ -163,6 +170,21 @@ function fixture() {
       else if (path === "/v1/opportunities/opp_existing_fixture/workspace/body" && method === "GET") value = {
         job_description: opportunity.job_description, job_snapshot: opportunity.job_snapshot, notes: opportunity.notes, outcome_notes: opportunity.outcome_notes,
       };
+      else if (state.savedCuratedLearning && path === "/v1/opportunities/opp_existing_fixture/match" && method === "GET") {
+        expect(url.searchParams.toString()).toBe("resume_id=1");
+        value = savedMatch;
+      }
+      else if (state.savedCuratedLearning && path === "/recommendations/match_strategy/saved" && method === "GET") {
+        expect(url.searchParams.toString()).toBe("match_id=5");
+        value = { match_id: savedMatch.match_id, job_title: opportunity.title, company: opportunity.company,
+          current_score: savedMatch.match_score, readiness_summary: curatedSummary, missing_hiring_signals: [],
+          learning_priorities: [], project_recommendations: [], timeline: [], generated_by: "curated", provenance: "curated" };
+      }
+      else if (state.savedCuratedLearning && path === "/v1/opportunities/opp_existing_fixture" && method === "PATCH") {
+        expect(body).toEqual({ resume_id: 2 });
+        opportunity.resume_id = 2;
+        value = opportunity;
+      }
       else if (path === "/v1/opportunities/opp_existing_fixture") value = opportunity;
       else if (path.startsWith("/v1/evidence-items/transcription-review/") && method === "GET") {
         const resume = resumes.find((item) => item.id === Number(path.split("/").at(-1)));
@@ -245,7 +267,7 @@ function fixture() {
       await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     });
   }
-  return { catalog, application, state, requests, unexpected, searches, workspaceRows, install, billingQuote };
+  return { catalog, application, state, requests, unexpected, searches, workspaceRows, install, billingQuote, curatedSummary };
 }
 
 async function searchOne(page: Page) {
@@ -261,6 +283,56 @@ async function checkLayout(page: Page) {
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
   expect(result.violations).toEqual([]);
 }
+
+test("saved curated learning stays usable while paid services are paused", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  f.state.savedCuratedLearning = true;
+  await context.route("**/*", (route) => new URL(route.request().url()).origin === new URL(baseURL!).origin ? route.continue() : route.abort());
+  await f.install(context, baseURL!);
+  await page.goto("/workspace/opp_existing_fixture?tab=learning");
+  await expect(page.getByRole("heading", { name: "What is worth learning next" })).toBeVisible();
+  const documentStart = await page.evaluate(() => performance.timeOrigin);
+  const workspaceReads = () => f.requests.filter(({ path }) => path === "/v1/opportunities/opp_existing_fixture/workspace");
+  const matchReads = () => f.requests.filter(({ path }) => path === "/v1/opportunities/opp_existing_fixture/match");
+  const savedPlanReads = () => f.requests.filter(({ path }) => path === "/recommendations/match_strategy/saved");
+  expect(workspaceReads()).toHaveLength(1);
+  expect(workspaceReads()[0].query).toBe("tab=learning&limit=20&include_skill_roi=true");
+  expect(matchReads()).toEqual([]);
+  expect(savedPlanReads()).toEqual([]);
+
+  const match = page.getByRole("button", { name: "Load saved match for learning strategy" });
+  await match.focus();
+  await expect(match).toBeFocused();
+  await page.keyboard.press("Enter");
+  const saved = page.getByRole("button", { name: "Find saved curated plan" });
+  await expect(saved).toBeEnabled();
+  await expect(page.getByRole("button", { name: "View curated plan" })).toBeDisabled();
+  await expect(page.getByRole("combobox", { name: "Learning plan mode" })).toHaveCount(0);
+  expect(matchReads().map(({ method, query }) => [method, query])).toEqual([["GET", "resume_id=1"]]);
+  expect(savedPlanReads()).toEqual([]);
+
+  await saved.focus();
+  await expect(saved).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(f.curatedSummary)).toBeVisible();
+  await expect(page.getByText("Saved curated plan · no new credits charged.")).toBeVisible();
+  expect(savedPlanReads().map(({ method, query }) => [method, query])).toEqual([["GET", "match_id=5"]]);
+  expect(workspaceReads()).toHaveLength(1);
+  expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStart);
+  await checkLayout(page);
+
+  const resume = page.getByRole("combobox", { name: "Resume", exact: true });
+  await resume.selectOption("2");
+  await expect(resume).toHaveValue("2");
+  await expect(page.getByText(f.curatedSummary)).toHaveCount(0);
+  await expect(saved).toHaveCount(0);
+  expect(matchReads()).toHaveLength(1);
+  expect(savedPlanReads()).toHaveLength(1);
+  expect(f.requests.filter(({ method }) => method !== "GET").map(({ method, path, body }) => [method, path, body]))
+    .toEqual([["PATCH", "/v1/opportunities/opp_existing_fixture", { resume_id: 2 }]]);
+  expect(f.unexpected).toEqual([]);
+});
 
 test("owned bootstrap fixture serves advisory GET and rejects an unexpected POST", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!); await page.goto("/employer-jobs");
