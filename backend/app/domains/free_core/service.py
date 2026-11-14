@@ -12,6 +12,7 @@ from ... import models
 from ..common import public_id
 from ..credits import admission
 from ..credits.finance import FundingUnavailable
+from ..resume_uploads.models import ResumeUpload
 from .models import FreeCoreRequest, FreeCoreReservation
 from .policy import FreeCoreUnavailable, Operation, current_policy
 
@@ -96,7 +97,23 @@ def admit(db: Session, *, user_id: int, operation: Operation, source_type: str,
             raise FreeCoreUnavailable("New processing on this route is paused while its actual expense overrun is reviewed.")
         start = stamp - timedelta(days=30)
         query = db.query(FreeCoreReservation).filter(FreeCoreReservation.created_at >= start)
-        used = query.filter_by(user_id=user_id, operation=operation).count()
+        account = query.filter_by(user_id=user_id, operation=operation)
+        if operation == "resume_parse":
+            # The owner lock serializes reservations and cancellation/completion.
+            # Only durable terminal states without a scan claim waive the parse slot.
+            # All holds still count toward global admissions and funded expenses.
+            unstarted_upload = (db.query(FreeCoreRequest.id)
+                .join(ResumeUpload, ResumeUpload.id == FreeCoreRequest.source_id)
+                .filter(FreeCoreRequest.reservation_id == FreeCoreReservation.id,
+                        FreeCoreRequest.user_id == user_id, FreeCoreRequest.source_type == "resume_upload",
+                        FreeCoreRequest.state == "admitted", FreeCoreRequest.result_id.is_(None),
+                        ResumeUpload.user_id == user_id, ResumeUpload.request_sha256 == FreeCoreRequest.input_fingerprint,
+                        ResumeUpload.state.in_(("cancelled", "expired")), ResumeUpload.attempt_count == 0,
+                        ResumeUpload.result_resume_id.is_(None), ResumeUpload.lease_token.is_(None),
+                        ResumeUpload.lease_until.is_(None))
+                .exists())
+            account = account.filter(~unstarted_upload)
+        used = account.count()
         if used >= envelope.per_account_30_days:
             raise HTTPException(429, detail={"code": "free_processing_account_limit",
                 "message": f"The {envelope.per_account_30_days}-request free allowance for this service has been used in the last 30 days. Your saved results remain available."})

@@ -3,14 +3,20 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from threading import Barrier
 from types import SimpleNamespace
 
 import pytest
 from backend.app.database import Base
+from backend.app.domains.common import utcnow
+from backend.app.domains.free_core import service as free_service
 from backend.app.domains.free_core.models import FreeCoreRequest, FreeCoreReservation
-from backend.app.domains.resume_uploads import scanner, tasks
+from backend.app.domains.resume_uploads import privacy, scanner, tasks, wake
+from backend.app.domains.resume_uploads import service as uploads
+from backend.app.domains.resume_uploads.models import ResumeUpload
 from backend.app.models import User
+from backend.tests.test_employer_admissions_postgres import _migrate
 from backend.tests.test_employer_admissions_postgres import pg_engine as owned_pg_engine
 from backend.tests.test_free_core import reserve, synthetic_free_policy
 from backend.tests.test_resume_upload_quarantine import FakeStore, admission, queue
@@ -132,3 +138,116 @@ def test_missing_native_funding_never_signs_upload_or_starts_scan(factory, funde
     assert exc.value.status_code == 503 and store.signs == 0
     with factory() as db:
         assert db.query(FreeCoreReservation).count() == 0
+
+
+@pytest.fixture
+def funded_upload(funded, monkeypatch):
+    monkeypatch.setenv("RESUME_DIRECT_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv("RESUME_UPLOAD_TASK_WAKE_ENABLED", "true")
+    monkeypatch.setattr(wake, "confirm", lambda *_: None)
+    for engine in owned_pg_engine.__wrapped__():
+        # Use the earliest released migration with funded reservations + existing upload tables.
+        _migrate(engine, "20261027_0024")
+        maker = sessionmaker(engine, autoflush=False)
+        with maker() as db:
+            db.add(User(id=1, email="funded-wake@example.invalid", ai_credits=17, job_service_credits=13))
+            db.commit()
+        yield maker, FakeStore()
+
+
+@pytest.mark.parametrize("terminal", ["expired", "cancelled"])
+def test_definitive_unclaimed_upload_allows_one_fresh_racing_admission(funded_upload, monkeypatch, terminal):
+    factory, store = funded_upload
+    def timeout(*_args):
+        raise wake.WakeUnavailable
+    with monkeypatch.context() as fail:
+        fail.setattr(wake, "confirm", timeout)
+        with pytest.raises(HTTPException) as error:
+            admission(funded_upload, key="first")
+        assert error.value.status_code == 503 and store.signs == 0
+    with factory() as db:
+        old = db.query(ResumeUpload).one()
+        identifier = old.id
+        if terminal == "expired":
+            old.expires_at = utcnow() - timedelta(seconds=1)
+            db.commit()
+    # An awaiting intent still counts until the expiry/cancellation actually commits.
+    with pytest.raises(HTTPException) as before:
+        admission(funded_upload, key="still-counts")
+    assert before.value.detail["code"] == "free_processing_account_limit"
+    with factory() as db:
+        if terminal == "cancelled":
+            assert uploads.cancel(db, 1, identifier).state == "cancelled"
+        else:
+            assert privacy.sweep(db) == 1
+    assert privacy.run_cleanup(factory, identifier, store)
+
+    def fresh(key):
+        try:
+            return admission(funded_upload, key=key)[0].state
+        except HTTPException as failure:
+            assert failure.detail["code"] == "free_processing_account_limit"
+            return failure.status_code
+    outcomes = parallel(lambda: fresh("new-a"), lambda: fresh("new-b"))
+    assert outcomes.count("awaiting_upload") == outcomes.count(429) == 1
+    with factory() as db:
+        requests = db.query(FreeCoreRequest).all()
+        reservations = db.query(FreeCoreReservation).all()
+        old = db.get(ResumeUpload, identifier)
+        assert old.state == terminal and old.attempt_count == 0
+        assert len(requests) == len(reservations) == 2
+        assert all(row.state == "admitted" and row.result_id is None for row in requests)
+        assert all(row.state == "reserved" and row.settled_minor is None for row in reservations)
+        assert free_service.allocation_usage(db, funding_period_id=reservations[0].funding_period_id) == 40
+        owner = db.get(User, 1)
+        assert (owner.ai_credits, owner.job_service_credits) == (17, 13)
+
+
+@pytest.mark.parametrize("policy_limit", ["global_30_day_operations", "free_allocation_minor"])
+def test_unclaimed_terminal_upload_still_counts_in_global_funding(funded_upload, funded, monkeypatch, policy_limit):
+    factory, _ = funded_upload
+    first, _ = admission(funded_upload)
+    with factory() as db:
+        uploads.cancel(db, 1, first.upload_id)
+    funded[policy_limit] = 1 if policy_limit == "global_30_day_operations" else 20
+    monkeypatch.setenv("FREE_CORE_POLICY_JSON", json.dumps(funded))
+    with pytest.raises(HTTPException) as denied:
+        admission(funded_upload, key="globally-denied")
+    assert denied.value.status_code == 503 and denied.value.detail["code"] == "free_processing_unavailable"
+    with factory() as db:
+        assert db.query(FreeCoreRequest).count() == db.query(FreeCoreReservation).count() == 1
+
+
+@pytest.mark.parametrize("binding", ["missing", "mismatch", "legacy", "unlinked", "started", "completed"])
+def test_unproved_or_used_resume_reservations_still_count(funded_upload, monkeypatch, binding):
+    factory, store = funded_upload
+    if binding in {"started", "completed"}:
+        identifier, _ = queue(funded_upload)
+        if binding == "started":
+            def interrupted(*_args):
+                raise RuntimeError("synthetic interruption after claim")
+            monkeypatch.setattr(store, "inspect_object", interrupted)
+            with pytest.raises(RuntimeError, match="interruption after claim"):
+                tasks.process(factory, identifier, store)
+        else:
+            monkeypatch.setattr(scanner, "inspect", lambda *_a, **_k: SimpleNamespace(
+                parsed=("Synthetic", {}, [], 0, {}), receipt=lambda: {"synthetic": True}))
+            assert tasks.process(factory, identifier, store)
+    else:
+        identifier = admission(funded_upload)[0].upload_id
+    with factory() as db:
+        if binding != "completed":
+            uploads.cancel(db, 1, identifier)
+        request = db.query(FreeCoreRequest).one()
+        if binding == "missing":
+            db.delete(db.get(ResumeUpload, identifier))
+        elif binding == "mismatch":
+            request.input_fingerprint = "f" * 64
+        elif binding == "legacy":
+            request.source_type = "legacy_parse"
+        elif binding == "unlinked":
+            db.execute(text("UPDATE resume_uploads SET user_id=NULL WHERE id=:id"), {"id": identifier})
+        db.commit()
+    with pytest.raises(HTTPException) as denied:
+        admission(funded_upload, key="must-deny")
+    assert denied.value.status_code == 429 and denied.value.detail["code"] == "free_processing_account_limit"
