@@ -161,6 +161,32 @@ async function delay(signal: AbortSignal, milliseconds = POLL_MS): Promise<void>
   });
 }
 
+async function reserveDirectUpload(
+  body: { filename: string; size_bytes: number; sha256: string; enrich_skills: boolean },
+  key: string,
+  signal: AbortSignal,
+  deadline: number,
+): Promise<unknown> {
+  const headers = { "Idempotency-Key": key };
+  try {
+    return await control("/resume/uploads", "POST", signal, body, headers);
+  } catch (error) {
+    stopped(signal);
+    const wakeUnconfirmed = error instanceof ControlFailure && error.status === 503
+      && error.code === "resume_upload_wake_unavailable";
+    const responseLost = error instanceof TypeError
+      || (error instanceof DOMException && error.name === "TimeoutError");
+    if (!wakeUnconfirmed && !responseLost) throw error;
+    const retryDelay = wakeUnconfirmed ? error.retryAfterMs ?? POLL_MS : POLL_MS;
+    if (Date.now() + retryDelay + CONTROL_TIMEOUT_MS >= deadline) throw error;
+    // Retry only the idempotent intent reservation, before any PUT is sent.
+    await delay(signal, retryDelay);
+    await waitUntilPageVisible(signal);
+    if (Date.now() + CONTROL_TIMEOUT_MS >= deadline) throw error;
+    return control("/resume/uploads", "POST", signal, body, headers);
+  }
+}
+
 async function cancelIntent(id: string): Promise<ResumeUploadCancelled["cleanup"]> {
   try {
     const acknowledgment = await control(`/resume/uploads/${id}`, "DELETE", AbortSignal.timeout(CONTROL_TIMEOUT_MS));
@@ -210,8 +236,10 @@ export async function uploadResumeFile(file: File, options: Options = {}): Promi
     progress("creating");
     const sourceFormat: ResumeSourceFormat = /\.pdf$/i.test(file.name) ? "pdf" : /\.docx$/i.test(file.name) ? "docx" : /\.tex$/i.test(file.name) ? "tex" : "texzip";
     const media = MEDIA[sourceFormat];
-    const raw = await control("/resume/uploads", "POST", signal,
-      { filename: file.name, size_bytes: file.size, sha256, enrich_skills: options.enrichSkills ?? false }, { "Idempotency-Key": key });
+    const raw = await reserveDirectUpload(
+      { filename: file.name, size_bytes: file.size, sha256, enrich_skills: options.enrichSkills ?? false },
+      key, signal, deadline,
+    );
     // Remember a valid opaque ID even if the remaining capability is refused.
     if (record(raw) && typeof raw.upload_id === "string" && /^rup_[a-f0-9]{32}$/.test(raw.upload_id)) id = raw.upload_id;
     const intent = validateIntent(raw, file, media); id = intent.upload_id;
