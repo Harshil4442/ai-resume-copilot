@@ -1269,7 +1269,7 @@ def enqueue_source_refresh(db, identity):
 
 
 def enqueue_due_sources(db: Session, limit: int = 100) -> int:
-    if not config.discovery_enabled():
+    if not config.discovery_enabled() or not config.periodic_refresh_enabled():
         return 0
     from ..dispatch.service import enqueue
     due = db.query(models.EmployerSource).filter(

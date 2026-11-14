@@ -10,6 +10,8 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base, get_db
 from backend.app.domains.common import payload_fingerprint, utcnow
+from backend.app.domains.dispatch import service as dispatch
+from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import (
     config,
     connectors,
@@ -518,6 +520,37 @@ def source_ingestion(context, monkeypatch):
             return original(source, client, **kwargs)
     monkeypatch.setattr(connectors, "fetch_source_scan", fetch)
     return factory, cache, revision, state, requests
+
+
+@pytest.mark.parametrize("value", ["false", "invalid"])
+def test_periodic_refresh_pause_keeps_manual_and_queued_refreshes(source_ingestion, monkeypatch, value):
+    factory, _, _, _, requests = source_ingestion
+    monkeypatch.delenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", raising=False)
+    monkeypatch.setattr(dispatch, "SessionLocal", factory)
+    with factory() as db:
+        assert service.enqueue_due_sources(db) == 1
+        db.commit()
+        queued_id = db.query(DispatchOutbox.id).scalar()
+        source = db.get(models.EmployerSource, "source_test")
+        source.next_refresh_at = due = utcnow() - timedelta(minutes=1)
+        db.commit()
+
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", value)
+    with factory() as db:
+        with monkeypatch.context() as gate:
+            gate.setattr(db, "query", lambda *_: pytest.fail("Paused refresh admission must not query SQL"))
+            assert service.enqueue_due_sources(db) == 0
+        assert service._utc(db.get(models.EmployerSource, "source_test").next_refresh_at) == due
+        assert db.query(DispatchOutbox.id).all() == [(queued_id,)]
+
+    assert dispatch.process_event(queued_id) == "completed"
+    monkeypatch.setattr(service, "utcnow", lambda: due + timedelta(minutes=10))
+    with factory() as db:
+        manual = service.enqueue_source_refresh(db, "source_test")
+        assert manual.id != queued_id
+        manual_id = manual.id
+    assert dispatch.process_event(manual_id) == "completed"
+    assert len(requests) == 2
 
 
 def test_source_304_refreshes_exact_snapshot_without_closure_or_skill_recomputation(source_ingestion, monkeypatch):
