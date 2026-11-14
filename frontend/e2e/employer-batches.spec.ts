@@ -5,8 +5,8 @@ import { encode } from "next-auth/jwt";
 
 import { batchApplication, batchCatalog, quotedBatch } from "../lib/fixtures/employerBatch";
 import type { EmployerApplicationBatch } from "../lib/employerJobs";
-import type { EmployerSearchSummaryPage } from "../lib/employerJobs";
 import { ownedBootstrapFixture } from "../lib/fixtures/ownedBootstrap";
+import type { components } from "../lib/generated/api";
 import { parseOwnedBootstrap } from "../lib/ownedBootstrapContract";
 
 const base = "/v1/employer-jobs";
@@ -30,7 +30,8 @@ function fixture() {
     });
     await context.route("**/api/auth/session", async (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ user: { id: owner === "a" ? "424242" : "424243", email: `${owner}@fixture.example`, name: "Taylor Fixture" }, expires: "2099-01-01T00:00:00Z" }) }));
     await context.route((url) => url.pathname.startsWith("/api/backend/") || /^\/api\/account\/(profile|bootstrap)$/.test(url.pathname), async (route) => {
-      const request = route.request(), path = new URL(request.url()).pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", ""), method = request.method();
+      const request = route.request(), url = new URL(request.url());
+      const path = url.pathname.replace(/^\/api\/account\/(profile|bootstrap)$/, "/auth/$1").replace("/api/backend", ""), method = request.method();
       const body = request.postData() ? request.postDataJSON() as Record<string, unknown> : {};
       requests.push({ path, method, body, owner });
       let value: unknown, status = 200;
@@ -42,11 +43,29 @@ function fixture() {
       else if (path === "/auth/profile") value = { email: "fixture@example.com", tier: "free", ai_credits: 40, job_service_credits: catalog.balance, full_name: "Taylor Fixture" };
       else if (path === "/v1/features") value = { features: { career_workspace: { enabled: true } } };
       else if (path === "/v1/credits/availability") value = { catalog_enabled: false, execution_enabled: false, supported_operations: [] };
-      else if (path === "/resume/page") value = { resumes: [] };
-      else if (path === `${base}/catalog`) value = catalog;
-      else if (path === `${base}/search-summaries` && method === "GET") value = { items: [], next_cursor: null } satisfies EmployerSearchSummaryPage;
-      else if (path === `${base}/searches`) value = { items: [] };
-      else if (path === `${base}/applications`) value = { items: owner === "a" ? applications : [] };
+      else if (path === `${base}/bootstrap` && method === "GET") {
+        expect(url.search).toBe("");
+        expect(request.postData()).toBeNull();
+        const rows = owner === "a" ? applications.slice(0, 30).map((application) => {
+          const { id, status, application_mode, batch_id, credit_cost, package_digest, opening_key, employer_key, posting, artifact, admission_snapshot, pricing_snapshot, missing_fields } = application;
+          if (artifact === null) throw new Error("Expected an exact file in the saved application fixture");
+          return { id, status, application_mode, batch_id: batch_id ?? null, credit_cost, package_digest,
+            opening_key: opening_key ?? null, employer_key: employer_key ?? null,
+            posting: { title: posting.title, employer: posting.employer, source_id: posting.source_id,
+              has_valid_apply_url: Boolean(posting.apply_url), application_mode: catalog.sources[0].application_mode },
+            artifact: { filename: artifact.filename, media_type: artifact.media_type },
+            admission_snapshot: admission_snapshot ? { opening_key: admission_snapshot.opening_key, employer_key: admission_snapshot.employer_key,
+              policy_fingerprint: admission_snapshot.policy_fingerprint, expires_at: admission_snapshot.expires_at } : null,
+            pricing_snapshot: pricing_snapshot ? { pricing_version: pricing_snapshot.pricing_version, unit_price: pricing_snapshot.unit_price } : null,
+            has_missing_fields: missing_fields.length > 0 };
+        }) : [];
+        value = { schema_version: "owned-jobs-bootstrap-v1", catalog,
+          resumes: { resumes: [], next_cursor: null, selected_resume: null },
+          saved_searches: { items: [], next_cursor: null }, applications: rows,
+        } satisfies components["schemas"]["JobsBootstrapView"];
+      }
+      else if (path === "/resume/page" && method === "GET") value = { resumes: [], next_cursor: null, selected_resume: null };
+      else if (path === `${base}/catalog` && method === "GET") value = catalog;
       else if (path === `${base}/application-batches` && method === "POST") {
         if (!batch) batch = quotedBatch(applications.filter((app) => (body.items as { application_id: string }[]).some((item) => item.application_id === app.id)), Number(body.max_total_credits));
         if (state.interruptQuote) { state.interruptQuote = false; status = 503; value = { detail: "Quote response interrupted; use the same intent." }; } else value = batch;
@@ -65,15 +84,16 @@ function fixture() {
         if (app && method === "GET") value = app;
       }
       if (value === undefined) { unexpected.push(`${method} ${path}`); status = 503; value = { detail: "Unexpected local fixture request" }; }
-      await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+      await route.fulfill({ status, contentType: "application/json", headers: { "Cache-Control": "private, no-store" }, body: JSON.stringify(value) });
     });
   }
   return { applications, catalog, state, requests, unexpected, install, get batch() { return batch; }, set batch(value: EmployerApplicationBatch | null) { batch = value; }, switchOwner() { owner = "b"; } };
 }
 function assertFreeSavedSearchReads(requests: { path: string; method: string; body: Record<string, unknown> }[]) {
-  const reads = requests.filter((request) => request.path === `${base}/search-summaries`);
+  const reads = requests.filter((request) => request.path === `${base}/bootstrap`);
   expect(reads.length).toBeGreaterThan(0);
   expect(reads.every((request) => request.method === "GET" && Object.keys(request.body).length === 0)).toBe(true);
+  expect(requests.filter((request) => request.path === `${base}/search-summaries`)).toEqual([]);
 }
 async function selectBatch(page: Page) {
   await page.goto("/employer-jobs");
