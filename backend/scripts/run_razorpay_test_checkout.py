@@ -267,8 +267,15 @@ def run(credentials: dict[str, str], duration: int) -> None:
         wait_loopback(backend + "/api/health", api)
         next_app = start(["node", "tests/candidate-https-server.mjs"], next_env, ROOT / "frontend")
         wait_loopback(frontend + "/register", next_app, tls=tls)
-        receiver = start([sys.executable, "-m", "backend.scripts.razorpay_test_webhook_ingress",
-                          "--listen-port", str(ingress_port), "--upstream-port", str(backend_port)], python_env, ROOT)
+        receiver_command = [sys.executable, "-m", "backend.scripts.razorpay_test_webhook_ingress",
+                            "--listen-port", str(ingress_port), "--upstream-port", str(backend_port)]
+        receiver_env = python_env
+        control_dir = home / "test-webhook-control"
+        if credentials:
+            control_dir.mkdir(mode=0o700)
+            receiver_command.extend(["--test-control-dir", str(control_dir)])
+            receiver_env = python_env | {"HIREWIZ_TEST_WEBHOOK_SECRET": credentials["RAZORPAY_WEBHOOK_SECRET"]}
+        receiver = start(receiver_command, receiver_env, ROOT)
         wait_loopback(ingress + "/api/health", receiver, status=405)
 
         if not credentials:
@@ -292,6 +299,7 @@ def run(credentials: dict[str, str], duration: int) -> None:
         print(f"Checkout lab is available at {frontend}/register", flush=True)
         print(f"Use the lab's loopback certificate at {cert}", flush=True)
         print(f"Point the temporary Test webhook tunnel only to {ingress}{WEBHOOK_PATH}", flush=True)
+        print(f"Optional signed Test delivery hold file: {control_dir / 'hold.json'}", flush=True)
         print(f"The lab ends after {duration} minutes or Ctrl+C.", flush=True)
         deadline = time.monotonic() + duration * 60
         while time.monotonic() < deadline:

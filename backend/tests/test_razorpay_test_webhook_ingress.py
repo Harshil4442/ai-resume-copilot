@@ -1,6 +1,9 @@
 """Local Test receiver boundary with no Razorpay or other external network calls."""
 
+import hashlib
+import hmac
 import json
+import os
 import socket
 from contextlib import contextmanager
 from http.client import HTTPConnection
@@ -188,4 +191,56 @@ def test_refuses_duplicate_authentication_headers_without_forwarding(relay):
         stream.sendall(wire)
         with stream.makefile("rb") as reply:
             assert reply.readline().split()[1] == b"400"
+    assert upstream.received == []
+
+
+def test_holds_only_the_selected_signed_order_and_payment_and_releases_on_removal(relay, tmp_path):
+    receiver, upstream = relay
+    tmp_path.chmod(0o700)
+    secret = "private-synthetic-test-webhook-secret"
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, secret)
+    rule = tmp_path / "hold.json"
+    rule.write_text('{"order":"order_hold123","payment":"pay_hold123"}')
+    rule.chmod(0o600)
+
+    def event(name, payload):
+        body = json.dumps({"event": name, "payload": payload}).encode()
+        signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return body, {"X-Razorpay-Signature": signature, "X-Razorpay-Event-Id": "evt_synthetic_delivery"}
+
+    def deliver(packet):
+        body, headers = packet
+        return send(receiver, body=body, headers=headers)[0]
+
+    capture = event("payment.captured", {"payment": {"entity": {"id": "pay_hold123", "order_id": "order_hold123"}}})
+    paid = event("order.paid", {"order": {"entity": {"id": "order_hold123"}}})
+    refund = event("refund.processed", {"refund": {"entity": {"payment_id": "pay_hold123"}}})
+    foreign = event("payment.captured", {"payment": {"entity": {"id": "pay_other123", "order_id": "order_other123"}}})
+    unsigned = (capture[0], capture[1] | {"X-Razorpay-Signature": "0" * 64})
+    assert deliver(capture) == deliver(paid) == deliver(refund) == 503
+    assert upstream.received == []
+    assert deliver(foreign) == deliver(unsigned) == 200
+    rule.unlink()
+    for packet in (capture, paid, refund):
+        assert deliver(packet) == 200
+    assert [row[1] for row in upstream.received] == [foreign[0], unsigned[0], capture[0], paid[0], refund[0]]
+    assert [row[2]["X-Razorpay-Event-Id"] for row in upstream.received[-3:]] == ["evt_synthetic_delivery"] * 3
+
+
+def test_rejects_invalid_test_control_without_reading_links_or_named_pipes(relay, tmp_path):
+    receiver, upstream = relay
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, "private-synthetic-test-webhook-secret")
+    path = tmp_path / "hold.json"
+    other = tmp_path / "other"
+    other.write_text('{"order":"order_other123"}')
+    path.symlink_to(other)
+    assert send(receiver)[0] == 503
+    path.unlink()
+    os.mkfifo(path, 0o600)
+    assert send(receiver)[0] == 503
+    path.unlink()
+    path.write_text('{"all":"unbounded"}')
+    path.chmod(0o600)
+    assert send(receiver)[0] == 503
     assert upstream.received == []
