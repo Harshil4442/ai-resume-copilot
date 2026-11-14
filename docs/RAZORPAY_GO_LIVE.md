@@ -36,6 +36,41 @@ callback overlap before retiring any earlier credential.
 
 ## 3. Verify Test-mode purchase and recovery
 
+Use a disposable HireWiz stack with synthetic accounts and a separate database.
+The local browser workflow uses simulated provider responses. Keep its results
+as application evidence. For provider evidence, use Razorpay Test keys, a
+separate Test webhook secret and an isolated HTTPS callback that forwards only
+`POST /api/billing/webhooks/razorpay`. Razorpay can deliver Test events over a
+public HTTPS tunnel to a local receiver. Keep the rest of the application and
+the database private. Confirm that the Test integration has no connection to
+the live merchant keys, customer data, production webhook or queue. [Test and
+Live modes](https://razorpay.com/docs/payments/dashboard/test-live-modes/)
+· [Webhook testing](https://razorpay.com/docs/webhooks/validate-test/)
+
+For a local Test API already listening on loopback, run the [Test webhook
+receiver](../backend/scripts/razorpay_test_webhook_ingress.py) from the backend
+directory. Set the upstream port to the disposable API and point the HTTPS
+tunnel only at the receiver's listen port.
+
+```sh
+python -B scripts/razorpay_test_webhook_ingress.py --listen-port 17899 --upstream-port 18000
+```
+
+The receiver relays the raw body and the Razorpay signature and event ID. It
+returns only the HTTP status and keeps no delivery records. Verify that
+`GET /api/health` and unrelated POST paths are refused at the temporary endpoint.
+
+For one Test order, observe delivery of `order.paid` and `payment.captured` and
+verify they settle one credit lot. Check duplicate delivery using the original
+event ID. Observe both a partial and a remaining refund for that order when
+the Test payment method supports them. For another Test order, time callback
+delivery so authenticated provider reconciliation settles the owned order first.
+Verify that a later delivery leaves the settlement intact. Record the case as
+pending if those events arrive before reconciliation and no later delivery can
+be observed. Record only sanitized event status, amount, currency and ledger
+assertions. Remove the Test webhook and stop the temporary receiver when the
+test is complete.
+
 - [ ] Confirm the public catalog at `GET /api/public/credits/catalog` and the eligible signed-in catalog at `GET /api/v1/credits/catalog` reflect their audience and the checkout state. Both return 404 while the unified rollout is off. The legacy `GET /api/public/billing/catalog` should show checkout closed. During a canary, the signed-out unified catalog must keep checkout closed. Create the owned quote through `POST /api/v1/credits/purchase-quotes` with its SKU and idempotency key. Create the order through `POST /api/v1/credits/orders` with its quote ID, `billing_country=IN` and idempotency key. The server fixes the INR total and eligible services. Verify a valid 15-minute quote across the campaign cutoff and refusal of an expired, foreign or changed quote.
 - [ ] Use `GET /api/v1/credits/recent-order` and `GET /api/v1/credits/orders/{reference}` to recover the owned original. Replaying an interrupted order creation must keep the same attempt. Test an ambiguous or malformed provider response and confirm it blocks a second payable order until the first is reconciled.
 - [ ] A successful browser return to `POST /api/billing/orders/{order_reference}/checkout-result` records confirmation. Credits are granted only after verified capture through the shared webhook or an authoritative provider read through `POST /api/billing/orders/{order_reference}/reconcile`. Verify exactly one credit lot, the quoted credits, actual expiry and matching order and wallet entries. The actual expiry must be at least the quoted expiry and at least 30 days after both verified capture and fulfillment. Retry capture and reconciliation to verify idempotency.
