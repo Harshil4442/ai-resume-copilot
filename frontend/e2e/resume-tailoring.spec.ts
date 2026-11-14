@@ -199,8 +199,8 @@ function createFixture() {
           Object.assign(entry, changes, { snapshot_fingerprint: "e".repeat(64) });
           value = entry;
         }
-      } else if (path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && method === "POST") {
-        expect(body).toEqual({}); // The server selects approved links; no client evidence IDs or file choice.
+      } else if (path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot/selected` && method === "POST") {
+        expect(body).toEqual({ expected_resume_id: opportunity.resume_id }); // The server selects approved links.
         const source = resumes.find((resume) => resume.id === opportunity.resume_id);
         expect(source?.source_available).toBe(true);
         value = { id: "rsv_snapshot", version_number: 1, approval_state: "draft", generation_run_id: null,
@@ -286,7 +286,7 @@ for (const failure of failures) {
     await expect(generate).toBeEnabled();
     await expect(page.getByText(/Version \d+ created\./)).toHaveCount(0);
     expect(fixture.opportunity.resume_versions).toEqual([]);
-    expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot") || request.path.endsWith("/result"))).toEqual([]);
+    expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot/selected") || request.path.endsWith("/result"))).toEqual([]);
     expect(fixture.requests.find((request) => request.path === "/v1/analysis-runs" && request.method === "POST")?.body).toEqual({ operation: "resume_tailor", opportunity_id: opportunityId, input: {}, accepted_quote: { pricing_version: "tailoring-fixture-v1", units: 2 } });
     expect(fixture.unexpected).toEqual([]);
     await audit(page);
@@ -311,14 +311,14 @@ test("failure recovery waits for a resume connection and saves the currently sel
   await expect(saveUnchanged).toHaveCount(0); // Connecting a new source clears the old failure action.
   await expect(actions(page).snapshot).toBeDisabled();
   await expect(actions(page).generate).toBeDisabled();
-  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot"))).toEqual([]);
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot/selected"))).toEqual([]);
   releaseConnection();
   await expect(actions(page).resume).toHaveValue("2");
   await expect(saveUnchanged).toHaveCount(0);
   await expect(actions(page).snapshot).toBeEnabled();
   await actions(page).snapshot.click();
   await expect(page.getByRole("region", { name: "Review changes before approval", exact: true }).getByText("Version 1: Example Studio source snapshot", { exact: true })).toBeVisible();
-  expect(fixture.requests.filter((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && request.method === "POST").map((request) => request.body)).toEqual([{}]);
+  expect(fixture.requests.filter((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot/selected` && request.method === "POST").map((request) => request.body)).toEqual([{ expected_resume_id: 2 }]);
   expect(fixture.requests.filter((request) => request.path === "/v1/analysis-runs" && request.method === "POST")).toHaveLength(1);
   expect(fixture.requests.filter((request) => request.path.endsWith("/result"))).toEqual([]);
   expect(fixture.unexpected).toEqual([]);
@@ -408,7 +408,7 @@ test("a retained original allows a source snapshot without approved evidence", a
   await expect(snapshot).toBeEnabled();
   await snapshot.click();
   await expect(page.getByRole("region", { name: "Review changes before approval", exact: true }).getByText("Version 1: Example Studio source snapshot", { exact: true })).toBeVisible();
-  expect(fixture.requests.find((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot` && request.method === "POST")?.body).toEqual({});
+  expect(fixture.requests.find((request) => request.path === `/v1/opportunities/${opportunityId}/workspace/source-snapshot/selected` && request.method === "POST")?.body).toEqual({ expected_resume_id: 2 });
   expect(fixture.requests.some((request) => request.path === "/v1/analysis-runs")).toBe(false);
   expect(fixture.unexpected).toEqual([]);
   await audit(page);
@@ -647,7 +647,7 @@ test("source snapshots use server evidence links and version bodies open only on
   await fixture.install(context, baseURL!); await openWorkspace(page);
   await actions(page).snapshot.click();
   await expect(page.getByText("Open version 1 for review", { exact: true })).toBeVisible();
-  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot")).map((request) => request.body)).toEqual([{}]);
+  expect(fixture.requests.filter((request) => request.path.endsWith("/workspace/source-snapshot/selected")).map((request) => request.body)).toEqual([{ expected_resume_id: 1 }]);
   expect(fixture.opportunity.resume_versions[0].evidence_ids).toEqual(["evi_old"]);
   expect(fixture.requests.some((request) => /\/workspace\/resume_versions\//.test(request.path))).toBe(false);
   await expect(page.getByRole("button", { name: "Download PDF", exact: true })).toHaveCount(0);

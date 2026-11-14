@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, apiGet, apiPostJson } from "../lib/api";
 import { readSavedSearchQuery, type EmployerSearchSummary, type SearchResult } from "../lib/employerJobs";
+import type { JobsFirstPage } from "../lib/employerJobsOverview";
 import { emptyPreferenceDraft, preferenceDraft, preferenceInput } from "../lib/searchPreferences";
 import { useResumeOptions } from "../lib/resumeOptions";
 import { ResumeSelector } from "./ResumeSelector";
@@ -12,6 +13,8 @@ import { parseDiscoveryBatch, parseDiscoveryQuote, type DiscoveryBatch, type Dis
 import { creditWalletKey } from "../lib/unifiedCreditClient";
 import { useProgressQuery } from "../lib/useProgressQuery";
 import type { UnifiedServiceQuote } from "../lib/unifiedServiceQuotes";
+import type { ResumePageResponse } from "../lib/types";
+import type { EmployerJobsRead } from "../lib/useEmployerJobsReads";
 import { EmployerSearchPreferences } from "./EmployerSearchPreferences";
 import { SavedResultCard } from "./EmployerSavedSearches";
 import { ServiceChargeReview } from "./billing/ServiceChargeReview";
@@ -33,14 +36,15 @@ function definitelyUnstarted(error: unknown) {
 }
 
 /** Mount by selected saved-search ID; parent locks history while an intent is unresolved. */
-export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplication, onPrepare, onResume, onLockChange }: {
+export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplication, onPrepare, onResume, onLockChange, resumeFirstPage, readResumes, onRefreshHistory, canPrepare = true }: {
   enabled: boolean; initialSearch?: EmployerSearchSummary | null;
-  preparingApplication: boolean; onPrepare: (postingId: string, resumeId: number) => void;
+  preparingApplication: boolean; onPrepare: (postingId: string, resumeId: number, trigger: HTMLButtonElement) => void;
   onResume: (resumeId: string) => void; onLockChange: (locked: boolean) => void;
+  resumeFirstPage?: JobsFirstPage<ResumePageResponse>; readResumes?: EmployerJobsRead; onRefreshHistory?: () => void; canPrepare?: boolean;
 }) {
   const saved = readSavedSearchQuery(initialSearch?.query);
   const [resumeId, setResumeId] = useState(saved ? String(saved.resume_id) : "");
-  const resumeOptions = useResumeOptions({ selectedId: resumeId });
+  const resumeOptions = useResumeOptions({ selectedId: resumeId, firstPage: resumeFirstPage, read: readResumes });
   const [role, setRole] = useState(saved?.role ?? ""), [location, setLocation] = useState(saved?.location ?? "");
   const [remote, setRemote] = useState(saved?.remote_only ?? false), [days, setDays] = useState(saved?.published_within_days ? String(saved.published_within_days) : "");
   const [preferences, setPreferences] = useState(() => saved ? preferenceDraft(saved.preferences) : { ...emptyPreferenceDraft, employment: [...emptyPreferenceDraft.employment] });
@@ -56,8 +60,9 @@ export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplica
   const refresh = useCallback(() => {
     window.dispatchEvent(new Event("refresh_unified_credits"));
     void client.invalidateQueries({ queryKey: creditWalletKey });
-    void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] });
-  }, [client]);
+    if (onRefreshHistory) onRefreshHistory();
+    else void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] });
+  }, [client, onRefreshHistory]);
   const quote = useMutation({ retry: false, mutationFn: async (request: DiscoveryRequest) => {
     const parsed = parseDiscoveryQuote(await apiPostJson<unknown>(`${base}/discovery-quotes`, request, { "Idempotency-Key": crypto.randomUUID() }), 5);
     if (!parsed) throw new Error("A verified one-credit search quote is unavailable. No batch has been approved.");
@@ -117,7 +122,7 @@ export function UnifiedDiscoveryPanel({ enabled, initialSearch, preparingApplica
           {batch.status === "preparing" ? <Button className="mt-4" variant="secondary" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? "Cancelling…" : "Cancel search"}</Button> : null}
           {cancel.isError ? <p role="alert" className="mt-3 text-sm text-coral">{cancel.error.message} Check the saved search status before taking another action.</p> : null}
         </div>
-        {batch.items.map((item, index) => <SavedResultCard key={index} item={item as unknown as SearchResult} preparing={preparingApplication} canPrepare={Boolean(resumeId)} onPrepare={(postingId) => onPrepare(postingId, Number(resumeId))} />)}
+        {batch.items.map((item, index) => <SavedResultCard key={index} item={item as unknown as SearchResult} preparing={preparingApplication} canPrepare={canPrepare && Boolean(resumeId)} onPrepare={(postingId, trigger) => onPrepare(postingId, Number(resumeId), trigger)} />)}
       </section> : !review && !pending ? <p className="text-sm leading-6 text-muted-foreground">Choose your resume and preferences, then review the exact service quote. Opening a saved search below is free.</p> : null}
     </div>
   </section>;

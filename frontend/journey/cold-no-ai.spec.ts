@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { createHash, createHmac } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, request as requestFactory, type Route } from "@playwright/test";
+import { decode, encode } from "next-auth/jwt";
 
 // Disposable CI lab measurements only. No production instrumentation or field-INP claim.
 type PublicLabState = {
@@ -238,6 +239,52 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   const initialProfile = await request.get(`${baseURL}/api/account/profile`);
   expect(initialProfile.ok()).toBeTruthy();
   expect((await initialProfile.json()).ai_credits).toBe(0);
+
+  // Use the real outer session for the candidate just registered by this
+  // fixture. Change only the test bearer expiry to avoid a real-time wait.
+  const sessionSecret = process.env.NEXTAUTH_SECRET!;
+  const bearerSecret = process.env.JWT_SECRET!;
+  expect(sessionSecret).toBe("synthetic-nextauth-browser-secret-over-thirty-two-characters");
+  expect(bearerSecret).toBe("synthetic-browser-jwt-secret-over-thirty-two-characters");
+  expect(new URL(baseURL!).hostname).toBe("127.0.0.1");
+  const sessionToken = await decode({ token: sessionCookies[0].value, secret: sessionSecret });
+  if (typeof sessionToken?.accessToken !== "string" || sessionToken.browserPairingSession) {
+    throw new Error("Expected the owned legacy fixture session");
+  }
+  const [header, encodedClaims] = sessionToken.accessToken.split(".");
+  expect(JSON.parse(Buffer.from(header, "base64url").toString("utf8")).alg).toBe("HS256");
+  const backendClaims = JSON.parse(Buffer.from(encodedClaims, "base64url").toString("utf8"));
+  expect(backendClaims.sub).toBe(String(sessionToken.hirewizUserId));
+  expect(backendClaims.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  backendClaims.exp = Math.floor(Date.now() / 1000) - 60;
+  const expired = `${header}.${Buffer.from(JSON.stringify(backendClaims)).toString("base64url")}`;
+  const expiredSignature = createHmac("sha256", bearerSecret).update(expired).digest("base64url");
+  const expiredSession = await encode({ token: { ...sessionToken, accessToken: `${expired}.${expiredSignature}` }, secret: sessionSecret, maxAge: 3600 });
+  const recovery = await context.browser()!.newContext({ ignoreHTTPSErrors: true });
+  await recovery.route((url) => url.origin !== baseURL, (route) => route.abort("blockedbyclient"));
+  try {
+    await recovery.addCookies([{ ...sessionCookies[0], value: expiredSession }]);
+    expect((await recovery.request.get(`${baseURL}/api/account/dashboard`)).status()).toBe(401);
+    expect((await recovery.request.get(`${baseURL}/api/backend/v1/employer-jobs/applications`)).status()).toBe(401);
+    const recoveryPage = await recovery.newPage();
+    await recoveryPage.goto(`${baseURL}/dashboard`);
+    await expect(recoveryPage.getByRole("heading", { name: "Sign in again" })).toBeVisible();
+    await recoveryPage.getByRole("link", { name: "Sign out securely" }).click();
+    await expect(recoveryPage).toHaveURL(/\/login$/);
+    expect((await recovery.cookies()).some((cookie) => cookie.name === sessionCookies[0].name)).toBe(false);
+    await recoveryPage.getByLabel("Email address", { exact: true }).fill("candidate.browser@example.com");
+    await recoveryPage.getByLabel("Password", { exact: true }).fill("synthetic-browser-password-123");
+    await recoveryPage.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect(recoveryPage).toHaveURL(/\/dashboard$/);
+    await expect(recoveryPage.getByRole("heading", { name: "Sign in again" })).toHaveCount(0);
+    const freshProfile = await recovery.request.get(`${baseURL}/api/account/profile`);
+    expect(freshProfile.status()).toBe(200);
+    expect((await freshProfile.json()).email).toBe("candidate.browser@example.com");
+    expect((await recovery.request.get(`${baseURL}/api/account/dashboard`)).status()).toBe(200);
+  } finally {
+    await recovery.close();
+  }
+
   await expect(page.getByRole("checkbox", { name: /Optional AI skill enrichment/ })).not.toBeChecked();
   await page.locator('input[type="file"]').setInputFiles(process.env.COLD_BROWSER_ORIGINAL!);
   const parseResponse = page.waitForResponse((r) => r.url().endsWith("/api/backend/resume/parse") && r.request().method() === "POST");
@@ -259,12 +306,32 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
   const profile = await request.get(`${baseURL}/api/account/profile`);
   expect((await profile.json()).target_role).toBe("Python Engineer");
-  await page.goto("/employer-jobs");
+  const jobsBootstrapPath = "/api/backend/v1/employer-jobs/bootstrap";
+  const initialJobsPaths = new Set([jobsBootstrapPath, "/api/backend/resume/page", "/api/backend/resume/list",
+    "/api/backend/v1/employer-jobs/catalog", "/api/backend/v1/employer-jobs/search-summaries", "/api/backend/v1/employer-jobs/applications"]);
+  const initialJobsReads: string[] = [];
+  function observeJobsRead(browserRequest: import("@playwright/test").Request) {
+    const path = new URL(browserRequest.url()).pathname;
+    if (browserRequest.method() === "GET" && initialJobsPaths.has(path)) initialJobsReads.push(path);
+  }
+  page.on("request", observeJobsRead);
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Good to see you, Synthetic.", exact: true })).toBeVisible();
+  const dashboardDocument = await page.evaluate(() => performance.timeOrigin);
+  if (page.viewportSize()!.width < 1280) await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const overviewResponse = page.waitForResponse((response) => new URL(response.url()).pathname === jobsBootstrapPath && response.request().method() === "GET");
+  await page.getByRole("link", { name: "Jobs", exact: true }).click();
+  expect((await overviewResponse).status()).toBe(200);
+  expect(await page.evaluate(() => performance.timeOrigin)).toBe(dashboardDocument);
   await page.getByRole("combobox", { name: "Resume", exact: true }).selectOption(String(parsed.resume_id));
   await page.getByLabel("Target role", { exact: true }).fill("Python Engineer");
   await page.getByLabel("Location", { exact: true }).fill("Bengaluru");
   await page.getByLabel("Jobs to find", { exact: true }).fill("3");
   await expect(page.getByRole("button", { name: "Find jobs", exact: true })).toBeDisabled();
+  await expect(page.getByText("No saved searches on this page.")).toBeVisible();
+  await expect(page.getByText("Prepare a result above to begin. Nothing is submitted when you search.")).toBeVisible();
+  page.off("request", observeJobsRead);
+  expect(initialJobsReads).toEqual([jobsBootstrapPath]);
   const initialCatalog = await request.get(`${baseURL}/api/backend/v1/employer-jobs/catalog`);
   expect((await initialCatalog.json()).balance).toBe(0);
   // Historical-order fixture: the new UI deliberately does not sell dual-wallet packs.
@@ -432,6 +499,7 @@ test("fresh candidate and legacy checkout recovery: real Chromium → BFF → AP
     source_bytes_exact: true, custom_bytes_exact: true, original_sha256: createHash("sha256").update(original).digest("hex"),
     custom_sha256: createHash("sha256").update(custom).digest("hex"), cold_user_created_via_ui: true,
     real_nextauth: true, no_bff_interception: true, no_credits_before_webhook: true,
+    initial_jobs_reads: { overview: initialJobsReads.length, separate_reads: 0 },
     finite_bundle_sku: "starter_bundle", purchased_analysis_units: 2, analysis_units_after_no_ai_work: 2,
     legacy_order_created_by_fixture_api: true, legacy_order_recovery_via_ui: true, new_unified_purchase_proof: false,
     https_loopback_transport: true, secure_http_only_session_cookie: true,

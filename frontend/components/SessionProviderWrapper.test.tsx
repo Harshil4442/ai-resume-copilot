@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const auth = vi.hoisted(() => ({
   pathname: "/employer-jobs",
   session: { data: null, status: "loading" } as {
-    data: { user: { id?: string; email?: string } } | null;
+    data: { user: { id?: string; email?: string }; reauthenticationRequired?: true } | null;
     status: "loading" | "authenticated" | "unauthenticated";
   },
 }));
@@ -18,6 +18,9 @@ vi.mock("next-auth/react", () => ({
 vi.mock("next/navigation", () => ({ usePathname: () => auth.pathname }));
 
 import SessionProviderWrapper from "./SessionProviderWrapper";
+import { ownedDashboardKey } from "../lib/ownedDashboardClient";
+import { ownedBootstrapKey } from "../lib/ownedBootstrapClient";
+import { clearNotificationUnsubscribeLink, readNotificationUnsubscribeLink } from "../lib/notificationUnsubscribeLink";
 
 const privateKeys = [["resumes"], ["feature-decisions"], ["employer-jobs", "catalog"]];
 let clients: QueryClient[];
@@ -123,6 +126,52 @@ describe("session owner boundary", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Your session could not be identified"));
     expect(clients).toHaveLength(0);
     expect(screen.queryByTestId("package")).not.toBeInTheDocument();
+  });
+
+  it("hides authenticated workspace and browser review after bearer expiry while preserving secure logout", () => {
+    auth.session = { status: "authenticated", data: { user: { id: "owner-a" }, reauthenticationRequired: true } };
+    const view = render(<SessionProviderWrapper><PrivateWorkspace /></SessionProviderWrapper>);
+    expect(screen.getByRole("link", { name: "Sign out securely" })).toHaveAttribute("href", "/logout");
+    expect(clients).toHaveLength(0);
+    auth.pathname = "/browser-companion";
+    view.rerender(<SessionProviderWrapper><PrivateWorkspace /></SessionProviderWrapper>);
+    expect(screen.getByRole("heading", { name: "Sign in again" })).toBeVisible();
+    expect(clients).toHaveLength(0);
+    auth.pathname = "/logout";
+    view.rerender(<SessionProviderWrapper><p>Logout request</p></SessionProviderWrapper>);
+    expect(screen.getByText("Logout request")).toBeVisible();
+  });
+
+  it("keeps public unsubscribe available when the session has expired without an owner identity", () => {
+    const target = "/notifications/unsubscribe";
+    const token = `hwdu1.eyJ2ZXJzaW9uIjoxfQ.${"A".repeat(43)}`;
+    auth.pathname = target;
+    auth.session = { status: "authenticated", data: { user: {}, reauthenticationRequired: true } };
+    window.history.replaceState(null, "", `${target}#token=${token}`);
+    try {
+      render(<SessionProviderWrapper><h1>Unsubscribe from reminders</h1></SessionProviderWrapper>);
+      expect(screen.getByRole("heading", { name: "Unsubscribe from reminders" })).toBeVisible();
+      expect(readNotificationUnsubscribeLink().token).toBe(token);
+      expect(window.location.hash).toBe("");
+    } finally {
+      clearNotificationUnsubscribeLink();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it.each([{ key: ownedBootstrapKey }, { key: ownedDashboardKey }])("requires secure sign-out after trusted snapshot denial at $key", async ({ key }) => {
+    const read = vi.fn().mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    function Workspace() {
+      useQuery({ queryKey: key, queryFn: read, retry: false });
+      return <PrivateWorkspace />;
+    }
+    const view = render(<SessionProviderWrapper><Workspace /></SessionProviderWrapper>);
+    expect(await screen.findByRole("heading", { name: "Sign in again" })).toBeVisible();
+    expect(screen.queryByTestId("resume")).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+    auth.session = { status: "authenticated", data: { user: { id: "owner-b" } } };
+    view.rerender(<SessionProviderWrapper><p>New owner workspace</p></SessionProviderWrapper>);
+    expect(screen.getByText("New owner workspace")).toBeVisible();
   });
 });
 

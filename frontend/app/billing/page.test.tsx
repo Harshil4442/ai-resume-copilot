@@ -64,6 +64,48 @@ async function review() {
 }
 async function confirmIndia() { const checkbox = await screen.findByRole("checkbox", { name: /I confirm my billing country/ }); fireEvent.click(checkbox); }
 
+it.each(["unified", "legacy"] as const)("recovers a stalled %s checkout through the same verified order", async (kind) => {
+  const legacy = kind === "legacy";
+  const recentPath = legacy ? "/billing/recent-order" : "/v1/credits/recent-order";
+  const statusPath = legacy ? "/billing/orders/order_legacy" : "/v1/credits/orders/order_unified";
+  const createPath = legacy ? "/billing/orders" : "/v1/credits/orders";
+  const reference = legacy ? "order_legacy" : "order_unified";
+  const scriptSelector = 'script[src="https://checkout.razorpay.com/v1/checkout.js"]';
+  state.get.mockImplementation((url: string) => url === recentPath ? Promise.resolve(legacy ? legacyOrder() : order()) : read(url));
+  if (legacy) state.post.mockResolvedValue(legacyCheckout);
+  delete window.Razorpay;
+  render(<BillingPage />);
+  const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+  await confirmIndia();
+
+  vi.useFakeTimers();
+  await act(async () => { fireEvent.click(resume); });
+  expect(document.querySelector(scriptSelector)).toBeInTheDocument();
+  expect(resume).toBeDisabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Razorpay checkout did not open");
+  noCheckout();
+  expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: /I confirm my billing country/ }));
+  expect(resume).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /check payment status/i })); });
+  expect(state.get).toHaveBeenCalledWith(statusPath, expect.any(AbortSignal));
+  expect(resume).toBeEnabled();
+
+  await act(async () => { fireEvent.click(resume); });
+  const script = document.querySelector(scriptSelector);
+  expect(script).toBeInTheDocument();
+  window.Razorpay = hostedCheckout;
+  await act(async () => { fireEvent.load(script!); });
+  expect(openCheckout).toHaveBeenCalledOnce();
+  const requests = state.post.mock.calls.filter(([path]) => path === createPath);
+  expect(requests).toHaveLength(2);
+  expect(requests[0][1]).toMatchObject({ order_reference: reference, idempotency_key: expect.any(String) });
+  expect(requests[1]).toEqual(requests[0]);
+  script?.remove();
+});
+
 describe("unified billing account", () => {
   it("shows a single new balance while preserving separate legacy entitlements", async () => {
     render(<BillingPage />);
@@ -535,6 +577,65 @@ describe("legacy payment recovery", () => {
     await screen.findByText("Order reference: order_legacy");
     await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
     expect(screen.queryByRole("button", { name: "Reconcile original payment" })).not.toBeInTheDocument();
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
+  it.each([
+    ["pending", 0, [["refunded", 64_900, 0]]],
+    ["paid", 0, [["paid", 16_225, 75], ["paid", 32_450, 50], ["refunded", 64_900, -1]]],
+  ] as const)("refreshes the same mounted legacy balance and history after refunds from %s", async (initialStatus, initialRefund, updates) => {
+    let amount = initialRefund as number;
+    let status: string = initialStatus;
+    let credits = 100;
+    let analysisUnits = 2;
+    const orderStatus = () => legacyOrder({ status, fulfilled: status === "paid", refunded_amount_minor: amount, checkout_available: false });
+    state.get.mockImplementation((url: string) => {
+      if (url === "/billing/recent-order" || url === "/billing/orders/order_legacy") return Promise.resolve(orderStatus());
+      if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: analysisUnits }, wallet }));
+      if (url === "/auth/me") return Promise.resolve({ job_service_credits: credits });
+      if (url === "/v1/employer-jobs/credits?limit=10") return Promise.resolve({ balance: credits, reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null });
+      return read(url);
+    });
+    render(<BillingPage />);
+    const balance = await screen.findByRole("region", { name: "Current entitlement" });
+    const serviceBalance = within(balance).getByText("Job service credits", { exact: true }).parentElement!;
+    const analysisBalance = within(balance).getByText("Analysis units", { exact: true }).parentElement!;
+    const historyBalance = () => screen.getByText("Available balance", { exact: true }).parentElement!;
+    await waitFor(() => expect(historyBalance()).toHaveTextContent("100 credits"));
+    expect(within(serviceBalance).getByText("100", { exact: true })).toBeVisible();
+    const check = await screen.findByRole("button", { name: "Check payment status" });
+
+    for (const [newStatus, newAmount, newCredits] of updates) {
+      await waitFor(() => expect(check).toBeEnabled());
+      status = newStatus; amount = newAmount; credits = newCredits;
+      analysisUnits = credits < 0 ? -2 : status === "refunded" ? 0 : 1;
+      fireEvent.click(check);
+      await screen.findByRole("heading", { name: status === "refunded" ? "Payment refunded" : "Payment partially refunded" });
+      const amountText = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(newAmount / 100);
+      await screen.findByText(`Total refunded: ${amountText}`);
+      await waitFor(() => expect(historyBalance()).toHaveTextContent(`${Math.max(0, credits)} credits`));
+      expect(await within(serviceBalance).findByText(String(Math.max(0, credits)), { exact: true })).toBeVisible();
+      if (credits < 0) expect(screen.getAllByText("Pending credit adjustment: 1.")).toHaveLength(2);
+      if (analysisUnits < 0) {
+        expect(await within(balance).findByText("Pending analysis-unit adjustment: 2.")).toBeVisible();
+        expect(within(analysisBalance).getByText("0", { exact: true })).toBeVisible();
+      }
+      if (status === "paid") expect(screen.getByText("The original payment was partially refunded.", { exact: true })).toBeVisible();
+    }
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(updates.length);
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
+  it("keeps a previously verified cumulative refund when a later check reports an older amount", async () => {
+    const partial = legacyOrder({ status: "paid", fulfilled: true, refunded_amount_minor: 32_450, checkout_available: false });
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(partial)
+      : url === "/billing/orders/order_legacy" ? Promise.resolve({ ...partial, refunded_amount_minor: 16_225 }) : read(url));
+    render(<BillingPage />);
+    await screen.findByText("Total refunded: ₹324.5");
+    const check = screen.getByRole("button", { name: "Check payment status" });
+    await waitFor(() => expect(check).toBeEnabled());
+    fireEvent.click(check);
+    await screen.findByText("The original order status could not be verified.");
+    expect(screen.getByText("Total refunded: ₹324.5")).toBeVisible();
+    expect(screen.queryByText("Total refunded: ₹162.25")).not.toBeInTheDocument();
     expect(state.post).not.toHaveBeenCalled(); noCheckout();
   });
   it("retains older premium purchase status without inventing credit conversion", async () => {

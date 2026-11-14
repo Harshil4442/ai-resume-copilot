@@ -75,7 +75,7 @@ export function ServiceCreditHistory({ refreshKey }: { refreshKey: string }) {
     return apiGet<ServiceCreditHistoryPage>(serviceCreditHistoryPath(filter, cursor), controller.signal).then((response) => {
       if (controller.signal.aborted) return;
       // Older deployments do not yet expose the reservation history contract.
-      if (!Array.isArray(response.operations)) throw new Error("Service history is temporarily unavailable.");
+      if (!Array.isArray(response.operations) || !Number.isSafeInteger(response.balance)) throw new Error("Service history is temporarily unavailable.");
       setError(null);
       setPage((previous) => ({
         ...response,
@@ -119,7 +119,7 @@ export function ServiceCreditHistory({ refreshKey }: { refreshKey: string }) {
       </div>
 
       {page ? <dl className="mt-6 grid gap-4 border-y border-border py-5 sm:grid-cols-2">
-        <div><dt className="data-label">Available balance</dt><dd className="mt-2 text-2xl font-semibold tabular-nums text-primary">{page.balance} <span className="text-sm font-normal text-muted-foreground">credits</span></dd></div>
+        <div><dt className="data-label">Available balance</dt><dd className="mt-2 text-2xl font-semibold tabular-nums text-primary">{Math.max(0, page.balance)} <span className="text-sm font-normal text-muted-foreground">credits</span></dd>{page.balance < 0 ? <dd className="mt-1 text-xs text-muted-foreground">Pending credit adjustment: {-page.balance}.</dd> : null}</div>
         <div className="sm:border-l sm:border-border sm:pl-6"><dt className="data-label">Currently held</dt><dd className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{page.reserved_credits} <span className="text-sm font-normal text-muted-foreground">credits</span></dd><dd className="mt-1 text-xs text-muted-foreground">Across all searches and applications</dd></div>
       </dl> : null}
 

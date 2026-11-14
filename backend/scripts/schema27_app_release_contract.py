@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'ec2ff98e1eb208ce6e9428b8f44f9b3fda86191bcb8ec6448d846461e5b5f461'
+CANDIDATE_APP_SHA256 = '7047543482c3395694653a5da48954ad3be22ef5a569d2652d03323eb6428d34'
 CANDIDATE_APP_FILES = 313
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -42,19 +42,28 @@ HISTORICAL_CURRENT_IGNORES = (*v3.HISTORICAL_CURRENT_IGNORES,
 NEW_HTTP_PATHS = {
     "/api/recommendations/match_strategy/saved": "84cb75fbecc4fc9ba2f7cea63a5a461cf2c382e3094998065f27bbadcb1e4d3f",
     "/api/public/notifications/unsubscribe": "c2d58bafabeb58932448485c133bd4a7613f3c134a48fa6d502d2cfda5fe2044",
+    "/api/v1/employer-jobs/bootstrap": "7214b6a32145394e0bdc3401c13bae629b8dec5b3b6412a4e56555b30e8d0ba3",
     "/api/v1/notifications/preferences": "8bca55f75a9c5e9c67713554f1bea9d6fedf31cfef85fbea5066ebf7cea46cb4",
     "/api/v1/opportunities/page": "29f1a35114d7cf58e15d0816b6dcda425b4098c745bb18b64bbc15d08407f8a4",
     # Optional learning projection. Keep the retained v3 route pin immutable.
     "/api/v1/opportunities/{opportunity_id}/workspace": "6e1d8ef20c87bdf480648071f00c941cbe711d3f772af5e8f89ebb48b1501cfa",
+    "/api/v1/opportunities/{opportunity_id}/workspace/source-snapshot/selected": "8b141705ba49a35d502a08dfaf674ee34093f664f29b9c507b8745a9e8064297",
     "/api/v1/opportunities/{opportunity_id}/workspace/{collection}": "ce7b8e566f8d9d169ad1e29455fe2d247eb23d9f16c10ff4cc6cbd9aca59fa1c",
 }
 NEW_HTTP_SCHEMAS = {
+    "JobsApplicationAdmission": "8d0f05405d0d888a1ef89bca6e2eb0484b70a2ff69e1399134050957650d29e0",
+    "JobsApplicationArtifact": "8adad70dc819fae25b7eb7e8cca231f158fd1803f1364011d6c1a84c0686a636",
+    "JobsApplicationPosting": "65f10aad2d7ef78ca1ff37ce64e71a707ef904f6caf6e5139558bee7dd2f8520",
+    "JobsApplicationPrice": "d5ce7a2fc309ab8c9533f59853293d43ea7653b0d50f30f1b6ace53b304a5f07",
+    "JobsApplicationRow": "d283547aafff85c9854afc5eb43645947748bfff85a5d4cebff538f75ee3c690",
+    "JobsBootstrapView": "7ef4a9c964613a30964c1745e6bf76ceda6be676c411d11ef04d0b63710c3f68",
     "PreferenceChange": "f836f891975e90293310e2b7ed501a2ad5e41d7ad80d8f46a74dcdcd5419a072",
     "PreferenceResponse": "10ad227d9d00a4a1dbcf928fed2047bfc30e9d2ca56715cb07318a3fa91c813b",
     "UnsubscribeRequest": "a87c23e73f8c868aaf837fcc755f290412fbecb636f714bd41b042badff0de6a",
     "OpportunityPageItem": "8393811d947f625ea1a973b02547823c23ce0b75016f780babe2275a4c47b95d",
     "OpportunityPageResponse": "fc5888ecca03cb83495b1d8733ed477c28de5ed83caf794e480cfe2b2328d244",
     "WorkspaceResponse": "8f408916af8d6005c2604ce6a570bddca996b2005691bdd3b2db9eef06f87318",
+    "WorkspaceSourceSnapshotCreate": "9fb774cb149726bae8f55f19525bdb50b7f10b966de48cad994470db968f6f29",
     "InterviewResultMetadata": "b0b0577d8c6472de876710cf2f1998ccbc9824c661f4d81b4fe7a7f5d4ebf813",
     "WorkspacePage_InterviewResultMetadata_": "ce512358144d1940c3cb0f91018c1445831fcd662fb62fe6b0fde4b5711bfa46",
     "WorkspacePages": "e1b63ac13d466953c1c4f4f5e18d749dedeae62e3a34ff11c4889639d2bb3363",
@@ -68,6 +77,8 @@ DIGEST_NAMESPACES = {"HEADS": "v3_digest_consent_heads", "HISTORY": "v3_digest_c
 OLD_COMMANDS = ("ScopedDenial", "ScopedPasswordReset", "ScopedBegin", "ScopedSubmitDeviceEnrollment", "ScopedSubmitBegin",
                 "ScopedPairedDeviceActivation", "ScopedPairedDeviceDenial", "ScopedPairedRevocation")
 F07_PATHS = (
+    "backend/scripts/stage5_first_minute.py", "backend/tests/test_stage5_first_minute.py",
+    "backend/tests/test_stage5_capacity.py",
     "backend/scripts/schema27_app_release_contract.py", "backend/scripts/notification_schema27_contract.py",
     "backend/scripts/notification_schema27_step.py", "backend/scripts/qualify_schema27.py",
     "backend/scripts/qualify_schema26_retained_v3.py", "infra/gcp/schema27_native_migration.py",
@@ -124,6 +135,7 @@ F07_PATHS = (
     "frontend/app/workspace/[id]/page.tsx", "frontend/app/workspace/[id]/page.test.tsx",
     "frontend/components/career/WorkspaceInterviewHistory.tsx", "frontend/lib/useQuotedAnalysis.ts",
     "frontend/lib/workspacePages.ts",
+    "backend/tests/test_employer_jobs_bootstrap.py",
 )
 
 

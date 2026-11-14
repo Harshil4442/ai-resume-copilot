@@ -39,6 +39,8 @@ export default function DashboardPage() {
   // A refused current snapshot must not keep rendering a prior successful read.
   const data = snapshot.isError ? undefined : snapshot.data;
   const profile = { data: data?.bootstrap.profile ?? undefined };
+  const analysisBalance = profile.data?.ai_credits;
+  const analysisUnits = analysisBalance === undefined ? "Unavailable" : Math.max(0, analysisBalance);
   const analytics = { data: data?.summary ?? undefined };
   const opportunities = { data: data?.opportunities ?? undefined };
   const reminders = { data: data?.reminders ?? undefined };
@@ -100,7 +102,7 @@ export default function DashboardPage() {
                 { label: "Active roles", value: opportunities.data ? active.length : "Unavailable", icon: BriefcaseBusiness, tone: "text-primary" },
                 { label: "Interviews", value: opportunities.data ? interviews : "Unavailable", icon: Target, tone: "text-primary" },
                 { label: "Average match", value: analytics.data ? analytics.data.applications_count ? Math.round(analytics.data.average_match_score) : "-" : "Unavailable", icon: Gauge, tone: "text-foreground" },
-                { label: unifiedWalletEnabled ? "Available credits" : "Analysis units", value: unifiedWalletEnabled ? wallet ? wallet.available_credits : "Unavailable" : profile.data?.ai_credits ?? "Unavailable", icon: Circle, tone: "text-coral" },
+                { label: unifiedWalletEnabled ? "Available credits" : "Analysis units", value: unifiedWalletEnabled ? wallet ? wallet.available_credits : "Unavailable" : analysisUnits, icon: Circle, tone: "text-coral" },
               ].map((metric) => (
                 <div key={metric.label} className="border-t border-border py-6 sm:border-r sm:px-6 sm:first:pl-0 xl:border-t-0 last:border-r-0">
                   <div className="flex items-center justify-between"><p className="data-label">{metric.label}</p><metric.icon size={16} className={metric.tone} /></div>

@@ -6,9 +6,9 @@ import { useResumeSelection, type ResumeItem, type ResumeOptions } from "../lib/
 import { Button } from "./ui/Button";
 
 export function ResumeSelector({ catalog, value, onChange, label = "Resume", emptyLabel = "Choose a resume", disabled = false,
-  required = false, retainedOnly = false, selectRef, format, onBrowse }: {
+  required = false, retainedOnly = false, hideError = false, selectRef, format, onBrowse }: {
   catalog: ResumeOptions; value: string | number; onChange: (value: string) => void;
-  label?: string; emptyLabel?: string; disabled?: boolean; required?: boolean; retainedOnly?: boolean;
+  label?: string; emptyLabel?: string; disabled?: boolean; required?: boolean; retainedOnly?: boolean; hideError?: boolean;
   selectRef?: Ref<HTMLSelectElement>; format?: (resume: ResumeItem) => string; onBrowse?: () => void;
 }) {
   const items = (catalog.data?.resumes ?? []).filter((item) => !retainedOnly || item.source_available);
@@ -24,7 +24,7 @@ export function ResumeSelector({ catalog, value, onChange, label = "Resume", emp
       </select>
     </label>
     {catalog.isLoading ? <p role="status" className="text-xs text-muted-foreground">Loading saved resumes…</p> : null}
-    {catalog.isError ? <div role="alert" className="space-y-2 text-xs"><p>{catalog.error instanceof Error ? catalog.error.message : "Could not load saved resumes."}</p><Button type="button" size="sm" variant="secondary" disabled={disabled || catalog.isFetching} onClick={catalog.refetch}>Retry resumes</Button></div> : null}
+    {catalog.isError && !hideError ? <div role="alert" className="space-y-2 text-xs"><p>{catalog.error instanceof Error ? catalog.error.message : "Could not load saved resumes."}</p><Button type="button" size="sm" variant="secondary" disabled={disabled || catalog.isFetching} onClick={catalog.refetch}>Retry resumes</Button></div> : null}
     {!catalog.isLoading && !catalog.isError && !items.length ? <p className="text-xs text-muted-foreground">{retainedOnly ? "No retained sources on this page." : "No saved resumes on this page."}</p> : null}
     {catalog.isOlderPage ? <Button type="button" size="sm" variant="secondary" disabled={disabled || catalog.isFetching} onClick={() => { onBrowse?.(); catalog.newest(); }}>Newest resumes</Button> : null}
     {catalog.hasMore ? <Button type="button" size="sm" variant="secondary" disabled={disabled || catalog.isFetching} onClick={() => { onBrowse?.(); catalog.loadMore(); }}>{catalog.isLoadingMore ? "Loading older resumes…" : "Load older resumes"}</Button> : null}

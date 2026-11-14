@@ -257,10 +257,40 @@ def test_legacy_cap_before_body_reads_internal_export_complete(owned):
 def test_source_snapshot_uses_all_approved_ids_beyond_page(owned):
     client, factory, _, _, _ = owned
     populate(factory, 75)
-    response = client.post(f"{PREFIX}/source-snapshot")
+    response = client.post(f"{PREFIX}/source-snapshot", json={})
     assert response.status_code == 201, response.text
     assert len(response.json()["evidence_ids"]) == 75
     assert response.json()["structured_content"] == {"format_preservation": "source", "source_format": "pdf", "source_edits": []}
+
+
+def test_source_snapshot_refuses_the_resume_changed_in_another_tab(owned):
+    client, factory, _, _, _ = owned
+    shown = client.get(PREFIX, params={"tab": "resume"}).json()["opportunity"]["resume_id"]
+    assert shown == 10
+    changed = client.patch("/api/v1/opportunities/opp_a", json={"resume_id": 11})
+    assert changed.status_code == 200, changed.text
+
+    stale = client.post(f"{PREFIX}/source-snapshot/selected", json={"expected_resume_id": shown})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"]["code"] == "source_snapshot_resume_changed"
+    with factory() as db:
+        assert db.query(models.ResumeVersion).count() == 0
+
+    fresh = client.get(PREFIX, params={"tab": "resume"}).json()["opportunity"]["resume_id"]
+    assert fresh == 11
+    saved = client.post(f"{PREFIX}/source-snapshot/selected", json={"expected_resume_id": fresh})
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["resume_id"] == 11
+    assert saved.json()["structured_content"] == {"format_preservation": "source", "source_format": "pdf", "source_edits": []}
+
+
+@pytest.mark.parametrize("body", [{}, {"expected_resume_id": None}, {"expected_resume_id": False},
+    {"expected_resume_id": "10"}, {"resume_id": 10}])
+def test_source_snapshot_rejects_invalid_explicit_resume_identity(owned, body):
+    client, factory, _, _, _ = owned
+    assert client.post(f"{PREFIX}/source-snapshot/selected", json=body).status_code == 422
+    with factory() as db:
+        assert db.query(models.ResumeVersion).count() == 0
 
 
 def test_source_snapshot_overflow_refuses_before_any_version_write(owned):

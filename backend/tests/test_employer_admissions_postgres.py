@@ -648,6 +648,97 @@ def _erase_fixture_owner(db):
     db.commit()
 
 
+@pytest.mark.parametrize(("kind", "changes"), [
+    ("source", {"board_token": "updated-board"}),
+    ("source", {"allowed_hosts": ["changed.example.com"]}),
+    ("source", {"employer_key": "verified-employer"}),
+    ("posting", {"external_id": "replacement-101"}),
+    ("posting", {"requisition_id": "new-opening"}),
+    ("posting", {"apply_url": "https://boards.greenhouse.io/example/jobs/2"}),
+    ("posting", {"content_sha256": "f" * 64}),
+    ("refresh", {}),
+])
+def test_application_creation_rechecks_source_and_posting_after_form_read(pg_context, monkeypatch, kind, changes):
+    factory, client, _ = pg_context
+    form_started, form_continue = Event(), Event()
+    calls = []
+
+    def form(source, external_id):
+        calls.append((source.board_token, external_id))
+        form_started.set()
+        assert form_continue.wait(timeout=10)
+        return copy.deepcopy(original.FORM)
+
+    monkeypatch.setattr(connectors, "load_form", form)
+    request = {"posting_id": "job_1", "resume_id": 10, "idempotency_key": "application-source-recheck"}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        creation = pool.submit(client.post, "/api/v1/employer-jobs/applications", json=request)
+        assert form_started.wait(timeout=5)
+        try:
+            with factory() as db:
+                posting = db.get(models.EmployerPosting, "job_1")
+                source = db.get(models.EmployerSource, posting.source_id)
+                original_contract = (source.board_token, posting.external_id)
+                if kind == "refresh":
+                    source.last_success_at = service.utcnow()
+                    posting.last_checked_at = service.utcnow()
+                else:
+                    row = source if kind == "source" else posting
+                    for name, value in changes.items():
+                        setattr(row, name, value)
+                db.commit()
+        finally:
+            form_continue.set()
+        response = creation.result(timeout=10)
+
+    assert calls == [original_contract]
+    with factory() as db:
+        if kind == "refresh":
+            assert response.status_code == 201, response.json()
+            assert db.query(models.EmployerApplication).count() == 1
+            assert db.query(models.SealedApplicationArtifact).count() == 1
+        else:
+            assert response.status_code == 409, response.json()
+            assert response.json()["detail"]["code"] == "application_source_changed"
+            assert db.query(models.EmployerApplication).count() == 0
+            assert db.query(models.SealedApplicationArtifact).count() == 0
+        assert db.get(core.User, 1).job_service_credits == 50
+    if kind == "refresh":
+        replay = client.post("/api/v1/employer-jobs/applications", json=request)
+        assert replay.status_code == 201
+        assert replay.json()["id"] == response.json()["id"]
+        assert calls == [original_contract]
+
+
+def test_application_creation_refuses_an_in_progress_source_refresh(pg_context, monkeypatch):
+    factory, client, _ = pg_context
+    waiting, proceed = Event(), Event()
+
+    def form(*_args):
+        waiting.set()
+        assert proceed.wait(timeout=10)
+        return copy.deepcopy(original.FORM)
+
+    monkeypatch.setattr(connectors, "load_form", form)
+    request = {"posting_id": "job_1", "resume_id": 10, "idempotency_key": "application-source-busy"}
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        creation = pool.submit(client.post, "/api/v1/employer-jobs/applications", json=request)
+        assert waiting.wait(timeout=5)
+        try:
+            with factory() as db:
+                db.query(models.EmployerSource).with_for_update().one()
+                proceed.set()
+                response = creation.result(timeout=3)
+        finally:
+            proceed.set()
+    assert response.status_code == 409, response.json()
+    assert response.json()["detail"]["code"] == "application_source_busy"
+    with factory() as db:
+        assert db.query(models.EmployerApplication).count() == 0
+        assert db.query(models.SealedApplicationArtifact).count() == 0
+    assert client.post("/api/v1/employer-jobs/applications", json=request).status_code == 201
+
+
 def test_account_erasure_fences_creation_after_its_initial_application_scan(pg_context, pg_engine, monkeypatch):
     factory, _, _ = pg_context
     scanned, proceed, form_ready = Event(), Event(), Event()

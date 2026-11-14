@@ -21,8 +21,10 @@ Release qualification still requires passing CI and a verified build for the
 final candidate commit.
 
 Last verified production context remains DB8 on committed schema26 with the
-three original services and restored schedules/coordinator, and frontend
-751/Hohsg with companion 0.8.9. The owner original-file review/download,
+three original services and restored schedules/coordinator. The current
+frontend and its independent changes are recorded in the
+[deployment progress](AUTO_APPLY_PROGRESS.md#latest-verified-runtime-and-pending-releases).
+The public companion package is 0.8.9. The owner original-file review/download,
 cancel-before-Fill and exact-device revocation portion is verified. Actual
 Fill/upload/submission, human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 finance/commercial gates and full R03/RTO qualification remain pending.
@@ -143,6 +145,13 @@ The paginated frontend needs `/api/resume/page` and the workspace read routes
 from the bridge API. Keep the current frontend serving while staging the bridge.
 Use the bridge controller's fresh scanner and reviewed funding checks before
 creating candidate revisions, even at zero traffic.
+
+Deploy the API that supports `POST /workspace/source-snapshot/selected`
+before promoting the frontend that uses it. The request must identify the
+résumé shown in the Workspace. If another tab changes the connected résumé, the
+API returns a conflict and creates no version. If the new route is unavailable,
+the frontend reports the failure and sends no request to the older snapshot
+route. Restore the previous frontend first if this API must be rolled back.
 
 The current frontend still reads the legacy résumé and workspace routes. Before
 moving API traffic, use the verified read-only database observer to count groups

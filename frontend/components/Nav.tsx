@@ -21,6 +21,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { featureDecisionsOptions } from "../lib/ownedBootstrapClient";
 import { ownedDashboardOptions } from "../lib/ownedDashboardClient";
 import { ownerProfileQueryKey, ownerProfileQueryOptions } from "../lib/ownerProfile";
+import { employerJobsOverviewKey } from "../lib/employerJobsOverview";
 import { creditAvailabilityOptions, creditWalletOptions, creditWalletKey } from "../lib/unifiedCreditClient";
 import Logo from "./ui/Logo";
 
@@ -93,17 +94,19 @@ export default function Nav() {
     function refreshCredits() {
       void queryClient.invalidateQueries({ queryKey: ownerProfileQueryKey });
       void queryClient.invalidateQueries({ queryKey: ["employer-jobs", "catalog"] });
+      if (pathname !== "/employer-jobs") void queryClient.invalidateQueries({ queryKey: employerJobsOverviewKey, exact: true, refetchType: "none" });
     }
     function refreshUnifiedCredits() { void queryClient.invalidateQueries({ queryKey: creditWalletKey }); }
     window.addEventListener("refresh_analysis_units", refreshCredits);
     window.addEventListener("refresh_unified_credits", refreshUnifiedCredits);
     return () => { window.removeEventListener("refresh_analysis_units", refreshCredits); window.removeEventListener("refresh_unified_credits", refreshUnifiedCredits); };
-  }, [queryClient, companionPage]);
+  }, [queryClient, companionPage, pathname]);
 
   const links = authenticated
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
-  const units = deferHeaderMetadata ? undefined : profile.data?.ai_credits;
+  const analysisBalance = deferHeaderMetadata ? undefined : profile.data?.ai_credits;
+  const units = analysisBalance === undefined ? undefined : Math.max(0, analysisBalance);
   const serviceCredits = deferHeaderMetadata ? undefined : profile.data?.job_service_credits;
 
   return (

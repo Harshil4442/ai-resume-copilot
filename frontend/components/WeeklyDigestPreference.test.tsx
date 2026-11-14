@@ -76,6 +76,19 @@ describe("explicit owner-bound digest preference", () => {
     expect(changeNotificationPreference).not.toHaveBeenCalled();
   });
 
+  it("lets candidates check a stale delivery schedule without changing consent", async () => {
+    vi.mocked(readNotificationPreference).mockResolvedValueOnce({ ...on, projection_current: false, next_digest_at: null }).mockResolvedValueOnce(on);
+    const view = render(<WeeklyDigestPreference />);
+    await view.findByText("Weekly emails: On");
+    expect(view.getByText(/delivery schedule is not current/)).toBeVisible();
+    const refresh = view.getByRole("button", { name: "Refresh current preference" });
+    fireEvent.click(refresh);
+    await waitFor(() => expect(view.queryByText(/delivery schedule is not current/)).toBeNull());
+    expect(await view.findByRole("checkbox")).toBeChecked();
+    expect(readNotificationPreference).toHaveBeenCalledTimes(2);
+    expect(changeNotificationPreference).not.toHaveBeenCalled();
+  });
+
   it("never repeats an uncertain PUT; manual recovery is a new GET of current state", async () => {
     const pending = deferred<typeof on>();
     vi.mocked(changeNotificationPreference).mockReturnValue(pending.promise);

@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
+from ...schemas import ResumePageResponse
 from .search_preferences import SearchPreferencesV1
 
 
@@ -51,6 +52,55 @@ class SearchSummary(BaseModel):
 class SearchSummaryPage(BaseModel):
     items: list[SearchSummary]
     next_cursor: str | None
+
+
+class JobsApplicationPosting(BaseModel):
+    title: str = Field(max_length=300)
+    employer: str = Field(max_length=200)
+    source_id: str = Field(max_length=64)
+    has_valid_apply_url: bool
+    application_mode: str = Field(max_length=24)
+
+
+class JobsApplicationArtifact(BaseModel):
+    filename: str = Field(max_length=240)
+    media_type: str = Field(max_length=160)
+
+
+class JobsApplicationAdmission(BaseModel):
+    opening_key: str = Field(max_length=64)
+    employer_key: str = Field(max_length=64)
+    policy_fingerprint: str = Field(max_length=64)
+    expires_at: datetime
+
+
+class JobsApplicationPrice(BaseModel):
+    unit_price: int = Field(strict=True)
+    pricing_version: str = Field(max_length=160)
+
+
+class JobsApplicationRow(BaseModel):
+    id: str = Field(max_length=64)
+    status: str = Field(max_length=32)
+    application_mode: str = Field(max_length=24)
+    batch_id: str | None = Field(max_length=64)
+    credit_cost: int
+    package_digest: str = Field(max_length=64)
+    opening_key: str | None = Field(max_length=64)
+    employer_key: str | None = Field(max_length=64)
+    has_missing_fields: bool
+    posting: JobsApplicationPosting
+    artifact: JobsApplicationArtifact
+    admission_snapshot: JobsApplicationAdmission | None
+    pricing_snapshot: JobsApplicationPrice | None
+
+
+class JobsBootstrapView(BaseModel):
+    schema_version: Literal["owned-jobs-bootstrap-v1"] = "owned-jobs-bootstrap-v1"
+    catalog: dict[str, Any]
+    resumes: ResumePageResponse
+    saved_searches: SearchSummaryPage
+    applications: list[JobsApplicationRow] = Field(max_length=30)
 
 
 class SavedSearchResult(BaseModel):

@@ -217,6 +217,39 @@ describe("direct private resume upload contract", () => {
     expect(fetchMock.mock.calls.some(([url]) => /approve|execute|billing|enrich/.test(String(url)))).toBe(false);
   });
 
+  it("reports the inspection outage only after the same upload reaches a verified terminal failure", async () => {
+    vi.useFakeTimers();
+    const value = file();
+    const unavailable = { error_code: "resume_inspection_unavailable" };
+    serve(value, { complete: async () => json({ ...status("queued"), ...unavailable }), get: async () => json({ ...status("failed"), ...unavailable }) });
+    let waiting!: () => void;
+    const queued = new Promise<void>((resolve) => { waiting = resolve; });
+    const result = uploadResumeFile(value, { onProgress: (progress) => { if (progress.phase === "queued") waiting(); } });
+    const rejected = expect(result).rejects.toThrow("Resume inspection is temporarily unavailable. This file was not saved. Try again later or use a resume you already saved.");
+    await queued;
+    expect(gets()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    await rejected;
+    expect(gets()).toHaveLength(1);
+    expect(completions()).toHaveLength(1);
+    expect(puts()).toHaveLength(1);
+    expect(deletes()).toHaveLength(1);
+    expect(apiPostForm).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ state: "rejected" }, /did not pass resume safety checks/],
+    [{ upload_id: "rup_" + "b".repeat(32) }, /Resume status could not be verified/],
+    [{ resume }, /Resume status could not be verified/],
+  ] as const)("keeps the original outcome for an inspection error with %j", async (change, message) => {
+    const value = file();
+    serve(value, { complete: async () => json({ ...status("failed"), error_code: "resume_inspection_unavailable", ...change }) });
+    await expect(uploadResumeFile(value)).rejects.toThrow(message);
+    expect(puts()).toHaveLength(1);
+    expect(gets()).toHaveLength(0);
+    expect(apiPostForm).not.toHaveBeenCalled();
+  });
+
   it("fails immediately for an unbound status instead of waiting or retrying PUT", async () => {
     const value=file(); serve(value,{complete:async()=>json({...status(),upload_id:"rup_"+"b".repeat(32)})});
     await expect(uploadResumeFile(value)).rejects.toThrow("Resume status could not be verified");

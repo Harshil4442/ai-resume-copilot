@@ -1,0 +1,381 @@
+"""Local Test receiver boundary with no Razorpay or other external network calls."""
+
+import hashlib
+import hmac
+import json
+import os
+import socket
+from contextlib import contextmanager
+from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Event, Thread
+
+import pytest
+from backend.app.domains.credits.models import CreditGrant
+from backend.app.models import EntitlementLedger, PaymentEvent, PaymentOrder, PaymentRefund
+from test_razorpay_billing import (
+    TEST_WEBHOOK_SECRET,
+    _accepted_legacy_order,
+    _capture_payload,
+    _refund_payload,
+    _signature,
+    client,
+    enabled_checkout,
+    session_factory,
+)
+from test_unified_credit_payments import start, unified
+
+from scripts import razorpay_test_webhook_ingress as ingress
+
+assert client and session_factory and enabled_checkout and unified
+
+
+class UpstreamHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        server = self.server
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        server.received.append((self.path, body, dict(self.headers.items())))
+        if server.release_response is not None:
+            server.release_response.wait(2)
+            return
+        if server.application is None:
+            status = server.response_status
+            response_body = b"private upstream response"
+        else:
+            reply = server.application.post(self.path, content=body, headers=dict(self.headers))
+            status = reply.status_code
+            response_body = reply.content
+        self.send_response(status)
+        self.send_header("Location", "/must-not-follow")
+        self.send_header("Set-Cookie", "must-not-relay=private")
+        self.send_header("Content-Length", str(len(response_body)))
+        self.end_headers()
+        self.wfile.write(response_body)
+
+    def log_message(self, format, *args):
+        pass
+
+
+@contextmanager
+def running(server):
+    thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
+        assert not thread.is_alive()
+
+
+@pytest.fixture
+def relay():
+    upstream = ThreadingHTTPServer((ingress.LOOPBACK, 0), UpstreamHandler)
+    upstream.received = []
+    upstream.application = None
+    upstream.release_response = None
+    upstream.response_status = 200
+    receiver = ingress.WebhookIngress(0, upstream.server_port)
+    with running(upstream), running(receiver):
+        yield receiver, upstream
+        if upstream.release_response is not None:
+            upstream.release_response.set()
+
+
+def send(receiver, *, method="POST", path=ingress.WEBHOOK_PATH, body=b"{}", headers=None):
+    connection = HTTPConnection(ingress.LOOPBACK, receiver.server_port, timeout=2)
+    try:
+        connection.request(method, path, body=body, headers=headers or {})
+        response = connection.getresponse()
+        return response.status, dict(response.getheaders()), response.read()
+    finally:
+        connection.close()
+
+
+def test_preserves_paid_webhook_raw_body_and_headers_for_actual_app(
+    relay, client, enabled_checkout, session_factory, capsys, tmp_path,
+):
+    receiver, upstream = relay
+    upstream.application = client
+    created = _accepted_legacy_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        payload = _capture_payload(order) | {"synthetic": "Résumé"}
+        provider_order_id = order.provider_order_id
+    body = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
+    headers = {
+        "X-Razorpay-Event-Id": "evt_owned_test_relay",
+        "X-Razorpay-Signature": _signature(body),
+        "Cookie": "must-not-forward=private",
+        "Authorization": "must-not-forward",
+    }
+
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    rule = tmp_path / "hold.json"
+    rule.write_text(json.dumps({"order": provider_order_id}))
+    rule.chmod(0o600)
+    assert send(receiver, body=body, headers=headers)[0] == 503
+    assert upstream.received == []
+    with session_factory() as db:
+        assert db.query(PaymentEvent).count() == db.query(EntitlementLedger).count() == 0
+    rule.unlink()
+
+    for _ in range(2):
+        status, response_headers, response_body = send(receiver, body=body, headers=headers)
+        assert status == 200
+        assert response_headers == {"Connection": "close", "Content-Length": "0"}
+        assert response_body == b""
+
+    assert len(upstream.received) == 2
+    for path, observed, forwarded in upstream.received:
+        assert path == ingress.WEBHOOK_PATH and observed == body
+        assert {name: forwarded[name] for name in ingress.WEBHOOK_HEADERS} == {
+            name: headers[name] for name in ingress.WEBHOOK_HEADERS
+        }
+        assert {"Cookie", "Authorization"}.isdisjoint(forwarded)
+    with session_factory() as db:
+        assert db.query(PaymentEvent).one().provider_event_id == "evt_owned_test_relay"
+        assert db.query(EntitlementLedger).count() == 1
+    assert enabled_checkout == []
+    assert capsys.readouterr() == ("", "")
+
+
+def test_unified_pass_capture_and_refunds_through_signed_test_receiver(relay, unified, session_factory, tmp_path):
+    receiver, upstream = relay
+    client, provider_calls = unified
+    upstream.application = client
+    quote, _, checkout = start(client)
+    assert checkout.status_code == 200
+    assert (quote["amount_minor"], quote["credits"]) == (5900, 40)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=checkout.json()["order_id"]).one()
+        provider_order = order.provider_order_id
+        captured = _capture_payload(order)
+        paid = _capture_payload(order, event="order.paid")
+        partial = _refund_payload(order, "rfnd_testpartial", 2950)
+        remaining = _refund_payload(order, "rfnd_testremaining", 2950)
+    payment = captured["payload"]["payment"]["entity"]["id"]
+    rule = tmp_path / "hold.json"
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+
+    def hold(**identities):
+        rule.write_text(json.dumps(identities))
+        rule.chmod(0o600)
+
+    def deliver(event, payload):
+        body = json.dumps(payload).encode()
+        return send(receiver, body=body, headers={
+            "X-Razorpay-Event-Id": event,
+            "X-Razorpay-Signature": _signature(body),
+        })[0]
+
+    def available():
+        response = client.get("/api/v1/credits/wallet")
+        assert response.status_code == 200
+        return response.json()["available_credits"]
+
+    hold(order=provider_order)
+    assert deliver("evt_test_capture", captured) == deliver("evt_test_paid", paid) == 503
+    assert available() == 0
+    rule.unlink()
+    assert deliver("evt_test_capture", captured) == deliver("evt_test_paid", paid) == 200
+    assert deliver("evt_test_capture", captured) == 200
+    assert available() == 40
+
+    hold(payment=payment)
+    assert deliver("evt_test_partial", partial) == 503
+    assert available() == 40
+    rule.unlink()
+    assert deliver("evt_test_partial", partial) == deliver("evt_test_partial", partial) == 200
+    assert available() == 20
+    assert deliver("evt_test_remaining", remaining) == deliver("evt_test_remaining", remaining) == 200
+    assert available() == 0
+
+    with session_factory() as db:
+        assert db.query(PaymentOrder).one().refunded_amount_minor == 5900
+        assert db.query(PaymentEvent).count() == 4
+        assert db.query(PaymentRefund).count() == 2
+        grant = db.query(CreditGrant).one()
+        assert (grant.quantity, grant.remaining_credits) == (40, 0)
+        assert db.query(EntitlementLedger).one().status == "refunded"
+    assert len(provider_calls) == 1
+
+
+def test_loses_only_one_ack_after_durable_test_order_settlement(relay, unified, session_factory, tmp_path):
+    receiver, upstream = relay
+    client, provider_calls = unified
+    upstream.application = client
+    _, _, checkout = start(client)
+    assert checkout.status_code == 200
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=checkout.json()["order_id"]).one()
+        provider_order = order.provider_order_id
+        paid = _capture_payload(order, event="order.paid")
+        captured = _capture_payload(order)
+
+    tmp_path.chmod(0o700)
+    control = tmp_path / "hold.json"
+    control.write_text(json.dumps({"ack_loss_order": provider_order}))
+    control.chmod(0o600)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    body = json.dumps(paid).encode()
+    headers = {"X-Razorpay-Signature": _signature(body), "X-Razorpay-Event-Id": "evt_earned_retry"}
+    capture = json.dumps(captured).encode()
+    capture_headers = {"X-Razorpay-Signature": _signature(capture), "X-Razorpay-Event-Id": "evt_other_kind"}
+    assert send(receiver, body=body, headers=headers | {"X-Razorpay-Signature": "0" * 64})[0] == 400
+    assert send(receiver, body=body, headers={"X-Razorpay-Signature": _signature(body)})[0] == 400
+    incorrect = json.loads(body)
+    incorrect["payload"]["order"]["entity"]["amount_due"] = 1
+    rejected = json.dumps(incorrect).encode()
+    bad_headers = {"X-Razorpay-Signature": _signature(rejected), "X-Razorpay-Event-Id": "evt_rejected"}
+    assert send(receiver, body=rejected, headers=bad_headers)[0] == 400
+    assert send(receiver, body=rejected, headers=bad_headers)[0] == 200
+    assert list(tmp_path.iterdir()) == [control]
+    with session_factory() as db:
+        assert db.query(CreditGrant).count() == 0
+
+    assert send(receiver, body=body, headers=headers)[0] == 503
+    with session_factory() as db:
+        original = db.query(PaymentEvent).filter_by(provider_event_id="evt_earned_retry").one()
+        assert (original.processing_status, original.event_type) == ("processed", "order.paid")
+        assert db.query(PaymentOrder).one().status == "paid"
+        assert db.query(CreditGrant).one().quantity == 40
+
+    marker = tmp_path / f"ack-loss-{hashlib.sha256(provider_order.encode()).hexdigest()}.used"
+    assert marker.read_bytes() == b"" and (marker.stat().st_mode & 0o777) == 0o600
+    assert send(receiver, body=capture, headers=capture_headers)[0] == 200
+    with running(ingress.WebhookIngress(0, upstream.server_port,
+            hold=ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET))) as restarted:
+        assert send(restarted, body=body, headers=headers)[0] == 200
+        # A second processed delivery also leaves the one-shot marker alone.
+        assert send(restarted, body=body, headers=headers | {"X-Razorpay-Event-Id": "evt_same_order"})[0] == 200
+    with session_factory() as db:
+        assert db.query(PaymentEvent).count() == 4
+        assert db.query(CreditGrant).one().remaining_credits == 40
+    assert len(provider_calls) == 1
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT"])
+def test_refuses_other_methods_without_forwarding(relay, method):
+    receiver, upstream = relay
+    assert send(receiver, method=method)[0] == 405
+    assert upstream.received == []
+
+
+@pytest.mark.parametrize("path", [
+    "/", "/api/health", ingress.WEBHOOK_PATH + "?q=1", ingress.WEBHOOK_PATH + "/",
+    "/" + ingress.WEBHOOK_PATH, ingress.WEBHOOK_PATH.replace("razorpay", "%72azorpay"),
+    "http://127.0.0.1" + ingress.WEBHOOK_PATH,
+])
+def test_refuses_nonexact_request_targets(relay, path):
+    receiver, upstream = relay
+    assert send(receiver, path=path)[0] == 404
+    assert upstream.received == []
+
+
+@pytest.mark.parametrize(("body", "headers", "status"), [
+    (b"", {}, 400),
+    (b"{}", {"Content-Length": str(ingress.MAX_BODY_BYTES + 1)}, 413),
+    (b"{}", {"Transfer-Encoding": "chunked"}, 400),
+    (b"{}", {"Content-Encoding": "gzip"}, 400),
+])
+def test_refuses_unbounded_or_transformed_body(relay, body, headers, status):
+    receiver, upstream = relay
+    assert send(receiver, body=body, headers=headers)[0] == status
+    assert upstream.received == []
+
+
+@pytest.mark.parametrize("status", [204, 302, 400, 429, 503])
+def test_returns_only_upstream_status_without_redirect_or_response_body(relay, status):
+    receiver, upstream = relay
+    upstream.response_status = status
+    observed, headers, body = send(receiver)
+    assert observed == status
+    assert {"Location", "Set-Cookie"}.isdisjoint(headers)
+    assert body == b""
+    assert len(upstream.received) == 1
+
+
+def test_times_out_without_retry(relay, monkeypatch):
+    receiver, upstream = relay
+    monkeypatch.setattr(ingress, "UPSTREAM_TIMEOUT_SECONDS", 0.1)
+    upstream.release_response = Event()
+    assert send(receiver)[0] == 504
+    assert len(upstream.received) == 1
+
+
+def test_closes_stalled_client_without_forwarding(relay, monkeypatch):
+    receiver, upstream = relay
+    monkeypatch.setattr(ingress, "REQUEST_TIMEOUT_SECONDS", 0.1)
+    with socket.create_connection((ingress.LOOPBACK, receiver.server_port), timeout=1) as stream:
+        stream.sendall(f"POST {ingress.WEBHOOK_PATH} HTTP/1.1\r\n".encode())
+        assert stream.recv(128) == b""
+    assert upstream.received == []
+
+
+def test_refuses_duplicate_authentication_headers_without_forwarding(relay):
+    receiver, upstream = relay
+    wire = (
+        f"POST {ingress.WEBHOOK_PATH} HTTP/1.1\r\n"
+        "Content-Length: 2\r\nX-Razorpay-Event-Id: first\r\nX-Razorpay-Event-Id: second\r\n\r\n{}"
+    ).encode()
+    with socket.create_connection((ingress.LOOPBACK, receiver.server_port), timeout=1) as stream:
+        stream.sendall(wire)
+        with stream.makefile("rb") as reply:
+            assert reply.readline().split()[1] == b"400"
+    assert upstream.received == []
+
+
+def test_holds_only_the_selected_signed_order_and_payment_and_releases_on_removal(relay, tmp_path):
+    receiver, upstream = relay
+    tmp_path.chmod(0o700)
+    secret = "private-synthetic-test-webhook-secret"
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, secret)
+    rule = tmp_path / "hold.json"
+    rule.write_text('{"order":"order_hold123","payment":"pay_hold123"}')
+    rule.chmod(0o600)
+
+    def event(name, payload):
+        body = json.dumps({"event": name, "payload": payload}).encode()
+        signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        return body, {"X-Razorpay-Signature": signature, "X-Razorpay-Event-Id": "evt_synthetic_delivery"}
+
+    def deliver(packet):
+        body, headers = packet
+        return send(receiver, body=body, headers=headers)[0]
+
+    capture = event("payment.captured", {"payment": {"entity": {"id": "pay_hold123", "order_id": "order_hold123"}}})
+    paid = event("order.paid", {"order": {"entity": {"id": "order_hold123"}}})
+    refund = event("refund.processed", {"refund": {"entity": {"payment_id": "pay_hold123"}}})
+    foreign = event("payment.captured", {"payment": {"entity": {"id": "pay_other123", "order_id": "order_other123"}}})
+    unsigned = (capture[0], capture[1] | {"X-Razorpay-Signature": "0" * 64})
+    assert deliver(capture) == deliver(paid) == deliver(refund) == 503
+    assert upstream.received == []
+    assert deliver(foreign) == deliver(unsigned) == 200
+    rule.unlink()
+    for packet in (capture, paid, refund):
+        assert deliver(packet) == 200
+    assert [row[1] for row in upstream.received] == [foreign[0], unsigned[0], capture[0], paid[0], refund[0]]
+    assert [row[2]["X-Razorpay-Event-Id"] for row in upstream.received[-3:]] == ["evt_synthetic_delivery"] * 3
+
+
+def test_rejects_invalid_test_control_without_reading_links_or_named_pipes(relay, tmp_path):
+    receiver, upstream = relay
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, "private-synthetic-test-webhook-secret")
+    path = tmp_path / "hold.json"
+    other = tmp_path / "other"
+    other.write_text('{"order":"order_other123"}')
+    path.symlink_to(other)
+    assert send(receiver)[0] == 503
+    path.unlink()
+    os.mkfifo(path, 0o600)
+    assert send(receiver)[0] == 503
+    path.unlink()
+    path.write_text('{"all":"unbounded"}')
+    path.chmod(0o600)
+    assert send(receiver)[0] == 503
+    assert upstream.received == []

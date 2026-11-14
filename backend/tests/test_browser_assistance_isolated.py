@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import copy
 import hashlib
 import importlib.util
 import os
@@ -23,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import (
 )
 from fastapi import HTTPException
 from sqlalchemy import JSON, Column, Integer, LargeBinary, String, Table, create_engine, or_
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 ROOT = Path(__file__).resolve().parents[1] / "app"
@@ -77,6 +79,7 @@ core.ResumeVersion, core.EvidenceItem = ResumeVersion, EvidenceItem
 sys.modules[core.__name__] = core
 common = load(PREFIX + ".domains.common", ROOT / "domains/common.py")
 employer = load(PREFIX + ".domains.employer.models", ROOT / "domains/employer/models.py")
+load(PREFIX + ".schemas", ROOT / "schemas.py")
 load(PREFIX + ".domains.employer.search_preferences", ROOT / "domains/employer/search_preferences.py")
 employer_schemas = load(PREFIX + ".domains.employer.schemas", ROOT / "domains/employer/schemas.py")
 employer_service = types.ModuleType(PREFIX + ".domains.employer.service")
@@ -494,7 +497,8 @@ class BrowserAssistanceFlow(unittest.TestCase):
         # Exercise the shipping creation function and real SQL query, while
         # isolating unrelated remote form/document-storage adapters.
         create_nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in {
-            "_require_enabled", "_posting", "_source", "_source_mode", "_artifact_row", "create_application"}]
+            "_require_enabled", "_posting", "_source", "_source_mode", "_artifact_row",
+            "_application_posting_snapshot", "_application_source_changed", "create_application"}]
         admissions_tree = ast.parse((ROOT / "domains/employer/admissions.py").read_text())
         identities = types.SimpleNamespace(payload_fingerprint=common.payload_fingerprint)
         exec(compile(ast.fix_missing_locations(ast.Module(body=[node for node in admissions_tree.body
@@ -531,10 +535,17 @@ class BrowserAssistanceFlow(unittest.TestCase):
         self.db.add(new_job)
         self.db.commit()
         form = {"version": "synthetic-capacity-form", "fields": [], "supported": False}
-        adapters = types.SimpleNamespace(source_contract=lambda value: value, load_form=lambda *_: form)
+        contract_fields = ("id", "employer", "platform", "board_token", "region", "allowed_hosts", "careers_url",
+                           "submission_enabled", "submission_grant", "credential_env", "form_parity_verified",
+                           "receipt_contract")
+        adapters = types.SimpleNamespace(
+            source_contract=lambda row: types.SimpleNamespace(**{key: getattr(row, key) for key in contract_fields}),
+            load_form=lambda *_: form, ConnectorError=ValueError,
+        )
         storage = types.SimpleNamespace(materialize_for_application=lambda *_: sealed,
             guarded_storage=lambda *_args, **_kwargs: nullcontext((sealed, None)), attach_upload=lambda *_args, **_kwargs: None)
         namespace = {"core": core, "models": employer, "schemas": employer_schemas, "config": config, "or_": or_,
+            "copy": copy, "DBAPIError": DBAPIError,
             "HTTPException": HTTPException, "payload_fingerprint": common.payload_fingerprint, "public_id": common.public_id,
             "connectors": adapters, "artifacts": storage, "admissions": identities,
             "_selection_snapshot": lambda *_: (types.SimpleNamespace(id=1), None), "_quote_application": lambda *_: None}

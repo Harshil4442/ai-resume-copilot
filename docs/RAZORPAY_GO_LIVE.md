@@ -36,6 +36,88 @@ callback overlap before retiring any earlier credential.
 
 ## 3. Verify Test-mode purchase and recovery
 
+Use a disposable HireWiz stack with synthetic accounts and a separate database.
+The local browser workflow uses simulated provider responses. Keep its results
+as application evidence. For provider evidence, use Razorpay Test keys, a
+separate Test webhook secret and an isolated HTTPS callback that forwards only
+`POST /api/billing/webhooks/razorpay`. Razorpay can deliver Test events over a
+public HTTPS tunnel to a local receiver. Keep the rest of the application and
+the database private. Confirm that the Test integration has no connection to
+the live merchant keys, customer data, production webhook or queue. [Test and
+Live modes](https://razorpay.com/docs/payments/dashboard/test-live-modes/)
+· [Webhook testing](https://razorpay.com/docs/webhooks/validate-test/)
+
+Use a separate checkout without `.env` files and install the locked frontend and
+backend dependencies. Start a disposable UTF-8 PostgreSQL database named
+`hirewiz_admission_test` on loopback port `55433` or `55434`. The launcher uses
+the same disposable PostgreSQL contract as the local browser workflow. Run it
+from the repository root with the backend Python environment.
+
+```sh
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout --allow-disposable-postgres
+```
+
+The default check starts the production Next.js build and FastAPI, registers a
+disposable account, verifies the closed checkout and empty wallet, and checks
+the callback receiver. It has no provider credentials and sends no payment
+requests. When the Test account and webhook secret are authorized, opt in from
+an interactive terminal.
+
+```sh
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout \
+  --allow-disposable-postgres --razorpay-test --minutes 30
+```
+
+Enter the Test key ID, key secret and separate webhook secret at the hidden
+prompts. The disposable database has a synthetic active campaign so the lab
+uses the proposed introductory totals without displaying a crossed-out price.
+Its dates apply only to this test. Open the printed local URL in an isolated
+browser profile, trust only the launcher's loopback certificate for this
+session, and register a synthetic account. Use Razorpay's test payment methods.
+Point the HTTPS tunnel only at the printed loopback
+[receiver](../backend/scripts/razorpay_test_webhook_ingress.py) port and configure
+the exact printed callback path in the Test dashboard. The
+receiver relays the raw body and the Razorpay signature and event ID. It returns
+only the HTTP status and keeps no delivery records. Verify that `GET /api/health`
+and unrelated POST paths are refused at the public endpoint. The launcher
+stops its local processes and drops only its own schema on exit. Capture
+sanitized evidence while the launcher is running.
+
+For one Test order, observe delivery of `order.paid` and `payment.captured` and
+verify they settle one credit lot. To verify a genuine Razorpay retry, atomically
+write `{"ack_loss_order":"order_<exact-Test-order-ID>"}` to the printed private
+`hold.json` with mode `0600` before paying. Use this rule by itself. For the first
+matching signed `order.paid` with an event ID, the receiver returns 503 only after
+the local billing handler confirms that the event committed. Its empty,
+order-specific marker keeps that response one-shot across receiver restarts.
+Leave the receiver and webhook running, and verify one recorded event and one
+credit lot after Razorpay retries the original event ID. If the retry is not
+observed, record it as pending. Remove the rule before testing partial and
+remaining refunds, when the Test payment method supports them.
+
+If a previous lab runner is already active, a second receiver can target that
+runner's verified loopback API port directly. Use a new loopback receiver port,
+its own private control directory and the same dedicated Test webhook secret.
+Point the Test tunnel at that receiver only. The previous receiver discards the
+application response needed to distinguish a commit from a duplicate, so avoid
+chaining the receivers.
+
+For the reconciliation order, use the private `hold.json` path printed by the
+launcher. Create the file with permissions `0600` using an atomic rename. Before
+completing Test Checkout, set `order` to that exact Razorpay Test order ID. If
+testing refund reconciliation, add `payment` with that exact Test payment ID
+before issuing the Test refund. A refund can contain a payment ID without an
+order ID. Use only the IDs from the dedicated test account and remove the hold
+as soon as reconciliation finishes. The receiver returns 503 for matching
+signed deliveries without storing their bodies. Razorpay can redeliver them
+later, and they must leave the isolated settlement intact. If the payment
+captured before the hold or redelivery is not observed, record the relevant
+case as pending. [Razorpay delivery retries](https://razorpay.com/docs/webhooks/best-practices/)
+
+Record only sanitized event status, amount, currency and ledger assertions.
+Remove the Test webhook and stop the temporary receiver when the test is
+complete.
+
 - [ ] Confirm the public catalog at `GET /api/public/credits/catalog` and the eligible signed-in catalog at `GET /api/v1/credits/catalog` reflect their audience and the checkout state. Both return 404 while the unified rollout is off. The legacy `GET /api/public/billing/catalog` should show checkout closed. During a canary, the signed-out unified catalog must keep checkout closed. Create the owned quote through `POST /api/v1/credits/purchase-quotes` with its SKU and idempotency key. Create the order through `POST /api/v1/credits/orders` with its quote ID, `billing_country=IN` and idempotency key. The server fixes the INR total and eligible services. Verify a valid 15-minute quote across the campaign cutoff and refusal of an expired, foreign or changed quote.
 - [ ] Use `GET /api/v1/credits/recent-order` and `GET /api/v1/credits/orders/{reference}` to recover the owned original. Replaying an interrupted order creation must keep the same attempt. Test an ambiguous or malformed provider response and confirm it blocks a second payable order until the first is reconciled.
 - [ ] A successful browser return to `POST /api/billing/orders/{order_reference}/checkout-result` records confirmation. Credits are granted only after verified capture through the shared webhook or an authoritative provider read through `POST /api/billing/orders/{order_reference}/reconcile`. Verify exactly one credit lot, the quoted credits, actual expiry and matching order and wallet entries. The actual expiry must be at least the quoted expiry and at least 30 days after both verified capture and fulfillment. Retry capture and reconciliation to verify idempotency.

@@ -14,7 +14,7 @@ import {
 import { Button } from "../ui/Button";
 import { LoadingBlock } from "../ui/LoadingBlock";
 import { EligibleCreditServices, UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
-import { loadHostedCheckout } from "./hostedCheckout";
+import { HostedCheckoutLoadError, loadHostedCheckout } from "./hostedCheckout";
 import { fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
@@ -162,6 +162,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       || (resumeOrder ? !resumeOrder.checkout_available || reconciliationHeld || checkoutStatusRequired === resumeOrder.order_id : unsettled(order))) return;
     actionPending.current = true; setBusy(true); setError(null);
     if (orderIntent.current?.quoteId !== accepted.quote_id) orderIntent.current = { quoteId: accepted.quote_id, key: crypto.randomUUID() };
+    let verifiedOrderId: string | null = null;
     try {
       const raw = await apiPostJson<unknown>("/v1/credits/orders", { quote_id: accepted.quote_id, billing_country: "IN",
         idempotency_key: orderIntent.current.key, ...(resumeOrder ? { order_reference: resumeOrder.order_id } : {}) });
@@ -172,11 +173,12 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       const current = await readOrder(checkout.order_id, undefined, accepted);
       if (current.status === "paid" && current.fulfilled) { setBusy(false); return; }
       if (!current.checkout_available || current.provider_order_id !== checkout.provider_order_id) throw new Error("The original payment needs reconciliation before checkout can resume.");
-      await loadHostedCheckout();
-      if (!mounted.current || !window.Razorpay) return;
+      verifiedOrderId = current.order_id;
+      const Razorpay = await loadHostedCheckout();
+      if (!mounted.current) return;
       let callbackReceived = false;
       let checkoutDismissed = false;
-      const hosted = new window.Razorpay({ key: checkout.key_id, amount: checkout.amount_minor, currency: checkout.currency,
+      const hosted = new Razorpay({ key: checkout.key_id, amount: checkout.amount_minor, currency: checkout.currency,
         name: checkout.name, description: checkout.description, order_id: checkout.provider_order_id, prefill: checkout.prefill ?? undefined,
         handler: (callback) => {
           if (callbackReceived || !mounted.current) return;
@@ -197,6 +199,13 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       hosted.open();
     } catch (failure) {
       if (!mounted.current) return;
+      if (failure instanceof HostedCheckoutLoadError && verifiedOrderId) {
+        setCheckoutStatusRequired(verifiedOrderId);
+        setIndiaConfirmed(false);
+        setError(failure.message);
+        setBusy(false);
+        return;
+      }
       const detail = failure instanceof ApiError ? (failure.detail as { detail?: { code?: string; order_id?: string; order_created?: boolean } })?.detail : null;
       if (detail?.order_created === false && ["credit_quote_rejected", "credit_release_unavailable"].includes(detail.code ?? "")) {
         setUnknownAttempt(false); setQuote(null); quoteIntent.current = null; orderIntent.current = null;

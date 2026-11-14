@@ -59,6 +59,22 @@ describe("dedicated safe account operations",()=>{
 });
 
 describe("finite owned bootstrap read", () => {
+ it.each(["bootstrap", "dashboard"] as const)("preserves a signed analysis balance in the owned %s response", async (operation) => {
+  const bootstrap = ownedBootstrapFixture({ profile: { ai_credits: -2 } });
+  const value = operation === "bootstrap" ? bootstrap : ownedDashboardFixture(bootstrap);
+  const fetch = vi.fn(async () => Response.json(value)); vi.stubGlobal("fetch", fetch);
+  const response = await handleAccount(await req(operation), operation);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(value);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(new Headers((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].headers).get("authorization")).toBe("Bearer synthetic-private-bearer");
+ });
+ it.each([["ai_credits", -1.5], ["ai_credits", String(-1)], ["ai_credits", -Number.MAX_SAFE_INTEGER - 1], ["profile_completeness", -1]])("rejects invalid %s %s in the owned profile", async (field, amount) => {
+  const value = ownedBootstrapFixture();
+  Object.assign(value.profile!, { [field]: amount });
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(value)));
+  expect((await handleAccount(await req("bootstrap"), "bootstrap")).status).toBe(503);
+ });
  it("forwards one exact empty owned GET with bearer and no replay/clock fan-out", async () => {
   const value = ownedBootstrapFixture();
   const fetch = vi.fn(async () => Response.json(value)); vi.stubGlobal("fetch", fetch);

@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { EmployerApplicationBatch, JobServiceCatalog } from "../lib/employerJobs";
+import { employerJobsOverviewKey, type EmployerJobsOverview } from "../lib/employerJobsOverview";
 
 const state = vi.hoisted(() => ({ pathname: "/employer-jobs" }));
 vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: "one" } } }) }));
@@ -21,6 +22,8 @@ import EmployerBatchPage from "../app/employer-jobs/batches/[id]/page";
 import Nav from "./Nav";
 
 const catalogPath = "/api/backend/v1/employer-jobs/catalog";
+const overviewPath = "/api/backend/v1/employer-jobs/bootstrap";
+const catalogKey = ["employer-jobs", "catalog"];
 const applicationsKey = ["employer-jobs", "applications"];
 const limits = { version: "synthetic", daily_limit: 10, rolling_limit: 20, rolling_days: 7,
   pending_limit: 5, daily_credit_limit: 100, rolling_credit_limit: 200, batch_limit: 10,
@@ -38,6 +41,13 @@ let requests: ReturnType<typeof vi.fn>;
 let catalogReads: PendingRead[];
 let abortedCatalogReads: number;
 
+function overview(current: JobServiceCatalog) {
+  return { schema_version: "owned-jobs-bootstrap-v1", catalog: current,
+    resumes: { resumes: [{ id: 10, filename: "synthetic.pdf", source_available: true,
+      source_format: "pdf", created_at: "2026-10-29T00:00:00Z" }], selected_resume: null, next_cursor: null },
+    saved_searches: { items: [], next_cursor: null }, applications: [] };
+}
+
 function json(value: unknown) {
   return new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 }
@@ -47,9 +57,10 @@ beforeEach(() => {
   state.pathname = "/employer-jobs";
   catalogReads = []; abortedCatalogReads = 0;
   requests = vi.fn((path: string, init: RequestInit = {}) => {
-    if (path === catalogPath) {
-      if (!catalogReads.length && client.getQueryData(["employer-jobs", "catalog"]) === undefined) {
-        return Promise.resolve(json(catalog));
+    if (path === catalogPath || path === overviewPath) {
+      const key = path === overviewPath ? employerJobsOverviewKey : catalogKey;
+      if (!catalogReads.length && client.getQueryData(key) === undefined) {
+        return Promise.resolve(json(path === overviewPath ? overview(catalog) : catalog));
       }
       return new Promise<Response>((resolve, reject) => {
         const signal = init.signal as AbortSignal;
@@ -60,9 +71,6 @@ beforeEach(() => {
     if (path === "/api/account/bootstrap") return Promise.resolve(json(ownedBootstrapFixture({ profile: { email: "one@example.invalid" } })));
     if (path === "/api/backend/v1/features") return Promise.resolve(json({ features: {} }));
     if (path === "/api/backend/v1/credits/availability") return Promise.resolve(json({ catalog_enabled: false, execution_enabled: false, supported_operations: [] }));
-    if (path === "/api/backend/resume/page?limit=20") return Promise.resolve(json({ resumes: [{ id: 10, filename: "synthetic.pdf", source_available: true }] }));
-    if (path === "/api/backend/v1/employer-jobs/applications") return Promise.resolve(json({ items: [] }));
-    if (path.includes("/search-summaries?")) return Promise.resolve(json({ items: [], next_cursor: null }));
     if (path === "/api/backend/v1/employer-jobs/searches" && init.method === "POST") return Promise.resolve(json({
       id: "search_pending", kind: "search_preparation", status: "pending", as_of: "2026-10-29T00:00:00Z", desired_count: 3,
       accepted_quote: { unit_price: 2, pricing_version: "synthetic", requested_count: 3, maximum_credits: 6, search_input_fingerprint: "synthetic-input" },
@@ -83,14 +91,18 @@ function tree(page: React.ReactNode) {
   return <QueryClientProvider client={client}><Nav />{page}</QueryClientProvider>;
 }
 
-it.each(["search", "batch"] as const)("refreshes the %s catalog once without abort/restart and preserves application refresh", async (page) => {
+it.each(["search", "batch"] as const)("refreshes the %s data once without aborting or restarting the read", async (page) => {
   const events = vi.spyOn(window, "dispatchEvent");
+  const readCatalog = () => page === "search"
+    ? client.getQueryData<EmployerJobsOverview>(employerJobsOverviewKey)?.catalog
+    : client.getQueryData<JobServiceCatalog>(catalogKey);
+  const readPath = page === "search" ? overviewPath : catalogPath;
   if (page === "batch") {
     state.pathname = "/employer-jobs/batches/batch_one";
     client.setQueryData(applicationsKey, { items: [] });
   }
   render(tree(page === "search" ? <EmployerJobsPage /> : <EmployerBatchPage />));
-  await waitFor(() => expect(client.getQueryData(["employer-jobs", "catalog"])).toEqual(catalog));
+  await waitFor(() => expect(readCatalog()).toEqual(catalog));
   if (page === "search") {
     await screen.findByRole("option", { name: /synthetic.pdf/ });
     fireEvent.change(screen.getByLabelText("Resume"), { target: { value: "10" } });
@@ -98,7 +110,6 @@ it.each(["search", "batch"] as const)("refreshes the %s catalog once without abo
     fireEvent.change(screen.getByLabelText("Jobs to find"), { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: "Find jobs" }));
     await screen.findByRole("heading", { name: "Preparing your search" });
-    await waitFor(() => expect(requests.mock.calls.filter(([path]) => path === "/api/backend/v1/employer-jobs/applications")).toHaveLength(2));
   } else {
     fireEvent.click(await screen.findByRole("button", { name: "Cancel remaining batch work" }));
     await screen.findByText(/Cancellation requested for remaining work/);
@@ -108,9 +119,11 @@ it.each(["search", "batch"] as const)("refreshes the %s catalog once without abo
   expect(events.mock.calls.filter(([event]) => event.type === "refresh_analysis_units")).toHaveLength(1);
   expect(catalogReads[0].signal.aborted).toBe(false);
   expect(abortedCatalogReads).toBe(0);
-  await act(async () => { catalogReads[0].resolve(json({ ...catalog, balance: 44 })); });
-  await waitFor(() => expect(client.getQueryData<{ balance: number }>(["employer-jobs", "catalog"])?.balance).toBe(44));
-  expect(requests.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(2); // initial + one refresh
+  const updated = { ...catalog, balance: 44 };
+  await act(async () => { catalogReads[0].resolve(json(page === "search" ? overview(updated) : updated)); });
+  await waitFor(() => expect(readCatalog()?.balance).toBe(44));
+  expect(requests.mock.calls.filter(([path]) => path === readPath)).toHaveLength(2);
+  if (page === "search") expect(requests.mock.calls.some(([path]) => [catalogPath, "/api/backend/v1/employer-jobs/applications"].includes(path))).toBe(false);
   expect(requests.mock.calls.filter(([path]) => path === "/api/account/bootstrap")).toHaveLength(2);
   expect(requests.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   events.mockRestore();

@@ -4016,6 +4016,262 @@
         "title": "JobMatchResponse",
         "type": "object"
       },
+      "JobsApplicationAdmission": {
+        "properties": {
+          "employer_key": {
+            "maxLength": 64,
+            "title": "Employer Key",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "opening_key": {
+            "maxLength": 64,
+            "title": "Opening Key",
+            "type": "string"
+          },
+          "policy_fingerprint": {
+            "maxLength": 64,
+            "title": "Policy Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opening_key",
+          "employer_key",
+          "policy_fingerprint",
+          "expires_at"
+        ],
+        "title": "JobsApplicationAdmission",
+        "type": "object"
+      },
+      "JobsApplicationArtifact": {
+        "properties": {
+          "filename": {
+            "maxLength": 240,
+            "title": "Filename",
+            "type": "string"
+          },
+          "media_type": {
+            "maxLength": 160,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "media_type"
+        ],
+        "title": "JobsApplicationArtifact",
+        "type": "object"
+      },
+      "JobsApplicationPosting": {
+        "properties": {
+          "application_mode": {
+            "maxLength": 24,
+            "title": "Application Mode",
+            "type": "string"
+          },
+          "employer": {
+            "maxLength": 200,
+            "title": "Employer",
+            "type": "string"
+          },
+          "has_valid_apply_url": {
+            "title": "Has Valid Apply Url",
+            "type": "boolean"
+          },
+          "source_id": {
+            "maxLength": 64,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "employer",
+          "source_id",
+          "has_valid_apply_url",
+          "application_mode"
+        ],
+        "title": "JobsApplicationPosting",
+        "type": "object"
+      },
+      "JobsApplicationPrice": {
+        "properties": {
+          "pricing_version": {
+            "maxLength": 160,
+            "title": "Pricing Version",
+            "type": "string"
+          },
+          "unit_price": {
+            "title": "Unit Price",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unit_price",
+          "pricing_version"
+        ],
+        "title": "JobsApplicationPrice",
+        "type": "object"
+      },
+      "JobsApplicationRow": {
+        "properties": {
+          "admission_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobsApplicationAdmission"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "application_mode": {
+            "maxLength": 24,
+            "title": "Application Mode",
+            "type": "string"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/JobsApplicationArtifact"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "credit_cost": {
+            "title": "Credit Cost",
+            "type": "integer"
+          },
+          "employer_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employer Key"
+          },
+          "has_missing_fields": {
+            "title": "Has Missing Fields",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 64,
+            "title": "Id",
+            "type": "string"
+          },
+          "opening_key": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Key"
+          },
+          "package_digest": {
+            "maxLength": 64,
+            "title": "Package Digest",
+            "type": "string"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/JobsApplicationPosting"
+          },
+          "pricing_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobsApplicationPrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "maxLength": 32,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "application_mode",
+          "batch_id",
+          "credit_cost",
+          "package_digest",
+          "opening_key",
+          "employer_key",
+          "has_missing_fields",
+          "posting",
+          "artifact",
+          "admission_snapshot",
+          "pricing_snapshot"
+        ],
+        "title": "JobsApplicationRow",
+        "type": "object"
+      },
+      "JobsBootstrapView": {
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/JobsApplicationRow"
+            },
+            "maxItems": 30,
+            "title": "Applications",
+            "type": "array"
+          },
+          "catalog": {
+            "additionalProperties": true,
+            "title": "Catalog",
+            "type": "object"
+          },
+          "resumes": {
+            "$ref": "#/components/schemas/ResumePageResponse"
+          },
+          "saved_searches": {
+            "$ref": "#/components/schemas/SearchSummaryPage"
+          },
+          "schema_version": {
+            "const": "owned-jobs-bootstrap-v1",
+            "default": "owned-jobs-bootstrap-v1",
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog",
+          "resumes",
+          "saved_searches",
+          "applications"
+        ],
+        "title": "JobsBootstrapView",
+        "type": "object"
+      },
       "LearningPriority": {
         "properties": {
           "current_status": {
@@ -10423,6 +10679,22 @@
           "approved_evidence_count"
         ],
         "title": "WorkspaceResponse",
+        "type": "object"
+      },
+      "WorkspaceSourceSnapshotCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_resume_id": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 2147483647.0,
+            "title": "Expected Resume Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_resume_id"
+        ],
+        "title": "WorkspaceSourceSnapshotCreate",
         "type": "object"
       }
     },
@@ -18302,6 +18574,63 @@
         ]
       }
     },
+    "/api/v1/employer-jobs/bootstrap": {
+      "get": {
+        "description": "Initial owned Jobs reads share one fresh account validation.",
+        "operationId": "get_jobs_bootstrap_api_v1_employer_jobs_bootstrap_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "current_resume_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMaximum": 9223372036854775808,
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Current Resume Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsBootstrapView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Jobs Bootstrap",
+        "tags": [
+          "employer-jobs"
+        ]
+      }
+    },
     "/api/v1/employer-jobs/catalog": {
       "get": {
         "operationId": "get_catalog_api_v1_employer_jobs_catalog_get",
@@ -20434,6 +20763,63 @@
           }
         ],
         "summary": "Create Workspace Source Snapshot",
+        "tags": [
+          "career-workspace"
+        ]
+      }
+    },
+    "/api/v1/opportunities/{opportunity_id}/workspace/source-snapshot/selected": {
+      "post": {
+        "operationId": "create_workspace_selected_source_snapshot_api_v1_opportunities__opportunity_id__workspace_source_snapshot_selected_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSourceSnapshotCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Create Workspace Selected Source Snapshot",
         "tags": [
           "career-workspace"
         ]

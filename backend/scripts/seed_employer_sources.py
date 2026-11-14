@@ -9,6 +9,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
+
+from sqlalchemy import func, or_, text
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -18,6 +21,37 @@ from app.database import SessionLocal  # noqa: E402
 from app.domains.common import public_id, utcnow  # noqa: E402
 from app.domains.employer.models import EmployerSource  # noqa: E402
 from app.domains.employer.schemas import SourceCreate  # noqa: E402
+
+LINEAR_ORIGIN = "https://linear.app/careers"
+LINEAR_TENANT = "linear"
+
+
+def _reviewed_linear(source: SourceCreate) -> bool:
+    if source.platform != "ashby" or source.region != "global":
+        return False
+    linear = (source.employer.lower() == LINEAR_TENANT or source.board_token.lower() == LINEAR_TENANT
+              or urlsplit(source.careers_url).hostname == "linear.app"
+              or urlsplit(source.verification_url).hostname == "linear.app")
+    if linear and (source.board_token != LINEAR_TENANT or source.employer.lower() != LINEAR_TENANT
+                   or source.careers_url != LINEAR_ORIGIN or source.verification_url != LINEAR_ORIGIN):
+        raise ValueError("The reviewed Linear Ashby tenant requires the exact lowercase careers record")
+    return linear
+
+
+def _guard_linear_seed(db) -> None:
+    if db.get_bind().dialect.name == "postgresql":
+        # Serialize the alias check with the dedicated same-ID repair and any
+        # source insertion. Case-sensitive uniqueness alone misses this alias.
+        db.execute(text("SET LOCAL lock_timeout='1s'"))
+        db.execute(text("LOCK TABLE public.employer_sources IN SHARE ROW EXCLUSIVE MODE"))
+    matches = db.query(EmployerSource.id, EmployerSource.board_token).filter(
+        EmployerSource.platform == "ashby", EmployerSource.region == "global",
+        or_(func.lower(EmployerSource.employer) == LINEAR_TENANT,
+            func.lower(EmployerSource.board_token) == LINEAR_TENANT,
+            EmployerSource.careers_url == LINEAR_ORIGIN, EmployerSource.verification_url == LINEAR_ORIGIN),
+    ).limit(2).all()
+    if len(matches) > 1 or (matches and matches[0].board_token != LINEAR_TENANT):
+        raise ValueError("An existing Linear Ashby source needs the reviewed same-ID correction before seeding")
 
 
 def load_reviewed_sources(path: Path, *, include_submission_grants: bool = False) -> list[SourceCreate]:
@@ -34,13 +68,13 @@ def load_reviewed_sources(path: Path, *, include_submission_grants: bool = False
         source = SourceCreate.model_validate(entry)
         # Operator still confirms evidence independently; arbitrary candidate URLs
         # never enroll themselves into the company source registry.
-        from urllib.parse import urlsplit
         for url in (source.careers_url, source.verification_url):
             parsed = urlsplit(url)
             if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
                 raise ValueError("Reviewed source evidence must use HTTPS")
         if urlsplit(source.careers_url).hostname not in source.allowed_hosts:
             raise ValueError("Employer careers hostname must be explicitly allowed")
+        _reviewed_linear(source)
         sources.append(source)
     if len({(source.platform, source.region, source.board_token) for source in sources}) != len(sources):
         raise ValueError("Registry includes duplicate employer tenants")
@@ -48,6 +82,11 @@ def load_reviewed_sources(path: Path, *, include_submission_grants: bool = False
 
 
 def seed(db, sources: list[SourceCreate], *, reviewer_email: str, include_submission_grants: bool = False) -> dict:
+    linear_count = sum(_reviewed_linear(source) for source in sources)
+    if linear_count > 1:
+        raise ValueError("Registry includes duplicate Linear Ashby sources")
+    if linear_count:
+        _guard_linear_seed(db)
     reviewer = db.query(core.User).filter_by(email=reviewer_email.lower()).first()
     result = {"created": 0, "updated": 0}
     write_fields = {"submission_enabled", "submission_grant", "credential_env", "form_parity_verified", "receipt_contract"}

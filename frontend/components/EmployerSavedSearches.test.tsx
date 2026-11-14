@@ -99,9 +99,10 @@ describe("free saved search navigation", () => {
     await screen.findByRole("heading", { name: "Saved role 1" });
     expect(screen.getByText(/Only the first 1,000 current candidates/)).toBeInTheDocument();
     expect(screen.getByText(/They do not find new jobs or spend credits/)).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Prepare application" })[2]);
+    const trigger = screen.getAllByRole("button", { name: "Prepare application" })[2];
+    fireEvent.click(trigger);
     expect(prepare).toHaveBeenCalledOnce();
-    expect(prepare).toHaveBeenCalledWith("job_3");
+    expect(prepare).toHaveBeenCalledWith("job_3", trigger);
     expect(api.post).not.toHaveBeenCalled();
   });
 

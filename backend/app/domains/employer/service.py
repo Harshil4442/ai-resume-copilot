@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import LargeBinary, Text, and_, cast, func, literal_column, or_, select, text, true
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased, load_only
 
 from ... import models as core
@@ -95,7 +97,8 @@ def catalog(db, user_id):
         return _catalog_response(user.job_service_credits, sources)
 
 
-def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=None, native_validated: bool = False):
+def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=None, native_validated: bool = False,
+                                 candidate_revision: tuple[str, int] | None = None):
     """Read owner existence/balance and bounded sources in one fresh SQL snapshot.
 
     The route validates the JWT first. This advisory read never replaces financial
@@ -109,15 +112,23 @@ def catalog_for_verified_subject(db: Session, user_id: int, *, credential_epoch=
             models.EmployerSource.enabled.is_(True),
         ).order_by(models.EmployerSource.employer, models.EmployerSource.id).limit(500).subquery()
         source = aliased(models.EmployerSource, bounded)
+        account = core.CandidatePasswordAccount
         rows = db.query(core.User.id, core.User.job_service_credits, source, core.User.credential_epoch,
-                        core.CandidatePasswordAccount.user_id).select_from(
+                        account.user_id, account.account_binding_id, account.auth_generation, account.state).select_from(
             core.User,
-        ).outerjoin(core.CandidatePasswordAccount, core.CandidatePasswordAccount.user_id == core.User.id).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
+        ).outerjoin(account, account.user_id == core.User.id).outerjoin(source, true()).filter(core.User.id == user_id).order_by(
             source.employer, source.id,
         ).populate_existing().all()
-    if (not rows or rows[0][4] is not None and not native_validated
-            or rows[0][4] is None and int(rows[0][3] or 0) > 0
-            and (type(credential_epoch) is not int or credential_epoch != rows[0][3])):
+    if not rows:
+        raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    _, _, _, actual_epoch, mapped_id, binding_id, generation, state = rows[0]
+    if candidate_revision is not None:
+        admissible = state == "ACTIVE" and candidate_revision == (binding_id, generation)
+    elif mapped_id is not None:
+        admissible = native_validated
+    else:
+        admissible = int(actual_epoch or 0) <= 0 or (type(credential_epoch) is int and credential_epoch == actual_epoch)
+    if not admissible:
         raise HTTPException(401, "Not authenticated", headers={"WWW-Authenticate": "Bearer"})
     with catalog_span("catalog_owner_lookup"):
         balance = rows[0][1]
@@ -842,6 +853,18 @@ def _validate_answers(form, answers, consents):
             raise HTTPException(422, f"{field['label']} exceeds the employer's maximum length")
 
 
+def _application_posting_snapshot(posting):
+    # Refresh clocks are incidental. Bind the exact posting inputs to the form
+    # read and the subsequent package, including destination and opening scope.
+    return (posting.source_id, posting.external_id, posting.requisition_id,
+            posting.canonical_url, posting.apply_url, posting.content_sha256)
+
+
+def _application_source_changed():
+    return HTTPException(409, {"code": "application_source_changed",
+        "message": "The employer or job changed during preparation. Review the current job before trying again."})
+
+
 def create_application(db: Session, user_id: int, payload: schemas.ApplicationCreate):
     _require_enabled()
     fingerprint = payload_fingerprint(payload.model_dump(exclude={"idempotency_key"}))
@@ -852,13 +875,16 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         return existing
     posting = _posting(db, payload.posting_id)
     source = _source(db, posting.source_id)
-    if _source_mode(source) == "api":
+    initial_mode = _source_mode(source)
+    if initial_mode == "api":
         from ..credits.runtime import requires_unified_billing
         if requires_unified_billing(db, user_id):
             raise HTTPException(409, "Verified unified-credit submission is not enabled. Use reviewed browser assistance or the employer portal.")
     if not posting.is_open or not source.enabled:
         raise HTTPException(409, "This employer job is no longer available")
-    source_snapshot = connectors.source_contract(source)
+    source_snapshot = copy.deepcopy(connectors.source_contract(source))
+    source_policy = (source.employer_key, config.employer_limits(source))
+    posting_snapshot = _application_posting_snapshot(posting)
     posting_external_id = posting.external_id
     resume_snapshot, version_snapshot = _selection_snapshot(db, user_id, payload)
     db.rollback()  # No rendering/storage/provider call while holding a transaction.
@@ -876,6 +902,28 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
             if existing.input_fingerprint != fingerprint:
                 raise HTTPException(409, "This request key was already used with another application")
             return existing
+        # Ingestion locks source before posting. Keep both rows stable through
+        # commit, and do not wait on a scan while holding the candidate lock.
+        try:
+            source = db.query(models.EmployerSource).filter_by(id=source_snapshot.id).populate_existing().with_for_update(
+                read=True, nowait=True).first()
+            posting = db.query(models.EmployerPosting).filter_by(id=payload.posting_id).populate_existing().with_for_update(
+                nowait=True).first()
+        except DBAPIError as exc:
+            if (getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)) != "55P03":
+                raise
+            db.rollback()  # The lock refusal aborts the PostgreSQL transaction.
+            raise HTTPException(409, {"code": "application_source_busy",
+                "message": "This job is being refreshed. Try preparing the application again shortly."}) from None
+        if source is None or posting is None:
+            raise _application_source_changed()
+        if not posting.is_open or not source.enabled:
+            raise HTTPException(409, "This employer job was closed or disabled while the application was being prepared")
+        if (_application_posting_snapshot(posting) != posting_snapshot
+                or connectors.source_contract(source) != source_snapshot
+                or (source.employer_key, config.employer_limits(source)) != source_policy
+                or _source_mode(source) != initial_mode):
+            raise _application_source_changed()
         opening_key = admissions.opening_identity(posting, source)
         active_key = f"{user_id}:{opening_key}"
         if db.query(models.EmployerApplication.id).filter_by(user_id=user_id).filter(
@@ -888,10 +936,6 @@ def create_application(db: Session, user_id: int, payload: schemas.ApplicationCr
         ).count()
         if open_count >= config.positive_int("EMPLOYER_MAX_OPEN_APPLICATIONS", 100, 1000):
             raise HTTPException(429, "Complete or cancel existing prepared applications before preparing more")
-        posting = _posting(db, payload.posting_id)
-        source = _source(db, posting.source_id)
-        if not posting.is_open or not source.enabled:
-            raise HTTPException(409, "This employer job was closed or disabled while the application was being prepared")
         # Candidate-owned selections and evidence may have changed during rendering.
         _selection_snapshot(db, user_id, payload)
         artifact = _artifact_row(sealed, user_id, payload)
@@ -957,6 +1001,77 @@ def update_package(db, user_id, identity, payload: schemas.PackageUpdate):
         artifacts.attach_upload(db, upload_id, user_id=user_id)
         db.commit()
         return application
+
+
+def list_application_views(db: Session, user_id: int, *, limit: int = 30) -> list[dict]:
+    applications = db.query(models.EmployerApplication).filter_by(user_id=user_id).order_by(
+        models.EmployerApplication.created_at.desc()).limit(limit).all()
+    return [application_response(db, application) for application in applications]
+
+
+def _has_http_destination(value: str) -> bool:
+    try:
+        destination = urlsplit(value)
+        port = destination.port
+    except ValueError:
+        return False
+    return destination.scheme in {"http", "https"} and bool(destination.hostname) and (
+        port is None or 0 <= port <= 65535
+    )
+
+
+def _initial_application_quote[Quote: BaseModel](schema: type[Quote], value: object) -> Quote | None:
+    if value is None:
+        return None
+    try:
+        return schema.model_validate(value)
+    except ValidationError:
+        return None  # Incomplete historic quotes cannot be used for batch review.
+
+
+def list_bootstrap_application_views(db: Session, user_id: int) -> list[schemas.JobsApplicationRow]:
+    # Initial cards use only display metadata and inputs for advisory batch eligibility.
+    # Exact application detail still validates retained funds via the existing locked reader.
+    row = models.EmployerApplication
+    page = db.query(row.id, row.status, row.application_mode, row.batch_id, row.credit_cost,
+        row.package_digest, row.opening_key, row.employer_key, row.form, row.answers, row.consents,
+        row.admission_snapshot, row.pricing_snapshot, row.created_at, row.posting_id, row.artifact_id,
+    ).filter(row.user_id == user_id).order_by(row.created_at.desc()).limit(30).subquery()
+    application = aliased(row, page)
+    posting, source = models.EmployerPosting, models.EmployerSource
+    artifact = models.SealedApplicationArtifact
+    rows = db.query(application, posting, source, artifact).select_from(application).outerjoin(
+        posting, posting.id == application.posting_id,
+    ).outerjoin(
+        source, source.id == posting.source_id,
+    ).outerjoin(
+        artifact, and_(artifact.id == application.artifact_id, artifact.user_id == user_id),
+    ).options(
+        load_only(application.status, application.application_mode, application.batch_id, application.credit_cost,
+            application.package_digest, application.opening_key, application.employer_key, application.form,
+            application.answers, application.consents, application.admission_snapshot, application.pricing_snapshot),
+        load_only(posting.title, posting.employer, posting.source_id, posting.apply_url),
+        load_only(artifact.filename, artifact.media_type),
+    ).order_by(application.created_at.desc()).all()
+    result = []
+    for item, job, employer_source, sealed in rows:
+        if job is None:
+            raise HTTPException(404, "Job not found")
+        if employer_source is None:
+            raise HTTPException(404, "Employer source not found")
+        if sealed is None:
+            raise HTTPException(404, "Not found")
+        result.append(schemas.JobsApplicationRow(
+            id=item.id, status=item.status, application_mode=item.application_mode, batch_id=item.batch_id,
+            credit_cost=item.credit_cost, package_digest=item.package_digest, opening_key=item.opening_key,
+            employer_key=item.employer_key, has_missing_fields=bool(missing_fields(item)),
+            posting=schemas.JobsApplicationPosting(title=job.title, employer=job.employer, source_id=job.source_id,
+                has_valid_apply_url=_has_http_destination(job.apply_url), application_mode=_source_mode(employer_source)),
+            artifact=schemas.JobsApplicationArtifact(filename=sealed.filename, media_type=sealed.media_type),
+            admission_snapshot=_initial_application_quote(schemas.JobsApplicationAdmission, item.admission_snapshot),
+            pricing_snapshot=_initial_application_quote(schemas.JobsApplicationPrice, item.pricing_snapshot),
+        ))
+    return result
 
 
 def application_response(db, application):

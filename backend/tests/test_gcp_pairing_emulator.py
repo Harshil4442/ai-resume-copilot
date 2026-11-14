@@ -222,7 +222,9 @@ def case(monkeypatch):
     http_session.is_mtls = False
     http_session.request.side_effect = http.request
     storage = Client(project=PROJECT, credentials=AnonymousCredentials(), _http=http_session)
-    publication = publication_for(pin, "synthetic-pairing-journal", active=active)
+    publication = publication_for(
+        pin, "synthetic-pairing-journal", active=active, firestore_client=client,
+    )
     journal = GcsJournal(storage.bucket("synthetic-pairing-journal"), publication=publication)
     attempts = GcsPairingAttempts(storage.bucket("synthetic-pairing-journal"), publication=publication)
     fence = SyntheticFence(active, pin)

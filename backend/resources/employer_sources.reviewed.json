@@ -187,14 +187,14 @@
     {
       "employer": "Linear",
       "platform": "ashby",
-      "board_token": "Linear",
+      "board_token": "linear",
       "region": "global",
       "careers_url": "https://linear.app/careers",
       "allowed_hosts": [
         "linear.app"
       ],
       "verification_url": "https://linear.app/careers",
-      "verification_note": "Verified 13 October 2026: Official page embeds exact case-sensitive Linear Ashby job/application links. Public feed https://api.ashbyhq.com/posting-api/job-board/Linear returned HTTP 200 at 2026-10-13T16:49:27.646409+00:00; published destination URLs passed the existing tenant/host guard. Discovery only; no submission grant, credential or form-parity approval. Observation is not a production refresh or coverage claim.",
+      "verification_note": "Verified 13 November 2026: The official careers page embeds lowercase linear Ashby job and application URLs. The exact public feed https://api.ashbyhq.com/posting-api/job-board/linear returned 33 listed openings; all 66 destinations passed the existing case-sensitive tenant and host checks. The old uppercase endpoint also returned lowercase destinations. Discovery only; no submission grant, credential or form-parity approval. This observation is not a production refresh or coverage claim.",
       "submission_enabled": false,
       "form_parity_verified": false
     },

@@ -11,6 +11,7 @@ vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated"
 vi.mock("../../../lib/analytics", () => ({ trackEvent: vi.fn() }));
 
 import { ApiError } from "../../../lib/api";
+import { trackEvent } from "../../../lib/analytics";
 import OpportunityPage from "./page";
 
 let client: QueryClient;
@@ -81,6 +82,7 @@ function generate(units = 7) { return screen.getByRole("button", { name: `Genera
 function requests() { return state.post.mock.calls.filter(([url]) => url === "/v1/analysis-runs"); }
 
 beforeEach(() => {
+  vi.mocked(trackEvent).mockClear();
   state.id = "opportunity-one"; state.tab = "resume"; resumeId = 1;
   quote = { analysis_pricing_version: "price-reviewed", analysis_operation_units: { resume_tailor: 7 } };
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -373,9 +375,19 @@ it("retries a lost approved response with its original quote, payload and idempo
 });
 it.each(["queued", "running", "succeeded"])("reuses a verified %s run without requesting a quote or another run", async (status) => {
   enableCreditExecution(); state.post.mockResolvedValue({ reused_run: { id: "run-one", operation: "resume_tailor", status } });
+  const original = state.get.getMockImplementation()!;
+  state.get.mockImplementation((url: string, signal?: AbortSignal) => {
+    if (url === "/v1/analysis-runs/run-one") return Promise.resolve({ id: "run-one", opportunity_id: state.id,
+      operation: "resume_tailor", status: "succeeded", estimated_units: 8, committed_units: 8, billing_currency: "credits" });
+    if (url === "/v1/analysis-runs/run-one/result") return Promise.resolve({ result: {} });
+    return original(url, signal);
+  });
   await page(); const button = screen.getByRole("button", { name: "Generate tailored version" }); await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
-  await waitFor(() => expect(state.get.mock.calls.some(([url]) => url === "/v1/analysis-runs/run-one")).toBe(true));
+  await waitFor(() => expect(state.wire.mock.calls.some(([url]) => url === "/v1/analysis-runs/run-one/result")).toBe(true));
   expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/analysis-reuse"]);
+  expect(state.wire.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(status === "succeeded" ? 1 : 2);
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(status === "succeeded" ? 1 : 2);
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "analysis_completed")).toHaveLength(status === "succeeded" ? 0 : 1);
 });
 it("requests exactly eight enhanced questions after credit approval", async () => {
   state.tab = "interview"; enableCreditExecution(); await page();
@@ -462,7 +474,7 @@ it("explains an empty legacy saved interview without starting a new request", as
   expect(state.wire.mock.calls.map(([url]) => url).filter(url => url.startsWith("/v1/analysis-runs/"))).toEqual([resultPath]);
   expect(state.post).not.toHaveBeenCalled();
 });
-it("keeps a completed exact-result lookup from reloading saved interview history", async () => {
+it("keeps a completed interview lookup from reloading history or recording another completion", async () => {
   state.tab = "interview";
   const run = { id: "existing-interview", opportunity_id: state.id, operation: "interview_questions", status: "succeeded",
     estimated_units: 5, committed_units: 5, billing_currency: "credits", usage_state: "committed" };
@@ -479,10 +491,63 @@ it("keeps a completed exact-result lookup from reloading saved interview history
   fireEvent.click(screen.getByRole("button", { name: "Find saved result for Interview preparation · no charge" }));
   expect(await screen.findByRole("heading", { name: "A previously saved question?" })).toBeVisible();
   expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(1);
+  expect(state.wire.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(1);
+  expect(trackEvent).not.toHaveBeenCalledWith("analysis_completed", expect.anything());
+});
+it("records completion when a saved interview lookup races an already-observed run", async () => {
+  state.tab = "interview";
+  const run = { id: "queued-interview", opportunity_id: state.id, operation: "interview_questions",
+    status: "succeeded", estimated_units: 5, committed_units: 5, billing_currency: "credits", usage_state: "committed" };
+  let finishStatus: (value: typeof run) => void = () => {};
+  state.direct.mockImplementation((url: string) => {
+    if (url === `/v1/analysis-runs/${run.id}`) return new Promise<typeof run>((finish) => { finishStatus = finish; });
+    if (url === `/v1/analysis-runs/${run.id}/result`) return Promise.resolve({ ...run,
+      result: { opportunity_id: state.id, mode: "enhanced", questions: [{ question: "The tracked interview question?" }] } });
+  });
+  state.post.mockResolvedValueOnce({ reused_run: { ...run, status: "queued", committed_units: 0 } })
+    .mockResolvedValueOnce({ reused_run: run });
+  await page();
+  const findSaved = screen.getByRole("button", { name: "Find saved result for Interview preparation · no charge" });
+  fireEvent.click(findSaved);
+  await waitFor(() => expect(state.wire.mock.calls.filter(([url]) => url === `/v1/analysis-runs/${run.id}`)).toHaveLength(1));
+  await waitFor(() => expect(findSaved).toBeEnabled());
+  await act(async () => fireEvent.click(findSaved));
+  await waitFor(() => expect(findSaved).toBeEnabled());
+  expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/analysis-reuse", "/v1/credits/analysis-reuse"]);
+  await act(async () => finishStatus(run));
+  expect(await screen.findByRole("heading", { name: "The tracked interview question?" })).toBeVisible();
+  expect(state.wire.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(2);
+  expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "analysis_completed")).toHaveLength(1);
 });
 it("keeps snapshots accessible when no paid route is qualified", async () => {
   enableCreditExecution([]); await page(); expect(screen.getByRole("button", { name: "Generate tailored version" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Save source snapshot" })).toBeEnabled(); expect(state.post).not.toHaveBeenCalled();
+});
+
+it("requires a new snapshot click after the shown resume changed in another tab", async () => {
+  enableCreditExecution([]);
+  state.post.mockRejectedValueOnce(new ApiError("The connected resume changed. Review the current resume before saving a source snapshot.",
+    409, { detail: { code: "source_snapshot_resume_changed" } })).mockResolvedValueOnce({ resume_id: 2 });
+  await page();
+  const select = screen.getByRole("combobox", { name: "Resume" });
+  expect(select).toHaveValue("1");
+  resumeId = 2;
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  expect(await screen.findByText(/The connected resume changed/)).toBeVisible();
+  await waitFor(() => expect(select).toHaveValue("2"));
+  const path = `/v1/opportunities/${state.id}/workspace/source-snapshot/selected`;
+  expect(state.post.mock.calls).toEqual([[path, { expected_resume_id: 1 }]]);
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  await waitFor(() => expect(state.post.mock.calls).toEqual([[path, { expected_resume_id: 1 }], [path, { expected_resume_id: 2 }]]));
+});
+
+it("never falls back to an unbound snapshot when the API has not been updated", async () => {
+  enableCreditExecution([]);
+  state.post.mockRejectedValueOnce(new ApiError("Method Not Allowed", 405, null));
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Save source snapshot" }));
+  expect(await screen.findByText(/Could not save a snapshot of the selected resume/)).toBeVisible();
+  expect(state.post.mock.calls).toEqual([[`/v1/opportunities/${state.id}/workspace/source-snapshot/selected`, { expected_resume_id: 1 }]]);
 });
 
 
@@ -732,6 +797,72 @@ it.each([false, true])("opens an owned saved curated plan with paid credits paus
   expect(state.wire.mock.calls.filter(([url]) => url === savedPath)).toHaveLength(1);
 });
 
+it("asks before loading the next exact saved match when both résumés have a match", async () => {
+  state.tab = "learning";
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) {
+      const workspace = matchWorkspace("current");
+      return Promise.resolve({ ...workspace, opportunity: { ...workspace.opportunity, latest_match_id: resumeId === 1 ? 91 : 92 },
+        skill_roi: { items: [], opportunity_count: 0 } });
+    }
+    if (url.endsWith("/match?resume_id=1")) return Promise.resolve(savedMatch);
+    if (url.endsWith("/match?resume_id=2")) return Promise.resolve({ ...savedMatch, match_id: 92 });
+  });
+  const matches = () => state.wire.mock.calls.map(([url]) => url).filter(url => url.includes("/match?"));
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`]);
+  fireEvent.change(screen.getByRole("combobox", { name: "Resume" }), { target: { value: "2" } });
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Resume" })).toHaveValue("2"));
+  const load = await screen.findByRole("button", { name: "Load saved match for learning strategy" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`]);
+  expect(screen.queryByRole("button", { name: "Find saved curated plan" })).not.toBeInTheDocument();
+  fireEvent.click(load);
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matches()).toEqual([`/v1/opportunities/${state.id}/match?resume_id=1`, `/v1/opportunities/${state.id}/match?resume_id=2`]);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it.each([503, 409])("retries a saved match after HTTP %s using only the needed reads", async (status) => {
+  state.tab = "learning";
+  const matchPath = `/v1/opportunities/${state.id}/match?resume_id=1`;
+  let matchReads = 0;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) return Promise.resolve({ ...matchWorkspace("current"),
+      skill_roi: { items: [], opportunity_count: 0 } });
+    if (url === matchPath) return ++matchReads === 1
+      ? Promise.reject(new ApiError("Saved match unavailable", status, null))
+      : Promise.resolve(savedMatch);
+  });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry saved match" }));
+  await screen.findByRole("button", { name: "Find saved curated plan" });
+  expect(matchReads).toBe(2);
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(status === 409 ? 2 : 1);
+});
+
+it("never retries an old match after conflict readback confirms another résumé", async () => {
+  state.tab = "learning";
+  let workspaceReads = 0;
+  const matchPath = `/v1/opportunities/${state.id}/match?resume_id=1`;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) {
+      if (workspaceReads++ > 0) resumeId = 2;
+      return Promise.resolve({ ...matchWorkspace(resumeId === 1 ? "current" : "different_resume"),
+        skill_roi: { items: [], opportunity_count: 0 } });
+    }
+    if (url === matchPath) return Promise.reject(new ApiError("Saved match uses another résumé", 409, null));
+  });
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Load saved match for learning strategy" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Retry saved match" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Resume" })).toHaveValue("2"));
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/match?"))).toEqual([[matchPath, expect.any(AbortSignal)]]);
+  expect(screen.queryByRole("button", { name: "Find saved curated plan" })).not.toBeInTheDocument();
+});
+
 const rankedSkill = { opportunity_count: 1, items: [{ skill: "postgresql", opportunity_count: 1,
   demand_ratio: 1, evidence_strength: 0, outcome_signal: 0, estimated_hours: 30, score: 93,
   reason: "Appears in the current owned opportunity." }] };
@@ -851,6 +982,10 @@ it("current-source match keeps quoted reuse bound to its original resume after c
   await page(); fireEvent.change(screen.getByRole("combobox", { name: /Match mode/ }), { target: { value: "enhanced" } });
   fireEvent.click(screen.getAllByRole("button", { name: "Run match" })[0]);
   await screen.findByText(savedMatch.fit_summary);
+  expect(state.wire.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(1);
+  expect(state.wire.mock.calls.filter(([url]) => url.includes("/workspace?"))).toHaveLength(1);
+  expect(trackEvent).not.toHaveBeenCalledWith("analysis_completed", expect.anything());
+  expect(trackEvent).not.toHaveBeenCalledWith("first_useful_match", expect.anything());
   await remoteResumeChange();
   expect(screen.queryByText(savedMatch.fit_summary)).toBeNull();
   expect(screen.getByText(/Your earlier match request belongs to another resume selection/)).toBeVisible();

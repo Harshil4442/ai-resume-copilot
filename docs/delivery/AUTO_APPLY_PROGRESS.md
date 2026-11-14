@@ -1,12 +1,18 @@
 # HireWiz development and deployment progress
 
-Updated **13 November 2026 (IST)**. The API, analysis worker and employer
+Updated **14 November 2026 (IST)**. The API, analysis worker and employer
 worker each send 100% of their traffic to DB8 on schema26. The separate résumé
-coordinator serves its retained 7a00839 image. Frontend 751/Hohsg was last
-verified on the production domain. PR114's pagination and authentication
-update has a verified Cloud Run image and a staged Vercel deployment. The
-scanner, checkout, recovery and monitoring changes are integrated in draft PR120.
-[PR114 release checks](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43438302862) · [PR120](https://github.com/Harshil4442/ai-resume-copilot/pull/120)
+coordinator serves its retained 7a00839 image. The live frontend reduces
+sign-in and Dashboard requests, checks that a browser-review download matches
+the selected résumé, restores keyboard focus when application review closes,
+and guides users through secure sign-out when their backend session expires.
+Jobs paces its first reads and offers a single retry after a capacity refusal.
+Billing now refreshes legacy balances after a verified refund and shows any
+pending adjustment separately from spendable credits. A confirmed inspection failure
+now tells users that their new file was not saved. The merged saved Workspace
+and interview history work has a matching GCP image and staged frontend.
+[Serving source](https://github.com/Harshil4442/ai-resume-copilot/commit/987c831fa17d98e6a6b5a2225d55960754006972) ·
+[Merged Workspace changes](https://github.com/Harshil4442/ai-resume-copilot/pull/125)
 The active 27 October credit/cost/quality goal across the
 existing eight stages remains incomplete. The six accepted 26 October outcomes
 below retain their original historical scope.
@@ -27,6 +33,14 @@ checkout and final employer submission remain closed. Paid native document QA
 Human Reviewer 2, representative shadow accounting, 10,000-user capacity,
 commercial/finance gates and full R03/RTO qualification remain pending.
 
+Razorpay acknowledged HireWiz’s request for written confirmation of the proposed
+credit passes and candidate-reviewed application assistance. Merchant-scope
+confirmation and Razorpay Test evidence for capture, refunds and reconciliation
+remain pending. The isolated receiver can withhold signed callbacks for an exact
+Test order so recovery can be exercised before Razorpay redelivers them. A
+synthetic held callback produced zero ledger changes, then settled exactly once
+after release and replay. [Test checkout tooling](https://github.com/Harshil4442/ai-resume-copilot/pull/126)
+
 The production shadow observation for 6–13 November UTC completed under the
 read-only database role. The window contained no qualifying operations or
 discovery batches. The report retained two unknown and three settled provider
@@ -44,13 +58,13 @@ recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#sche
 |---|---|---|
 | Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
 | Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-d-32d98b931d16-open` | 100% serving on the retained revision. The latest-ready pointer names a different revision. |
-| Production frontend | Source `751319a19420d5f141697643f68b6853ea2da5c6`; `dpl_Hohsgv6Y5CPPN2295GUvJNs45YZH` | Production remains at the retained verified deployment. New bounded resume selectors/session changes and reviewed header-read deferral require their matching frontend publication; a READY preview is not a production alias promotion. |
-| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. The 17-case maintenance and 80-document/nine-job QA holds remain. |
+| Production frontend | Source `987c831fa17d98e6a6b5a2225d55960754006972`, deployment `dpl_2vM9q17SpzECqWYW1qvy1KpNisxM` | The signed-in Dashboard, saved Jobs and legacy Billing views opened with existing account data. The predecessor paced four Jobs reads that had reached the shared limit. The latest frontend updates the original order and spendable balances after partial and full refund readback, and accepts signed legacy analysis balances in the owned account response. Five browser widths used simulated refund responses. The signed-in résumé page opened and simulated inspection failures displayed the new message. Live checkout remains disabled. |
+| Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. New documents would stop at inspection while definitions are stale. The available production logs contain no upload attempts after expiry. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
-| Staged frontend | PR114 merge `5c54768dac9225fbb32763f55d46fc794141a91f`; deployment `dpl_ChHqR3DxbTbp5yPt8nijyzAv5zgS` | The staged deployment is ready. Promote it after the matching API and the old frontend's authenticated reads pass verification. |
-| Verified application image | PR114 source `629e808c78dfdbdeaad0a8862974b8c18b6c6fde`; image `sha256:5fde8e759699df51d2d91d0463d648a06500794c7d25e8b9d543a9e71efe938c` | Build `77bb4df7-7013-419e-bdad-302be4a52ecf`, exact-source CI `43438302862` and Source27 Git/build/image verification passed. Cloud Run staging awaits scanner and funding checks. |
-| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. The replacement pair remains unpublished. |
+| Bridge application image | PR125 merge `4dc9aea40e11a55f2d137abbdd446edcd9051e98`; image `sha256:08888d36aacf24a8a5cde68935abac7ff69e5fb2c1062badc60786df5a1321a9` | Build `2bccad42-17dd-4f95-adb4-9bfe318739a0` succeeded. The merged tree equals the tested PR tree. All five jobs passed exact main CI, and the stock verifier matched the source, build and image. Cloud Run staging still requires current scanner verification and the reviewed expense and model policies. [Main CI](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43582145259) |
+| Bridge frontend | PR125 merge `4dc9aea40e11a55f2d137abbdd446edcd9051e98`, deployment `dpl_3XeVpMRVV34CAB6HEeHxyMQYqTpL` | The build is ready at the Git main alias. The Workspace and résumé pagination routes require their matching API before canonical promotion. |
+| Reviewed policies | Expense policy **5**, model policy **3** | Both expired on 11 November at 22:34 UTC and remain unreferenced by the serving services. An independently reviewed replacement for the closed pilot is prepared locally. The approved estimate is unpublished and expires on 21 November at 11:20 UTC. |
 
 The PR114 source-image verification record has SHA-256
 `6d851cbaf7077930c7c74c5959479965bc3e037737f261da45a44ff4e27129e2`.
@@ -60,9 +74,8 @@ The matching SQL observation has SHA-256
 `c716b36be4b13666ae39744d4fb2591736ce5bf820111f51bd56ec4c79239875`.
 The completed restore receipt has SHA-256
 `0db12c8baa4ae658cf821f5d5edb69048e55cef4a9c46f0911294fea205a6511`.
-The old staging plan and journals remain under their original custody. The next
-forward rollout needs exact release qualification and current policies with at least
-four hours of validity at capture. New traffic promotion, rollout financial
+The old staging plan and journals remain under their original custody. The next forward rollout needs a fresh scanner proof and reviewed policies with
+at least four hours of validity at capture. New traffic promotion, rollout financial
 readback and full R03/RTO qualification remain pending.
 
 The Gemini monthly spend cap remains **INR450**. Provider enforcement can lag;

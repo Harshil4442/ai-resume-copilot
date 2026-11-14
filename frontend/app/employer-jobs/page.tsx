@@ -9,7 +9,7 @@ import { EmployerSavedResults, EmployerSearchHistory } from "../../components/Em
 import { emptyPreferenceDraft, preferenceDraft, preferenceInput } from "../../lib/searchPreferences";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CircleAlert, LoaderCircle, Search } from "lucide-react";
+import { CheckCircle2, LoaderCircle, Search } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,9 +18,11 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingBlock } from "../../components/ui/LoadingBlock";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
-import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type JobServiceCatalog, type SearchPriceAcceptance } from "../../lib/employerJobs";
+import { applicationStatusLabels, batchEligibility, employerJobsBase, isSearchPreparation, readSavedSearchQuery, searchSummary, type EmployerApplication, type EmployerSavedResultPage, type EmployerSearchCreateResult, type EmployerSearchPreparation, type EmployerSearchSummary, type SearchPriceAcceptance } from "../../lib/employerJobs";
+import { employerJobsOverviewKey, readEmployerJobsOverview } from "../../lib/employerJobsOverview";
 import { useResumeOptions } from "../../lib/resumeOptions";
 import { ResumeSelector } from "../../components/ResumeSelector";
+import { isEmployerJobsCapacity, useEmployerJobsReads } from "../../lib/useEmployerJobsReads";
 import { progressPollDelay } from "../../lib/readQueryPolicy";
 import { usePageVisible } from "../../lib/useProgressQuery";
 
@@ -58,49 +60,82 @@ export default function EmployerJobsPage() {
   const preparationChecks = useRef({ id: null as string | null, attempt: 0, reads: 0 });
   const pageVisible = usePageVisible();
   const [applicationId, setApplicationId] = useState<string | null>(null);
+  const applicationTrigger = useRef<HTMLButtonElement | null>(null);
+  const applicationsHeading = useRef<HTMLHeadingElement | null>(null);
   const [selectedApplications, setSelectedApplications] = useState<string[]>([]);
-  const [batchReview, setBatchReview] = useState<{ id?: string; selected?: EmployerApplication[] } | null>(null);
+  const [batchReview, setBatchReview] = useState<{ id?: string; selected?: Pick<EmployerApplication, "id" | "credit_cost">[] } | null>(null);
   const applicationIntent = useRef<{ fingerprint: string; key: string } | null>(null);
   const intent = useRef<{ fingerprint: string; key: string; acceptedQuote: SearchPriceAcceptance } | null>(null);
-  const catalog = useQuery({ queryKey: ["employer-jobs", "catalog"], queryFn: ({ signal }) => apiGet<JobServiceCatalog>(`${employerJobsBase}/catalog`, signal) });
-  const resumes = useResumeOptions({ selectedId: resumeId });
-  const applications = useQuery({ queryKey: ["employer-jobs", "applications"], queryFn: ({ signal }) => apiGet<{ items: EmployerApplication[] }>(`${employerJobsBase}/applications`, signal) });
+  const jobsReads = useEmployerJobsReads();
+  const overview = useQuery({
+    queryKey: employerJobsOverviewKey,
+    queryFn: ({ signal }) => readEmployerJobsOverview(signal, jobsReads.read),
+    enabled: !availability.isPending,
+    retry: false,
+    refetchOnReconnect: false,
+  });
+  const catalog = overview.isSuccess ? overview.data.catalog : undefined;
+  const applications = overview.data?.applications;
+  const resumeFirstPage = { ...overview, data: overview.data?.resumes };
+  const searchesFirstPage = { ...overview, data: overview.data?.saved_searches };
+  const resumes = useResumeOptions({ selectedId: resumeId, read: jobsReads.read, firstPage: resumeFirstPage });
+  function retryJobsReads() {
+    if (!jobsReads.allowRetry()) return;
+    void client.refetchQueries({ type: "active", predicate: ({ queryKey, state }) =>
+      isEmployerJobsCapacity(state.error) && (queryKey[0] === "resumes" ||
+        (queryKey[0] === "employer-jobs" && ["bootstrap", "search-summaries"].includes(String(queryKey[1])))),
+    });
+  }
+  async function refreshSearchPrice() {
+    const refreshed = await overview.refetch();
+    if (!refreshed.isError && refreshed.data?.catalog.pricing_version) setPriceRefreshRequired(false);
+  }
   const requestedCount = Number(count);
-  const validCount = Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= (catalog.data?.max_search_jobs ?? 0);
-  const priceReady = Boolean(catalog.data?.pricing_version) && Number.isSafeInteger(catalog.data?.search_credits_per_job) && (catalog.data?.search_credits_per_job ?? 0) > 0;
-  const estimated = validCount && priceReady && catalog.data ? requestedCount * catalog.data.search_credits_per_job : null;
-  const enoughCredits = estimated !== null && catalog.data !== undefined && catalog.data.balance >= estimated;
+  const validCount = Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= (catalog?.max_search_jobs ?? 0);
+  const priceReady = Boolean(catalog?.pricing_version) && Number.isSafeInteger(catalog?.search_credits_per_job) && (catalog?.search_credits_per_job ?? 0) > 0;
+  const estimated = validCount && priceReady && catalog ? requestedCount * catalog.search_credits_per_job : null;
+  const enoughCredits = estimated !== null && catalog !== undefined && catalog.balance >= estimated;
   const query = { resume_id: Number(resumeId), role: role.trim(), location: location.trim(), desired_count: requestedCount, remote_only: remote, published_within_days: days ? Number(days) : null, excluded_employers: excludedEmployers, preferences: preferenceChoice.preferences };
   const fingerprint = JSON.stringify(query);
   const recovering = recoverableQuery === fingerprint;
   const retainedQuote = recovering ? recoverableQuote : null;
   const displayedMaximum = retainedQuote?.maximum_credits ?? estimated;
-  const displayedUnitPrice = retainedQuote?.unit_price ?? catalog.data?.search_credits_per_job;
+  const displayedUnitPrice = retainedQuote?.unit_price ?? catalog?.search_credits_per_job;
 
-  const refreshBalances = useCallback(() => {
-    // Nav owns the profile/catalog refresh for this shared owner client.
-    window.dispatchEvent(new Event("refresh_analysis_units"));
-    void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] });
+  const refreshOverview = useCallback(() => {
+    void client.invalidateQueries({ queryKey: employerJobsOverviewKey, exact: true });
   }, [client]);
+  const refreshHistory = useCallback(() => {
+    void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] });
+    refreshOverview();
+  }, [client, refreshOverview]);
+  const refreshBalances = useCallback(() => {
+    // Nav refreshes the independent account balance.
+    window.dispatchEvent(new Event("refresh_analysis_units"));
+    refreshOverview();
+  }, [refreshOverview]);
+  const refreshAfterSearch = useCallback(() => {
+    void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] });
+    refreshBalances();
+  }, [client, refreshBalances]);
   const search = useMutation({
     retry: false,
     mutationFn: async () => {
-      if (!legacyAvailable || !catalog.data?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering)) throw new Error("Check your resume, role, job count and service credit balance before searching.");
-      if (intent.current?.fingerprint !== fingerprint) intent.current = { fingerprint, key: crypto.randomUUID(), acceptedQuote: { pricing_version: catalog.data.pricing_version, unit_price: catalog.data.search_credits_per_job, maximum_credits: estimated } };
+      if (!legacyAvailable || !overview.isSuccess || !catalog?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering)) throw new Error("Check your resume, role, job count and service credit balance before searching.");
+      if (intent.current?.fingerprint !== fingerprint) intent.current = { fingerprint, key: crypto.randomUUID(), acceptedQuote: { pricing_version: catalog.pricing_version, unit_price: catalog.search_credits_per_job, maximum_credits: estimated } };
       return apiPostJson<EmployerSearchCreateResult>(`${employerJobsBase}/searches`, { ...query, accepted_quote: intent.current.acceptedQuote, idempotency_key: intent.current.key });
     },
     onSuccess: (result) => {
       setPreparationError(null);
-      if (isSearchPreparation(result)) { preparationSelection.current = result.id; setPreparation(result); setRecoverableQuery(null); void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances(); return; }
+      if (isSearchPreparation(result)) { preparationSelection.current = result.id; setPreparation(result); setRecoverableQuery(null); refreshAfterSearch(); return; }
       preparationSelection.current = null;
       setPreparation(null); setActiveSearch(searchSummary(result)); intent.current = null; setRecoverableQuery(null);
-      void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances();
+      refreshAfterSearch();
     },
     onError: async (error) => {
       if (needsSearchPriceReview(error)) {
         intent.current = null; setRecoverableQuery(null); setRecoverableQuote(null); setPriceRefreshRequired(true);
-        const refreshed = await catalog.refetch();
-        if (!refreshed.isError && refreshed.data?.pricing_version) setPriceRefreshRequired(false);
+        await refreshSearchPrice();
         return;
       }
       setRecoverableQuery(intent.current?.fingerprint ?? null); setRecoverableQuote(intent.current?.acceptedQuote ?? null); refreshBalances();
@@ -145,7 +180,7 @@ export default function EmployerJobsPage() {
           if (cancelled) return;
           client.setQueryData(["employer-jobs", "saved-results", current.completed_search_id, null], firstPage);
           setActiveSearch(firstPage.search); setPreparation(null); intent.current = null; setRecoverableQuery(null);
-          void client.invalidateQueries({ queryKey: ["employer-jobs", "search-summaries"] }); refreshBalances();
+          refreshAfterSearch();
         } else if (current.status === "failed" || current.status === "cancelled") {
           intent.current = null; setRecoverableQuery(null); refreshBalances();
         } else schedule();
@@ -155,7 +190,7 @@ export default function EmployerJobsPage() {
     }
     schedule(explicitCheck);
     return () => { cancelled = true; controller.abort(); if (timer !== undefined) window.clearTimeout(timer); };
-  }, [preparationId, preparationTerminal, preparationRetry, preparationError, pageVisible, client, refreshBalances]);
+  }, [preparationId, preparationTerminal, preparationRetry, preparationError, pageVisible, client, refreshAfterSearch, refreshBalances]);
   const searchPreparing = preparation !== null && preparation.status !== "failed" && preparation.status !== "cancelled";
   const searchBusy = search.isPending || searchPreparing;
   const cancelSearch = useMutation({
@@ -172,47 +207,66 @@ export default function EmployerJobsPage() {
     },
   });
   const prepare = useMutation({
-    mutationFn: (selection: string | { postingId: string; resumeId: number }) => {
-      const postingId = typeof selection === "string" ? selection : selection.postingId;
-      const chosenResumeId = typeof selection === "string" ? Number(resumeId) : selection.resumeId;
+    mutationFn: ({ postingId, resumeId: chosenResumeId }: { postingId: string; resumeId: number }) => {
+      if (!overview.isSuccess) throw new Error("Refresh your Jobs overview before preparing an application.");
       if (!chosenResumeId) throw new Error("Choose a resume for this application.");
       const payload = { posting_id: postingId, resume_id: chosenResumeId, resume_choice: "original" };
       const fingerprint = JSON.stringify(payload);
       if (applicationIntent.current?.fingerprint !== fingerprint) applicationIntent.current = { fingerprint, key: crypto.randomUUID() };
       return apiPostJson<EmployerApplication>(`${employerJobsBase}/applications`, { ...payload, idempotency_key: applicationIntent.current.key });
     },
-    onSuccess: (application) => { applicationIntent.current = null; client.setQueryData(["employer-jobs", "application", application.id], application); setApplicationId(application.id); void client.invalidateQueries({ queryKey: ["employer-jobs", "applications"] }); },
+    onSuccess: (application) => { applicationIntent.current = null; client.setQueryData(["employer-jobs", "application", application.id], application); refreshOverview(); },
   });
-  const selectedPackages = (applications.data?.items ?? []).filter((app) => selectedApplications.includes(app.id));
-  const selectionValid = selectedPackages.length > 0 && selectedPackages.length === selectedApplications.length && selectedPackages.every((app) => batchEligibility(app, catalog.data) === null);
+  function openApplication(id: string, trigger: HTMLButtonElement) {
+    applicationTrigger.current = trigger;
+    setApplicationId(id);
+  }
+  function prepareApplication(postingId: string, selectedResumeId: number, trigger: HTMLButtonElement) {
+    prepare.mutate({ postingId, resumeId: selectedResumeId }, {
+      onSuccess: (application) => openApplication(application.id, trigger),
+    });
+  }
+  function applicationFocusTarget() {
+    const trigger = applicationTrigger.current;
+    return trigger?.isConnected && !trigger.disabled ? trigger : applicationsHeading.current;
+  }
+  const selectedPackages = (applications ?? []).filter((app) => selectedApplications.includes(app.id));
+  const selectionValid = selectedPackages.length > 0 && selectedPackages.length === selectedApplications.length && selectedPackages.every((app) => batchEligibility(app, catalog) === null);
 
   return <main className="app-page"><div className="page-container">
     <header className="grid gap-5 border-b border-border pb-7 sm:grid-cols-[1fr_auto] sm:items-start">
       <div><p className="eyebrow">Employer discovery pilot · 20 reviewed origins</p><h1 className="font-display mt-2 text-4xl font-normal sm:text-5xl">Find your next role. Apply with control.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Search available postings within our 20 reviewed employer origins and compare your skills. Candidate-reviewed browser assistance is limited to Razorpay’s Greenhouse portal; other employers use a manual portal handoff.</p></div>
-      <div className="surface p-4"><p className="data-label">{unified ? "Credits" : "Legacy service credits"}</p><p className="mt-1 text-2xl font-semibold text-primary">{unified ? wallet.data?.available_credits ?? "—" : catalog.data?.balance ?? "—"}</p><Link href="/billing" className="mt-2 inline-block text-sm font-semibold text-primary underline underline-offset-4">Buy credits</Link></div>
+      <div className="surface p-4"><p className="data-label">{unified ? "Credits" : "Legacy service credits"}</p><p className="mt-1 text-2xl font-semibold text-primary">{unified ? wallet.data?.available_credits ?? "—" : catalog?.balance ?? "—"}</p><Link href="/billing" className="mt-2 inline-block text-sm font-semibold text-primary underline underline-offset-4">Buy credits</Link></div>
     </header>
-    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} enabled={isCreditOperationAvailable(availability.data, "job_discovery_batch")} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={(postingId, resumeId) => prepare.mutate({ postingId, resumeId })} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
+    {overview.isError && !isEmployerJobsCapacity(overview.error) ? <div className="surface mt-5 space-y-2 p-4" role="alert">
+      {overview.error instanceof ApiError && overview.error.status === 401 ? <><p>Your Jobs session has ended.</p><a href="/logout" className="text-primary underline">Sign out securely</a></> :
+        <><p>Could not load the Jobs overview.</p><Button type="button" variant="secondary" size="sm" disabled={overview.isFetching} onClick={() => void overview.refetch()}>Retry loading Jobs</Button></>}
+    </div> : null}
+    {jobsReads.paused ? <div className="surface mt-5 space-y-2 p-4">
+      <p role="status" className="text-sm">Jobs is temporarily busy. You can retry loading your job information when the button becomes available.</p>
+      <Button type="button" variant="secondary" size="sm" className="min-h-11" disabled={!jobsReads.canRetry} onClick={retryJobsReads}>Retry loading Jobs</Button>
+    </div> : null}
+    {unified || unifiedHistory ? <UnifiedDiscoveryPanel key={unifiedHistory?.id ?? "new"} enabled={overview.isSuccess && isCreditOperationAvailable(availability.data, "job_discovery_batch")} resumeFirstPage={resumeFirstPage} readResumes={jobsReads.read} onRefreshHistory={refreshHistory} canPrepare={overview.isSuccess} initialSearch={unifiedHistory} preparingApplication={prepare.isPending} onPrepare={prepareApplication} onResume={setResumeId} onLockChange={setDiscoveryLocked} /> : null}
     <div className="mt-8 grid min-w-0 gap-8 xl:grid-cols-[340px_minmax(0,1fr)]">
       <aside className="min-w-0 space-y-5">
         {legacyAvailable && !unifiedHistory ? <form className="surface p-5 sm:p-6" onSubmit={(event) => { event.preventDefault(); search.mutate(); }} aria-labelledby="search-heading">
           <h2 id="search-heading" className="font-display text-2xl">Your search</h2>
           <div className="mt-5 grid gap-4">
-            <ResumeSelector catalog={resumes} value={resumeId} onChange={setResumeId} required disabled={searchBusy} format={(resume) => `${resume.filename} · #${resume.id}${resume.source_available ? "" : " · original file missing"}`} />
-            {resumes.isError ? <p role="alert" className="text-sm text-coral">Could not load resumes. <button type="button" className="underline" onClick={() => void resumes.refetch()}>Retry</button></p> : null}
+            <ResumeSelector catalog={resumes} hideError={overview.isError || isEmployerJobsCapacity(resumes.error)} value={resumeId} onChange={setResumeId} required disabled={searchBusy} format={(resume) => `${resume.filename} · #${resume.id}${resume.source_available ? "" : " · original file missing"}`} />
             <Link href="/resume" className="text-xs font-semibold text-primary underline underline-offset-4">Upload another resume</Link>
             <label className="grid gap-2 text-sm font-semibold">Target role<input className="field-control" value={role} onChange={(event) => setRole(event.target.value)} required maxLength={160} disabled={searchBusy} placeholder="e.g. Backend Engineer" /></label>
             <label className="grid gap-2 text-sm font-semibold">Location<input className="field-control" value={location} onChange={(event) => setLocation(event.target.value)} maxLength={160} disabled={searchBusy} placeholder="City or country" /></label>
-            <div className="grid grid-cols-2 gap-3"><label className="grid gap-2 text-sm font-semibold">Jobs to find<input className="field-control" type="number" min={1} max={catalog.data?.max_search_jobs ?? 100} step={1} value={count} onChange={(event) => setCount(event.target.value)} disabled={searchBusy} required /></label><label className="grid gap-2 text-sm font-semibold">Published/released within<select className="field-control" value={days} onChange={(event) => setDays(event.target.value)} disabled={searchBusy}><option value="">Any date</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select></label></div><p className="text-xs leading-5 text-muted-foreground">Dates may reflect republishing. A date window excludes postings whose publication date is unknown.</p>
+            <div className="grid grid-cols-2 gap-3"><label className="grid gap-2 text-sm font-semibold">Jobs to find<input className="field-control" type="number" min={1} max={catalog?.max_search_jobs ?? 100} step={1} value={count} onChange={(event) => setCount(event.target.value)} disabled={searchBusy} required /></label><label className="grid gap-2 text-sm font-semibold">Published/released within<select className="field-control" value={days} onChange={(event) => setDays(event.target.value)} disabled={searchBusy}><option value="">Any date</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select></label></div><p className="text-xs leading-5 text-muted-foreground">Dates may reflect republishing. A date window excludes postings whose publication date is unknown.</p>
             <label className="flex items-center gap-3 text-sm"><input type="checkbox" className="h-4 w-4 accent-primary" checked={remote} onChange={(event) => setRemote(event.target.checked)} disabled={searchBusy} />Remote roles only</label>
             <EmployerSearchPreferences value={preferences} onChange={setPreferences} disabled={searchBusy} error={preferenceChoice.error} />
             <div className="rounded-lg bg-surface p-4 text-sm leading-6" id="search-cost"><p className="font-semibold">{displayedMaximum !== null ? `Up to ${displayedMaximum} service credits` : "Checking search price…"}</p><p className="mt-1 text-xs text-muted-foreground">{displayedUnitPrice !== undefined ? `${displayedUnitPrice} per new verified job delivered. Unused reservations are returned. Search does not apply to jobs.` : "Prices and availability come from the server."}</p>{retainedQuote ? <p className="mt-2 text-xs leading-5 text-muted-foreground">Checking your existing request at its originally accepted price. Retrying checks that request before starting any new paid search.</p> : null}</div>
-            <Button type="submit" className="min-h-11 w-full" aria-describedby="search-cost" disabled={!catalog.data?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering) || searchBusy}>{searchBusy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}{searchBusy ? "Finding employer jobs…" : "Find jobs"}</Button>
-            {priceRefreshRequired ? <p role="status" className="text-xs leading-5 text-muted-foreground">Refresh the price before starting. <button type="button" className="underline text-primary" disabled={catalog.isFetching} onClick={async () => { const refreshed = await catalog.refetch(); if (!refreshed.isError && refreshed.data?.pricing_version) setPriceRefreshRequired(false); }}>Refresh search price</button></p> : null}
-            {catalog.isError ? <p role="alert" className="text-sm text-coral">Could not read prices and availability. <button type="button" className="underline" onClick={() => void catalog.refetch()}>Retry</button></p> : catalog.data && !catalog.data.enabled ? <p className="text-xs leading-5 text-muted-foreground">Employer search is not enabled yet. You can continue tracking roles in <Link href="/workspace" className="underline text-primary">Workspace</Link>.</p> : estimated !== null && !enoughCredits && !recovering ? <p className="text-xs leading-5 text-muted-foreground">You need {estimated} service credits for this search. <Link className="underline text-primary" href="/billing">Review credit packs</Link>.</p> : null}
+            <Button type="submit" className="min-h-11 w-full" aria-describedby="search-cost" disabled={!overview.isSuccess || !catalog?.enabled || estimated === null || priceRefreshRequired || !validCount || preferenceChoice.error !== null || !resumeId || !role.trim() || (!enoughCredits && !recovering) || searchBusy}>{searchBusy ? <LoaderCircle size={16} className="animate-spin" /> : <Search size={16} />}{searchBusy ? "Finding employer jobs…" : "Find jobs"}</Button>
+            {priceRefreshRequired ? <p role="status" className="text-xs leading-5 text-muted-foreground">Refresh the price before starting. <button type="button" className="underline text-primary" disabled={overview.isFetching || jobsReads.paused} onClick={() => void refreshSearchPrice()}>Refresh search price</button></p> : null}
+            {overview.isSuccess && catalog && !catalog.enabled ? <p className="text-xs leading-5 text-muted-foreground">Employer search is not enabled yet. You can continue tracking roles in <Link href="/workspace" className="underline text-primary">Workspace</Link>.</p> : estimated !== null && !enoughCredits && !recovering ? <p className="text-xs leading-5 text-muted-foreground">You need {estimated} service credits for this search. <Link className="underline text-primary" href="/billing">Review credit packs</Link>.</p> : null}
           </div>
         </form> : !unified && !unifiedHistory ? <p role="status" className="text-sm">Checking search availability. <button className="text-primary underline" onClick={() => void availability.refetch()}>Refresh</button></p> : null}
-        <section className="border-y border-border py-5"><h2 className="text-sm font-semibold">Pilot source availability</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">The pilot covers 20 reviewed employer origins. Source availability varies; the latest reported checks appear below. Results are limited to available pilot sources, and worldwide coverage is planned for a later release.</p><ul className="mt-3 grid gap-2">{catalog.data?.sources.map((source) => <li key={source.id} className="text-xs"><span className="font-semibold">{source.employer}</span><span className="text-muted-foreground"> · {source.status === "healthy" ? `Checked ${source.last_success_at ? dateLabel(source.last_success_at) : "date unknown"}` : source.status.replaceAll("_", " ")}</span></li>)}</ul></section>
-        <EmployerSearchHistory disabled={discoveryLocked} selectedId={unifiedHistory?.id ?? activeSearch?.id} onSelect={(item) => { if (discoveryLocked) return; const savedQuery = readSavedSearchQuery(item.query); setPreparation(null); setPreparationError(null); if (isUnifiedDiscovery(item.scope)) { setUnifiedHistory(item); setActiveSearch(null); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); return; } setUnifiedHistory(null); preparationSelection.current = item.status !== "completed" ? item.id : null; if (item.status !== "completed") { setActiveSearch(null); reviewPreparation.mutate(item.id); } else setActiveSearch(item); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); setRole(savedQuery?.role ?? ""); setLocation(savedQuery?.location ?? ""); setRemote(savedQuery?.remote_only ?? false); setDays(savedQuery?.published_within_days ? String(savedQuery.published_within_days) : ""); setCount(savedQuery ? String(savedQuery.desired_count ?? item.desired_count) : ""); setPreferences(preferenceDraft(savedQuery?.preferences)); setExcludedEmployers(savedQuery?.excluded_employers ?? []); }} />
+        <section className="border-y border-border py-5"><h2 className="text-sm font-semibold">Pilot source availability</h2><p className="mt-2 text-xs leading-5 text-muted-foreground">The pilot covers 20 reviewed employer origins. Source availability varies; the latest reported checks appear below. Results are limited to available pilot sources, and worldwide coverage is planned for a later release.</p><ul className="mt-3 grid gap-2">{catalog?.sources.map((source) => <li key={source.id} className="text-xs"><span className="font-semibold">{source.employer}</span><span className="text-muted-foreground"> · {source.status === "healthy" ? `Checked ${source.last_success_at ? dateLabel(source.last_success_at) : "date unknown"}` : source.status.replaceAll("_", " ")}</span></li>)}</ul></section>
+        <EmployerSearchHistory firstPage={searchesFirstPage} read={jobsReads.read} disabled={discoveryLocked} selectedId={unifiedHistory?.id ?? activeSearch?.id} onSelect={(item) => { if (discoveryLocked) return; const savedQuery = readSavedSearchQuery(item.query); setPreparation(null); setPreparationError(null); if (isUnifiedDiscovery(item.scope)) { setUnifiedHistory(item); setActiveSearch(null); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); return; } setUnifiedHistory(null); preparationSelection.current = item.status !== "completed" ? item.id : null; if (item.status !== "completed") { setActiveSearch(null); reviewPreparation.mutate(item.id); } else setActiveSearch(item); setResumeId(savedQuery ? String(savedQuery.resume_id) : ""); setRole(savedQuery?.role ?? ""); setLocation(savedQuery?.location ?? ""); setRemote(savedQuery?.remote_only ?? false); setDays(savedQuery?.published_within_days ? String(savedQuery.published_within_days) : ""); setCount(savedQuery ? String(savedQuery.desired_count ?? item.desired_count) : ""); setPreferences(preferenceDraft(savedQuery?.preferences)); setExcludedEmployers(savedQuery?.excluded_employers ?? []); }} />
       </aside>
       <div className="min-w-0 space-y-8">
         {search.isError ? <div role="alert" className="rounded-lg border border-coral/30 bg-coral/5 p-4 text-sm leading-6 text-coral">{search.error.message} {needsSearchPriceReview(search.error) ? "Review the refreshed maximum above and click Find jobs again when ready." : "If the request was interrupted, retry the same search to check its existing result before starting a different paid search."}</div> : null}
@@ -229,20 +283,20 @@ export default function EmployerJobsPage() {
           {preparationError ? <div role="alert" className="mt-4 text-sm leading-6"><p>{preparationError}</p><p className="mt-2">Automatic checks are paused. This status read will not restart the search or charge again.</p><Button type="button" variant="secondary" className="mt-3 min-h-11" onClick={() => { setPreparationError(null); setPreparationRetry((value) => value + 1); }}>Retry search status</Button></div> : searchPreparing ? <div className="mt-4" role="status" aria-label="Search preparation in progress"><LoaderCircle size={20} className="animate-spin" /></div> : <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => { setPreparation(null); setPreparationError(null); }}>Return to saved results</Button>}
           {searchPreparing && preparation.status !== "completed" ? <Button type="button" variant="secondary" className="mt-4 min-h-11" disabled={cancelSearch.isPending} onClick={() => cancelSearch.mutate()}>{cancelSearch.isPending ? "Cancelling search…" : "Cancel search"}</Button> : null}
           {cancelSearch.isError ? <p role="alert" className="mt-3 text-sm leading-6">{cancelSearch.error.message}</p> : null}
-        </section> : activeSearch ? <EmployerSavedResults key={activeSearch.id} search={activeSearch} preparing={prepare.isPending} canPrepare={Boolean(resumeId)} onPrepare={(postingId) => prepare.mutate(postingId)} /> : unified || unifiedHistory ? null : <EmptyState icon={Search} title="Search with your resume and preferences" description="Choose how many verified jobs to find. Review the service credit price before starting." />}
-        <section aria-labelledby="applications-heading" className="border-t border-border pt-7"><h2 id="applications-heading" className="font-display text-2xl">Your applications</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Each job keeps its own resume choice, review and submission status.</p>
-          <div className="mt-5 space-y-3 rounded-xl border border-border bg-surface p-4"><h3 className="font-semibold">Review a fixed application batch</h3><p className="text-xs leading-5 text-muted-foreground">Select complete applications supported by a permissioned API, then review every exact job, file, answer, action and fixed service credit price. The current manual sources use individual employer handoffs.</p>{catalog.data?.admission_limits ? <p className="text-xs leading-5">Maximum {catalog.data.admission_limits.batch_limit} jobs and {catalog.data.admission_limits.batch_credit_limit} service credits per batch. Approval never includes future jobs.</p> : null}<Button variant="secondary" className="min-h-11 w-full sm:w-auto" disabled={!selectionValid || applications.isFetching} onClick={() => setBatchReview({ selected: selectedPackages })}>Review selected batch ({selectedPackages.length})</Button>{!catalog.data?.auto_submit_enabled ? <p className="text-xs leading-5 text-muted-foreground">API batch submission is currently disabled.</p> : null}</div>
-          {applications.isLoading ? <div className="mt-4"><LoadingBlock rows={2} /></div> : applications.isError ? <div className="mt-4 flex items-center gap-3 text-sm" role="alert"><CircleAlert size={16} /><p>Could not load applications.</p><Button variant="secondary" size="sm" onClick={() => void applications.refetch()}>Retry</Button></div> : <div className="mt-4 divide-y divide-border">{applications.data?.items.map((application) => {
-            const ineligible = batchEligibility(application, catalog.data);
+        </section> : activeSearch ? <EmployerSavedResults key={activeSearch.id} search={activeSearch} onRefreshHistory={refreshHistory} preparing={prepare.isPending} canPrepare={overview.isSuccess && Boolean(resumeId)} onPrepare={(postingId, trigger) => prepareApplication(postingId, Number(resumeId), trigger)} /> : unified || unifiedHistory ? null : <EmptyState icon={Search} title="Search with your resume and preferences" description="Choose how many verified jobs to find. Review the service credit price before starting." />}
+        <section aria-labelledby="applications-heading" className="border-t border-border pt-7"><h2 id="applications-heading" ref={applicationsHeading} tabIndex={-1} className="font-display text-2xl">Your applications</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Each job keeps its own resume choice, review and submission status.</p>
+          <div className="mt-5 space-y-3 rounded-xl border border-border bg-surface p-4"><h3 className="font-semibold">Review a fixed application batch</h3><p className="text-xs leading-5 text-muted-foreground">Select complete applications supported by a permissioned API, then review every exact job, file, answer, action and fixed service credit price. The current manual sources use individual employer handoffs.</p>{catalog?.admission_limits ? <p className="text-xs leading-5">Maximum {catalog.admission_limits.batch_limit} jobs and {catalog.admission_limits.batch_credit_limit} service credits per batch. Approval never includes future jobs.</p> : null}<Button variant="secondary" className="min-h-11 w-full sm:w-auto" disabled={!selectionValid || overview.isFetching} onClick={() => setBatchReview({ selected: selectedPackages })}>Review selected batch ({selectedPackages.length})</Button>{!catalog?.auto_submit_enabled ? <p className="text-xs leading-5 text-muted-foreground">API batch submission is currently disabled.</p> : null}</div>
+          {overview.isPending ? <div className="mt-4"><LoadingBlock rows={2} /></div> : <div className="mt-4 divide-y divide-border">{applications?.map((application) => {
+            const ineligible = batchEligibility(application, catalog);
             return <div key={application.id} className="min-w-0 py-4">
-              <button type="button" onClick={() => setApplicationId(application.id)} className="flex min-h-11 w-full flex-wrap items-start justify-between gap-3 py-2 text-left hover:bg-surface"><span className="min-w-0"><span className="block break-words text-sm font-semibold">{application.posting.title}</span><span className="mt-1 block text-xs text-muted-foreground">{application.posting.employer}</span></span><span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${application.status === "confirmed" ? "text-primary" : "text-muted-foreground"}`}>{application.status === "confirmed" ? <CheckCircle2 size={14} /> : null}{applicationStatusLabels[application.status]}</span></button>
+              <button type="button" onClick={(event) => openApplication(application.id, event.currentTarget)} className="flex min-h-11 w-full flex-wrap items-start justify-between gap-3 py-2 text-left hover:bg-surface"><span className="min-w-0"><span className="block break-words text-sm font-semibold">{application.posting.title}</span><span className="mt-1 block text-xs text-muted-foreground">{application.posting.employer}</span></span><span className={`inline-flex shrink-0 items-center gap-1.5 text-xs ${application.status === "confirmed" ? "text-primary" : "text-muted-foreground"}`}>{application.status === "confirmed" ? <CheckCircle2 size={14} /> : null}{applicationStatusLabels[application.status]}</span></button>
               {application.batch_id ? <Button variant="ghost" className="mt-2 min-h-11" onClick={() => setBatchReview({ id: application.batch_id! })}>View this application's batch</Button> : application.application_mode === "api" ? <label className="mt-2 flex min-h-11 items-start gap-3 text-xs leading-5"><input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-primary" checked={selectedApplications.includes(application.id)} disabled={Boolean(ineligible)} onChange={(event) => setSelectedApplications((previous) => event.target.checked ? [...previous, application.id] : previous.filter((value) => value !== application.id))} /><span>Select {application.posting.title} for exact batch review{ineligible ? <span className="mt-1 block text-muted-foreground">{ineligible}</span> : <span className="mt-1 block text-muted-foreground">{application.credit_cost} service credits · {application.artifact?.filename}</span>}</span></label> : <p className="mt-2 text-xs leading-5 text-muted-foreground">Individual manual handoff. This employer is not included in API batches.</p>}
             </div>;
-          })}{!applications.data?.items.length ? <p className="py-5 text-sm text-muted-foreground">Prepare a result above to begin. Nothing is submitted when you search.</p> : null}</div>}
+          })}{overview.isSuccess && !applications?.length ? <p className="py-5 text-sm text-muted-foreground">Prepare a result above to begin. Nothing is submitted when you search.</p> : null}</div>}
         </section>
       </div>
     </div>
-    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} /> : null}
-    {batchReview ? <BatchPanel key={batchReview.id ?? selectedApplications.join(":")} {...batchReview} onClose={() => { setBatchReview(null); setSelectedApplications([]); refreshBalances(); }} onChange={refreshBalances} /> : null}
+    {applicationId ? <ApplicationPanel key={applicationId} id={applicationId} onClose={() => setApplicationId(null)} onChange={refreshBalances} returnFocusTo={applicationFocusTarget} overview={{ catalog, resumeFirstPage, read: jobsReads.read, refresh: refreshOverview }} /> : null}
+    {batchReview ? <BatchPanel key={batchReview.id ?? selectedApplications.join(":")} {...batchReview} entryAvailable={overview.isSuccess} onClose={() => { setBatchReview(null); setSelectedApplications([]); refreshBalances(); }} onChange={refreshBalances} /> : null}
   </div></main>;
 }

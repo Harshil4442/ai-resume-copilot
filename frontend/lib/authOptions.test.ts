@@ -63,6 +63,20 @@ it("preserves a distinct retained Google session after explicit native linking w
   expect(JSON.stringify(session)).not.toContain("authentication_method");
 });
 
+it.each([-1, 0, 1])("reports backend expiry independently of the NextAuth session (%s)", async (offset) => {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(JSON.stringify({ sub: "12", exp: now + offset * 60 })).toString("base64url");
+  const token = { hirewizUserId: 12, accessToken: `e30.${payload}.syntheticSignature`, browserPairingSession: context };
+  const session = await authOptions.callbacks!.session!({
+    session: { user: { email: "candidate@example.com" }, expires: new Date(Date.now() + 86400_000).toISOString() },
+    token,
+  } as never);
+  expect("reauthenticationRequired" in session ? session.reauthenticationRequired : undefined).toBe(offset <= 0 ? true : undefined);
+  expect(token.browserPairingSession).toEqual(context);
+  expect(token.accessToken).toContain(payload);
+  expect(JSON.stringify(session)).not.toContain(token.accessToken);
+});
+
 it.each([context, { ...context, authentication_method: "password" }, { ...context, authentication_method: "google", candidate_id: 13 }])("rejects a Google callback that relabels password or another owner's native context", async (wrong) => {
   vi.spyOn(console, "error").mockImplementation(() => {});
   backend(wrong);

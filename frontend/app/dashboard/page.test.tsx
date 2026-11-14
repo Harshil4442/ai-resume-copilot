@@ -55,6 +55,20 @@ it("coalesces the actual Nav and Dashboard to one owned snapshot without losing 
   expect(state.get.mock.calls[1][0]).toBe("/auth/dashboard");
 });
 
+it("keeps Dashboard and its header available with zero spendable analysis units after a legacy refund", async () => {
+  const bootstrap = ownedBootstrapFixture({ profile: { ai_credits: -2 }, availability: { catalog_enabled: false, execution_enabled: false, supported_operations: [] } });
+  state.get.mockResolvedValue(ownedDashboardFixture(bootstrap));
+  const view = render(tree());
+  expect(await screen.findByText("Owned role")).toBeVisible();
+  expect(screen.getByText("Analysis units", { exact: true }).parentElement?.parentElement).toHaveTextContent("0");
+  expect(screen.getByTitle("0 analysis units remaining")).toHaveTextContent("0");
+  expect(screen.queryByText("-2", { exact: true })).not.toBeInTheDocument();
+  state.pathname = "/resume";
+  view.rerender(<QueryClientProvider client={client}><Nav /></QueryClientProvider>);
+  expect(screen.getByTitle("0 analysis units remaining")).toBeVisible();
+  expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard"]);
+});
+
 it("reuses the verified Dashboard overview after navigation until an explicit refresh or invalidation", async () => {
   const view = render(tree());
   await screen.findByText("Owned role");

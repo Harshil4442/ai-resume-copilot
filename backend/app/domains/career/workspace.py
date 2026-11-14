@@ -254,15 +254,19 @@ def evidence_detail(db: Session, user_id: int, opportunity: schemas.OpportunityH
         transcription=review, transcription_unavailable=unavailable)
 
 
-def source_snapshot(db: Session, user_id: int, opportunity_id: str) -> models.ResumeVersion:
+def source_snapshot(db: Session, user_id: int, opportunity_id: str, *, expected_resume_id: int | None = None) -> models.ResumeVersion:
     """Save the unchanged source and the complete approved-ID set at selection.
 
     Later approvals do not join this immutable selection. Existing version
     creation revalidates every selected ID before commit. Do not lock evidence:
     transcription review locks Evidence then Resume, so Resume->Evidence would
     invert that order. No evidence text or proposed edit is copied here.
+    A supplied resume identity must still match after locking the opportunity.
     """
     opportunity = header(db, user_id, opportunity_id, locked=True)
+    if expected_resume_id is not None and expected_resume_id != opportunity.resume_id:
+        raise HTTPException(409, {"code": "source_snapshot_resume_changed",
+            "message": "The connected resume changed. Review the current resume before saving a source snapshot."})
     resume = db.query(models.Resume).filter(models.Resume.user_id == user_id, models.Resume.id == opportunity.resume_id).with_for_update().first()
     if resume is None or not resume.source_available or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
         raise HTTPException(409, "Connect a resume with its original source first")

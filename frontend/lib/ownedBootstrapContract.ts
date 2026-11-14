@@ -22,7 +22,8 @@ const PRIVATE_FIELDS = new Set(["access_token", "accesstoken", "refresh_token", 
   "candidate_lifetime", "candidatelogoutrequest", "password_hash"]);
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 const exact = (value: Record<string, unknown>, fields: readonly string[]) => Object.keys(value).length === fields.length && fields.every((key) => Object.hasOwn(value, key));
-const integer = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const signedInteger = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
+const integer = (value: unknown) => signedInteger(value) && value >= 0;
 const strings = (value: unknown, maximum = 5000): value is string[] => Array.isArray(value) && value.length <= maximum && value.every((entry) => typeof entry === "string");
 
 export function bootstrapHasNoAuthority(value: unknown): boolean {
@@ -45,7 +46,7 @@ export function parseOwnedBootstrap(value: unknown): OwnedBootstrap | null {
   const profile = value.profile;
   if (profile !== null && (!object(profile) || !exact(profile, PROFILE_FIELDS)
     || typeof profile.email !== "string" || !profile.email.includes("@") || !["free", "premium"].includes(String(profile.tier))
-    || !integer(profile.ai_credits) || !integer(profile.profile_completeness) || Number(profile.profile_completeness) > 100
+    || !signedInteger(profile.ai_credits) || !integer(profile.profile_completeness) || Number(profile.profile_completeness) > 100
     || typeof profile.years_experience !== "number" || !Number.isFinite(profile.years_experience)
     || !strings(profile.skills) || !strings(profile.missing_fields, 15)
     || !TEXT_FIELDS.every((key) => profile[key] === null || typeof profile[key] === "string"))) return null;
