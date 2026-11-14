@@ -495,6 +495,47 @@ def test_disabled_route_does_not_query_new_tables_or_sign(context, monkeypatch):
     assert context[1].signs == 0
 
 
+def test_paused_admission_preserves_accepted_uploads_and_saved_sources(context, monkeypatch):
+    factory, store = context
+    monkeypatch.delenv("RESUME_UPLOAD_ADMISSION_ENABLED", raising=False)
+    accepted, target = admission(context, key="accepted-before-pause")
+    cancelled, cancelled_target = admission(context, key="cancel-after-pause")
+    monkeypatch.setenv("RESUME_UPLOAD_ADMISSION_ENABLED", "false")
+
+    for owner, key, content, status_code in (
+        (1, "new-key", CONTENT, 503),
+        (2, "accepted-before-pause", CONTENT, 503),
+        (1, "accepted-before-pause", CONTENT + b"changed", 409),
+    ):
+        with pytest.raises(HTTPException) as error:
+            admission(context, owner=owner, key=key, content=content)
+        assert error.value.status_code == status_code
+    assert store.signs == 2
+    assert_no_saved(context)
+    with factory() as db:
+        assert db.query(ResumeUpload).count() == 2
+
+    retry, retry_target = admission(context, key="accepted-before-pause")
+    assert retry == accepted
+    assert retry_target.quarantine_name == target.quarantine_name
+    assert store.signs == 3
+    store.upload(target)
+    store.upload(cancelled_target)
+    with factory() as db:
+        assert service.status(db, 1, accepted.upload_id).state == "awaiting_upload"
+        assert service.complete(db, 1, accepted.upload_id).state == "queued"
+        assert service.cancel(db, 1, cancelled.upload_id).state == "cancelled"
+    assert tasks.process_due(factory, store) == 1
+    assert privacy.cleanup_due(factory, store) == 2
+    with factory() as db:
+        released = service.status(db, 1, accepted.upload_id)
+        assert released.state == "released" and released.resume is not None
+        download = service.source_access(db, 1, released.resume.resume_id, store)
+        assert download.url.startswith("https://synthetic.invalid/clean?generation=")
+        assert download.sha256 == hashlib.sha256(CONTENT).hexdigest()
+        assert db.get(core.User, 1).ai_credits == 100
+
+
 @pytest.mark.parametrize("body", [{"size_bytes": schemas.MAX_BYTES+1}, {"size_bytes": True}, {"size_bytes": 0},
     {"sha256": "A"*64}, {"filename": "source.rtf"}, {"filename": "bad\x00.pdf"}, {"owner_id": 2}])
 def test_upload_metadata_strict_and_additional_formats_stay_closed(body):

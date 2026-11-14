@@ -10,6 +10,8 @@ import pytest
 from backend.app import models as core
 from backend.app.database import Base, get_db
 from backend.app.domains.common import payload_fingerprint, utcnow
+from backend.app.domains.dispatch import service as dispatch
+from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import (
     config,
     connectors,
@@ -20,6 +22,7 @@ from backend.app.domains.employer import (
     tasks,
 )
 from backend.app.routers.v1.employer import router
+from backend.app.routers.worker import execute_dispatch_task
 from backend.app.security import get_current_user
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -518,6 +521,80 @@ def source_ingestion(context, monkeypatch):
             return original(source, client, **kwargs)
     monkeypatch.setattr(connectors, "fetch_source_scan", fetch)
     return factory, cache, revision, state, requests
+
+
+@pytest.mark.parametrize("value", ["false", "invalid"])
+def test_periodic_refresh_pause_keeps_manual_and_queued_refreshes(source_ingestion, monkeypatch, value):
+    factory, _, _, _, requests = source_ingestion
+    monkeypatch.delenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", raising=False)
+    monkeypatch.setattr(dispatch, "SessionLocal", factory)
+    with factory() as db:
+        assert service.enqueue_due_sources(db) == 1
+        db.commit()
+        queued_id = db.query(DispatchOutbox.id).scalar()
+        source = db.get(models.EmployerSource, "source_test")
+        source.next_refresh_at = due = utcnow() - timedelta(minutes=1)
+        db.commit()
+
+    monkeypatch.setenv("EMPLOYER_PERIODIC_REFRESH_ENABLED", value)
+    with factory() as db:
+        with monkeypatch.context() as gate:
+            gate.setattr(db, "query", lambda *_: pytest.fail("Paused refresh admission must not query SQL"))
+            assert service.enqueue_due_sources(db) == 0
+        assert service._utc(db.get(models.EmployerSource, "source_test").next_refresh_at) == due
+        assert db.query(DispatchOutbox.id).all() == [(queued_id,)]
+
+    assert dispatch.process_event(queued_id) == "completed"
+    monkeypatch.setattr(service, "utcnow", lambda: due + timedelta(minutes=10))
+    with factory() as db:
+        manual = service.enqueue_source_refresh(db, "source_test")
+        assert manual.id != queued_id
+        manual_id = manual.id
+    assert dispatch.process_event(manual_id) == "completed"
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("permanent", [True, False])
+def test_refresh_dispatch_ack_requires_definitive_connector_failure(source_ingestion, monkeypatch, permanent):
+    factory, cache, _, _, _ = source_ingestion
+    monkeypatch.delenv("ANALYSIS_TASK_TOKEN", raising=False)
+    monkeypatch.setattr(dispatch, "SessionLocal", factory)
+    now = utcnow()
+    monkeypatch.setattr(tasks, "utcnow", lambda: now)
+    def provider_failure(source, **_kwargs):
+        requests.append(source.board_token)
+        raise connectors.ConnectorError("job_destination_tenant_mismatch" if permanent else "source_http_503",
+                                       safe_to_retry=not permanent)
+    requests = []
+    monkeypatch.setattr(connectors, "fetch_source_scan", provider_failure)
+    with factory() as db:
+        source = db.get(models.EmployerSource, "source_test")
+        checkpoint = source.last_success_at
+        posting = db.get(models.EmployerPosting, "job_1")
+        old_posting_state = (posting.is_open, posting.last_checked_at, posting.content_sha256)
+        event_id = service.enqueue_source_refresh(db, source.id).id
+    if permanent:
+        assert execute_dispatch_task(event_id, None, None)["status"] == "unavailable"
+        assert execute_dispatch_task(event_id, None, None)["status"] == "completed"
+        assert requests == ["verified"]
+    else:
+        for previous_calls in range(2):
+            with pytest.raises(HTTPException) as failure:
+                execute_dispatch_task(event_id, None, None)
+            assert failure.value.status_code == 503
+            assert len(requests) == previous_calls + 1
+    with factory() as db:
+        source = db.get(models.EmployerSource, "source_test")
+        event = db.get(DispatchOutbox, event_id)
+        assert source.status == "unavailable"
+        assert source.last_error_code == ("job_destination_tenant_mismatch" if permanent else "source_http_503")
+        assert source.last_success_at == checkpoint
+        assert source.scan_token is None and source.scan_started_at is None
+        assert service._utc(source.next_refresh_at) == now + (timedelta(hours=6) if permanent else timedelta(minutes=15))
+        posting = db.get(models.EmployerPosting, "job_1")
+        assert (posting.is_open, posting.last_checked_at, posting.content_sha256) == old_posting_state
+        assert (event.status, event.execution_attempts) == (("completed", 1) if permanent else ("retry", 2))
+    assert not cache.published
 
 
 def test_source_304_refreshes_exact_snapshot_without_closure_or_skill_recomputation(source_ingestion, monkeypatch):

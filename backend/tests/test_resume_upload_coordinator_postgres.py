@@ -53,6 +53,30 @@ def test_scan_batch_processes_one_and_later_tick_processes_second(context):
         assert db.query(domain.core.Resume).count() == 2
 
 
+def test_older_active_lease_does_not_starve_queued_upload(context):
+    first, _ = domain.queue(context, key='older')
+    second, _ = domain.queue(context, key='newer')
+    now = utcnow()
+    lease_until = now + timedelta(minutes=4)
+    with context[0]() as db:
+        older = db.get(ResumeUpload, first)
+        older.state = 'inspecting'
+        older.lease_token = 'synthetic-active-lease'
+        older.lease_until = lease_until
+        older.next_attempt_at = now - timedelta(minutes=1)
+        older.attempt_count = 1
+        db.commit()
+
+    assert run(context, 'scan').scan_completed == 1
+    with context[0]() as db:
+        older = db.get(ResumeUpload, first)
+        assert (older.state, older.lease_token, older.lease_until, older.attempt_count) == (
+            'inspecting', 'synthetic-active-lease', lease_until, 1,
+        )
+        assert db.get(ResumeUpload, second).state == 'released'
+        assert db.query(domain.core.Resume).count() == 1
+
+
 def test_permanent_refusal_schedules_exact_cleanup_and_saves_no_resume(context, monkeypatch):
     identifier, target = domain.queue(context)
     def refused(*a, **k):

@@ -39,6 +39,11 @@ def enabled() -> None:
         fail(503, "direct_upload_unavailable")
 
 
+def admission_enabled() -> bool:
+    """Keep accepted uploads and saved source access available during a pause."""
+    return os.getenv("RESUME_UPLOAD_ADMISSION_ENABLED", "true") == "true"
+
+
 def lock_owner(db: Session, owner_id: int):
     owner = db.query(core.User).filter_by(id=owner_id).populate_existing().with_for_update().one_or_none()
     if owner is None:
@@ -87,6 +92,8 @@ def create(db: Session, owner_id: int, body: UploadCreate, key: str, store: Obje
         if row.request_sha256 != digest:
             fail(409, "idempotency_metadata_conflict")
     else:
+        if not admission_enabled():
+            fail(503, "direct_upload_unavailable")
         active = db.query(ResumeUpload).filter(ResumeUpload.user_id == owner_id, ResumeUpload.state.in_(ACTIVE_STATES), ResumeUpload.expires_at > now).count()
         daily = db.query(ResumeUpload).filter(ResumeUpload.user_id == owner_id, ResumeUpload.created_at >= now - timedelta(days=1)).count()
         if active >= ACTIVE_LIMIT or daily >= DAILY_LIMIT:
