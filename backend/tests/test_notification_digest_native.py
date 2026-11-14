@@ -30,17 +30,21 @@ POLICY = "weekly-digest-v1"
 MESSAGE = "c" * 64
 
 
+def use_intercepted_registry_clock(c, patch):
+    # The in-memory SDK has no network latency. Advance only the two owned
+    # registry clocks so runner scheduling cannot select the deadline branch.
+    composition = c.accounts._composition()
+    ticks = count()
+    for registry in (composition.lifetime.registry, composition.scoped.publication.registry):
+        assert registry.deadline_seconds == 5.0 and registry.max_attempts == 3
+        patch.setattr(registry, "monotonic", lambda: next(ticks) / 1000)
+
+
 def account(c, monkeypatch):
     monkeypatch.setenv("NOTIFICATION_DIGESTS_ENABLED", "true")
     monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
-    # Account setup uses intercepted in-memory SDKs. Runner scheduling delay
-    # is not their transport latency. Digest behavior uses the original clocks.
-    composition = c.accounts._composition()
-    ticks = count()
     with monkeypatch.context() as setup_clock:
-        for registry in (composition.lifetime.registry, composition.scoped.publication.registry):
-            assert registry.deadline_seconds == 5.0 and registry.max_attempts == 3
-            setup_clock.setattr(registry, "monotonic", lambda: next(ticks) / 1000)
+        use_intercepted_registry_clock(c, setup_clock)
         uid = register(c)
         login = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
     with c.accounts.sessions() as db:
@@ -307,18 +311,24 @@ def test_budget_error_only_original_postcommit_knownreceipt_can_retry(configured
 def test_execution_postwitness_closure_never_reaches_provider(configured, monkeypatch):
     from app.domains.recovery.gcp_closure_contracts import closure_path
     c = configured
-    native, _, revision, _ = opt_in(c, monkeypatch)
+    key = closure_path(c.execution)
+    closure = (b"synthetic closure denial", "999")
     calls = []
     def close_after_begin(names):
         if BEGINS in names:
-            c.objects[closure_path(c.execution)] = b"synthetic closure denial", "999"
-    c.native.mutate = close_after_begin
-    with pytest.raises(GuardUnavailable):
-        send(native, revision, lambda: calls.append(1) or result())
-    c.native.mutate = None
-    c.objects.pop(closure_path(c.execution))
-    with pytest.raises(GuardDenied):
-        send(ConfiguredDigestNative(c.accounts), revision, lambda: calls.append(1) or result())
+            assert key not in c.objects
+            c.objects[key] = closure
+
+    with monkeypatch.context() as send_clock:
+        use_intercepted_registry_clock(c, send_clock)
+        native, _, revision, _ = opt_in(c, monkeypatch)
+        with monkeypatch.context() as injection:
+            injection.setattr(c.native, "mutate", close_after_begin)
+            with pytest.raises(GuardUnavailable, match="The pinned authority has a protected closure"):
+                send(native, revision, lambda: calls.append(1) or result())
+        assert c.objects.pop(key) == closure
+        with pytest.raises(GuardDenied, match="Digest weekly attempt already begun"):
+            send(ConfiguredDigestNative(c.accounts), revision, lambda: calls.append(1) or result())
     assert calls == []
 
 
