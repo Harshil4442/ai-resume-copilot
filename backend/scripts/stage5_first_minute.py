@@ -13,6 +13,7 @@ from scripts.stage5_capacity import (
     FRESH_WINDOW_COOLDOWN_SECONDS,
     FRESH_WINDOW_MODE,
     expected_capacity_refusal,
+    private_no_store,
     summarize,
     wait_for_fresh_window,
 )
@@ -141,7 +142,8 @@ def control_reads(client, tokens, buyers_percent: int) -> dict:
 
     def succeeds(read):
         response = get(route(read), read.actor)
-        return response.status_code == 200 and owned_response(read, response.json(), buyers_percent)
+        return (response.status_code == 200 and private_no_store(response.headers)
+                and owned_response(read, response.json(), buyers_percent))
 
     return {"foreign_workspace_status": get(workspace_path(2), 1).status_code,
         "foreign_order_status": get(route(pending_order), 1).status_code,
@@ -199,8 +201,7 @@ async def measure(client, plan, tokens, storage, counters, *, clock=time.perf_co
                         row.update(status=response.status_code, bytes=len(response.content),
                             retry_after=response.headers.get("retry-after"))
                         if response.status_code == 200:
-                            cache = {part.strip().lower() for part in response.headers.get("cache-control", "").split(",")}
-                            row["contract_valid"] = {"private", "no-store"}.issubset(cache) and owned_response(
+                            row["contract_valid"] = private_no_store(response.headers) and owned_response(
                                 read, response.json(), plan.buyers_percent)
                         elif response.status_code == 429:
                             row["capacity_refusal_valid"] = expected_capacity_refusal(

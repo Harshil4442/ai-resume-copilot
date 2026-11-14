@@ -37,6 +37,7 @@ from scripts.stage5_capacity import (  # noqa: E402
     Plan,
     expected_capacity_refusal,
     finish_owned_http,
+    private_no_store,
     release_native_context,
     scheduled_phase,
     summarize,
@@ -359,7 +360,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
             preflight["bootstrap_status"] = first.status_code
             try:
                 preflight["bootstrap_contract_valid"] = first.status_code == 200 and check_body(
-                    BOOTSTRAP_PATH, first.json(), user_id=1, buyer=False, heavy=False)
+                    BOOTSTRAP_PATH, first.json(), user_id=1, buyer=False, heavy=False) and (
+                        not first_minute or private_no_store(first.headers))
             except (ValueError, TypeError, KeyError, AttributeError):
                 preflight["bootstrap_contract_valid"] = False
             if preflight["bootstrap_contract_valid"] is not True:

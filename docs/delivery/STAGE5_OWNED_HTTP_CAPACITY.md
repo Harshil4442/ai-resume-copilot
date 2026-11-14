@@ -326,6 +326,9 @@ adds one local command per observation. Success requires exhausting the same
 40-call shared List allowance and observing controlled refusal with no Get
 fallback or SQL mutation during measurement. Because one request can consume
 its first List before another uses the final allowance, success counts may vary.
+Owned success responses, including the three positive preflight controls, must
+carry exactly the `private` and `no-store` cache directives. Negative ownership
+controls check the route's promised response status.
 This is a bounded diagnostic with fixed arrival offsets and synthetic external
 responses. It does not measure browser network timing or production peak
 capacity, and it creates no provider order or upload object.
