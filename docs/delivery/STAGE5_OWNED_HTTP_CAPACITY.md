@@ -188,8 +188,8 @@ production environment, cloud credentials, secrets or provider action. It upload
 only sanitized numeric/source reports and cleanup/failure records, never logs,
 keys, PostgreSQL files or the home directory. A missing native dependency or failed
 emulator/SDK prerequisite is a failure, not a skip or mocked replacement. This
-workflow runs only the reviewed owned-local experiment. Its PR trigger names
-only the eleven finite Stage5 tooling/config/test paths, so this Linux validation
+workflow runs only the reviewed owned-local experiments. Its PR trigger names
+only thirteen finite Stage5 tooling/config/test paths, so this Linux validation
 can complete before merge without adding broader production authority.
 The [official Ubuntu2404 runner inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)
 provides PG16, so no host17 path is assumed. The source build uses the
@@ -259,6 +259,44 @@ failures. Each 16-read batch used 32 intercepted metadata calls after at least
 61 seconds of natural cooldown. Actual peak concurrent requests were 1, 10 and
 16. Cleanup was verified, and the run made no provider calls. Sustained hosted
 throughput and concurrency above 16 remain unmeasured.
+
+## Workspace Skill ROI read
+
+The Workspace learning tab requests Skill ROI within its owned Workspace read.
+The backend checks ownership before computing the existing ranking from
+saved job snapshots, match skills, outcomes and approved evidence skills. The standalone endpoint remains available to existing
+clients. During frontend and backend version overlap, the new frontend uses it
+only after a successful Workspace response for the same opportunity omits the
+new field. The current DB8 API predates the compact Workspace route, so the
+frontend still requires the bridge API first. An unavailable projection or
+capacity refusal is shown explicitly.
+
+The local HTTP regression exercised real bearer validation through intercepted
+native SDKs. One combined read used two fresh List requests and returned the
+same result as the standalone endpoint. This saves one authenticated HTTP
+request and two metadata calls for a cold learning-tab view on the matching
+release. Production throughput and field latency remain unmeasured.
+
+The separate `--skill-roi-journey` diagnostic (workflow input `skill_roi_journey`)
+compares both paths on the same synthetic dataset and API build without changing
+the default or fresh-window workloads. The eight enrolled actors, including
+the 500-opportunity account, each visit a fixed owned learning tab in both arms.
+The first arm makes the original two concurrent reads. The second uses the
+consolidated read. Both use the original project governor and each waits at
+least 61 seconds before sending traffic. The report must confirm all eight
+journeys per arm, exactly 16 versus eight completed HTTP requests, 32 versus
+16 synthetic Admin Lists, and equivalent complete Skill ROI ranks and Workspace
+projections. The two extra access controls require 401 without a bearer and 404
+for another owner's exact opportunity. The cap is 29 HTTP requests including
+all controls. No real provider calls are made. The fixed-order, direct HTTPS
+measurement does not establish browser or production latency.
+
+The [hosted Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469657852)
+verified the expected counts and equivalent output in both the 20% and 25%
+synthetic buyer cohorts. Each completed all eight journeys per arm, moving
+from 16 to eight HTTP responses and from 32 to 16 intercepted Admin Lists.
+There were zero provider calls. The [default workload](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43469626412)
+also reproduced its existing response counts in both cohorts.
 
 ## Original acceptance remains open
 

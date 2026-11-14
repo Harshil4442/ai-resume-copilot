@@ -370,6 +370,10 @@ class RefreshDenied(RuntimeError):
     """Fixed nonsecret refusal; never echo vendor output or exception text."""
 
 
+class MonitorHeartbeatUnavailable(RefreshDenied):
+    """The verified local observation survived an unacknowledged heartbeat."""
+
+
 def need(value: Any, code: str) -> None:
     if not value:
         raise RefreshDenied(code)
@@ -439,8 +443,8 @@ def header(docker: list[str], image: str) -> bytes:
         "--entrypoint=/usr/bin/clamscan", image, "--database=/var/lib/clamav", "--version"], seconds=30)
 
 
-def _serving_pin(service: Any, contract: Any) -> tuple[str, Any]:
-    """Bind the native v2 serving revision; every successor needs fresh proof."""
+def _serving_pin(service: Any, contract: Any, *, monitor: bool = False) -> tuple[str, Any]:
+    """Bind serving identity. Only monitoring may observe expired V4 proof."""
     need(type(service) is dict and service.get("name") == f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
          and service.get("uid") == "7014a5ba-faee-4fbf-8272-a437b1de49ad"
          and re.fullmatch(r"[1-9][0-9]{0,18}", str(service.get("generation", "")))
@@ -466,7 +470,14 @@ def _serving_pin(service: Any, contract: Any) -> tuple[str, Any]:
         sys.path.insert(0, str(ROOT / "infra/gcp"))
         from document_refresh_probe import verify_current_successor
 
-        verified = verify_current_successor(image, service)
+        if monitor:
+            from document_refresh_probe import policy_for_serving
+            from infra.gcp import document_source_candidate as profile
+            if policy_for_serving(service, image) == profile.POLICY_SHA256:
+                from infra.gcp.document_source_release import observe_current_source_definitions
+                verified = observe_current_source_definitions(image, service)
+        if verified is None:
+            verified = verify_current_successor(image, service)
         need(verified.image == image, "document_refresh_serving_successor_unverified")
     return image, verified
 
@@ -480,7 +491,7 @@ def monitor(*, now: datetime) -> dict[str, Any]:
     http = native_http()
     try:
         service = native_json(http, "GET", f"https://run.googleapis.com/v2/projects/{PROJECT}/locations/{REGION}/services/{SERVICE}")
-        image, native = _serving_pin(service, contract)
+        image, native = _serving_pin(service, contract, monitor=True)
     finally:
         http.close()
     if native is None:
@@ -494,10 +505,12 @@ def monitor(*, now: datetime) -> dict[str, Any]:
         need(expires.tzinfo is not None and expires - now <= AGE_LIMIT,
              "document_refresh_native_definition_time_invalid")
         issued, remaining = expires - AGE_LIMIT, expires - now
-        result = {"status": "expired" if remaining < timedelta(0) else
+        expired = remaining <= timedelta(0)
+        result = {"status": "expired" if expired else
                   "refresh_required" if remaining <= ALERT_BEFORE else "fresh",
                   "issued_at_utc": issued.isoformat(), "expires_at_utc": expires.isoformat(),
-                  "seconds_remaining": int(remaining.total_seconds()), "source": "fresh_native_immutable_image_receipt"}
+                  "seconds_remaining": int(remaining.total_seconds()),
+                  "source": "expired_native_immutable_image_receipt" if expired else "fresh_native_immutable_image_receipt"}
     return {"mode": "monitor", "image": image, "native_serving_pin_observed": True,
             "definitions": result, "promotion_performed": False}
 
@@ -1839,7 +1852,6 @@ def main() -> None:
                 delegate.close()
     elif args.mode == "monitor":
         result = monitor(now=datetime.now(UTC))
-        emit_status(result)
     elif args.mode == "resume-full-source-refresh":
         need(args.resume_candidate_directory is not None and args.resume_manifest_sha256 is not None,
              "document_resume_original_candidate_required")
@@ -1912,8 +1924,13 @@ def main() -> None:
         result = candidate(args.output_directory, publish=args.publish_candidate, now=datetime.now(UTC))
     write_new(args.output_directory / "result.json", result)
     print(json.dumps(result, sort_keys=True))
-    if args.mode == "monitor" and result["definitions"]["status"] != "fresh":
-        raise RefreshDenied("document_refresh_expiry_alert")
+    if args.mode == "monitor":
+        try:
+            emit_status(result)
+        except Exception:
+            raise MonitorHeartbeatUnavailable("document_refresh_monitor_heartbeat_unavailable") from None
+        if result["definitions"]["status"] != "fresh":
+            raise RefreshDenied("document_refresh_expiry_alert")
 
 
 def _final_failure_code(error: Exception) -> str:
@@ -2195,14 +2212,21 @@ def run_cli() -> int:
         # Reporting is an independent bounded write, never a retry of the failed
         # Build/Job/PATCH. The exact read-only reconciliation mode must not
         # write even a failure heartbeat to Cloud Logging.
-        if not readback_requested:
+        observed_expiry = (mode == "monitor" and type(error) is RefreshDenied
+                           and error.args == ("document_refresh_expiry_alert",))
+        heartbeat_unavailable = mode == "monitor" and type(error) is MonitorHeartbeatUnavailable
+        if not readback_requested and not (observed_expiry or heartbeat_unavailable):
             try:
                 emit_status({"mode": "monitor", "definitions": {"status": "unavailable"}})
             except Exception:
                 pass
         final_mode = mode in {"resume-final-v2-transition", "reconcile-final-v2-transition"}
         code = _final_failure_code(error) if final_mode else "document_refresh_unavailable"
-        if not final_mode and type(error) is RefreshDenied:
+        if heartbeat_unavailable:
+            code = "document_refresh_monitor_heartbeat_unavailable"
+        elif observed_expiry:
+            code = "document_refresh_expiry_alert"
+        elif not final_mode and type(error) is RefreshDenied:
             try:
                 code = _diagnostic_kind_code(error)[1] or code
             except Exception:

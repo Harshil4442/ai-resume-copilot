@@ -35,7 +35,6 @@ from ..billing.service import (
     WebhookValidationError,
     _process_capture,
     _process_refund,
-    as_aware,
     process_razorpay_webhook,
 )
 from ..database import get_db
@@ -52,13 +51,15 @@ OPEN_ORDER_STATUSES = UNCERTAIN_ORDER_STATUSES | {"created", "client_confirmed",
 MAX_WEBHOOK_BYTES = 1_000_000
 
 
-def _blocks_new_purchase(*, hold_unbound_paid: bool = False):
-    # Only legacy status discovery already included unbound paid rows. Keep
-    # that support path without widening unified purchase admission.
+def _blocks_new_purchase(*, hold_unbound_paid: bool = False, bound_mode: str | None = None):
+    # Legacy discovery and admission hold unbound paid rows for review.
+    # A mode filter narrows bound attempts only; uncertain orders stay held.
     unbound_statuses = UNCERTAIN_ORDER_STATUSES | ({"paid_unfulfilled"} if hold_unbound_paid else set())
     bound = PaymentOrder.provider_order_id.is_not(None)
     if not hold_unbound_paid:
         bound = and_(bound, PaymentOrder.provider_order_id != "")
+    if bound_mode is not None:
+        bound = and_(bound, PaymentOrder.provider_mode == bound_mode)
     return or_(
         PaymentOrder.status.in_(unbound_statuses),
         and_(PaymentOrder.status.in_(OPEN_ORDER_STATUSES | {"paid_unfulfilled"}), bound),
@@ -165,6 +166,7 @@ def create_order(
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id = user.id
     reference = payload.order_reference
     request_key = payload.idempotency_key
     identity = reference or (purchase_request_id(user.id, request_key) if request_key else None)
@@ -197,43 +199,31 @@ def create_order(
     if product.entitlement_kind == "premium_access" and user.is_premium_active():
         raise HTTPException(status_code=409, detail="Premium access is already active.")
 
-    open_orders = (
+    # The owner lock serializes purchase admission. A read here avoids waiting
+    # on settlement, which takes the payment order lock before the owner lock.
+    held = (
         db.query(PaymentOrder)
         .filter(
             PaymentOrder.user_id == user.id,
-            PaymentOrder.status.in_(OPEN_ORDER_STATUSES),
-            or_(PaymentOrder.status.in_(UNCERTAIN_ORDER_STATUSES), and_(
-                PaymentOrder.sku == product.sku, PaymentOrder.provider_mode == settings.mode,
-            )),
+            PaymentOrder.provider == "razorpay",
+            _blocks_new_purchase(hold_unbound_paid=True, bound_mode=settings.mode),
         )
-        .order_by(PaymentOrder.created_at.desc())
-        .with_for_update()
-        .all()
+        .order_by(PaymentOrder.created_at.asc(), PaymentOrder.id.asc())
+        .first()
     )
-    abandoned = []
-    for existing in open_orders:
-        if existing.status in UNCERTAIN_ORDER_STATUSES:
+    if held is not None:
+        if held.status in UNCERTAIN_ORDER_STATUSES:
             # Age, a changed pack/key/mode, and a missing response cannot prove
             # that the provider created no payable order. Keep the attempt held.
-            raise _order_status_required(existing, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.")
-        if existing.provider_order_id:
-            # A standard provider order has no safe local cancel primitive and
-            # an old Checkout popup can remain payable. Block instead of
-            # exposing a second payable order after catalog or key changes.
-            raise _order_status_required(existing, "An earlier checkout requires review before another purchase.")
-        abandoned.append(existing)
+            raise _order_status_required(held, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.")
+        # A provider order from any pack can remain payable under this mode.
+        raise _order_status_required(held, "An earlier checkout requires review before another purchase.")
     if not product_purchase_enabled(product, checkout_enabled=settings.checkout_enabled):
         raise HTTPException(status_code=503, detail="This service purchase is not available yet.")
     validate_purchase_quote(payload.accepted_quote, product_quote(product, CATALOG_VERSION))
     if not request_key:
         raise HTTPException(409, {"code": "billing_request_requires_review",
             "message": "Refresh the purchase review before creating checkout. A new order requires an accepted quote and request identity."})
-    for existing in abandoned:
-        existing.status = "abandoned"
-        existing.active_attempt_key = None
-    if abandoned:
-        db.commit()
-
     try:
         authority = service_prices()["cost_policy_snapshot"]
         assert_actual_variance(db, current_policy())
@@ -265,10 +255,34 @@ def create_order(
         status="initializing",
         active_attempt_key=f"{user.id}:{product.sku}:{settings.mode}",
     )
-    db.add(order)
+    # Only unbound attempts for this SKU and mode can be superseded. Keep the
+    # owner lock through cleanup and insertion, then dispatch once.
     try:
+        unbound = (
+            db.query(PaymentOrder)
+            .filter(
+                PaymentOrder.user_id == user.id,
+                PaymentOrder.provider == "razorpay",
+                PaymentOrder.sku == product.sku,
+                PaymentOrder.provider_mode == settings.mode,
+                PaymentOrder.status.in_(OPEN_ORDER_STATUSES - UNCERTAIN_ORDER_STATUSES),
+                PaymentOrder.provider_order_id.is_(None),
+            )
+            .with_for_update(nowait=True)
+            .all()
+        )
+        for existing in unbound:
+            existing.status = "abandoned"
+            existing.active_attempt_key = None
+        if unbound:
+            db.flush()
+        db.add(order)
         db.commit()
-        db.refresh(order)
+    except OperationalError as exc:
+        db.rollback()
+        if getattr(exc.orig, "sqlstate", None) != "55P03":
+            raise
+        raise HTTPException(status_code=409, detail="Another payment update is in progress. Check your original order.") from None
     except IntegrityError:
         db.rollback()
         concurrent = (
@@ -282,31 +296,54 @@ def create_order(
         if concurrent:
             raise _order_status_required(concurrent) from None
         raise HTTPException(status_code=409, detail="Checkout initialization is in progress.")
-
     try:
         provider_result = RazorpayAdapter(settings).create_order(
             product=product,
-            local_order_id=order.public_id,
+            local_order_id=public_id,
             receipt=receipt,
         )
     except RazorpayProviderError:
-        log.warning("Razorpay order creation outcome is unknown for local order %s", order.public_id)
-        order.status = "creation_unknown"
+        log.warning("Razorpay order creation response was unavailable for local order %s", public_id)
+        order = db.query(PaymentOrder).filter_by(public_id=public_id).populate_existing().with_for_update().one()
+        if order.user_id != user_id:
+            raise HTTPException(404, "Order not found.") from None
+        if order.status == "initializing":
+            order.status = "creation_unknown"
         # The durable attempt key stays reserved until provider proof resolves it.
-        db.add(order)
         db.commit()
-        raise _order_status_required(order, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.") from None
+        if order.status in UNCERTAIN_ORDER_STATUSES:
+            raise _order_status_required(order, "Checkout creation has an unknown outcome. Contact billing support to reconcile this original attempt before another purchase.") from None
+        raise _order_status_required(order) from None
 
-    order.provider_order_id = provider_result["provider_order_id"]
-    order.status = "created"
-    db.add(order)
+    # Reconciliation can bind or settle the original during the provider call.
+    order = db.query(PaymentOrder).filter_by(public_id=public_id).populate_existing().with_for_update().one()
+    provider_order_id = provider_result["provider_order_id"]
+    detached = order.user_id is None and order.customer_deleted_at is not None
+    if order.user_id != user_id and not detached:
+        raise HTTPException(404, "Order not found.")
+    if order.provider_order_id not in (None, provider_order_id):
+        if detached:
+            raise HTTPException(404, "Order not found.")
+        if order.status in {"initializing", "created"}:
+            order.status = "creation_unknown"
+            db.commit()
+        raise _order_status_required(order)
+    order.provider_order_id = provider_order_id
+    if not detached and order.status == "initializing":
+        order.status = "created"
     try:
         db.commit()
-        db.refresh(order)
     except IntegrityError:
         db.rollback()
-        log.exception("Duplicate provider order identifier for local order %s", order.public_id)
-        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.")
+        log.exception("Duplicate provider order identifier for local order %s", public_id)
+        if detached:
+            raise HTTPException(404, "Order not found.") from None
+        raise HTTPException(status_code=502, detail="Could not start checkout. Please try again.") from None
+    if detached:
+        # Keep callback routing for the retained audit row without reopening checkout.
+        raise HTTPException(404, "Order not found.")
+    if order.status != "created":
+        raise _order_status_required(order)
     return _checkout_response(
         order=order, current_user=user, settings=settings
     )
@@ -356,6 +393,26 @@ def record_checkout_result(
         provider_payment_id=payload.razorpay_payment_id,
         signature=payload.razorpay_signature,
     ):
+        raise HTTPException(status_code=400, detail="Invalid checkout confirmation.")
+
+    # Settlement locks the order before touching payment transactions. Refresh
+    # the loaded row under that same lock before deciding how to record evidence.
+    order = (
+        db.query(PaymentOrder)
+        .filter(
+            PaymentOrder.id == order.id,
+            PaymentOrder.user_id == current_user.id,
+            PaymentOrder.provider == "razorpay",
+        )
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    if order.provider_mode != settings.mode or order.provider_key_id != settings.key_id:
+        raise HTTPException(status_code=409, detail="This checkout attempt is no longer available.")
+    if payload.razorpay_order_id != order.provider_order_id:
         raise HTTPException(status_code=400, detail="Invalid checkout confirmation.")
 
     transaction = (
@@ -414,18 +471,17 @@ def _normalized_order_status(order: PaymentOrder) -> str:
 
 
 def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
+    # Delivery stays complete after premium expires or the owner ends access.
+    # Current premium access is evaluated independently by the account profile.
     entitlement = (
         db.query(EntitlementLedger)
         .filter(
             EntitlementLedger.source_order_id == order.id,
-            EntitlementLedger.status == "active",
+            EntitlementLedger.status.in_(("active", "ended_by_user")),
         )
         .first()
     )
-    fulfilled = bool(entitlement)
-    if entitlement and entitlement.expires_at:
-        expires_at = as_aware(entitlement.expires_at)
-        fulfilled = bool(expires_at and expires_at > _utcnow())
+    fulfilled = order.status in {"paid", "partially_refunded"} and entitlement is not None
     transaction = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.order_id == order.id)

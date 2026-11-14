@@ -2,9 +2,10 @@
 
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { z } from "zod";
 
-import { apiGet } from "./api";
-import type { Workspace } from "./career";
+import { ApiError, apiGet } from "./api";
+import type { SkillRoi, Workspace } from "./career";
 import type { ResumeOptions } from "./resumeOptions";
 import { retryRead } from "./readQueryPolicy";
 import type { ResumePageResponse } from "./types";
@@ -16,6 +17,20 @@ export const WORKSPACE_PAGE_SIZE = 20;
 export const workspaceKey = (owner: string, opportunity: string) => ["workspace", owner, opportunity] as const;
 export const workspaceConnectionKey = (owner: string, opportunity: string) => ["workspace-source-connection", owner, opportunity] as const;
 export type PendingWorkspaceConnection = { resumeId: number; title: string };
+
+const skillRoiSchema = z.object({
+  opportunity_count: z.number().int().nonnegative(),
+  items: z.array(z.object({
+    skill: z.string(), opportunity_count: z.number().int().positive(),
+    demand_ratio: z.number(), evidence_strength: z.number(), outcome_signal: z.number(),
+    estimated_hours: z.number().int().positive(), score: z.number(), reason: z.string(),
+  })).max(30),
+});
+
+export function parseWorkspaceSkillRoi(value: unknown): SkillRoi | null {
+  const parsed = skillRoiSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 /** A connection hint cannot supply histories, evidence approval or source authority. */
 export async function resetWorkspaceAfterSourceConnection(client: QueryClient, owner: string, opportunity: string, pending: PendingWorkspaceConnection) {
@@ -29,8 +44,17 @@ export async function resetWorkspaceAfterSourceConnection(client: QueryClient, o
 export function useWorkspace(owner: string, opportunity: string, tab: WorkspaceTab, enabled: boolean, selectedVersion?: string) {
   return useQuery({
     queryKey: [...workspaceKey(owner, opportunity), "tab", tab, selectedVersion || null], enabled,
-    queryFn: ({ signal }) => apiGet<Workspace>(`/v1/opportunities/${encodeURIComponent(opportunity)}/workspace?tab=${tab}&limit=${WORKSPACE_PAGE_SIZE}${selectedVersion ? `&selected_version_id=${encodeURIComponent(selectedVersion)}` : ""}`, signal),
-    retry: retryRead, refetchOnWindowFocus: false, refetchOnReconnect: false,
+    queryFn: ({ signal }) => {
+      const options = new URLSearchParams({ tab, limit: String(WORKSPACE_PAGE_SIZE) });
+      if (selectedVersion) options.set("selected_version_id", selectedVersion);
+      if (tab === "learning") options.set("include_skill_roi", "true");
+      return apiGet<Workspace>(`/v1/opportunities/${encodeURIComponent(opportunity)}/workspace?${options}`, signal);
+    },
+    retry: (count, error) => {
+      if (tab === "learning" && error instanceof ApiError && [401, 403, 404].includes(error.status)) return false;
+      return retryRead(count, error);
+    },
+    refetchOnWindowFocus: false, refetchOnReconnect: false,
   });
 }
 

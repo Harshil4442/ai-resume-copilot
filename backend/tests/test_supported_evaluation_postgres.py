@@ -30,8 +30,10 @@ from tests.test_supported_evaluation import ROOT, actual_composite_capture, eval
 
 @pytest.fixture(scope="module")
 def owned_postgres(tmp_path_factory):
-    binary = Path("/opt/homebrew/opt/postgresql@17/bin")
+    binary = Path(os.getenv("HIREWIZ_STAGE5_PG_BIN") or "/opt/homebrew/opt/postgresql@17/bin")
     if not (binary / "initdb").is_file():
+        if os.getenv("HIREWIZ_STAGE5_PG_REQUIRED") == "true":
+            pytest.fail("The required owned PostgreSQL 17 binaries are unavailable")
         pytest.skip("Owned disposable PostgreSQL 17 binaries are unavailable")
     version = subprocess.run([str(binary / "postgres"), "--version"], capture_output=True, text=True, check=True).stdout
     assert "PostgreSQL) 17." in version
@@ -72,10 +74,21 @@ def owned_postgres(tmp_path_factory):
 
 
 @pytest.fixture
-def prepared(evaluation, owned_postgres):  # noqa: F811
+def prepared(evaluation, owned_postgres, request):  # noqa: F811
     values = evaluation | {"auth": evaluation["auth"].model_copy(update={"database": inputs.DatabasePin.model_validate(owned_postgres["pin"])})}
     factory = runner.local_factory(owned_postgres["url"], values["auth"])
     try:
+        if getattr(request, "param", None) == "migrated":
+            from alembic import command
+            from alembic.config import Config
+            from sqlalchemy import text
+
+            schema = runner._schema(values["auth"])
+            with factory.kw["bind"].begin() as connection:
+                connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+                config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+                config.attributes["connection"] = connection
+                command.upgrade(config, "20261105_0027")
         runner.prepare(factory, **values)
         yield factory, values
     finally:
@@ -107,7 +120,9 @@ def test_real_pg_idempotent_prepare_native_actual_text_and_identity(prepared):
     factory, values = prepared
     runner.prepare(factory, **values)
     with factory() as db:
-        assert db.query(models.AnalysisRun).count() == 80
+        runs = db.query(models.AnalysisRun).all()
+        assert len(runs) == 80
+        assert all(run.input_fingerprint == runner._fingerprint(db, run) for run in runs)
         assert db.query(models.Resume).count() == 40
         assert db.query(FreeCoreReservation).count() == 80
         assert db.query(models.User).one().ai_credits == db.query(models.User).one().job_service_credits == 0
@@ -316,6 +331,7 @@ def test_actual_complete_tailor_operation_preserves_pdf_and_exports_real_artifac
         factory.kw["bind"].dispose()
 
 
+@pytest.mark.parametrize("prepared", ["migrated"], indirect=True)
 def test_real_account_erase_retains_detached_model_and_native_obligations(prepared, monkeypatch):
     from app.routers.auth import delete_account
 

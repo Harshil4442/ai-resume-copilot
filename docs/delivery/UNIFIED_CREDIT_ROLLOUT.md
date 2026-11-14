@@ -122,6 +122,54 @@ qualification and planning boundary. The historical controller-only target was
 9b9. The current Source27 candidate requires its own exact-source qualification
 and release plan; the earlier image does not contain these new application fixes.
 
+The existing GitHub `main` push trigger builds and pushes the app image with
+`cloudbuild.yaml`. Merge the tested combined candidate once, then record the
+resulting `main` SHA and observe its own CI and triggered Build. Use the triggered
+image if the release controller verifies its exact Git SHA, Build ID and image
+digest. The trigger does not update Cloud Run traffic. PR-head CI and a merge
+commit's Build cannot be combined as evidence for either SHA.
+
+If the exact merged SHA has no usable triggered image, first check the outcome of
+the existing Build. The [native Git build recipe](../../infra/gcp/cloudbuild-monetary.yaml)
+can produce a separately verified image for the selected commit after its CI
+passes. It uses the existing `hirewiz-builder-20261014` service account and
+Cloud Logging. Set `--git-source-revision` and `_RELEASE` to the same full SHA
+and use `--git-source-dir=.` in `us-central1`.
+[Cloud Build service accounts and logging](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts)
+
+### Promote the matched schema26 bridge and frontend
+
+The paginated frontend needs `/api/resume/page` and the workspace read routes
+from the bridge API. Keep the current frontend serving while staging the bridge.
+Use the bridge controller's fresh scanner and reviewed funding checks before
+creating candidate revisions, even at zero traffic.
+
+The current frontend still reads the legacy résumé and workspace routes. Before
+moving API traffic, use the verified read-only database observer to count groups
+above the legacy limits. Check résumés by owner (500), activity, contacts,
+reminders and versions by owner and opportunity (50 each), evidence and versions
+by owner and résumé (50 each), and scheduled reminders by owner (50). Retain only
+aggregate counts. Resolve any overflow affecting the current frontend before
+starting the mixed release.
+
+At the exact zero-traffic tag, verify release health and use an existing test
+session to check the owned legacy résumé list, account bootstrap and a workspace
+detail. Verify the existing pilot flags and closed payment and generation flags.
+Repeat the legacy reads through the serving frontend after the matching API moves
+to production. Then promote the staged frontend and verify its paginated résumé
+and workspace reads through the canonical host. Verify fresh sign-in separately.
+
+Before schema27 DDL, a frontend failure can be handled by restoring the prior
+frontend while the compatible bridge is serving. If the paginated frontend is
+live, restore the prior alias before moving API traffic back. Use
+`schema27_native_migration.py bridge-rollback` with the original verified bridge
+plan, plan hash and journal for the pre-DDL backend traffic rollback. The same
+lock fences rollback and DDL. The controller still requires exact schema26 and
+fresh rollback evidence. After schema27 DDL, use a recovery path verified for
+schema27 and retained customer obligations.
+
+### Historical schema25 rollout
+
 Once schema25 and the reviewed pilot have already been restored, use the distinct
 [application-only rolling runbook](SCHEMA25_APP_ROLLING_RELEASE.md) for the initial
 compatible prior8cb app update. Do not replay the completed migration or treat a
@@ -406,6 +454,13 @@ Record real attributed execution costs through the existing internal settlement
 function only after the source measurement is verified. Unknown amounts remain
 protected across month boundaries, cancellation and account deletion.
 
+`backend/scripts/audit_expense_policy.py --ledger` reports live captures,
+processing fees and refunds by default. Use `--provider-mode test` for test-mode
+payment reconciliation. Refunds follow their processed date and original order
+mode. Model and service exposure still include all recorded work because a test
+payment can coexist with actual provider costs. Reconcile those costs separately
+before calculating a margin.
+
 ## Commercial guardrails
 
 The proposed offer packs are ₹59/40 credits, ₹179/130 credits and ₹449/360
@@ -435,6 +490,43 @@ An unknown model, payment or submission response is a reconciliation state, not
 permission to repeat a POST. Roll back code only to a compatible tested version;
 retain all populated accounting tables and do not restore an expensive route
 without sufficient reserved funding.
+
+### Schema27 database recovery rehearsal
+
+The [local PostgreSQL 17 rehearsal](../../backend/tests/test_schema27_application_restore_postgres.py)
+uses a dedicated disposable cluster with `HIREWIZ_SCHEMA27_LOCAL_RESTORE=true`.
+A full logical restore retained the fixture rows, but PostgreSQL reconstructed
+the résumé format constraint with a different cast expression. The strict
+catalogue verifier refused that restored schema. The Alembic rebuild with a
+data-only archive passed the verifier with foreign keys and triggers enabled
+and matched all 84 public tables and nine sequence states in the synthetic
+fixture. This included original résumé bytes, an evidence row, active quotes,
+reserved credits, unresolved provider expense and idempotent payment replay.
+The replay checked the two existing migration seeds separately and used the
+existing evidence writer contract.
+
+With a published employer source, the same data import stopped atomically.
+The source insert created a revision row that was also present in the archive.
+The drill verified the refusal and unchanged target rows. A complete restore
+must retain that archived history and verify catalogue invariants before use.
+
+The owned physical recovery test uses PostgreSQL 17 `pg_basebackup` with
+streamed WAL and `pg_verifybackup`. Start it only with an explicitly selected
+local binary directory in `HIREWIZ_SCHEMA27_PHYSICAL_PG_BIN`. A detached cluster
+recovered two catalogue publication revisions and matched the schema, all 84
+table contents, nine sequence states, trigger definitions and relation ACLs.
+The restored test accepted a new catalogue publication and still rejected an
+unversioned evidence update and an invalid foreign key. Payment and reservation
+replay remained idempotent. The expanded drill restored the exact approved PDF,
+the sealed application, the unknown attempt and its five-credit hold. Two worker
+redeliveries made zero employer calls, and the same opening refused a replacement
+application. These results use a disposable PostgreSQL 17 cluster.
+
+Production backup coverage, role and permission recovery, independent authority
+replay and recovery times still need verification before reopening after a
+database failure. The provider reports a six-hour point-in-time history window
+and zero stored snapshots for the current project. Verify an isolated Neon
+restore and independent backup separately. [Neon restore documentation](https://neon.com/docs/postgres/backup-restore/branch-restore)
 
 Accepted model work checks the route's sustained-failure and expense-overrun
 pause before sending a prompt for token counting and again when claiming a

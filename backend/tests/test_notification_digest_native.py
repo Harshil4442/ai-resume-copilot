@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 from datetime import UTC, datetime
+from itertools import count
 from uuid import uuid4
 
 import pytest
@@ -32,8 +33,16 @@ MESSAGE = "c" * 64
 def account(c, monkeypatch):
     monkeypatch.setenv("NOTIFICATION_DIGESTS_ENABLED", "true")
     monkeypatch.setenv("LIFECYCLE_EMAILS_ENABLED", "true")
-    uid = register(c)
-    login = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    # Account setup uses intercepted in-memory SDKs. Runner scheduling delay
+    # is not their transport latency. Digest behavior uses the original clocks.
+    composition = c.accounts._composition()
+    ticks = count()
+    with monkeypatch.context() as setup_clock:
+        for registry in (composition.lifetime.registry, composition.scoped.publication.registry):
+            assert registry.deadline_seconds == 5.0 and registry.max_attempts == 3
+            setup_clock.setattr(registry, "monotonic", lambda: next(ticks) / 1000)
+        uid = register(c)
+        login = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
     with c.accounts.sessions() as db:
         revision = revision_from_row(db.get(CandidatePasswordAccount, uid), db.get(User, uid).password_hash)
     native = ConfiguredDigestNative(c.accounts)

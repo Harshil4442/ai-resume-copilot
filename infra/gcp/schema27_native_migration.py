@@ -1,9 +1,9 @@
 """Authenticated all-off26 bridge and one-shot additive27 migration.
 
-The old successor owns bridge staging/promotion while SQL is26. This controller
-never calls that26 SQL verifier after DDL. Reconciliation is read-only, requires
-our detached receipt in the SAME DDL transaction, and never retries migration.
-No SDK, credential, database or provider action occurs on import/help.
+The old successor owns bridge staging, promotion and rollback while SQL is26.
+Schema27 reconciliation uses a separate verifier and requires a detached receipt
+in the SAME DDL transaction. It is read-only and never retries migration. No SDK,
+credential, database or provider action occurs on import/help.
 """
 from __future__ import annotations
 
@@ -225,9 +225,9 @@ class NativeMigration27Boundary:
                              poolclass=NullPool, echo=False, hide_parameters=True)
 
     def bridge_phase(self, mode):
-        need(mode in {"stage", "advance", "observe", "reconcile"}, "bridge_phase")
-        # The unchanged controller verifies exact SQL26 before any stage or
-        # promotion; this method must never be used as a27 observer.
+        need(mode in {"stage", "advance", "observe", "reconcile", "rollback"}, "bridge_phase")
+        # The successor requires exact SQL26 and the original bridge journal,
+        # including before rollback. Schema27 reconciliation uses separate ports.
         return successor.execute(mode, self.bridge_plan, self.bridge, self.bridge_journal)
 
     def sources(self, plan):
@@ -570,8 +570,8 @@ def load_capture_config(raw):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("bridge-capture", "bridge-stage", "bridge-advance", "bridge-observe", "bridge-reconcile",
-                                          "capture", "upgrade", "reconcile"))
+    parser.add_argument("phase", choices=("bridge-capture", "bridge-stage", "bridge-advance", "bridge-observe",
+                                          "bridge-reconcile", "bridge-rollback", "capture", "upgrade", "reconcile"))
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--target-root", type=Path, required=True)
     parser.add_argument("--prior-root", type=Path, required=True)

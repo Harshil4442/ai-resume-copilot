@@ -143,6 +143,34 @@ def test_actual_allocation_qualified_despite_stale_unserved_latest_ready(name):
         fixture.probe.validate_serving(clients, value, fixture.APP, name)
 
 
+@pytest.mark.parametrize("name", apps.CALLERS)
+def test_serving_accepts_native_revision_container_status_only(name):
+    value, revisions = serving_fixture(name)
+    for revision in revisions.values():
+        revision["containerStatuses"] = [{"name": "app", "imageDigest": fixture.APP}]
+    clients = SimpleNamespace(revision=lambda full: revisions[full])
+    actual = apps.serving(clients, value, fixture.APP, name, apps.UIDS[name])
+    assert actual["name"].endswith(name + "-00001-owned")
+    assert actual["containerStatuses"] == [{"name": "app", "imageDigest": fixture.APP}]
+
+
+@pytest.mark.parametrize("tamper", ["desired_status", "unexpected_revision_field", "revision_config"])
+def test_native_container_status_does_not_mask_caller_drift(tamper):
+    name = apps.CALLERS[0]
+    value, revisions = serving_fixture(name)
+    for revision in revisions.values():
+        revision["containerStatuses"] = [{"name": "app", "imageDigest": fixture.APP}]
+    created = revisions[value["latestCreatedRevision"]]
+    if tamper == "desired_status":
+        value["template"]["containerStatuses"] = copy.deepcopy(created["containerStatuses"])
+    elif tamper == "unexpected_revision_field":
+        created["unexpectedStatus"] = {}
+    else:
+        created["containers"][0]["image"] = "another-image"
+    with pytest.raises(apps.ApplicationDenied, match="mixed_or_unknown_reachable_template"):
+        apps.serving(SimpleNamespace(revision=lambda full: revisions[full]), value, fixture.APP, name, apps.UIDS[name])
+
+
 @pytest.mark.parametrize("tamper", ["alias_source", "alias_env", "created_image", "uid", "traffic_intent"])
 def test_mixed_template_alias_or_wrong_caller_is_refused(tamper):
     name = apps.CALLERS[0]

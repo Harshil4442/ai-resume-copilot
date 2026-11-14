@@ -59,7 +59,7 @@ jobs:
     env:
       CLOUDSDK_CORE_DISABLE_FILE_LOGGING: "true"
       CLOUDSDK_CORE_LOG_HTTP: "false"
-      REFRESH_MODE: ${{ github.event.schedule == '37 1 * * *' && 'refresh' || inputs.mode || 'monitor' }}
+      REFRESH_MODE: ${{ inputs.mode || 'monitor' }}
       DOCUMENT_REFRESH_CONTROLLER_UID: ${{ vars.DOCUMENT_REFRESH_CONTROLLER_UID }}
       RECOVER_FAILED_NATIVE_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.recover_failed_native_job || '' }}
       RETIRE_EXPIRED_V2: ${{ github.event_name == 'workflow_dispatch' && inputs.retire_expired_v2 || false }}
@@ -85,6 +85,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+      - name: Select scheduled maintenance mode
+        if: github.event_name == 'schedule'
+        env:
+          TRIGGER_SCHEDULE: ${{ github.event.schedule }}
+          DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED: ${{ vars.DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED }}
+        run: |
+          mode=monitor
+          if [[ "$TRIGGER_SCHEDULE" == '37 1 * * *' && "$DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED" == 'true' ]]; then
+            mode=refresh
+          fi
+          printf 'REFRESH_MODE=%s\n' "$mode" >> "$GITHUB_ENV"
       - name: Require explicitly provisioned maintenance identity
         env:
           PROVIDER: ${{ vars.DOCUMENT_REFRESH_WIF_PROVIDER }}

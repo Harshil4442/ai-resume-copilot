@@ -10322,6 +10322,16 @@
               }
             ]
           },
+          "skill_roi": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SkillRoiResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "submitted_resume_version": {
             "anyOf": [
               {
@@ -20232,6 +20242,16 @@
                 }
               ],
               "title": "Selected Version Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_skill_roi",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Skill Roi",
+              "type": "boolean"
             }
           }
         ],

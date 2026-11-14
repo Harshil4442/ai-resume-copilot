@@ -6196,6 +6196,7 @@ export interface components {
             pages: components["schemas"]["WorkspacePages"];
             resumes: components["schemas"]["ResumePageResponse"];
             selected_resume_version: components["schemas"]["ResumeVersionMetadata"] | null;
+            skill_roi?: components["schemas"]["SkillRoiResponse"] | null;
             submitted_resume_version: components["schemas"]["ResumeVersionMetadata"] | null;
             /** Submitted Resume Version Id */
             submitted_resume_version_id: string | null;
@@ -12411,6 +12412,7 @@ export interface operations {
                 tab?: "overview" | "resume" | "learning" | "interview" | "outcome" | "activity";
                 limit?: number;
                 selected_version_id?: string | null;
+                include_skill_roi?: boolean;
             };
             header?: never;
             path: {

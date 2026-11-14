@@ -1,11 +1,15 @@
 """Bounded HTTP browsing; internal complete-input and export services stay intact."""
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import and_, false, func, or_
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as DatabaseTimeout
 from sqlalchemy.orm import Session
 
 from ... import models
@@ -15,6 +19,8 @@ from . import schemas, service, transcription_review, workspace_cursor
 MAX_PAGE = 50
 DEFAULT_PAGE = 20
 MAX_LEGACY_ITEMS = 50
+MAX_SKILL_ROI_BYTES = 32 * 1024
+log = logging.getLogger(__name__)
 
 # Explicit projections prevent deferred body reads during list serialization.
 _SPECS: dict[str, tuple[Any, type[BaseModel], str, bool]] = {
@@ -107,7 +113,7 @@ def body(db: Session, user_id: int, opportunity_id: str) -> schemas.OpportunityB
 
 
 def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "overview", limit: int = DEFAULT_PAGE,
-              selected_version_id: str | None = None) -> schemas.WorkspaceResponse:
+              selected_version_id: str | None = None, include_skill_roi: bool = False) -> schemas.WorkspaceResponse:
     opportunity = header(db, user_id, opportunity_id)
     pages = {"resume_versions": collection_page(db, user_id, opportunity, "resume_versions", limit=limit)}
     for collection in {"overview": ("contacts", "reminders"), "resume": ("evidence",), "activity": ("activity",)}.get(tab, ()):
@@ -144,13 +150,24 @@ def bootstrap(db: Session, user_id: int, opportunity_id: str, *, tab: str = "ove
                 if error.status_code not in {404, 409}:
                     raise
                 match_source_state = "unavailable"
+    resumes = resume_browsing.page(db, user_id, limit=limit, current_id=opportunity.resume_id)
+    skill_roi = None
+    if tab == "learning" and include_skill_roi:
+        # Keep this optional query last so a read failure cannot block the workspace.
+        try:
+            ranking = service.calculate_skill_roi(db, user_id)
+        except (OperationalError, DatabaseTimeout):
+            log.warning("Workspace Skill ROI database read unavailable")
+        else:
+            if len(json.dumps(ranking.model_dump(), ensure_ascii=False, allow_nan=False).encode()) <= MAX_SKILL_ROI_BYTES:
+                skill_roi = ranking
     return schemas.WorkspaceResponse(opportunity=opportunity, pages=schemas.WorkspacePages(**pages),
-        resumes=resume_browsing.page(db, user_id, limit=limit, current_id=opportunity.resume_id), match=saved_match,
+        resumes=resumes, match=saved_match,
         match_source_state=match_source_state,
         submitted_resume_version_id=submitted_id,
         submitted_resume_version=schemas.ResumeVersionMetadata.model_validate(submitted) if submitted is not None else None,
         selected_resume_version=schemas.ResumeVersionMetadata.model_validate(selected) if selected is not None else None,
-        approved_evidence_count=count)
+        approved_evidence_count=count, skill_roi=skill_roi)
 
 
 def _legacy_ids(query, model, collection: str):
@@ -175,6 +192,9 @@ def legacy_opportunity_detail(db: Session, user_id: int, opportunity_id: str) ->
     # later collection must not trigger body reads from earlier collections.
     for collection in ("activity", "contacts", "reminders", "resume_versions"):
         model, _, order_name, descending = _SPECS[collection]
+        # The legacy frontend defaults to the first version when recording an application.
+        if collection == "resume_versions":
+            order_name = "version_number"
         order = getattr(model, order_name)
         query = _query(db, user_id, compact, collection, metadata=False).order_by(
             order.desc() if descending else order.asc(), model.id.desc() if descending else model.id.asc())

@@ -29,6 +29,8 @@ import schema26_app_rolling_v3 as app26  # noqa: E402
 
 KIND = "hirewiz_schema26_app_successor_v1"
 SCHEMA = "20261031_0026"
+# Cloud Run reports the resolved image digest as output-only container status.
+REACHABLE_REVISION_OUTPUTS = frozenset({"containerStatuses"})
 REQUIRED_STEPS = frozenset(
     {
         app26.contract.COMPATIBILITY_STEP,
@@ -551,13 +553,19 @@ class NativeSuccessorBoundary(native.NativeRollingBoundary):
         rolling._ready(current, pin)
         return pin
 
+    def _reachable_revision(self, service, revision):
+        value = self.revision(service, revision)
+        if value is None:
+            return None
+        return {key: item for key, item in value.items() if key not in REACHABLE_REVISION_OUTPUTS}
+
     def _reachable(self, pins, source):
         return tuple(
             app26.historical.reachable_pin(
                 pin.service,
                 revision,
-                self.revision(pin.service, revision),
-                self.revision(pin.service, pin.prior_revision),
+                self._reachable_revision(pin.service, revision),
+                self._reachable_revision(pin.service, pin.prior_revision),
                 prior_source=source,
             )
             for pin in pins

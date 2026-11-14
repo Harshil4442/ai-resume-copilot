@@ -57,10 +57,12 @@ def forecasts(policy: ExpensePolicy) -> list[dict]:
     return rows
 
 
-def ledger_report(db, *, now: datetime | None = None) -> dict:
+def ledger_report(db, *, now: datetime | None = None, provider_mode: str = "live") -> dict:
     """UTC cash-period aggregates from a fresh session, without candidate bodies.
 
-    Capture and refund dates are independent. Reserved service credits include
+    Capture and refund dates are independent and use the requested payment mode.
+    Service and provider-cost exposure continues to include all recorded work.
+    Reserved service credits include
     pending and possible-sent unknown work; this report cannot classify either
     as a completed application or release them. Frozen reservations remain held
     until settlement before the cutoff. Model figures retain their
@@ -69,6 +71,8 @@ def ledger_report(db, *, now: datetime | None = None) -> dict:
     from sqlalchemy import DateTime, bindparam, text
 
     stamp = now or datetime.now(UTC)
+    if provider_mode not in {"live", "test"}:
+        raise ValueError("Ledger payment mode must be live or test")
     if stamp.tzinfo is None or stamp.utcoffset() is None:
         raise ValueError("Ledger report requires an aware UTC cutoff")
     stamp = stamp.astimezone(UTC)
@@ -82,7 +86,7 @@ def ledger_report(db, *, now: datetime | None = None) -> dict:
         db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
         db.execute(text("SET LOCAL TIME ZONE 'UTC'"))
         db.execute(text("SET LOCAL statement_timeout = '5000ms'"))
-    bounds = {"start": start, "cutoff": stamp, "currency": "INR"}
+    bounds = {"start": start, "cutoff": stamp, "currency": "INR", "provider_mode": provider_mode}
     def query(sql):
         return db.execute(text(sql).bindparams(
             bindparam("start", type_=DateTime(timezone=True)),
@@ -93,18 +97,24 @@ def ledger_report(db, *, now: datetime | None = None) -> dict:
         "coalesce(sum(provider_fee_amount_minor),0), "
         "coalesce(sum(CASE WHEN provider_fee_amount_minor IS NULL THEN 1 ELSE 0 END),0), "
         "coalesce(sum(CASE WHEN customer_tax_amount_minor IS NULL THEN 1 ELSE 0 END),0) "
-        "FROM payment_orders WHERE paid_at >= :start AND paid_at < :cutoff AND currency=:currency"
+        "FROM payment_orders WHERE provider_mode=:provider_mode "
+        "AND paid_at >= :start AND paid_at < :cutoff AND currency=:currency"
     ).one()
     refunds = query(
-        "SELECT coalesce(sum(amount_minor),0),count(*) FROM payment_refunds "
-        "WHERE status='processed' AND processed_at >= :start AND processed_at < :cutoff "
-        "AND currency=:currency"
+        "SELECT coalesce(sum(r.amount_minor),0),count(*) FROM payment_refunds r "
+        "JOIN payment_orders o ON o.id=r.order_id WHERE o.provider_mode=:provider_mode "
+        "AND r.status='processed' AND r.processed_at >= :start AND r.processed_at < :cutoff "
+        "AND r.currency=:currency"
     ).one()
     exceptions = query(
         "SELECT "
-        "(SELECT count(*) FROM payment_refunds WHERE status='processed' AND processed_at IS NULL), "
-        "(SELECT count(*) FROM payment_orders WHERE paid_at >= :start AND paid_at < :cutoff AND currency<>:currency), "
-        "(SELECT count(*) FROM payment_refunds WHERE status='processed' AND processed_at >= :start AND processed_at < :cutoff AND currency<>:currency)"
+        "(SELECT count(*) FROM payment_refunds r JOIN payment_orders o ON o.id=r.order_id "
+        "WHERE o.provider_mode=:provider_mode AND r.status='processed' AND r.processed_at IS NULL), "
+        "(SELECT count(*) FROM payment_orders WHERE provider_mode=:provider_mode "
+        "AND paid_at >= :start AND paid_at < :cutoff AND currency<>:currency), "
+        "(SELECT count(*) FROM payment_refunds r JOIN payment_orders o ON o.id=r.order_id "
+        "WHERE o.provider_mode=:provider_mode AND r.status='processed' "
+        "AND r.processed_at >= :start AND r.processed_at < :cutoff AND r.currency<>:currency)"
     ).one()
     maximum = "max" if dialect == "sqlite" else "greatest"
     costs = query(
@@ -139,6 +149,7 @@ def ledger_report(db, *, now: datetime | None = None) -> dict:
         "period_start": start.isoformat(),
         "as_of": stamp.isoformat(),
         "calendar_basis": "UTC; inclusive month start, exclusive as-of cutoff",
+        "payment_provider_mode": provider_mode,
         "currency": "INR",
         "captured_gross_minor": int(receipts[0]),
         "refunded_minor": int(refunds[0]),
@@ -158,7 +169,7 @@ def ledger_report(db, *, now: datetime | None = None) -> dict:
         "service_usage": usage,
         "service_usage_basis": "settlement-month credits/quantities at stored unit prices; pre-cutoff frozen reservations held until settlement before cutoff",
         "reconciliation_required": True,
-        "profitability": "not determined; provider usage estimates and incomplete account expenses are not invoices",
+        "profitability": "not determined; recorded usage spans payment modes and supplier invoices are incomplete",
     }
 
 
@@ -170,6 +181,8 @@ def main():
         action="store_true",
         help="Read DATABASE_URL in a read-only transaction; never creates schema",
     )
+    parser.add_argument("--provider-mode", choices=("live", "test"), default="live",
+                        help="Select payment and refund mode for the ledger report (default: live)")
     args = parser.parse_args()
     policy = ExpensePolicy.model_validate_json(args.policy_file.read_text())
     result = {
@@ -189,7 +202,7 @@ def main():
         engine = create_engine(configured)
         try:
             with Session(engine) as db:
-                result["ledger"] = ledger_report(db)
+                result["ledger"] = ledger_report(db, provider_mode=args.provider_mode)
                 db.rollback()
         except SQLAlchemyError:
             raise SystemExit(

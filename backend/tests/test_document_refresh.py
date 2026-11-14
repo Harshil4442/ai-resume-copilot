@@ -556,6 +556,7 @@ def test_successor_monitor_uses_fresh_native_immutable_receipt_without_hourly_la
     selected = SimpleNamespace(image=image, definition_expires_at=(NOW + timedelta(hours=23)).isoformat())
     import sys
     monkeypatch.setitem(sys.modules, "document_refresh_probe", SimpleNamespace(
+        policy_for_serving=lambda *_: "historical",
         verify_current_successor=lambda actual_image, metadata: selected))
     monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
     monkeypatch.setattr(refresh, "native_json", lambda *args: value)
@@ -564,6 +565,87 @@ def test_successor_monitor_uses_fresh_native_immutable_receipt_without_hourly_la
     assert result["definitions"]["status"] == "refresh_required"
     assert result["definitions"]["seconds_remaining"] == 23 * 3600
     assert result["definitions"]["source"] == "fresh_native_immutable_image_receipt"
+
+
+def test_current_source_expiry_emits_precise_status_without_opening_other_paths(monkeypatch, tmp_path):
+    import json
+    import sys
+
+    from infra.gcp import document_source_candidate, document_source_release
+
+    value = service()
+    image = refresh.REPOSITORY + "@sha256:" + "f" * 64
+    value["template"]["containers"][0]["image"] = image
+    calls = []
+    receipt = SimpleNamespace(image=image, definition_expires_at=(NOW - timedelta(seconds=30)).isoformat())
+
+    def observe(actual_image, metadata):
+        assert actual_image == image and metadata is value
+        calls.append("verified")
+        return receipt
+
+    def require_fresh(*_):
+        raise refresh.RefreshDenied("fresh_proof_required")
+
+    monkeypatch.setitem(sys.modules, "document_refresh_probe", SimpleNamespace(
+        policy_for_serving=lambda *_: document_source_candidate.POLICY_SHA256,
+        verify_current_successor=require_fresh))
+    monkeypatch.setattr(document_source_release, "observe_current_source_definitions", observe)
+    monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
+
+    def native_json(_http, method, url, payload=None):
+        if method == "GET":
+            assert url.endswith("/services/" + refresh.SERVICE)
+            return value
+        assert method == "POST" and url == "https://logging.googleapis.com/v2/entries:write"
+        calls.append(payload["entries"][0]["jsonPayload"])
+        return {}
+
+    monkeypatch.setattr(refresh, "native_json", native_json)
+    monkeypatch.setattr(refresh, "command", lambda *_args, **_kwargs: pytest.fail("No image pull or build"))
+    with pytest.raises(refresh.RefreshDenied, match="fresh_proof_required"):
+        refresh.serving_image(value, refresh.accepted())
+    output = tmp_path / "monitor"
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "monitor",
+        "--output-directory", str(output)])
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, _tz=None):
+            return NOW
+    monkeypatch.setattr(refresh, "datetime", Clock)
+
+    assert refresh.run_cli() == 2
+    result = json.loads((output / "result.json").read_bytes())
+    assert result["promotion_performed"] is False
+    assert result["definitions"]["source"] == "expired_native_immutable_image_receipt"
+    assert calls == ["verified", {"event": "hirewiz_document_definition_maintenance_v1", "status": "expired",
+        "controller": "hirewiz-document-refresh", "version": 1, "seconds_remaining": -30}]
+
+
+def test_monitor_retains_verified_result_without_repeating_unknown_heartbeat(monkeypatch, tmp_path, capsys):
+    import json
+    import sys
+
+    output = tmp_path / "monitor"
+    expected = {"mode": "monitor", "definitions": {"status": "expired", "seconds_remaining": -30},
+                "promotion_performed": False}
+    emitted = []
+    monkeypatch.setattr(sys, "argv", ["document_refresh.py", "--mode", "monitor",
+        "--output-directory", str(output)])
+    monkeypatch.setattr(refresh, "monitor", lambda **_: expected)
+
+    def failed_write(result):
+        emitted.append(result)
+        assert json.loads((output / "result.json").read_bytes()) == expected
+        raise RuntimeError("private vendor response")
+
+    monkeypatch.setattr(refresh, "emit_status", failed_write)
+    assert refresh.run_cli() == 2
+    assert emitted == [expected]
+    console = capsys.readouterr().out
+    assert "document_refresh_monitor_heartbeat_unavailable" in console
+    assert "private vendor response" not in console
 
 
 def test_workflow_keeps_same_run_different_attempt_artifacts_separate(tmp_path, monkeypatch):
@@ -642,6 +724,46 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
     assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
     artifact = next(step for step in job["steps"] if step.get("name") == "Retain bounded maintenance evidence")
     assert artifact["if"] == "always() && env.OUTPUT_DIRECTORY != ''"
+
+
+@pytest.mark.parametrize(("schedule", "enabled", "expected"), [
+    ("37 1 * * *", "", "monitor"),
+    ("37 1 * * *", "false", "monitor"),
+    ("37 1 * * *", "TRUE", "monitor"),
+    ("37 1 * * *", "true ", "monitor"),
+    ("37 1 * * *", "true\nREFRESH_MODE=refresh", "monitor"),
+    ("37 1 * * *", "true", "refresh"),
+    ("17,47 * * * *", "true", "monitor"),
+])
+def test_scheduled_refresh_requires_exact_opt_in(tmp_path, schedule, enabled, expected):
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
+    trigger = workflow.get("on", workflow.get(True))
+    job = workflow["jobs"]["maintenance"]
+    steps = job["steps"]
+    selection = next(step for step in steps if step.get("name") == "Select scheduled maintenance mode")
+    admission = next(step for step in steps if step.get("name") == "Require explicitly provisioned maintenance identity")
+    auth = next(step for step in steps if step.get("uses", "").startswith("google-github-actions/auth@"))
+    assert schedule in {row["cron"] for row in trigger["schedule"]}
+    assert job["environment"] == "document-maintenance"
+    assert job["env"]["REFRESH_MODE"] == "${{ inputs.mode || 'monitor' }}"
+    assert "github.event_name == 'workflow_dispatch'" in job["env"]["RECOVER_EXPIRED_SOURCE"]
+    assert selection["if"] == "github.event_name == 'schedule'"
+    assert steps.index(selection) < steps.index(admission) < steps.index(auth)
+    assert selection["env"] == {
+        "TRIGGER_SCHEDULE": "${{ github.event.schedule }}",
+        "DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED": "${{ vars.DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED }}",
+    }
+    output = tmp_path / "github-env"
+    subprocess.run(["bash", "-e", "-c", selection["run"]], check=True, env={
+        "GITHUB_ENV": str(output),
+        "TRIGGER_SCHEDULE": schedule,
+        "DOCUMENT_REFRESH_SCHEDULED_WRITES_ENABLED": enabled,
+    })
+    assert output.read_text() == f"REFRESH_MODE={expected}\n"
 
 
 def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_ref_bypass():

@@ -74,6 +74,24 @@ describe("unified billing account", () => {
     expect(screen.getByText(/have not been added together or converted/)).toBeInTheDocument();
     expect(screen.queryByText("20 credits")).not.toBeInTheDocument(); expect(state.post).not.toHaveBeenCalled();
   });
+  it("shows both refund events and the negative ledger balance without a negative spendable wallet", async () => {
+    const refundedWallet = { ...wallet, available_credits: 0, reserved_credits: 0, debt_credits: 1, lots: [] };
+    const refunds = [
+      { id: "refund-two", event_type: "revoke", amount: -20, balance_after: -1, created_at: stamp },
+      { id: "refund-one", event_type: "revoke", amount: -20, balance_after: 19, created_at: stamp },
+    ];
+    state.get.mockImplementation((url: string) => url === "/auth/bootstrap"
+      ? Promise.resolve(ownedBootstrapFixture({ wallet: refundedWallet })) : url === "/v1/credits/history?limit=20"
+      ? Promise.resolve({ schema_version: schema, items: refunds, next_cursor: "next-history" }) : read(url));
+    render(<BillingPage />);
+    expect(await screen.findByText("Balance -1")).toBeVisible();
+    expect(screen.getAllByText("-20 credits")).toHaveLength(2);
+    expect(screen.getByText("Balance 19")).toBeVisible();
+    expect(within(screen.getByText("Available credits").parentElement!).getByText("0")).toBeVisible();
+    expect(within(screen.getByText("Pending balance adjustment").parentElement!).getByText("1")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Load older activity" })).toBeEnabled();
+    expect(state.post).not.toHaveBeenCalled(); noCheckout();
+  });
   it.each([undefined, null, -1, "3", 1.5])("does not invent a wallet balance for malformed data %j", async (available_credits) => {
     state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: { ...wallet, available_credits } })) : read(url));
     render(<BillingPage />); await screen.findByText(/Your credit balance is unavailable/); expect(screen.queryByText("Available credits")).not.toBeInTheDocument();
@@ -126,6 +144,61 @@ describe("unified purchase review and payment", () => {
     const quotes = state.post.mock.calls.filter(([url]) => url === "/v1/credits/purchase-quotes");
     expect(quotes).toHaveLength(2); expect(quotes[1][1].idempotency_key).not.toBe(quotes[0][1].idempotency_key);
     expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+  });
+  it("reviews the current price when a returning tab already received an expired quote", async () => {
+    const before = "2026-10-30T23:45:00Z";
+    const cutoff = campaign.ends_at;
+    const previousQuote = { ...quote, created_at: before, server_time: before, expires_at: cutoff, pass_expires_at: "2026-11-29T23:45:00Z" };
+    const endedCampaign = { ...campaign, status: "ended" };
+    const nextQuote = { ...quote, quote_id: "quote_standard", campaign: endedCampaign, amount_minor: 7900,
+      created_at: cutoff, server_time: cutoff, expires_at: "2026-10-31T00:15:00Z", pass_expires_at: "2026-11-30T00:00:00Z" };
+    let catalogReads = 0;
+    state.get.mockImplementation((url: string) => {
+      if (url !== "/v1/credits/catalog") return read(url);
+      if (++catalogReads === 1) return Promise.resolve({ ...catalog, server_time: before });
+      return Promise.resolve({ ...catalog, server_time: cutoff, products: [{ ...pack, amount_minor: 7900, campaign: endedCampaign }] });
+    });
+    let originalKey: string | undefined;
+    state.post.mockImplementation((url: string, body: { idempotency_key: string }) => {
+      if (url !== "/v1/credits/purchase-quotes") return post(url);
+      originalKey ??= body.idempotency_key;
+      return Promise.resolve(body.idempotency_key === originalKey ? previousQuote : nextQuote);
+    });
+
+    vi.useFakeTimers();
+    await act(async () => { render(<BillingPage />); });
+    const reviewButton = () => screen.getByRole("button", { name: "Review Starter pass" });
+    expect(reviewButton()).toBeEnabled();
+    await act(async () => { fireEvent.click(reviewButton()); });
+    fireEvent.click(screen.getByRole("checkbox", { name: /I confirm my billing country/ }));
+    expect(screen.getByRole("button", { name: "Continue with ₹59 payment" })).toBeEnabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15 * 60_000); });
+    expect(screen.getByRole("button", { name: "Continue with ₹59 payment" })).toBeDisabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh prices" })); });
+    expect(reviewButton()).toBeEnabled();
+    await act(async () => { fireEvent.click(reviewButton()); });
+    const newPayment = screen.getByRole("button", { name: "Continue with ₹79 payment" });
+    expect(newPayment).toBeDisabled();
+    const billingCountry = screen.getByRole("checkbox", { name: /I confirm my billing country/ });
+    expect(billingCountry).not.toBeChecked();
+    fireEvent.click(billingCountry);
+    expect(newPayment).toBeEnabled();
+    expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/purchase-quotes", "/v1/credits/purchase-quotes"]);
+    expect(state.post.mock.calls[1][1].idempotency_key).not.toBe(originalKey);
+    noCheckout();
+  });
+  it("reuses the quote request key when its response was lost", async () => {
+    state.post.mockRejectedValueOnce(new Error("Connection interrupted"));
+    render(<BillingPage />);
+    const reviewButton = await screen.findByRole("button", { name: "Review Starter pass" });
+    await waitFor(() => expect(reviewButton).toBeEnabled());
+    fireEvent.click(reviewButton);
+    await screen.findByRole("alert");
+    fireEvent.click(reviewButton);
+    await screen.findByRole("button", { name: "Continue with ₹59 payment" });
+    expect(state.post.mock.calls).toHaveLength(2);
+    expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+    noCheckout();
   });
   it("reads a captured original order after an interrupted request without a second checkout", async () => {
     state.post.mockImplementation((url: string) => url === "/v1/credits/orders" ? Promise.reject(new ApiError("Read original order", 409, { detail: { code: "billing_order_requires_status", order_id: "order_unified" } })) : post(url));
@@ -262,6 +335,44 @@ describe("unified purchase review and payment", () => {
     expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
     expect(orderReads).toBe(2);
   });
+
+  it("keeps a failed hosted checkout active and checks the original order after dismissal", async () => {
+    const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+    let latest = order();
+    let paymentFailed: () => void = () => { throw new Error("Checkout has not opened"); };
+    state.get.mockImplementation((url: string) => url === "/v1/credits/orders/order_unified" ? Promise.resolve(latest) : read(url));
+    hostedCheckout.mockImplementationOnce(function () {
+      return { open: openCheckout, on: vi.fn((_event, callback) => { paymentFailed = () => callback({}); }) };
+    });
+    const pay = await review(); await confirmIndia(); fireEvent.click(pay);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+
+    act(() => paymentFailed());
+    const resume = screen.getByRole("button", { name: "Resume original checkout" });
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeDisabled();
+
+    act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Credit payment confirmed" })).not.toBeInTheDocument();
+
+    const callback = { razorpay_order_id: "provider_unified", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    const original = hostedCheckout.mock.calls[0][0];
+    const statusReadCount = state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified").length;
+    act(() => { original.handler(callback); original.handler(callback); });
+    expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result")))
+      .toEqual([["/billing/orders/order_unified/checkout-result", callback]]);
+    expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/orders/order_unified")).toHaveLength(statusReadCount);
+    expect(resume).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Credit payment confirmed" })).not.toBeInTheDocument();
+
+    latest = settled;
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    await screen.findByRole("heading", { name: "Credit payment confirmed" });
+    expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+    expect(openCheckout).toHaveBeenCalledOnce();
+  });
 });
 
 describe("legacy payment recovery", () => {
@@ -310,6 +421,37 @@ describe("legacy payment recovery", () => {
     await screen.findByRole("heading", { name: "Payment confirmed" });
     expect(state.post.mock.calls.filter(([url]) => String(url).endsWith("/checkout-result"))).toHaveLength(1);
     expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(1);
+  });
+
+  it("requires a fresh original status and consent to reopen dismissed legacy checkout", async () => {
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder()) : read(url));
+    state.post.mockResolvedValue(legacyCheckout);
+    render(<BillingPage />);
+    const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+    await confirmIndia(); fireEvent.click(resume);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+
+    act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+    await confirmIndia();
+    expect(resume).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+    await waitFor(() => expect(resume).toBeEnabled());
+    fireEvent.click(resume);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(2));
+    expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+
+    const callback = { razorpay_order_id: "provider_legacy", razorpay_payment_id: "pay_fixture", razorpay_signature: "fixture" };
+    const original = hostedCheckout.mock.calls[0][0];
+    const statusReadCount = state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy").length;
+    act(() => { original.handler(callback); original.handler(callback); });
+    expect(state.post.mock.calls.slice(2)).toEqual([["/billing/orders/order_legacy/checkout-result", callback]]);
+    expect(state.get.mock.calls.filter(([url]) => url === "/billing/orders/order_legacy")).toHaveLength(statusReadCount);
+    expect(resume).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeDisabled();
+    expect(screen.queryByRole("heading", { name: "Payment confirmed" })).not.toBeInTheDocument();
   });
   it("requires fresh acceptance after reconciliation restores original checkout", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ provider_order_id: null, checkout_available: false })) : read(url));
@@ -505,4 +647,56 @@ it("aborts owner-unmounted payment status and ignores its late terminal result w
   const before = state.get.mock.calls.length; rendered.unmount(); expect(statusSignal!.aborted).toBe(true);
   await act(async () => { resolve(order({ status: "paid", fulfilled: true })); });
   expect(state.get).toHaveBeenCalledTimes(before); expect(state.post).not.toHaveBeenCalled();
+});
+
+it.each(["pending", "captured"] as const)("recovers a %s original purchase after a billing reload", async (outcome) => {
+  let recentReads = 0;
+  let resolveRecent!: (value: ReturnType<typeof order>) => void;
+  state.get.mockImplementation((url: string) => {
+    if (url !== "/v1/credits/recent-order") return read(url);
+    recentReads += 1;
+    return recentReads === 1 ? Promise.resolve(null) : new Promise((resolve) => { resolveRecent = resolve; });
+  });
+
+  const original = render(<BillingPage />);
+  const reviewButton = await screen.findByRole("button", { name: "Review Starter pass" });
+  await waitFor(() => expect(reviewButton).toBeEnabled());
+  fireEvent.click(reviewButton);
+  const pay = await screen.findByRole("button", { name: "Continue with ₹59 payment" });
+  await confirmIndia();
+  fireEvent.click(pay);
+  await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+  act(() => hostedCheckout.mock.calls[0][0].modal.ondismiss());
+  original.unmount();
+
+  render(<BillingPage />);
+  const newPurchase = await screen.findByRole("button", { name: "Review Starter pass" });
+  await waitFor(() => expect(resolveRecent).toBeDefined());
+  expect(newPurchase).toBeDisabled();
+  expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+  expect(openCheckout).toHaveBeenCalledOnce();
+
+  const settled = order({ status: "paid", payment_status: "paid", fulfilled: true, checkout_available: false });
+  await act(async () => resolveRecent(outcome === "captured" ? settled : order()));
+  if (outcome === "captured") {
+    await screen.findByRole("heading", { name: "Credit payment confirmed" });
+    expect(screen.queryByRole("button", { name: "Resume original checkout" })).not.toBeInTheDocument();
+    expect(openCheckout).toHaveBeenCalledOnce();
+    expect(state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders")).toHaveLength(1);
+    return;
+  }
+
+  const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+  expect(newPurchase).toBeDisabled();
+  expect(resume).toBeDisabled();
+  expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+  await confirmIndia();
+  fireEvent.click(resume);
+  await waitFor(() => expect(openCheckout).toHaveBeenCalledTimes(2));
+  const orders = state.post.mock.calls.filter(([url]) => url === "/v1/credits/orders");
+  expect(orders).toHaveLength(2);
+  expect(orders[1]).toEqual(["/v1/credits/orders", {
+    quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified",
+  }]);
+  expect(hostedCheckout.mock.calls[1][0]).toMatchObject({ order_id: "provider_unified", amount: 5900 });
 });

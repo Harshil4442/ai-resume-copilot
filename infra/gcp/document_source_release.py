@@ -170,10 +170,12 @@ class SourceProbe:
                    "document_source_revision_definition_identity_invalid")
         return job, execution, inventory, value, stamp
 
-    def _acceptance(self, clients, *, fresh=True):
-        job, execution, _, value, stamp = self._verified_evidence(clients)
-        prior.need(datetime.now(UTC) - stamp < timedelta(days=1 if fresh else 3),
-                   "document_source_revision_definitions_stale")
+    def _acceptance(self, clients, *, fresh=True, monitor_metadata=None):
+        job, execution, inventory, value, stamp = self._verified_evidence(clients)
+        age = datetime.now(UTC) - stamp
+        if monitor_metadata is not None and age >= timedelta(days=3):
+            return self._expired_predecessor(monitor_metadata, inventory, value, stamp)
+        prior.need(age < timedelta(days=1 if fresh else 3), "document_source_revision_definitions_stale")
         build = self.build
         return prior.NativeAcceptance(build["immutable_image"], build["build_id"], build["build_resource"],
             build["source_archive_sha256"], build["refresh_dockerfile_sha256"], build["source_sha256"],
@@ -212,9 +214,10 @@ class SourceProbe:
             return v3.verify_current_successor(image, metadata) if prior.policy_for_serving(metadata, image) == v3.POLICY else prior.verify_current_successor(image, metadata)
         return self._verify_current_source(image, metadata)
 
-    def _verify_current_source(self, image, metadata, *, expired_predecessor=False):
-        prior.need(type(expired_predecessor) is bool
-                   and (not expired_predecessor or self.POLICY == profile.POLICY_SHA256),
+    def _verify_current_source(self, image, metadata, *, expired_predecessor=False, monitor=False):
+        prior.need(type(expired_predecessor) is bool and type(monitor) is bool
+                   and not (expired_predecessor and monitor)
+                   and (not (expired_predecessor or monitor) or self.POLICY == profile.POLICY_SHA256),
                    "document_source_revision_expired_profile_refused")
         prior.need(self.policy_for_serving(metadata, image) == self.POLICY,
                    "document_source_revision_serving_policy_changed")
@@ -232,16 +235,19 @@ class SourceProbe:
                        and actual.get("uid") == self.SERVICE_UID,
                        "document_source_revision_serving_changed")
             if not expired_predecessor:
-                return self._acceptance(clients, fresh=False)
+                return self._acceptance(clients, fresh=False, monitor_metadata=metadata if monitor else None)
             _, _, inventory, value, stamp = self._verified_evidence(clients)
             prior.need(datetime.now(UTC) - stamp >= timedelta(days=3),
                        "document_source_revision_expired_predecessor_required")
-            return ExpiredSourcePredecessor(image, build["build_id"], self.source.commit,
-                self.source.qualification_sha256, self.POLICY, dict(self.source.sources),
-                courier.RENDERER, courier.FONT, (stamp + timedelta(days=3)).isoformat(),
-                corpus.sha(inventory), corpus.sha(value), corpus.sha(metadata))
+            return self._expired_predecessor(metadata, inventory, value, stamp)
         finally:
             clients.close()
+
+    def _expired_predecessor(self, metadata, inventory, value, stamp):
+        return ExpiredSourcePredecessor(self.build["immutable_image"], self.build["build_id"], self.source.commit,
+            self.source.qualification_sha256, self.POLICY, dict(self.source.sources),
+            courier.RENDERER, courier.FONT, (stamp + timedelta(days=3)).isoformat(),
+            corpus.sha(inventory), corpus.sha(value), corpus.sha(metadata))
 
     def verify_expired_current_source_predecessor(self, image, metadata):
         return verify_expired_current_source_predecessor(image, metadata,
@@ -315,6 +321,12 @@ def current_probe(image, metadata, *, read_only_release=False):
 
 def verify_current_successor(image, metadata, *, read_only_release=False):
     return current_probe(image, metadata, read_only_release=read_only_release).verify_current_successor(image, metadata)
+
+
+def observe_current_source_definitions(image, metadata):
+    """Observe current V4 evidence for alerts, including verified expiry."""
+    probe = current_probe(image, metadata)
+    return probe._verify_current_source(image, metadata, monitor=True)
 
 
 def verify_expired_current_source_predecessor(image, metadata, *, read_only_release=False):

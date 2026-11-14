@@ -912,7 +912,7 @@ def delete_memory(db: Session, user_id: int, memory_id: str) -> None:
 
 def calculate_skill_roi(db: Session, user_id: int) -> schemas.SkillRoiResponse:
     opportunities = (
-        db.query(models.Opportunity)
+        db.query(models.Opportunity.latest_match_id, models.Opportunity.job_snapshot, models.Opportunity.outcome)
         .filter(
             models.Opportunity.user_id == user_id,
             models.Opportunity.stage != "archived",
@@ -946,7 +946,7 @@ def calculate_skill_roi(db: Session, user_id: int) -> schemas.SkillRoiResponse:
             negative_outcomes.update(normalized)
 
     approved = (
-        db.query(models.EvidenceItem)
+        db.query(models.EvidenceItem.skills)
         .filter(
             models.EvidenceItem.user_id == user_id,
             models.EvidenceItem.approval_state == "approved",

@@ -446,10 +446,12 @@ def get_workspace(
     tab: schemas.WorkspaceTab = "overview",
     limit: int = Query(default=20, ge=1, le=50),
     selected_version_id: str | None = Query(default=None, min_length=1, max_length=64),
+    include_skill_roi: bool = False,
     db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
 ):
     response.headers["Cache-Control"] = "private, no-store"
-    return workspace.bootstrap(db, current_user.id, opportunity_id, tab=tab, limit=limit, selected_version_id=selected_version_id)
+    return workspace.bootstrap(db, current_user.id, opportunity_id, tab=tab, limit=limit,
+        selected_version_id=selected_version_id, include_skill_roi=include_skill_roi)
 
 
 @router.get("/opportunities/{opportunity_id}/workspace/body", response_model=schemas.OpportunityBody)

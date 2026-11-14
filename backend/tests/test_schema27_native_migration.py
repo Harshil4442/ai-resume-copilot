@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
+import sys
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -52,6 +54,58 @@ def test_native_factory_keeps_closed_stock_types_and_exact_target_observer(monke
     result = m.native_bridge(ROOT, ROOT, ROOT)
     assert result is old and type(result.observer) is m.Source27BridgeBoundary
     assert type(result.prior_observer) is m.app26.Source26Boundary
+
+
+def test_bridge_rollback_cli_reuses_original_plan_journal_and_stock_traffic_recovery(
+    prepared, monkeypatch, tmp_path, capsys,
+):
+    p = prepared
+    plan_path = tmp_path / "bridge-plan.json"
+    raw = m.rolling.canonical(asdict(p.plan.bridge))
+    plan_path.write_bytes(raw)
+    plan_path.chmod(0o600)
+    monkeypatch.setattr(m, "native_bridge", lambda *_: p.c.boundary)
+    monkeypatch.setattr(sys, "argv", ["schema27_native_migration.py", "bridge-rollback",
+        "--root", str(ROOT), "--target-root", str(ROOT), "--prior-root", str(ROOT),
+        "--bridge-plan", str(plan_path), "--bridge-plan-sha256", hashlib.sha256(raw).hexdigest(),
+        "--bridge-journal", str(p.c.journal.directory)])
+
+    def prior_health(plan, service, revision, release_id, tag):
+        assert release_id == p.plan.bridge.prior_source.release
+        p.c.fixture.health(plan, service, revision, release_id, tag)
+
+    monkeypatch.setattr(p.c.boundary, "health", prior_health)
+    m.main()
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "schema26_successor_rollback"
+    assert result["schema"] == m.contract.BEFORE and result["migrations"] == 0
+    assert result["native_mutations"] == 3 and result["native_mutation_scope"] == "traffic_only"
+    assert p.c.journal.read(m.app26.historical.ROLLBACK_INTENT) is not None
+    for pin in p.plan.bridge.services:
+        assert p.c.journal.read(f"rollback.{pin.service}.checked")["prior_http_health_observed"]
+    assert all(mask == "traffic" for _, _, mask in p.c.fixture.writes[-3:])
+
+    writes = len(p.c.fixture.writes)
+    p.boundary.bridge_phase("reconcile")
+    with pytest.raises(m.rolling.RollingDenied, match="bridge_phase"):
+        p.boundary.bridge_phase("recovery-restore")
+    with pytest.raises(m.rolling.RollingDenied, match="bridge_rollback_started"):
+        m.bridge_receipts(p.plan.bridge, p.c.journal)
+    assert len(p.c.fixture.writes) == writes
+
+
+def test_bridge_rollback_refuses_before_intent_when_original_source_fails(prepared, monkeypatch):
+    p = prepared
+
+    def refuse_source(_plan):
+        m.need(False, "exact_bridge_chain")
+
+    monkeypatch.setattr(p.c.boundary, "_sources", refuse_source)
+    writes = len(p.c.fixture.writes)
+    with pytest.raises(m.rolling.RollingDenied, match="exact_bridge_chain"):
+        p.boundary.bridge_phase("rollback")
+    assert len(p.c.fixture.writes) == writes
+    assert p.c.journal.read(m.app26.historical.ROLLBACK_INTENT) is None
 
 
 @pytest.mark.parametrize("chain", [
@@ -231,6 +285,22 @@ def test_real_pg_one_shot_ddl_detached_receipt_and_readonly_reconciliation(sql_o
     assert again == result
     with pytest.raises(m.rolling.RollingDenied, match="started_reconcile_only"):
         m.migration(p.plan, p.boundary, p.journal)
+
+
+def test_bridge_rollback_refuses_after_real_schema27_commit(sql_owned, monkeypatch):
+    p = sql_owned
+    assert m.migration(p.plan, p.boundary, p.journal)["migration_committed"]
+
+    def exact_schema26(*_args, **_kwargs):
+        with p.boundary.readonly(m.contract.BEFORE):
+            return p.plan.bridge.financial_sha256, ()
+
+    monkeypatch.setattr(p.c.boundary, "_database", exact_schema26)
+    writes = len(p.c.fixture.writes)
+    with pytest.raises(neon.NeonIdentityDenied, match="neon_release_exact_schema_mismatch"):
+        p.boundary.bridge_phase("rollback")
+    assert len(p.c.fixture.writes) == writes
+    assert p.c.journal.read(m.app26.historical.ROLLBACK_INTENT) is None
 
 
 class LostCommitEngine:

@@ -23,6 +23,7 @@ from app.domains.recovery.store import GuardDenied, GuardUnavailable
 from app.feature_flags import decisions_for_user
 from app.models import CandidatePasswordAccount, User, UserProfile
 from app.routers import auth
+from app.routers.v1 import career
 from tests.test_candidate_production_factory import PASSWORD, configured  # noqa: F401
 
 PATH = "/api/auth/bootstrap"
@@ -74,6 +75,7 @@ def api(configured, monkeypatch):  # noqa: F811
     monkeypatch.setattr(account_service, "production_candidate_accounts", lambda: c.accounts)
     app = FastAPI()
     app.include_router(auth.router, prefix="/api")
+    app.include_router(career.router, prefix="/api/v1")
     def database():
         with c.accounts.sessions() as db:
             yield db

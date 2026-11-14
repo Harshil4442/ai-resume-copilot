@@ -18,6 +18,7 @@ CONFIG = Path("/etc/docker/daemon.json")
 DOCUMENT_BASE_DIGEST = "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
 DOCUMENT_BASE = "public.ecr.aws/docker/library/python"
 SOURCE_POLICY_ENV = "EXPERIMENTAL_BUILDKIT_SOURCE_POLICY"
+DAEMON_OBSERVATION_SECONDS = 30
 
 
 def document_source_policy() -> Path:
@@ -101,7 +102,7 @@ def configure(path: Path) -> None:
 
 
 def verify() -> None:
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + DAEMON_OBSERVATION_SECONDS
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:

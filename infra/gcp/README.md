@@ -149,3 +149,49 @@ actual corresponding receipt exists. No production incident or test notification
 was induced. Preserve the channel and policy handles during future deployments.
 See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
 and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).
+
+`razorpay_webhook_alert.tf` defines an opt-in alert for HTTP 5xx responses to the
+direct Razorpay callback. Use the reviewed notification channel and inspect the
+plan for just this alert before activation. It matches existing Cloud Run request
+logs for the exact route, method, API service and region. It extracts no log
+labels and sends at most one notification per hour. Invalid signatures and other
+4xx responses are outside this alert. A provider delivery failure that never
+reaches Cloud Run still needs Razorpay-side monitoring. When the alert fires,
+check Razorpay delivery and reconcile the affected event before taking any
+action on the underlying order.
+
+See [Cloud Run request logs](https://docs.cloud.google.com/run/docs/logging)
+and [log-based alert behavior](https://docs.cloud.google.com/logging/docs/alerting/log-based-alerts).
+
+`worker_queue_alerts.tf` adds opt-in policies for the four existing analysis and employer
+queues and both private Cloud Run workers in `us-central1`. With
+`worker_queue_alerts_enabled=true`, the reviewed plan should add four queue policies and
+two worker policies using the same `document_refresh_notification_channels` destination.
+The opt-in is disabled by default. Confirm policy and channel readback after activation
+and record condition-specific delivery when a genuine incident occurs.
+
+Each queue policy checks for more than 20 queued tasks for ten minutes. Queue depth
+includes scheduled and retry work, so inspect queue state, recent dispatches and worker
+errors before intervening, especially while application admission is paused. The
+worker policies sum HTTP 5xx responses across revisions of each worker and alert at
+three or more in five minutes. These starting thresholds cover queue depth and HTTP
+failures. Task age, application-level failures returned as HTTP success, and periods
+without metric samples require separate evidence. See the
+[Cloud Tasks metrics](https://docs.cloud.google.com/tasks/docs/monitor) and
+[Cloud Run request metrics](https://docs.cloud.google.com/stackdriver/docs/solutions/slo-monitoring/sli-metrics/req-resp-metrics).
+
+`model_generation_alerts.tf` measures completed generation attempts in the API,
+analysis worker and résumé coordinator. The application logs only a fixed provider
+family, outcome and elapsed milliseconds for each admitted attempt. Elapsed time
+includes client work around the provider request. The alert checks whether the
+15-minute p95 exceeds 30 seconds for ten minutes. The 15-minute alignment gives
+log-based metrics time to ingest late samples. Check ingestion and time-series data
+after the instrumented release is serving. Missing samples are expected while
+generation is disabled. See [log metric ingestion](https://docs.cloud.google.com/logging/docs/logs-based-metrics/troubleshooting).
+
+`release_observability_dashboard.tf` adds the opt-in HireWiz production operations
+dashboard. Its four panels show queue depth, worker HTTP 5xx, generation latency and
+Razorpay callback failures. Enable the generation metric with the dashboard. Review
+the additive Terraform plan, the existing channel, and current monitoring prices
+before activation. Verify the deployed filters and dashboard under the operator's
+account. Read actual delivery evidence when an incident occurs.

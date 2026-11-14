@@ -441,9 +441,15 @@ def _sql_unified_proof(engine):
         for table in ("model_call_events", "analysis_runs", "model_cost_liabilities", "employer_applications", "employer_application_attempts", "service_credit_reservations", "service_credit_events"):
             assert scalar(f"SELECT count(*) FROM {table}") == 0
         assert scalar("SELECT count(*) FROM dispatch_outbox WHERE topic='employer.apply'") == 0
-        assert scalar("SELECT count(*) FROM payment_orders WHERE sku='starter_pass' AND gross_amount_minor=7900 AND status='paid'") == 1
+        assert scalar("SELECT count(*) FROM payment_orders WHERE sku='starter_pass' AND gross_amount_minor=7900 AND refunded_amount_minor=7900 AND status='refunded'") == 1
+        assert scalar("SELECT count(*) FROM payment_transactions WHERE status='refunded' AND refunded_amount_minor=7900") == 1
+        assert tuple(db.execute(text("SELECT count(*),sum(amount_minor) FROM payment_refunds WHERE status='processed'")).one()) == (2, 7900)
         assert scalar("SELECT count(*) FROM credit_grants WHERE source_type='payment_order' AND quantity=40 AND expires_at >= issued_at + interval '30 days'") == 1
-        assert scalar("SELECT sum(remaining_credits) FROM credit_grants") == 39
+        assert scalar("SELECT sum(remaining_credits) FROM credit_grants") == 0
+        assert scalar("SELECT debt_credits FROM credit_accounts JOIN users ON users.id=credit_accounts.user_id WHERE email='candidate.unified@example.com'") == 1
+        assert [tuple(row) for row in db.execute(text("""SELECT amount,balance_after,
+            (details->>'target_credits')::int,(details->>'debt_added')::int FROM credit_events
+            WHERE event_type='revoke' ORDER BY (details->>'target_credits')::int"""))] == [(-20, 19, 20, 0), (-20, -1, 40, 1)]
         assert scalar("SELECT count(*) FROM credit_discovery_batches") == 2
         assert scalar("SELECT count(*) FROM credit_discovery_deliveries") == 2
         assert scalar("SELECT count(*) FROM employer_searches WHERE status='completed' AND delivered_count=2 AND charged_credits=1") == 1
@@ -455,7 +461,8 @@ def _sql_unified_proof(engine):
         assert scalar("SELECT count(*) FROM resumes") == 1
         assert tuple(db.execute(text("SELECT job_service_credits, ai_credits FROM users WHERE email='candidate.unified@example.com'")).one()) == (0, 0)
         return {"model_calls": 0, "analysis_runs": 0, "payment_orders": 1, "purchased_credits": 40,
-            "remaining_credits": 39, "discovery_batches": 2, "new_jobs": 2, "credits_reserved": 2,
+            "remaining_credits": 0, "refund_debt_credits": 1, "processed_refunds": 2, "refunded_minor": 7900,
+            "discovery_batches": 2, "new_jobs": 2, "credits_reserved": 2,
             "credits_charged": 1, "credits_released": 1, "free_resume_parse": 1,
             "legacy_service_credits": 0, "legacy_analysis_units": 0, "external_applications": 0,
             "unreconciled_native_holds_preserved": 2, "migration": scalar("SELECT version_num FROM alembic_version")}
@@ -479,8 +486,9 @@ def run_journey(evidence: Path, *, scenario: str = "legacy"):
         "frontend/journey/cold-unified-discovery.spec.ts", "backend/tests/fixtures/cold_browser_credit_policy.py",
         "frontend/components/UnifiedDiscoveryPanel.tsx", "frontend/components/billing/UnifiedBillingPanel.tsx",
         "frontend/components/billing/LegacyBillingAccount.tsx", "frontend/components/billing/UnifiedCreditPacks.tsx",
-        "backend/app/routers/credits.py", "backend/app/domains/credits/discovery.py",
-        "backend/app/domains/credits/payments.py", "backend/app/domains/free_core/policy.py",
+        "frontend/lib/unifiedCredits.ts", "backend/app/routers/credits.py",
+        "backend/app/domains/credits/discovery.py", "backend/app/domains/credits/payments.py",
+        "backend/app/domains/credits/service.py", "backend/app/domains/free_core/policy.py",
         "frontend/playwright.cold.config.ts", "frontend/app/api/backend/[...path]/route.ts",
         "frontend/tests/candidate-https-server.mjs", "frontend/app/api/account/[operation]/route.ts",
         "frontend/lib/accountTransportServer.ts", "frontend/lib/accountTransportClient.ts",

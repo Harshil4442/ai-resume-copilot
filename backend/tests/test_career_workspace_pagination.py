@@ -332,6 +332,24 @@ def test_later_legacy_collection_overflow_refuses_before_any_body_hydration(owne
         assert "opportunity_contacts.notes" not in projection and "application_events.note" not in projection
 
 
+def test_legacy_workspace_keeps_default_submitted_version_after_resume_change(owned):
+    client, factory, _, _, _ = owned
+    populate(factory, 2)
+    with factory() as db:
+        db.query(models.Opportunity).filter_by(id="opp_a").update({"resume_id": 11})
+        db.add(models.ResumeVersion(id="rsv_new_source", user_id=1, resume_id=11,
+            opportunity_id="opp_a", version_number=1, created_at=STAMP + timedelta(days=1)))
+        db.commit()
+
+    legacy = client.get("/api/v1/opportunities/opp_a")
+    assert legacy.status_code == 200
+    assert legacy.json()["resume_versions"][0]["id"] == "rsv_0001"
+
+    page = client.get(f"{PREFIX}/resume_versions")
+    assert page.status_code == 200
+    assert page.json()["items"][0]["id"] == "rsv_new_source"
+
+
 VERSION_PAGE = "/api/v1/resume-versions/page"
 VALID_EDIT = {"unit_id": "unit", "original_text": "before", "replacement_text": "after", "reason": "role", "evidence_ids": ["evd_0000"]}
 VALID_CONTENT = {"format_preservation": "source", "source_format": "pdf", "source_edits": [VALID_EDIT]}

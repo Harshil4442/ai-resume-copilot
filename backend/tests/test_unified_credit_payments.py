@@ -11,12 +11,13 @@ from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavaila
 from backend.app.domains.credits.models import CreditCampaign, CreditGrant, CreditPurchaseQuote
 from backend.app.domains.credits.pricing import CATALOG_VERSION
 from backend.app.domains.credits.runtime import RuntimeConfig
-from backend.app.models import EntitlementLedger, PaymentOrder, User
+from backend.app.models import EntitlementLedger, PaymentOrder, PaymentRefund, User
 from backend.app.routers import credits
 from backend.app.services.delivery_contracts import current_output_contract
 from test_razorpay_billing import (  # Reuse verified-signature test transport only.
     _capture_payload,
     _post_event,
+    _purchase_payload,
     _refund_payload,
 )
 from test_razorpay_billing import client as client
@@ -88,6 +89,31 @@ def start(client, *, key="first-purchase"):
     payload = {"quote_id": quote.json()["quote_id"], "billing_country": "IN", "idempotency_key": key}
     result = client.post("/api/v1/credits/orders", json=payload)
     return quote.json(), payload, result
+
+
+def test_legacy_checkout_respects_owned_unified_order_during_mode_switch(unified, monkeypatch, session_factory):
+    client, calls = unified
+    _, _, created = start(client)
+    assert created.status_code == 200
+    original = created.json()["order_id"]
+    monkeypatch.setenv("UNIFIED_CREDITS_ENABLED", "false")
+
+    response = client.post("/api/billing/orders", json=_purchase_payload())
+    assert response.status_code == 409
+    assert response.json()["detail"]["order_id"] == original
+    assert [identity for identity, _ in calls] == [original]
+
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        other = User(email="other-checkout-owner@example.test")
+        db.add(other)
+        db.flush()
+        order.user_id = other.id
+        db.commit()
+
+    allowed = client.post("/api/billing/orders", json=_purchase_payload())
+    assert allowed.status_code == 200
+    assert [identity for identity, _ in calls] == [original, allowed.json()["order_id"]]
 
 
 def test_review_cannot_enable_production_with_estimates_or_synthetic_evidence(monkeypatch):
@@ -276,6 +302,53 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
     assert status["fulfilled"] and status["status"] == "paid" and status["pass_expires_at"]
 
 
+def test_campaign_cutoff_keeps_unexpired_offer_quote_payable(unified, monkeypatch, session_factory):
+    client, calls = unified
+    cutoff = datetime.now(UTC) + timedelta(minutes=1)
+    with session_factory() as db:
+        campaign = db.query(CreditCampaign).one()
+        campaign.starts_at = cutoff - timedelta(days=30)
+        campaign.ends_at = cutoff
+        db.commit()
+
+    issued_at = cutoff - timedelta(seconds=1)
+    monkeypatch.setattr(service, "utcnow", lambda: issued_at)
+    offer_response = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "before-campaign-cutoff",
+    })
+    assert offer_response.status_code == 200, offer_response.text
+    offer = offer_response.json()
+    assert offer["amount_minor"] == 5900
+    assert offer["campaign"]["status"] == "active"
+    assert datetime.fromisoformat(offer["expires_at"]) == issued_at + timedelta(minutes=15)
+
+    monkeypatch.setattr(service, "utcnow", lambda: cutoff)
+    standard_response = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "at-campaign-cutoff",
+    })
+    assert standard_response.status_code == 200, standard_response.text
+    standard = standard_response.json()
+    assert standard["amount_minor"] == 7900
+    assert standard["campaign"]["status"] == "ended"
+    assert calls == []
+
+    # A customer can accept the offer until their own quote expires.
+    payment = client.post("/api/v1/credits/orders", json={
+        "quote_id": offer["quote_id"], "billing_country": "IN",
+        "idempotency_key": "accept-offer-after-campaign-cutoff",
+    })
+    assert payment.status_code == 200, payment.text
+    order = payment.json()
+    assert order["amount_minor"] == 5900
+    assert order["accepted_quote"]["quote_id"] == offer["quote_id"]
+    assert order["accepted_quote"]["expires_at"] == offer["expires_at"]
+    assert calls == [(order["order_id"], 5900)]
+    with session_factory() as db:
+        stored = db.query(PaymentOrder).one()
+        assert stored.gross_amount_minor == 5900
+        assert OriginalOrder.from_order(stored).quote["amount_minor"] == 5900
+
+
 def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed_order(unified, session_factory):
     client, calls = unified
     identities = []
@@ -340,6 +413,48 @@ def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified
     with session_factory() as db:
         assert db.query(EntitlementLedger).one().status == "refunded"
         assert db.get(User, 1).ai_credits == 20
+
+
+def test_verified_refunds_after_spend_create_exact_debt_and_preserve_quote(unified, session_factory):
+    client, calls = unified
+    _, _, result = start(client)
+    assert result.status_code == 200
+    created = result.json()
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        capture = _capture_payload(order)
+        half = _refund_payload(order, "rfnd_spent_half", 2950)
+        rest = _refund_payload(order, "rfnd_spent_rest", 2950)
+    assert _post_event(client, "evt_spent_capture", capture).status_code == 200
+    with session_factory() as db:
+        reservation = service.reserve_credits(db, user_id=1, operation="job_discovery_batch",
+            source_id="refund-test-search", idempotency_key="refund-test-spend", credits=1,
+            input_fingerprint="a" * 64, quote_snapshot={"credits": 1}, execution_allowance_minor=13)
+        service.settle_reservation(db, user_id=1, reservation_id=reservation.id, committed_credits=1)
+        db.commit()
+    for event, body, expected_balance, expected_debt in (
+        ("evt_spent_half", half, 19, 0), ("evt_spent_rest", rest, 0, 1),
+    ):
+        for status in ("processed", "duplicate"):
+            response = _post_event(client, event, body)
+            assert response.status_code == 200 and response.json()["status"] == status
+            wallet = client.get("/api/v1/credits/wallet").json()
+            assert (wallet["available_credits"], wallet["reserved_credits"], wallet["debt_credits"]) == (
+                expected_balance, 0, expected_debt)
+    refunded = client.get(f"/api/v1/credits/orders/{created['order_id']}").json()
+    assert (refunded["status"], refunded["refunded_amount_minor"], refunded["fulfilled"], refunded["checkout_available"]) == (
+        "refunded", 5900, False, False)
+    assert {k: v for k, v in refunded["accepted_quote"].items() if k != "server_time"} == {
+        k: v for k, v in created["accepted_quote"].items() if k != "server_time"}
+    history = client.get("/api/v1/credits/history?limit=20")
+    assert history.status_code == 200
+    revocations = [item for item in history.json()["items"] if item["event_type"] == "revoke"]
+    assert [(item["amount"], item["balance_after"]) for item in revocations] == [(-20, -1), (-20, 19)]
+    with session_factory() as db:
+        assert db.query(PaymentRefund).count() == 2
+        assert db.query(CreditGrant).one().remaining_credits == 0
+        assert db.get(User, 1).ai_credits == 20
+    assert len(calls) == 1
 
 
 def test_refund_before_capture_and_late_capture_do_not_regrant(unified, session_factory):

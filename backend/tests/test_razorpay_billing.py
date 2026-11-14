@@ -376,6 +376,7 @@ def test_recent_order_prioritizes_oldest_owned_legacy_payment_hold(client, sessi
     assert response.status_code == 200
     assert response.json()["order_id"] == oldest["order_id"]
     assert response.json()["status"] == ("failed" if status == "payment_failed" else "pending")
+    assert response.json()["fulfilled"] is False
     assert response.headers["cache-control"] == "no-store, private"
 
 
@@ -513,6 +514,49 @@ def test_fresh_initializing_attempt_blocks_a_second_provider_order(
     with session_factory() as db:
         assert db.query(PaymentOrder).count() == 1
         assert db.query(PaymentOrder).one().status == "initializing"
+
+
+def test_legacy_checkout_blocks_a_new_sku_until_the_owned_original_is_resolved(
+    client, enabled_checkout, session_factory,
+):
+    original = _create_order(client)
+    growth = _purchase_payload() | {"sku": "growth_bundle", "accepted_quote":
+        product_quote(PRODUCTS["growth_bundle"], CATALOG_VERSION).model_dump()}
+    response = client.post("/api/billing/orders", json=growth)
+    assert response.status_code == 409
+    assert response.json()["detail"]["order_id"] == original["order_id"]
+    assert _create_order(client, original["order_id"])["provider_order_id"] == original["provider_order_id"]
+    assert enabled_checkout == [original["order_id"]]
+    with session_factory() as db:
+        assert db.query(PaymentOrder).one().status == "created"
+
+
+def test_legacy_checkout_cleanup_commits_only_with_the_replacement_order(
+    client, enabled_checkout, session_factory, monkeypatch,
+):
+    original = _create_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        order.provider_order_id = None
+        db.commit()
+
+    def funding_unavailable(*_):
+        raise billing.CostPolicyUnavailable("Synthetic funding review unavailable.")
+
+    with monkeypatch.context() as funding:
+        funding.setattr(billing, "assert_actual_variance", funding_unavailable)
+        refused = client.post("/api/billing/orders", json=_purchase_payload())
+    assert refused.status_code == 503
+    assert enabled_checkout == [original["order_id"]]
+    with session_factory() as db:
+        order = db.query(PaymentOrder).one()
+        assert order.status == "created" and order.active_attempt_key is not None
+
+    replacement = _create_order(client)
+    assert enabled_checkout == [original["order_id"], replacement["order_id"]]
+    with session_factory() as db:
+        old = db.query(PaymentOrder).filter_by(public_id=original["order_id"]).one()
+        assert old.status == "abandoned" and old.active_attempt_key is None
 
 
 def test_server_owned_order_reuse_and_mode_isolation(
@@ -790,6 +834,33 @@ def test_delayed_webhook_uses_order_entitlement_snapshot(
     with session_factory() as db:
         entitlement = db.query(EntitlementLedger).one()
         assert entitlement.quantity == 30
+
+
+@pytest.mark.parametrize("ended_by_user", [False, True])
+def test_recent_paid_premium_order_remains_fulfilled_after_access_ends(
+    client, enabled_checkout, session_factory, ended_by_user
+):
+    created = _accepted_legacy_order(client)
+    with session_factory() as db:
+        order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
+        capture = _capture_payload(order)
+    if not ended_by_user:
+        capture["created_at"] = int((datetime.now(UTC) - timedelta(days=31)).timestamp())
+    assert _post_event(client, "evt_legacy_access_ends", capture).json()["status"] == "processed"
+    if ended_by_user:
+        assert client.post("/api/billing/end-premium").json() == {"status": "ended", "auto_renews": False}
+
+    with session_factory() as db:
+        assert not db.query(User).one().is_premium_active()
+        assert db.query(EntitlementLedger).one().status == ("ended_by_user" if ended_by_user else "active")
+
+    for path in ("/api/billing/recent-order", f"/api/billing/orders/{created['order_id']}"):
+        response = client.get(path)
+        assert response.status_code == 200
+        body = response.json()
+        assert (body["order_id"], body["status"], body["fulfilled"], body["checkout_available"]) == (
+            created["order_id"], "paid", True, False
+        )
 
 
 def test_unknown_order_event_is_retryable_and_reconciles_same_event_id(

@@ -298,8 +298,10 @@ export function parseUnifiedCreditHistory(value: unknown): UnifiedCreditHistory 
     || (value.next_cursor !== undefined && value.next_cursor !== null && !nonempty(value.next_cursor, 1024))) return null;
   const items: UnifiedCreditHistory["items"] = [];
   for (const item of value.items) {
+    // Unlike spendable wallet credits, the ledger includes debt after a cash refund.
     if (!record(item) || !nonempty(item.id) || !nonempty(item.event_type, 80)
-      || typeof item.amount !== "number" || !Number.isSafeInteger(item.amount) || !nonnegativeInteger(item.balance_after)
+      || typeof item.amount !== "number" || !Number.isSafeInteger(item.amount)
+      || typeof item.balance_after !== "number" || !Number.isSafeInteger(item.balance_after)
       || creditTimestamp(item.created_at) === null) return null;
     items.push({ id: item.id, event_type: item.event_type, amount: item.amount,
       balance_after: item.balance_after, created_at: item.created_at as string });

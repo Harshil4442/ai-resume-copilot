@@ -504,6 +504,7 @@ class WorkspaceResponse(BaseModel):
     submitted_resume_version: ResumeVersionMetadata | None
     selected_resume_version: ResumeVersionMetadata | None
     approved_evidence_count: int | None
+    skill_roi: SkillRoiResponse | None = None
 
 
 WorkspacePageResponse = (

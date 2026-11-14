@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -398,6 +399,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
     from scripts import run_stage5_capacity as runner
 
     output, calls = tmp_path / "owned", []
+    previous_logging_threshold = logging.root.manager.disable
     class InertResources:
         def __init__(self, directory, *args):
             self.directory, self.cleanup = directory, []
@@ -408,6 +410,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
             if failure == "cleanup":
                 raise RuntimeError("synthetic-private-error")
     def execute(plan, resources):
+        assert logging.root.manager.disable == logging.CRITICAL
         results, preflight = measured_results(plan.requests_per_phase), dict(PREFLIGHT)
         resources.partial_report.update(results=results, preflight=preflight, synthetic_test=True)
         if failure == "preflight":
@@ -424,6 +427,7 @@ def test_actual_cli_preserves_report_and_returns_nonzero_for_any_measured_failur
     monkeypatch.setattr(sys, "argv", ["runner", "--execute", "--output", str(output),
                                     "--pg-bin", "/not-opened", "--redis-server", "/not-opened"])
     assert runner.main() == (0 if failure is None else 1)
+    assert logging.root.manager.disable == previous_logging_threshold
     report = json.loads((output / "report.json").read_text())
     assert report["validation"]["passed"] is (failure is None)
     assert report["validation"]["production_capacity_qualified"] is False
@@ -716,7 +720,9 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 11 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 19 and "backend/app/**" not in trigger["paths"]
+    assert "backend/scripts/stage5_skill_roi.py" in trigger["paths"]
+    assert "backend/tests/test_stage5_skill_roi.py" in trigger["paths"]
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -732,9 +738,14 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "--pg-bin \"$OWNED_PG_BIN\"" in runs
     assert "sudo" not in runs and "apt-get" not in runs
     assert "HIREWIZ_STAGE5_PG_REQUIRED" in source and "test_stage5_seed_postgres.py" in runs
+    evaluation = next(step for step in job["steps"] if step.get("name") == "Verify quality evaluation on owned PostgreSQL")
+    assert evaluation["env"]["HIREWIZ_STAGE5_PG_BIN"] == "${{ steps.postgres.outputs.bin }}"
+    assert evaluation["env"]["HIREWIZ_STAGE5_PG_REQUIRED"] == "true"
+    assert "test_supported_evaluation_postgres.py tests/test_supported_evaluation_services_postgres.py" in evaluation["run"]
     assert "1b083a6a9647024a98d4f38c2b51906a0f61ca36adcba11672b8933544962efe" in runs
     assert "fdbdee0a19a12e61c2eca46f4162f6d3ede3a01e0baa8a12cee1f35f3391f1e9" in runs
     assert "run_stage5_capacity.py --execute" in runs
+    assert "--skill-roi-journey" in runs and "test_stage5_skill_roi.py" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
     assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)

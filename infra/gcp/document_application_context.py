@@ -125,8 +125,10 @@ def verify_build(pin, build):
          "native_git_build_required")
 
 
-def template(value):
-    return {key: row for key, row in value.items() if key not in OUTPUTS}
+def template(value, *, revision=False):
+    # Container status is runtime output from GetRevision, never desired config.
+    outputs = OUTPUTS | {"containerStatuses"} if revision else OUTPUTS
+    return {key: row for key, row in value.items() if key not in outputs}
 
 
 def ready(service, name):
@@ -162,7 +164,7 @@ def serving(clients, service, image, name, uid=None):
              and re.fullmatch(r"[a-f0-9-]{36}", value.get("uid", ""))
              and any(row.get("type") == "Ready" and row.get("state") == "CONDITION_SUCCEEDED"
                      for row in value.get("conditions", []))
-             and template(value) == expected, "mixed_or_unknown_reachable_template")
+             and template(value, revision=True) == expected, "mixed_or_unknown_reachable_template")
         if revision == active:
             result = value
     need(result is not None, "physical_serving_revision_required")

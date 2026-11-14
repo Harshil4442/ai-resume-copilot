@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..observability import record_provider_generation
 from .model_cost_policy import (
     ModelCostUnavailable,
     attempt_quote,
@@ -57,8 +58,12 @@ class GenerationBudget:
 
     def finish(self, record: dict, *, latency_ms: int, response: Any = None, error: Exception | None = None):
         record["status"] = "failed" if error else "succeeded"
-        if self.after:
-            self.after(record, latency_ms, response, error)
+        provider = record.get("provider")
+        try:
+            if self.after:
+                self.after(record, latency_ms, response, error)
+        finally:
+            record_provider_generation(provider, latency_ms, failed=error is not None)
 
 
 _active: contextvars.ContextVar[GenerationBudget | None] = contextvars.ContextVar("generation_budget", default=None)

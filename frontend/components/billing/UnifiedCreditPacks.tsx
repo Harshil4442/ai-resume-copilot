@@ -20,7 +20,10 @@ type PacksProps = {
 
 function PackPrice({ pack, now }: { pack: UnifiedCreditPack; now: number }) {
   const campaign = pack.campaign;
-  const currentOffer = campaign?.status === "active" && !packNeedsPriceRefresh(pack, now);
+  if (packNeedsPriceRefresh(pack, now)) {
+    return <p className="mt-5 text-sm text-muted-foreground">Refresh to see the current price.</p>;
+  }
+  const currentOffer = campaign?.status === "active";
   const reference = showReferencePrice(pack, now);
   return <div className="mt-5 space-y-2">
     {currentOffer ? <p className="text-xs font-semibold text-primary">{reference ? "Limited offer" : "Introductory price"}</p> : null}
@@ -69,7 +72,6 @@ export function UnifiedCreditPacks({ catalog, onReview, onRefresh, reviewingSku 
             <li>Use for eligible HireWiz services at their reviewed prices</li>
             <li>Existing purchases keep their original terms</li>
           </ul>
-          {needsRefresh ? <p className="mb-4 text-xs leading-5 text-muted-foreground">This price needs refreshing because the offer period changed.</p> : null}
           <Button type="button" className="mt-auto min-h-11 w-full" disabled={!canReview} onClick={() => onReview(pack.sku)}>
             {reviewingSku === pack.sku ? "Preparing quote…" : `Review ${pack.name} pass`}
           </Button>
