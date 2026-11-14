@@ -7,6 +7,8 @@ from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
+from sqlalchemy import and_, or_
+
 from ... import models as core
 from ..common import utcnow
 from . import scanner
@@ -149,8 +151,12 @@ def process_due(factory, store: ObjectStore, *, limit: int = 10) -> int:
     if not 1 <= limit <= 10:
         raise ValueError("inspection_batch_limit")
     now = utcnow()
+    eligible_state = or_(
+        ResumeUpload.state == "queued",
+        and_(ResumeUpload.state == "inspecting", or_(ResumeUpload.lease_until.is_(None), ResumeUpload.lease_until <= now)),
+    )
     with factory() as db:
         identifiers = [row.id for row in db.query(ResumeUpload).filter(
-            ResumeUpload.state.in_(("queued", "inspecting")), ResumeUpload.next_attempt_at <= now,
+            eligible_state, ResumeUpload.next_attempt_at <= now,
             ResumeUpload.expires_at > now).order_by(ResumeUpload.next_attempt_at).limit(limit).all()]
     return sum(process(factory, identifier, store) for identifier in identifiers)
