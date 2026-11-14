@@ -18,27 +18,48 @@ interface RazorpayCheckout {
   on: (event: "payment.failed", callback: (response: { error?: { description?: string } }) => void) => void;
 }
 
+type RazorpayConstructor = new (options: RazorpayOptions) => RazorpayCheckout;
+
 declare global {
-  interface Window { Razorpay?: new (options: RazorpayOptions) => RazorpayCheckout }
+  interface Window { Razorpay?: RazorpayConstructor }
 }
 
-let checkoutScriptPromise: Promise<void> | null = null;
+const CHECKOUT_SCRIPT_TIMEOUT_MS = 12_000;
+let checkoutScriptPromise: Promise<RazorpayConstructor> | null = null;
+
+export class HostedCheckoutLoadError extends Error {}
 
 /** Call only after a validated, explicitly accepted server order exists. */
-export function loadHostedCheckout(): Promise<void> {
-  if (typeof window === "undefined") return Promise.reject(new Error("Checkout is available only in a browser."));
-  if (window.Razorpay) return Promise.resolve();
+export function loadHostedCheckout(): Promise<RazorpayConstructor> {
+  if (typeof window === "undefined") return Promise.reject(new HostedCheckoutLoadError("Checkout is available only in a browser."));
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
   if (checkoutScriptPromise) return checkoutScriptPromise;
-  checkoutScriptPromise = new Promise<void>((resolve, reject) => {
+  const attempt = new Promise<RazorpayConstructor>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
     script.async = true;
-    script.onload = () => {
-      if (window.Razorpay) resolve();
-      else { checkoutScriptPromise = null; script.remove(); reject(new Error("The hosted checkout did not initialize.")); }
-    };
-    script.onerror = () => { checkoutScriptPromise = null; script.remove(); reject(new Error("The hosted checkout could not be loaded.")); };
-    document.body.appendChild(script);
+
+    function finish(checkout?: RazorpayConstructor) {
+      window.clearTimeout(timeout);
+      script.onload = null;
+      script.onerror = null;
+      if (checkout) {
+        resolve(checkout);
+        return;
+      }
+      script.remove();
+      reject(new HostedCheckoutLoadError("Razorpay checkout did not open. Check the original payment status before trying again."));
+    }
+
+    const timeout = window.setTimeout(() => finish(), CHECKOUT_SCRIPT_TIMEOUT_MS);
+    script.onload = () => finish(window.Razorpay);
+    script.onerror = () => finish();
+    try {
+      document.body.appendChild(script);
+    } catch {
+      finish();
+    }
   });
+  checkoutScriptPromise = attempt.finally(() => { checkoutScriptPromise = null; });
   return checkoutScriptPromise;
 }

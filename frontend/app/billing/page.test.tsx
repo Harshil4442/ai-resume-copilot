@@ -64,6 +64,48 @@ async function review() {
 }
 async function confirmIndia() { const checkbox = await screen.findByRole("checkbox", { name: /I confirm my billing country/ }); fireEvent.click(checkbox); }
 
+it.each(["unified", "legacy"] as const)("recovers a stalled %s checkout through the same verified order", async (kind) => {
+  const legacy = kind === "legacy";
+  const recentPath = legacy ? "/billing/recent-order" : "/v1/credits/recent-order";
+  const statusPath = legacy ? "/billing/orders/order_legacy" : "/v1/credits/orders/order_unified";
+  const createPath = legacy ? "/billing/orders" : "/v1/credits/orders";
+  const reference = legacy ? "order_legacy" : "order_unified";
+  const scriptSelector = 'script[src="https://checkout.razorpay.com/v1/checkout.js"]';
+  state.get.mockImplementation((url: string) => url === recentPath ? Promise.resolve(legacy ? legacyOrder() : order()) : read(url));
+  if (legacy) state.post.mockResolvedValue(legacyCheckout);
+  delete window.Razorpay;
+  render(<BillingPage />);
+  const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+  await confirmIndia();
+
+  vi.useFakeTimers();
+  await act(async () => { fireEvent.click(resume); });
+  expect(document.querySelector(scriptSelector)).toBeInTheDocument();
+  expect(resume).toBeDisabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+  expect(screen.getByRole("alert")).toHaveTextContent("Razorpay checkout did not open");
+  noCheckout();
+  expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox", { name: /I confirm my billing country/ }));
+  expect(resume).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: /check payment status/i })); });
+  expect(state.get).toHaveBeenCalledWith(statusPath, expect.any(AbortSignal));
+  expect(resume).toBeEnabled();
+
+  await act(async () => { fireEvent.click(resume); });
+  const script = document.querySelector(scriptSelector);
+  expect(script).toBeInTheDocument();
+  window.Razorpay = hostedCheckout;
+  await act(async () => { fireEvent.load(script!); });
+  expect(openCheckout).toHaveBeenCalledOnce();
+  const requests = state.post.mock.calls.filter(([path]) => path === createPath);
+  expect(requests).toHaveLength(2);
+  expect(requests[0][1]).toMatchObject({ order_reference: reference, idempotency_key: expect.any(String) });
+  expect(requests[1]).toEqual(requests[0]);
+  script?.remove();
+});
+
 describe("unified billing account", () => {
   it("shows a single new balance while preserving separate legacy entitlements", async () => {
     render(<BillingPage />);
