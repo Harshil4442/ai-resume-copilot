@@ -13,6 +13,7 @@ from threading import Event, Thread
 import pytest
 from backend.app.models import EntitlementLedger, PaymentEvent, PaymentOrder
 from test_razorpay_billing import (
+    TEST_WEBHOOK_SECRET,
     _accepted_legacy_order,
     _capture_payload,
     _signature,
@@ -87,7 +88,7 @@ def send(receiver, *, method="POST", path=ingress.WEBHOOK_PATH, body=b"{}", head
 
 
 def test_preserves_paid_webhook_raw_body_and_headers_for_actual_app(
-    relay, client, enabled_checkout, session_factory, capsys,
+    relay, client, enabled_checkout, session_factory, capsys, tmp_path,
 ):
     receiver, upstream = relay
     upstream.application = client
@@ -95,6 +96,7 @@ def test_preserves_paid_webhook_raw_body_and_headers_for_actual_app(
     with session_factory() as db:
         order = db.query(PaymentOrder).filter_by(public_id=created["order_id"]).one()
         payload = _capture_payload(order) | {"synthetic": "Résumé"}
+        provider_order_id = order.provider_order_id
     body = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
     headers = {
         "X-Razorpay-Event-Id": "evt_owned_test_relay",
@@ -102,6 +104,17 @@ def test_preserves_paid_webhook_raw_body_and_headers_for_actual_app(
         "Cookie": "must-not-forward=private",
         "Authorization": "must-not-forward",
     }
+
+    tmp_path.chmod(0o700)
+    receiver.hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    rule = tmp_path / "hold.json"
+    rule.write_text(json.dumps({"order": provider_order_id}))
+    rule.chmod(0o600)
+    assert send(receiver, body=body, headers=headers)[0] == 503
+    assert upstream.received == []
+    with session_factory() as db:
+        assert db.query(PaymentEvent).count() == db.query(EntitlementLedger).count() == 0
+    rule.unlink()
 
     for _ in range(2):
         status, response_headers, response_body = send(receiver, body=body, headers=headers)
