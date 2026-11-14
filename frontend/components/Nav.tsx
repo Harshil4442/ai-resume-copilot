@@ -105,7 +105,8 @@ export default function Nav() {
   const links = authenticated
     ? appLinks.filter((link) => !link.feature || features.data?.features[link.feature]?.enabled !== false)
     : publicLinks;
-  const units = deferHeaderMetadata ? undefined : profile.data?.ai_credits;
+  const analysisBalance = deferHeaderMetadata ? undefined : profile.data?.ai_credits;
+  const units = analysisBalance === undefined ? undefined : Math.max(0, analysisBalance);
   const serviceCredits = deferHeaderMetadata ? undefined : profile.data?.job_service_credits;
 
   return (

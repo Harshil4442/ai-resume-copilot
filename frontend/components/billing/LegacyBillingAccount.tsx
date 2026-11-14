@@ -28,13 +28,13 @@ function sameQuote(actual: LegacyQuote | null | undefined, expected: LegacyQuote
     && actual.currency === expected.currency && actual.job_service_credits === expected.job_service_credits
     && actual.analysis_units === expected.analysis_units;
 }
-function balance(value: unknown): number | null {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+function signedBalance(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 function refundAmount(order: LegacyOrder): number | null {
-  const refunded = balance(order.refunded_amount_minor);
-  const amount = balance(order.amount_minor);
-  if (order.currency !== "INR" || refunded === null || amount === null || refunded > amount) return null;
+  const refunded = signedBalance(order.refunded_amount_minor);
+  const amount = signedBalance(order.amount_minor);
+  if (order.currency !== "INR" || refunded === null || refunded < 0 || amount === null || amount <= 0 || refunded > amount) return null;
   if (order.status === "refunded") return refunded > 0 && refunded === amount ? refunded : null;
   if (order.status === "paid" && refunded < amount) return refunded;
   return null;
@@ -77,7 +77,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
         if (isCurrent()) setProfile(value);
       }),
       apiGet<{ job_service_credits?: unknown }>("/auth/me").then((value) => {
-        if (isCurrent()) setServiceCredits(typeof value.job_service_credits === "number" && Number.isSafeInteger(value.job_service_credits) ? value.job_service_credits : null);
+        if (isCurrent()) setServiceCredits(signedBalance(value.job_service_credits));
       }).catch(() => { if (isCurrent()) setServiceCredits(null); }),
       apiGet<UsageHistory>("/v1/usage-events?limit=20").then((value) => { if (isCurrent()) setUsage(value); }),
     ]);
@@ -95,10 +95,10 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     }
     acceptedOrder.current = value;
     setOrder(value);
-    if ((value.status === "paid" && value.fulfilled) || value.status === "refunded") {
+    if ((value.status === "paid" && value.fulfilled) || value.status === "refunded" || (refunded !== null && refunded > 0)) {
       setError(null);
       setMessage(value.status === "refunded" ? "The original payment was refunded."
-        : refunded ? "The original payment was partially refunded. Your balances and service history show the updated amounts."
+        : refunded ? "The original payment was partially refunded."
           : "Payment confirmed. Your original purchased entitlements were delivered.");
       setReconciliationHeld(false);
       window.dispatchEvent(new Event("refresh_analysis_units"));
@@ -246,11 +246,12 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   }
 
   const refunded = order ? refundAmount(order) : null;
+  const analysisBalance = signedBalance(profile?.ai_credits);
   return <section className="space-y-6 border-t border-border pt-8" aria-labelledby="legacy-entitlements-heading">
     <div><p className="data-label">Earlier purchases</p><h2 id="legacy-entitlements-heading" className="font-display mt-2 text-2xl">Legacy entitlements</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">These balances retain their original promises. They remain separate from your new credit wallet until an approved migration is complete; they have not been added together or converted.</p></div>
     <div className="grid gap-5 sm:grid-cols-3" aria-label="Current entitlement" role="region">
-      <div><p className="data-label">Analysis units</p><p className="mt-2 text-2xl font-semibold">{profile ? balance(profile.ai_credits) ?? "Unavailable" : "..."}</p></div>
+      <div><p className="data-label">Analysis units</p><p className="mt-2 text-2xl font-semibold">{analysisBalance === null ? profile ? "Unavailable" : "..." : Math.max(0, analysisBalance)}</p>{analysisBalance !== null && analysisBalance < 0 ? <p className="mt-1 text-xs">Pending analysis-unit adjustment: {-analysisBalance}.</p> : null}</div>
       <div><p className="data-label">Job service credits</p><p className="mt-2 text-2xl font-semibold">{serviceCredits === undefined ? "..." : serviceCredits === null ? "Unavailable" : Math.max(0, serviceCredits)}</p>{serviceCredits === null ? <p className="mt-1 text-xs">Could not verify your available balance. Refresh this page to try again.</p> : serviceCredits !== undefined && serviceCredits < 0 ? <p className="mt-1 text-xs">Pending credit adjustment: {-serviceCredits}.</p> : null}</div>
       <div><p className="data-label">Current access</p><p className="mt-2 text-lg">{profile?.tier === "premium" ? "Premium active" : profile?.tier === "free" ? "Free access" : "Checking status"}</p>{profile?.premium_until ? <p className="text-xs">Through {new Date(profile.premium_until).toLocaleDateString("en-IN")}; no automatic renewal.</p> : null}</div>
     </div>
@@ -274,7 +275,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
         <Link href="/contact" className="inline-flex min-h-11 items-center text-sm underline">Billing support</Link>
       </div>
     </section> : null}
-    <ServiceCreditHistory refreshKey={order && (order.fulfilled || order.status === "refunded") ? `${order.order_id}:${order.status}:${refunded ?? ""}` : ""} />
+    <ServiceCreditHistory refreshKey={order && (order.fulfilled || order.status === "refunded" || refunded) ? `${order.order_id}:${order.status}:${refunded ?? ""}` : ""} />
     <details className="border-t border-border pt-5"><summary className="cursor-pointer font-semibold">Legacy analysis history</summary>
       {usage ? usage.items.length ? <ul className="mt-4 divide-y divide-border">{usage.items.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{item.event_type.replaceAll("_", " ")} · {new Date(item.created_at).toLocaleDateString("en-IN")}</span><span>{item.amount > 0 ? "+" : ""}{item.amount} units · balance {item.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm">No legacy analysis-unit activity yet.</p> : <p className="mt-3 text-sm">Analysis history is currently unavailable.</p>}
     </details>
