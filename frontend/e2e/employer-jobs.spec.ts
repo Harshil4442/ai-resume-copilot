@@ -423,6 +423,46 @@ test("legacy access keeps purchased terms while new passes require reviewed quot
   await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
+test("legacy refund checks update the same order, spendable balance and service history", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  f.state.recentPaidPack = true;
+  await f.install(context, baseURL!);
+  let refunded = 0;
+  const orderPath = "/api/backend/billing/orders/order_fixture";
+  await context.route((url) => url.pathname === orderPath, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const full = refunded === 109_900;
+    await route.fulfill({ status: 200, json: {
+      order_id: "order_fixture", sku: "growth_bundle", status: full ? "refunded" : "paid", fulfilled: !full,
+      amount_minor: 109_900, refunded_amount_minor: refunded, currency: "INR",
+      accepted_quote: { catalog_version: "fixture-v1", amount_minor: 109_900, currency: "INR", job_service_credits: 300, analysis_units: 6 },
+    } });
+  });
+  await page.goto("/billing");
+  const check = page.getByRole("button", { name: "Check payment status", exact: true });
+  const current = page.getByRole("region", { name: "Current entitlement" }).getByText("Job service credits", { exact: true }).locator("..");
+  const history = page.getByText("Available balance", { exact: true }).locator("..");
+  await expect(current.getByText("100", { exact: true })).toBeVisible();
+  await expect(history).toContainText("100 credits");
+  for (const update of [
+    { amount: 54_950, balance: 50, heading: "Payment partially refunded", formatted: "₹549.5" },
+    { amount: 109_900, balance: -1, heading: "Payment refunded", formatted: "₹1,099" },
+  ]) {
+    refunded = update.amount;
+    f.catalog.balance = update.balance;
+    await check.click();
+    await expect(page.getByRole("heading", { name: update.heading, exact: true })).toBeVisible();
+    await expect(page.getByText(`Total refunded: ${update.formatted}`, { exact: true })).toBeVisible();
+    const available = Math.max(0, update.balance);
+    await expect(current.getByText(String(available), { exact: true })).toBeVisible();
+    await expect(history).toContainText(`${available} credits`);
+  }
+  await expect(current).toContainText("Pending credit adjustment: 1.");
+  await expect(history).toContainText("Pending credit adjustment: 1.");
+  expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+  expect(f.unexpected).toEqual([]);
+});
+
 test("service credit checkout links preserve explicit pass review before purchase", async ({ page, context, baseURL }) => {
   const f = fixture(); await f.install(context, baseURL!); await page.goto("/employer-jobs");
   const buy = page.getByRole("link", { name: "Buy credits", exact: true });

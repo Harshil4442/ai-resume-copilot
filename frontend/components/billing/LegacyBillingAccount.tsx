@@ -16,7 +16,7 @@ type LegacyQuote = { catalog_version: string; amount_minor: number; currency: "I
 type LegacyOrder = {
   order_id: string; provider_order_id?: string | null; sku: string; status: "pending" | "paid" | "failed" | "refunded";
   fulfilled: boolean; amount_minor: number; currency: "INR"; accepted_quote?: LegacyQuote | null;
-  checkout_available?: boolean; payment_reference?: string | null;
+  checkout_available?: boolean; payment_reference?: string | null; refunded_amount_minor?: number;
 };
 type LegacyCheckout = {
   order_id: string; provider: string; provider_order_id: string; key_id: string; amount_minor: number; currency: string;
@@ -31,6 +31,14 @@ function sameQuote(actual: LegacyQuote | null | undefined, expected: LegacyQuote
 function balance(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
+function refundAmount(order: LegacyOrder): number | null {
+  const refunded = balance(order.refunded_amount_minor);
+  const amount = balance(order.amount_minor);
+  if (order.currency !== "INR" || refunded === null || amount === null || refunded > amount) return null;
+  if (order.status === "refunded") return refunded > 0 && refunded === amount ? refunded : null;
+  if (order.status === "paid" && refunded < amount) return refunded;
+  return null;
+}
 function errorText(error: unknown, fallback: string) { return error instanceof Error ? error.message : fallback; }
 
 /** Existing purchases remain usable on their original terms; this component never sells a new legacy pack. */
@@ -39,6 +47,8 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const statusWork = useRef<AbortController | null>(null);
   const statusBudgets = useRef(new Map<string, StatusReadBudget>());
   const mounted = useRef(true), pollId = useRef(0), actionPending = useRef(false);
+  const balanceRead = useRef(0);
+  const acceptedOrder = useRef<LegacyOrder | null>(null);
   const intent = useRef<{ orderId: string; key: string } | null>(null);
   const [profile, setProfile] = useState<{ tier?: string; ai_credits?: number; premium_until?: string | null } | null>(null);
   const [serviceCredits, setServiceCredits] = useState<number | null | undefined>(undefined);
@@ -52,26 +62,39 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   useEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
 
   const refreshBalances = useCallback(async (force = false) => {
+    const read = ++balanceRead.current;
+    const isCurrent = () => mounted.current && balanceRead.current === read;
     await Promise.allSettled([
       fetchOwnedProfile(client, force).then((value) => {
-        if (mounted.current) setProfile(value);
+        if (isCurrent()) setProfile(value);
       }),
       apiGet<{ job_service_credits?: unknown }>("/auth/me").then((value) => {
-        if (mounted.current) setServiceCredits(balance(value.job_service_credits));
-      }).catch(() => { if (mounted.current) setServiceCredits(null); }),
-      apiGet<UsageHistory>("/v1/usage-events?limit=20").then((value) => { if (mounted.current) setUsage(value); }),
+        if (isCurrent()) setServiceCredits(typeof value.job_service_credits === "number" && Number.isSafeInteger(value.job_service_credits) ? value.job_service_credits : null);
+      }).catch(() => { if (isCurrent()) setServiceCredits(null); }),
+      apiGet<UsageHistory>("/v1/usage-events?limit=20").then((value) => { if (isCurrent()) setUsage(value); }),
     ]);
   }, [client]);
   const acceptStatus = useCallback(async (value: LegacyOrder) => {
     if (!mounted.current) return;
+    const before = acceptedOrder.current;
+    const refunded = refundAmount(value);
+    if (before?.order_id === value.order_id) {
+      const priorRefund = refundAmount(before);
+      if ((before.status === "refunded" && value.status !== "refunded") ||
+          (priorRefund !== null && priorRefund > 0 && (refunded === null || refunded < priorRefund))) {
+        throw new Error("The original order status could not be verified.");
+      }
+    }
+    acceptedOrder.current = value;
     setOrder(value);
-    if (value.status === "paid" && value.fulfilled) {
-      setError(null); setMessage("Payment confirmed. Your original purchased entitlements were delivered.");
+    if ((value.status === "paid" && value.fulfilled) || value.status === "refunded") {
+      setError(null);
+      setMessage(value.status === "refunded" ? "The original payment was refunded."
+        : refunded ? "The original payment was partially refunded. Your balances and service history show the updated amounts."
+          : "Payment confirmed. Your original purchased entitlements were delivered.");
       setReconciliationHeld(false);
       window.dispatchEvent(new Event("refresh_analysis_units"));
       await refreshBalances(true);
-    } else if (value.status === "refunded") {
-      setReconciliationHeld(false); setMessage("The original payment was refunded.");
     }
   }, [refreshBalances]);
   const readRecent = useCallback(() => apiGet<LegacyOrder | null>("/billing/recent-order").then(async (value) => {
@@ -86,7 +109,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   useEffect(() => {
     mounted.current = true;
     void Promise.allSettled([refreshBalances(), readRecent()]);
-    return () => { mounted.current = false; pollId.current += 1; statusWork.current?.abort(); };
+    return () => { mounted.current = false; pollId.current += 1; balanceRead.current += 1; statusWork.current?.abort(); };
   }, [readRecent, refreshBalances]);
 
   const checkStatus = useCallback(async (orderId: string, automatic = false) => {
@@ -103,7 +126,10 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
           const value = await apiGet<LegacyOrder>(`/billing/orders/${encodeURIComponent(orderId)}`, signal);
           signal.throwIfAborted();
           if (!mounted.current || pollId.current !== run) throw new DOMException("Status check stopped", "AbortError");
-          if (value.order_id !== orderId || typeof value.sku !== "string" || isUnifiedPassSku(value.sku)) throw new Error("The original order could not be verified.");
+          const expected = acceptedOrder.current;
+          if (value.order_id !== orderId || typeof value.sku !== "string" || isUnifiedPassSku(value.sku) ||
+              (expected?.order_id === orderId && (value.sku !== expected.sku ||
+                (expected.accepted_quote && !sameQuote(value.accepted_quote, expected.accepted_quote))))) throw new Error("The original order could not be verified.");
           await acceptStatus(value); return value;
         }, active: (value) => value.status === "pending" || (value.status === "paid" && !value.fulfilled) });
       if (mounted.current && pollId.current === run && outcome !== "settled") setMessage("Payment is still pending. Automatic checks are paused; use Check payment status for one fresh read. If you were charged, do not pay again.");
@@ -175,12 +201,13 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     finally { actionPending.current = false; }
   }
 
+  const refunded = order ? refundAmount(order) : null;
   return <section className="space-y-6 border-t border-border pt-8" aria-labelledby="legacy-entitlements-heading">
     <div><p className="data-label">Earlier purchases</p><h2 id="legacy-entitlements-heading" className="font-display mt-2 text-2xl">Legacy entitlements</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">These balances retain their original promises. They remain separate from your new credit wallet until an approved migration is complete; they have not been added together or converted.</p></div>
     <div className="grid gap-5 sm:grid-cols-3" aria-label="Current entitlement" role="region">
       <div><p className="data-label">Analysis units</p><p className="mt-2 text-2xl font-semibold">{profile ? balance(profile.ai_credits) ?? "Unavailable" : "..."}</p></div>
-      <div><p className="data-label">Job service credits</p><p className="mt-2 text-2xl font-semibold">{serviceCredits === undefined ? "..." : serviceCredits ?? "Unavailable"}</p>{serviceCredits === null ? <p className="mt-1 text-xs">Could not verify your available balance. Refresh this page to try again.</p> : null}</div>
+      <div><p className="data-label">Job service credits</p><p className="mt-2 text-2xl font-semibold">{serviceCredits === undefined ? "..." : serviceCredits === null ? "Unavailable" : Math.max(0, serviceCredits)}</p>{serviceCredits === null ? <p className="mt-1 text-xs">Could not verify your available balance. Refresh this page to try again.</p> : serviceCredits !== undefined && serviceCredits < 0 ? <p className="mt-1 text-xs">Pending credit adjustment: {-serviceCredits}.</p> : null}</div>
       <div><p className="data-label">Current access</p><p className="mt-2 text-lg">{profile?.tier === "premium" ? "Premium active" : profile?.tier === "free" ? "Free access" : "Checking status"}</p>{profile?.premium_until ? <p className="text-xs">Through {new Date(profile.premium_until).toLocaleDateString("en-IN")}; no automatic renewal.</p> : null}</div>
     </div>
     {error ? <p role="alert" className="text-sm text-coral">{error}</p> : null}
@@ -188,8 +215,9 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     <p className="text-xs leading-5 text-muted-foreground">Payment confirmation updates while this tab is visible. If checks pause, use Check payment status before trying another payment.</p>
     {message ? <p role="status" className="text-sm leading-6">{message}</p> : null}
     {order ? <section className="surface-panel space-y-4 p-5" aria-labelledby="legacy-payment-heading">
-      <h3 id="legacy-payment-heading" className="font-display text-xl">{order.status === "paid" && order.fulfilled ? "Payment confirmed" : "Previous payment"}</h3>
+      <h3 id="legacy-payment-heading" className="font-display text-xl">{order.status === "refunded" ? "Payment refunded" : refunded ? "Payment partially refunded" : order.status === "paid" && order.fulfilled ? "Payment confirmed" : "Previous payment"}</h3>
       <p className="break-all text-xs">Order reference: {order.order_id}</p>
+      {refunded ? <p className="text-sm">Total refunded: {formatCreditPrice(refunded)}</p> : null}
       {order.accepted_quote ? <div aria-label="Original checkout terms" className="text-sm leading-6"><p>Original order: {order.accepted_quote.job_service_credits} service credits + {order.accepted_quote.analysis_units} analysis units for {formatCreditPrice(order.accepted_quote.amount_minor)}.</p><p>Resuming accepts these original terms and checks this same order.</p></div> : <p className="text-sm">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}
       {order.status === "pending" ? <>
         {!order.provider_order_id ? <p className="text-sm">Checkout creation has an unknown outcome. Payment remains paused; check status or contact billing support to reconcile the original attempt.</p> : null}
@@ -202,7 +230,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
         <Link href="/contact" className="inline-flex min-h-11 items-center text-sm underline">Billing support</Link>
       </div>
     </section> : null}
-    <ServiceCreditHistory refreshKey={order?.fulfilled ? order.order_id : ""} />
+    <ServiceCreditHistory refreshKey={order && (order.fulfilled || order.status === "refunded") ? `${order.order_id}:${order.status}:${refunded ?? ""}` : ""} />
     <details className="border-t border-border pt-5"><summary className="cursor-pointer font-semibold">Legacy analysis history</summary>
       {usage ? usage.items.length ? <ul className="mt-4 divide-y divide-border">{usage.items.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{item.event_type.replaceAll("_", " ")} · {new Date(item.created_at).toLocaleDateString("en-IN")}</span><span>{item.amount > 0 ? "+" : ""}{item.amount} units · balance {item.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm">No legacy analysis-unit activity yet.</p> : <p className="mt-3 text-sm">Analysis history is currently unavailable.</p>}
     </details>
