@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 from backend.app.domains.common import utcnow
-from backend.app.domains.resume_uploads import scanner, service, tasks
+from backend.app.domains.resume_uploads import scanner, service, tasks, wake
 from backend.app.domains.resume_uploads.models import ResumeUpload, ResumeUploadCleanup
 from backend.app.services import resume_upload_coordinator as coordinator
 from backend.tests import test_resume_upload_quarantine as domain
@@ -26,6 +26,32 @@ def context(pg_engine, monkeypatch):
 
 def run(context, mode):
     return coordinator._run_domain(context[0], context[1], mode)
+
+
+def test_confirmed_wake_and_owner_completion_converge_on_one_saved_resume(context, monkeypatch):
+    factory, store = context
+    pending = []
+    monkeypatch.setenv('RESUME_UPLOAD_TASK_WAKE_ENABLED', 'true')
+
+    def confirm(identifier, expires_at):
+        with factory() as db:
+            row = db.get(ResumeUpload, identifier)
+            assert row.state == 'awaiting_upload' and row.expires_at == expires_at
+        assert tasks.process_wake(factory, identifier, store) == 'pending'
+        pending.append(identifier)
+
+    monkeypatch.setattr(wake, 'confirm', confirm)
+    intent, target = domain.admission(context)
+    assert pending == [intent.upload_id] and intent.upload_url is not None
+    store.upload(target)
+    assert tasks.process_wake(factory, intent.upload_id, store) == 'pending'
+    with factory() as db:
+        assert service.complete(db, 1, intent.upload_id).state == 'queued'
+    assert tasks.process_wake(factory, intent.upload_id, store) == 'terminal'
+    assert tasks.process_wake(factory, intent.upload_id, store) == 'terminal'
+    with factory() as db:
+        assert db.query(domain.core.Resume).count() == 1
+        assert db.get(ResumeUpload, intent.upload_id).attempt_count == 1
 
 
 def test_wake_preserves_owner_completion_and_only_processes_the_named_upload(context, monkeypatch):
