@@ -206,6 +206,8 @@ def setup(db, replies, *, race=None):
         "_utcnow": lambda: datetime.now(UTC), "utcnow": lambda: datetime.now(UTC), "as_aware": lambda value: value,
         "UNCERTAIN_ORDER_STATUSES": {"initializing", "creation_unknown", "create_failed"},
         "OPEN_ORDER_STATUSES": {"initializing", "creation_unknown", "create_failed", "created", "client_confirmed", "payment_failed"},
+        "REFUND_RECONCILIATION_STATUSES": {"paid", "partially_refunded"},
+        "SETTLED_ORDER_STATUSES": {"paid", "partially_refunded", "refunded"},
         "IntegrityError": type("IntegrityError", (Exception,), {}), "WebhookValidationError": ValidationError,
         "OperationalError": type("OperationalError", (Exception,), {}),
         "PROVIDER": "razorpay", "Any": object, "_payment_transaction": transaction,
@@ -222,7 +224,8 @@ def setup(db, replies, *, race=None):
                  "_validate_refund_payment", "_process_capture", "_process_refund"):
         service_body(name, dependencies)
     dependencies.update({"EntitlementLedger": Ledger, "order_quote": reconciliation.order_quote})
-    for name in ("_owned_order", "_normalized_order_status", "_order_status_payload", "_reconciliation_reply"):
+    for name in ("_owned_order", "_normalized_order_status", "_order_status_payload", "_reconciliation_reply",
+                 "_new_settled_refunds"):
         production_body(name, dependencies)
     return production_body("reconcile_order", dependencies), calls
 
@@ -360,7 +363,7 @@ class ReconciliationTest(unittest.TestCase):
         self.assertEqual((order.status, order.active_attempt_key, db.grants), ("paid", None, [(100, 2)]))
         before = len(calls)
         self.assertEqual(invoke(operation, db)["resolution"], "settled")
-        self.assertEqual((len(calls), db.grants), (before, [(100, 2)]))
+        self.assertEqual((len(calls), db.grants, db.commits), (before + 4, [(100, 2)], 1))
 
     def test_actual_full_refund_before_capture_never_fabricates_capture_or_grants(self):
         remote = remote_order(status="paid", attempts=1, amount_paid=64_900, amount_due=0)

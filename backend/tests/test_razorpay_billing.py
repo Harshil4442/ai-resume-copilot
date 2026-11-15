@@ -447,7 +447,7 @@ def test_paused_checkout_reconciles_old_legacy_order_without_another_order(
     assert settled["order"]["status"] == "paid" and settled["order"]["fulfilled"]
     assert settled["order"]["accepted_quote"] == original_quote
     assert client.post(reconcile_path).json()["resolution"] == "settled"
-    assert reads == list(replies)
+    assert reads == list(replies) * 2
     assert enabled_checkout == [original["order_id"]]
     with session_factory() as db:
         assert db.query(PaymentOrder).count() == 1
