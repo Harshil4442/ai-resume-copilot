@@ -11,14 +11,13 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-from sqlalchemy import event
-
 from infra.gcp import schema27_continuity_bootstrap as bootstrap
 from infra.gcp import schema27_continuity_bridge as native
 from infra.gcp import schema27_continuity_bridge_plan as bridge
 from infra.gcp import schema27_continuity_catalog as catalog
 from infra.gcp import schema27_continuity_runtime as runtime
 from infra.gcp import schema27_continuity_scope as scope
+from sqlalchemy import event
 
 # isort: split
 from scripts import notification_schema27_continuity_step as step
@@ -100,7 +99,8 @@ def capture(boundary, bridge_plan, bridge_journal):
     need(type(boundary) is native.NativeContinuityBoundary, "capture_inputs")
     scope.verify_journal(bridge_plan.custody(), bridge_journal)
     boundary.journal = bridge_journal
-    with bridge_journal.locked():
+    with scope.lifecycle_lock(bridge_journal), bridge_journal.locked():
+        need(bridge_journal.read(scope.MIGRATION_FENCE) is None, "migration_started")
         boundary.verify_global(bridge_plan)
         receipts = native.promoted_receipts(bridge_plan, bridge_journal)
         before = catalog.observe_schema26(bridge_plan.custody(), bridge_journal,
@@ -155,13 +155,17 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
     custody = bridge_plan.custody()
     identity = bootstrap.migration_identity(bridge_plan.database)
     intent = plan.intent(identity, native.successor.native.host_auth.ACCOUNT)
-    with bridge_journal.locked(), migration_journal.locked():
+    with scope.lifecycle_lock(bridge_journal), bridge_journal.locked(), migration_journal.locked():
         plan.validate(bridge_plan, bridge_journal)
         recovery.validate_custody(custody, bridge_journal, migration_journal, identity, intent,
                                   bridge_plan_sha256=plan.bridge_plan_sha256,
                                   bridge_receipts_sha256=plan.bridge_receipts_sha256)
         started = migration_journal.read(recovery.STARTED)
         need((started is not None) == (mode == "reconcile"), "started_reconcile_only")
+        fence = {"migration_plan_sha256": migration_journal.plan_hash, "intent_sha256": intent.sha256()}
+        retained_fence = bridge_journal.read(scope.MIGRATION_FENCE)
+        matched_fence = retained_fence == fence | {"plan_sha256": bridge_journal.plan_hash}
+        need(matched_fence or (retained_fence is None and mode == "upgrade"), "bridge_migration_intent")
         _verify_live(boundary, bridge_plan, bridge_journal, plan)
         if mode == "upgrade":
             need(migration_journal.read(recovery.COMMIT_ACK) is None
@@ -174,6 +178,10 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
             with _metadata(boundary.root):
                 db_engine = bootstrap.engine(bridge_plan.database)
                 try:
+                    if retained_fence is None:
+                        bridge_journal.record(scope.MIGRATION_FENCE, fence)
+                    need(bridge_journal.read(scope.MIGRATION_FENCE) == fence | {
+                        "plan_sha256": bridge_journal.plan_hash}, "durable_bridge_intent_changed")
                     migration_journal.record(recovery.STARTED, intent.snapshot())
                     stored = migration_journal.read(recovery.STARTED)
                     need(stored == intent.snapshot(), "durable_intent_changed")

@@ -174,6 +174,7 @@ def _bind_new(plan, directory):
     with journal.locked():
         need(all(item.name == "owner.lock" for item in directory.iterdir()), "nonempty_capture_journal")
         journal.record(scope.JOURNAL_BINDING, custody.journal_binding())
+        journal.record(scope.JOURNAL_LOCATION, scope.journal_location(journal))
     return journal
 
 
@@ -199,6 +200,12 @@ def execute(mode, plan, boundary, journal):
          and type(plan) is bridge.ContinuityBridgePlan and type(boundary) is NativeContinuityBoundary,
          "exact_native_owner")
     scope.verify_journal(plan.custody(), journal)
+    with scope.lifecycle_lock(journal):
+        need(journal.read(scope.MIGRATION_FENCE) is None, "migration_started")
+        return _dispatch(mode, plan, boundary, journal)
+
+
+def _dispatch(mode, plan, boundary, journal):
     boundary.journal = journal
     if pending := _pending_acknowledged(plan, boundary, journal):
         return pending

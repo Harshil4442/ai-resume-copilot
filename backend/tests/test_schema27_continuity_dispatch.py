@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, replace
 from pathlib import Path
+from shutil import copytree
 from types import SimpleNamespace
 
 import pytest
@@ -35,14 +36,29 @@ def dispatch(ready, mode):
     return migration.execute(mode, lane.boundary, lane.plan, lane.journal, ready.plan, ready.journal)
 
 
-def test_migration_requires_fresh_bridge_control_and_durable_intent(ready, monkeypatch):
+@pytest.mark.parametrize("fence_already_saved", [False, True])
+def test_migration_requires_fresh_bridge_control_and_durable_intent(ready, monkeypatch, fence_already_saved):
     events = []
     receipt = "f" * 64
+    lane = ready.lane
+    if fence_already_saved:
+        intent = ready.plan.intent(migration.bootstrap.migration_identity(lane.plan.database),
+                                   migration.native.successor.native.host_auth.ACCOUNT)
+        lane.journal.record(migration.scope.MIGRATION_FENCE, {
+            "migration_plan_sha256": ready.journal.plan_hash, "intent_sha256": intent.sha256(),
+        })
+        with pytest.raises(migration.rolling.RollingDenied, match="migration_started"):
+            run(lane, "rollback")
+        with pytest.raises(migration.rolling.RollingDenied, match="started_reconcile_only"):
+            dispatch(ready, "reconcile")
 
     @contextmanager
     def begin():
         started = ready.journal.read(recovery.STARTED)
         assert started and started["bridge_receipts_sha256"] == ready.plan.bridge_receipts_sha256
+        fence = ready.lane.journal.read(migration.scope.MIGRATION_FENCE)
+        assert fence["migration_plan_sha256"] == ready.journal.plan_hash
+        assert fence["intent_sha256"] == migration.rolling.sha(started)
         assert ready.journal.read(recovery.COMMIT_ACK) is None
         events.append("connect")
         yield object()
@@ -74,6 +90,36 @@ def test_migration_requires_fresh_bridge_control_and_durable_intent(ready, monke
         dispatch(ready, "upgrade")
     assert dispatch(ready, "reconcile")["migration_committed"] is True
     assert events.count("connect") == events.count("commit") == 1
+    writes = list(lane.fixture.writes)
+    with pytest.raises(migration.rolling.RollingDenied, match="migration_started"):
+        run(lane, "rollback")
+    assert lane.fixture.writes == writes
+    assert lane.journal.read(migration.native.historical.ROLLBACK_INTENT) is None
+
+
+def test_bridge_and_migration_share_lifecycle_lock(ready, monkeypatch):
+    monkeypatch.setattr(migration.bootstrap, "engine", lambda _: pytest.fail("unexpected bootstrap"))
+    lane = ready.lane
+    writes = list(lane.fixture.writes)
+    with migration.scope.lifecycle_lock(lane.journal):
+        with pytest.raises(BlockingIOError):
+            run(lane, "rollback")
+        with pytest.raises(BlockingIOError):
+            dispatch(ready, "upgrade")
+    assert lane.fixture.writes == writes
+    assert lane.journal.read(migration.native.historical.ROLLBACK_INTENT) is None
+    assert lane.journal.read(migration.scope.MIGRATION_FENCE) is None
+    assert ready.journal.read(recovery.STARTED) is None
+
+
+def test_bridge_rollback_refuses_a_copy_of_the_original_journal(ready, tmp_path):
+    lane = ready.lane
+    copied = copytree(lane.journal.directory, tmp_path / "copied-bridge")
+    journal = migration.bridge.bind(lane.plan, copied)
+    writes = list(lane.fixture.writes)
+    with pytest.raises(migration.rolling.RollingDenied, match="lifecycle_journal_location"):
+        migration.native.execute("rollback", lane.plan, lane.boundary, journal)
+    assert lane.fixture.writes == writes
 
 
 def test_migration_rejects_wrong_plan_and_rollback_before_bootstrap(ready, monkeypatch):

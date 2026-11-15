@@ -13,12 +13,13 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
+
+from alembic import command
 from scripts import browser_schema19_step as identity_step
 from scripts import notification_schema27_contract as contract
 from scripts import notification_schema27_step as retained_step
-from sqlalchemy import text
 
 KIND = "hirewiz_schema27_continuity_additive_v1"
 ACTION = "schema27_continuity_additive_migration"

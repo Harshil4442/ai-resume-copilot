@@ -6,6 +6,7 @@ controller must independently authenticate source, policy and service state.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import hmac
 import json
@@ -14,6 +15,7 @@ import re
 import stat
 import subprocess
 import sys
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -26,6 +28,8 @@ from scripts import neon_continuity_identity as neon  # noqa: E402
 
 KIND = "hirewiz_schema27_continuity_bridge_v1"
 JOURNAL_BINDING = "continuity.bridge.binding"
+JOURNAL_LOCATION = "continuity.bridge.location"
+MIGRATION_FENCE = "continuity.bridge.migration-intent"
 RUNTIME_REFERENCE = "hirewiz-fresh-runtime-db-20261013:3"
 COORDINATOR_REFERENCE = "hirewiz-resume-coordinator-db-20261015:2"
 ROLE_RECEIPT_SHA256 = "4ba95b0fe7aa2d4b88195b797982369ad86214116bddb99feb0da97e1bddbc2f"
@@ -101,6 +105,33 @@ def verify_journal(custody: BridgeCustody, journal: rolling.Journal) -> None:
     _need(journal.plan_hash == rolling.sha(asdict(custody)), "journal_owner_changed")
     _need(journal.read(JOURNAL_BINDING) == binding | {"plan_sha256": journal.plan_hash},
           "journal_database_binding_changed")
+
+
+def journal_location(journal: rolling.Journal) -> dict:
+    directory = journal.directory
+    status = directory.stat(follow_symlinks=False)
+    _need(stat.S_ISDIR(status.st_mode) and status.st_uid == os.getuid()
+          and stat.S_IMODE(status.st_mode) == 0o700 and directory.resolve() == directory,
+          "lifecycle_journal_location")
+    return {"path": str(directory), "device": status.st_dev, "inode": status.st_ino}
+
+
+@contextmanager
+def lifecycle_lock(journal: rolling.Journal):
+    """Serialize bridge controls with migration intent before either inner lock."""
+    _need(type(journal) is rolling.Journal, "journal_type_invalid")
+    _need(journal.read(JOURNAL_LOCATION) == journal_location(journal) | {"plan_sha256": journal.plan_hash},
+          "lifecycle_journal_location")
+    location = journal.directory / "continuity-lifecycle.lock"
+    fd = os.open(location, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    try:
+        owner = os.fstat(fd)
+        _need(stat.S_ISREG(owner.st_mode) and owner.st_uid == os.getuid()
+              and stat.S_IMODE(owner.st_mode) == 0o600 and owner.st_nlink == 1, "lifecycle_lock_unverified")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(fd)
 
 
 def _reject_duplicates(pairs: list[tuple[str, str]]) -> dict[str, str]:

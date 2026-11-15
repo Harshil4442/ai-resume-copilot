@@ -125,8 +125,12 @@ audit; an existing intent never causes DDL to be replayed.
    recovery evidence. Run `python -m infra.gcp.schema27_continuity_migration capture`
    with the original bridge plan, its SHA-256 and its journal. Use a separate
    private journal for `upgrade` and `reconcile`, with the captured migration
-   plan's SHA-256. After an interrupted upgrade, run `reconcile` and leave
-   notification flags closed.
+   plan's SHA-256. Keep the original bridge journal on its original filesystem
+   at its captured path. The bridge and migration share one lifecycle lock.
+   A matching migration fence allows only that migration plan to continue if
+   execution stopped before recording `STARTED`. Once `STARTED` is durable,
+   run `reconcile` and leave notification flags closed, including when the
+   observer reports schema26.
 
 The actual Neon Free schema26 catalog, five protected liability groups and
 the bootstrap SQL role were verified through read-only checks on November 15.
@@ -134,6 +138,7 @@ The traffic and migration dispatchers were exercised against local fixtures.
 Hosted staging still requires an exact source build and current policy and
 scanner evidence.
 
-Before the migration commits, rollback uses the verified schema26 revision on
-the current database. A schema27 rollback or forward recovery must have its
-own verified schema27-compatible release and customer-obligation checks.
+Before recording the migration fence, rollback uses the verified schema26
+revision on the current database. A schema27 rollback or forward recovery
+must have its own verified schema27-compatible release and
+customer-obligation checks.
