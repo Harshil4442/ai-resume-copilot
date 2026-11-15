@@ -27,8 +27,11 @@ def _contend_for_owner(factory, request, work):
         lock_application_set(db, 1)
         holder = db.connection()
 
-        def observe(conn, _cursor, statement, *_args):
-            if conn is not holder and "pg_advisory_xact_lock" in statement:
+        def observe(conn, cursor, statement, *_args):
+            if conn is not holder and "pg_advisory_xact_lock" in statement and not entered.is_set():
+                # The deliberately blocked waiter can span a hosted runner pause.
+                # Keep the holder's lock deadline and the statement deadline intact.
+                cursor.execute("SET LOCAL lock_timeout = '8s'")
                 entered.set()
 
         event.listen(engine, "before_cursor_execute", observe)
