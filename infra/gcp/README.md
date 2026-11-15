@@ -195,3 +195,40 @@ Razorpay callback failures. Enable the generation metric with the dashboard. Rev
 the additive Terraform plan, the existing channel, and current monitoring prices
 before activation. Verify the deployed filters and dashboard under the operator's
 account. Read actual delivery evidence when an incident occurs.
+
+### Private security link wake
+
+The optional queue can retry one committed password-reset or privacy-erasure email
+at a time. Both runtime flags and the Terraform lane default off. Keep immediate
+delivery and the existing scheduled sweep active during qualification.
+
+The queue requires a separately reviewed, internal-only Cloud Run service named
+`hirewiz-security-mail-worker` in the same project and region. Use the default
+`run.app` origin with Cloud Run Invoker IAM enabled. Start its reviewed,
+digest-pinned image with
+`uvicorn app.security_mail_worker:app --host 0.0.0.0 --port 8080 --no-access-log`.
+The service entry point exposes only health and exact-ID delivery. Limit its
+concurrency to one and its request timeout to less than the 60-second task
+deadline. The application emits fixed status codes and receives only an opaque
+outbox ID. Cloud Run request logs can still contain that opaque path identifier.
+
+Prepare the worker runtime separately from the queue caller. Existing outbox
+ciphertext needs the current security-email key custody. Delivery needs the
+existing approved sender, restricted Resend credential and access to the
+outbox, proof, owner, candidate-state and detached mail-budget ledger rows.
+Review exact grants and verified database TLS before deployment. Queue Terraform
+leaves deployment, database roles, secret grants and credential versions under
+the release process. The API publisher receives only `cloudtasks.tasks.create`
+on this queue. The caller can invoke only the dedicated service.
+
+With both flags off, bind the service to its project via `GOOGLE_CLOUD_PROJECT`
+and set `SERVICE_ROLE=security-mail-worker`. Pin `SECURITY_MAIL_WORKER_AUDIENCE`
+to the verified default origin, `SECURITY_MAIL_WORKER_CALLER_EMAIL` to the
+queue's caller and `SECURITY_MAIL_WORKER_CALLER_SUBJECT` to that account's
+numeric `uniqueId`. The API needs the same project and audience,
+`SECURITY_MAIL_TASK_LOCATION` and `SECURITY_MAIL_TASK_QUEUE=hirewiz-security-mail-wake`.
+Enable `SECURITY_MAIL_WORKER_ENABLED` in isolated staging and verify that a
+real queue-generated OIDC token reaches the exact POST path and an unapproved
+caller cannot reach SQL. Use synthetic outbox records and a controlled mail
+provider. Turn on `SECURITY_MAIL_TASK_WAKE_ENABLED` only after those checks
+and the worker and queue readbacks pass.

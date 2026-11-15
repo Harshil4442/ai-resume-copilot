@@ -234,11 +234,12 @@ class SecurityEmailRetry:
     available_at: datetime | None = None
 
 
-def _security_email_row(db: Session, notification_id: str) -> models.NotificationOutbox | None:
+def _security_email_row(db: Session, notification_id: str, *, link_only: bool) -> models.NotificationOutbox | None:
+    kinds = ("password_reset", "privacy_erasure") if link_only else ("password_reset", "password_changed", "privacy_erasure")
     return db.query(models.NotificationOutbox).filter(
         models.NotificationOutbox.id == notification_id,
         models.NotificationOutbox.channel == "email",
-        models.NotificationOutbox.notification_type.in_(("password_reset", "password_changed", "privacy_erasure")),
+        models.NotificationOutbox.notification_type.in_(kinds),
     ).populate_existing().with_for_update().one_or_none()
 
 
@@ -266,13 +267,13 @@ def _security_email_state(db: Session, item: models.NotificationOutbox | None, n
     return SecurityEmailRetry("finished")
 
 
-def retry_security_email(db: Session, notification_id: str) -> SecurityEmailRetry:
+def retry_security_email(db: Session, notification_id: str, *, link_only: bool = False) -> SecurityEmailRetry:
     """Process one previously accepted outbox ID in a dedicated worker session."""
     if type(notification_id) is not str or re.fullmatch(r"ntf_[a-f0-9]{32}", notification_id) is None:
         raise ValueError("Invalid security email ID")
     from . import password_reset, privacy_erasure
 
-    item = _security_email_row(db, notification_id)
+    item = _security_email_row(db, notification_id, link_only=link_only)
     now = utcnow()
     if item is None:
         db.rollback()
@@ -287,7 +288,7 @@ def retry_security_email(db: Session, notification_id: str) -> SecurityEmailRetr
     # expiry and the central mail budget before making a provider call.
     if lane.deliver(db, notification_id):
         return SecurityEmailRetry("sent")
-    return _security_email_state(db, _security_email_row(db, notification_id), utcnow())
+    return _security_email_state(db, _security_email_row(db, notification_id, link_only=link_only), utcnow())
 
 
 def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySummary:

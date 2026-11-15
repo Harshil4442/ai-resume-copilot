@@ -117,6 +117,7 @@ def test_wrong_kind_state_channel_or_expiry_never_enters_wake(task_client, outbo
     ("SECURITY_MAIL_TASK_WAKE_ENABLED", "TRUE"),
     ("SECURITY_MAIL_TASK_QUEUE", "hirewiz-resume-wake"),
     ("SECURITY_MAIL_WORKER_AUDIENCE", ORIGIN + "/wrong"),
+    ("SECURITY_MAIL_WORKER_AUDIENCE", "https://hirewiz-security-mail-worker---other-origin.run.app"),
     ("SECURITY_MAIL_WORKER_AUDIENCE", "https://hirewiz-resume-coordinator-example.run.app"),
 ])
 def test_disabled_or_misbound_publication_uses_no_database_or_cloud(monkeypatch, task_client, name, value):

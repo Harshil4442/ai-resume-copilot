@@ -36,6 +36,7 @@ def _target() -> tuple[str, str] | None:
         not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", project)
         or not re.fullmatch(r"[a-z]+-[a-z]+[1-9][0-9]*", location)
         or queue != QUEUE
+        or "---" in origin
         or not re.fullmatch(
             r"https://hirewiz-security-mail-worker-[a-z0-9-]+(?:\.[a-z]+-[a-z]+[1-9][0-9]*)?\.run\.app", origin
         )
