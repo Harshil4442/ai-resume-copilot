@@ -351,6 +351,59 @@ def test_refuses_duplicate_authentication_headers_without_forwarding(relay):
     assert upstream.received == []
 
 
+def test_records_only_fixed_test_diagnostics_for_real_webhook_validation(relay, client, enabled_checkout, tmp_path):
+    _, upstream = relay
+    upstream.application = client
+    tmp_path.chmod(0o700)
+    hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    body = b"private synthetic payload which is not JSON"
+    signature = _signature(body)
+    event = "evt_private_synthetic_diagnostic"
+    signed = {"X-Razorpay-Signature": signature, "X-Razorpay-Event-Id": event}
+
+    with running(ingress.WebhookIngress(0, upstream.server_port, hold=hold, test_diagnostics=True)) as receiver:
+        assert send(receiver, method="GET")[0] == 405
+        assert send(receiver, path="/other")[0] == 404
+        assert send(receiver, body=iter([body]), headers=signed)[0] == 400
+        assert send(receiver, body=body, headers=signed | {"Content-Encoding": "gzip"})[0] == 400
+        assert send(receiver, body=body, headers=signed | {"Content-Length": "broken"})[0] == 400
+        assert upstream.received == []
+        assert send(receiver, body=body)[0] == 400
+        assert send(receiver, body=body, headers=signed | {"X-Razorpay-Signature": "0" * 64})[0] == 400
+        assert send(receiver, body=body, headers={"X-Razorpay-Signature": signature})[0] == 400
+        assert send(receiver, body=body, headers=signed)[0] == 400
+        assert send(receiver, body=body, headers=signed)[0] == 400
+
+    assert len(upstream.received) == 5
+    snapshot = tmp_path / "delivery-diagnostics.json"
+    raw = snapshot.read_text()
+    assert json.loads(raw) == {
+        "wrong_method": 1,
+        "wrong_path": 1,
+        "transfer_encoding": 1,
+        "content_encoding": 1,
+        "invalid_content_length": 1,
+        "upstream_400_missing_signature": 1,
+        "upstream_400_signature_mismatch": 1,
+        "upstream_400_missing_event_id": 1,
+        "upstream_400_verified_headers": 2,
+    }
+    assert set(tmp_path.iterdir()) == {snapshot}
+    assert snapshot.stat().st_mode & 0o777 == 0o600
+    assert all(private not in raw for private in (body.decode(), TEST_WEBHOOK_SECRET, signature, event))
+
+
+def test_enters_diagnostics_only_with_private_test_delivery_control(relay, tmp_path):
+    _, upstream = relay
+    with pytest.raises(ValueError, match="private Test delivery control"):
+        ingress.WebhookIngress(0, upstream.server_port, test_diagnostics=True)
+    tmp_path.chmod(0o700)
+    hold = ingress.TestDeliveryHold(tmp_path, TEST_WEBHOOK_SECRET)
+    with running(ingress.WebhookIngress(0, upstream.server_port, hold=hold)) as receiver:
+        assert send(receiver, body=b"{}", headers={"Transfer-Encoding": "chunked"})[0] == 400
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_holds_only_the_selected_signed_order_and_payment_and_releases_on_removal(relay, tmp_path):
     receiver, upstream = relay
     tmp_path.chmod(0o700)

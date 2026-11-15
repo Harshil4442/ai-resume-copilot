@@ -13,6 +13,7 @@ import socket
 import stat
 import tempfile
 import time
+from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -36,6 +37,30 @@ class AckLossAttempt:
     event_digest: str
 
 
+class TestDeliveryDiagnostics:
+    """Write a bounded private snapshot of fixed per-request reason counts."""
+
+    def __init__(self, directory: Path):
+        self.path = directory / "delivery-diagnostics.json"
+        self.counts: Counter[str] = Counter()
+
+    def record(self, reason: str) -> None:
+        self.counts[reason] = min(self.counts[reason] + 1, 999_999_999)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.path.parent, mode="w", delete=False) as file:
+                temporary = Path(file.name)
+                json.dump(self.counts, file, sort_keys=True)
+            temporary.replace(self.path)
+        except OSError:
+            # Observations must not change delivery outcomes or expose error details.
+            pass
+        finally:
+            if temporary is not None:
+                with suppress(OSError):
+                    temporary.unlink()
+
+
 class TestDeliveryHold:
     """Control delivery of an exact signed event in the disposable Test lab."""
 
@@ -44,6 +69,12 @@ class TestDeliveryHold:
             raise ValueError("Test delivery control requires a private directory and webhook secret")
         self.directory = directory
         self.secret = secret.encode()
+
+    def verifies(self, body: bytes, signature: str) -> bool:
+        if not re.fullmatch(r"[0-9a-f]{64}", signature):
+            return False
+        expected = hmac.new(self.secret, body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(signature, expected)
 
     def check(self, body: bytes, headers: dict[str, str]) -> tuple[int | None, AckLossAttempt | None]:
         path = self.directory / "hold.json"
@@ -69,9 +100,7 @@ class TestDeliveryHold:
         except (ValueError, RecursionError):
             return 503, None
 
-        signature = headers.get("X-Razorpay-Signature", "")
-        expected = hmac.new(self.secret, body, hashlib.sha256).hexdigest()
-        if not re.fullmatch(r"[0-9a-f]{64}", signature) or not hmac.compare_digest(signature, expected):
+        if not self.verifies(body, headers.get("X-Razorpay-Signature", "")):
             return None, None
         try:
             event = json.loads(body)
@@ -143,11 +172,15 @@ def close_stream(stream: socket.socket) -> None:
 class WebhookIngress(HTTPServer):
     request_queue_size = 8
 
-    def __init__(self, listen_port: int, upstream_port: int, *, hold: TestDeliveryHold | None = None):
+    def __init__(self, listen_port: int, upstream_port: int, *, hold: TestDeliveryHold | None = None,
+                 test_diagnostics: bool = False):
         if not 1 <= upstream_port <= 65535 or listen_port == upstream_port:
             raise ValueError("Expected two distinct loopback ports")
         self.upstream_port = upstream_port
         self.hold = hold
+        if test_diagnostics and hold is None:
+            raise ValueError("Test delivery diagnostics require the private Test delivery control")
+        self.diagnostics = TestDeliveryDiagnostics(hold.directory) if test_diagnostics and hold else None
         super().__init__((LOOPBACK, listen_port), WebhookHandler)
         if self.server_port == upstream_port:
             self.server_close()
@@ -163,6 +196,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
     default_request_version = "HTTP/1.0"
 
     def handle(self) -> None:
+        self.diagnostic_reason: str | None = None
         self.connection.settimeout(REQUEST_TIMEOUT_SECONDS)
         self.request_timer = Timer(REQUEST_TIMEOUT_SECONDS, close_stream, (self.connection,))
         self.request_timer.daemon = True
@@ -172,11 +206,14 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.handle_one_request()
         finally:
             self.request_timer.cancel()
+            if self.server.diagnostics is not None:
+                self.server.diagnostics.record(self.diagnostic_reason or "incomplete_http")
 
     def log_message(self, format, *args) -> None:
         pass
 
-    def send_error(self, code, message=None, explain=None) -> None:
+    def send_error(self, code, message=None, explain=None, *, reason="malformed_http") -> None:
+        self.diagnostic_reason = reason
         self.close_connection = True
         self.send_response_only(code)
         self.send_header("Connection", "close")
@@ -188,49 +225,70 @@ class WebhookHandler(BaseHTTPRequestHandler):
         if not super().parse_request():
             return False
         if self.command != "POST":
-            self.send_error(405)
+            self.send_error(405, reason="wrong_method")
             return False
         # The base parser normalizes leading double slashes in self.path.
         if self.requestline.split()[1] != WEBHOOK_PATH:
-            self.send_error(404)
+            self.send_error(404, reason="wrong_path")
             return False
         return True
 
     def do_POST(self) -> None:
+        if self.headers.get("Transfer-Encoding") is not None:
+            self.send_error(400, reason="transfer_encoding")
+            return
+        if self.headers.get("Content-Encoding") is not None:
+            self.send_error(400, reason="content_encoding")
+            return
         lengths = self.headers.get_all("Content-Length", [])
-        if (len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal()
-                or len(lengths[0]) > 10 or self.headers.get("Transfer-Encoding") is not None
-                or self.headers.get("Content-Encoding") is not None):
-            self.send_error(400)
+        if not lengths:
+            self.send_error(400, reason="missing_content_length")
+            return
+        if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal() or len(lengths[0]) > 10:
+            self.send_error(400, reason="invalid_content_length")
             return
         length = int(lengths[0])
         if not length or length > MAX_BODY_BYTES:
-            self.send_error(413 if length else 400)
+            self.send_error(413 if length else 400, reason="oversized_body" if length else "empty_body")
             return
         headers = {"Content-Type": "application/json"}
         for name in WEBHOOK_HEADERS:
             values = self.headers.get_all(name, [])
             if len(values) > 1 or any(len(value) > 256 or not value.isprintable()
                                        for value in values if value):
-                self.send_error(400)
+                self.send_error(400, reason="invalid_webhook_header")
                 return
             if values:
                 headers[name] = values[0]
         body = self.rfile.read(length)
         if len(body) != length:
-            self.send_error(400)
+            self.send_error(400, reason="incomplete_body")
             return
         self.request_timer.cancel()
         hold = self.server.hold
         refused, acknowledgement = hold.check(body, headers) if hold is not None else (None, None)
         if refused is not None:
-            self.send_error(refused)
+            self.send_error(refused, reason="test_control_refusal")
             return
         status, outcome = forward_webhook(self.server.upstream_port, body, headers,
                                           inspect_settlement=acknowledgement is not None)
         if outcome and hold is not None and acknowledgement is not None and hold.note_settlement(acknowledgement, outcome):
-            status = 503
-        self.send_error(status)
+            self.send_error(503, reason="test_ack_loss")
+            return
+        self.send_error(status, reason=self.upstream_reason(status, body, headers))
+
+    def upstream_reason(self, status: int, body: bytes, headers: dict[str, str]) -> str:
+        hold = self.server.hold
+        if status == 400 and self.server.diagnostics is not None and hold is not None:
+            signature = headers.get("X-Razorpay-Signature", "")
+            if not signature:
+                return "upstream_400_missing_signature"
+            if not hold.verifies(body, signature):
+                return "upstream_400_signature_mismatch"
+            if not headers.get("X-Razorpay-Event-Id", "").strip():
+                return "upstream_400_missing_event_id"
+            return "upstream_400_verified_headers"
+        return "upstream_2xx" if 200 <= status < 300 else "upstream_other"
 
 
 def _settlement_reply(response: http.client.HTTPResponse) -> SettlementReply | None:
@@ -281,11 +339,14 @@ def main() -> None:
     parser.add_argument("--listen-port", required=True, type=int)
     parser.add_argument("--upstream-port", required=True, type=int)
     parser.add_argument("--test-control-dir", type=Path)
+    parser.add_argument("--test-diagnostics", action="store_true",
+                        help="write fixed request reason counts to the private Test control directory")
     args = parser.parse_args()
     try:
         hold = (TestDeliveryHold(args.test_control_dir, os.environ.get("HIREWIZ_TEST_WEBHOOK_SECRET", ""))
                 if args.test_control_dir is not None else None)
-        with WebhookIngress(args.listen_port, args.upstream_port, hold=hold) as ingress:
+        with WebhookIngress(args.listen_port, args.upstream_port, hold=hold,
+                            test_diagnostics=args.test_diagnostics) as ingress:
             print(f"Razorpay Test receiver listening on {LOOPBACK}:{ingress.server_port}", flush=True)
             ingress.serve_forever()
     except KeyboardInterrupt:
