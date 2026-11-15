@@ -749,11 +749,13 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 21 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 23 and "backend/app/**" not in trigger["paths"]
     assert "backend/scripts/stage5_skill_roi.py" in trigger["paths"]
     assert "backend/tests/test_stage5_skill_roi.py" in trigger["paths"]
     assert "backend/scripts/stage5_first_minute.py" in trigger["paths"]
     assert "backend/tests/test_stage5_first_minute.py" in trigger["paths"]
+    assert "backend/scripts/stage5_jobs_journey.py" in trigger["paths"]
+    assert "backend/tests/test_stage5_jobs_journey.py" in trigger["paths"]
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -778,6 +780,7 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "run_stage5_capacity.py --execute" in runs
     assert "--skill-roi-journey" in runs and "test_stage5_skill_roi.py" in runs
     assert "--first-minute" in runs and "test_stage5_first_minute.py" in runs
+    assert "--jobs-journey" in runs and "test_stage5_jobs_journey.py" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
     assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)
