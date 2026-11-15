@@ -78,6 +78,15 @@ def _run_domain(factory, store, mode: Mode) -> Outcome:
                    cleanup_completed=privacy.cleanup_due(factory, store, limit=1))
 
 
+def _run_wake(factory, store, identifier: str) -> WakeOutcome:
+    from ..domains.resume_uploads import privacy, tasks
+
+    status = tasks.process_wake(factory, identifier, store)
+    if status == "terminal" and not privacy.end_upload_wake(factory, identifier, store):
+        status = "pending"
+    return WakeOutcome("wake", status)
+
+
 def _pairs(items):
     data = {}
     for key, value in items:
@@ -218,10 +227,8 @@ def _child(mode: ChildMode) -> int:
             outcome: Outcome | WakeOutcome
             with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
                 if mode == "wake":
-                    from ..domains.resume_uploads.tasks import process_wake
-
                     assert identifier is not None
-                    outcome = WakeOutcome("wake", process_wake(SessionLocal, identifier, GCSObjectStore()))
+                    outcome = _run_wake(SessionLocal, GCSObjectStore(), identifier)
                 else:
                     outcome = _run_domain(SessionLocal, GCSObjectStore(), mode)
             print(json.dumps(asdict(outcome), separators=(",", ":")), flush=True)

@@ -28,7 +28,7 @@ def run(context, mode):
     return coordinator._run_domain(context[0], context[1], mode)
 
 
-def test_confirmed_wake_and_owner_completion_converge_on_one_saved_resume(context, monkeypatch):
+def test_confirmed_wake_closes_quarantine_and_keeps_the_saved_resume(context, monkeypatch):
     factory, store = context
     pending = []
     monkeypatch.setenv('RESUME_UPLOAD_TASK_WAKE_ENABLED', 'true')
@@ -37,21 +37,46 @@ def test_confirmed_wake_and_owner_completion_converge_on_one_saved_resume(contex
         with factory() as db:
             row = db.get(ResumeUpload, identifier)
             assert row.state == 'awaiting_upload' and row.expires_at == expires_at
-        assert tasks.process_wake(factory, identifier, store) == 'pending'
+        assert coordinator._run_wake(factory, store, identifier).status == 'pending'
         pending.append(identifier)
 
     monkeypatch.setattr(wake, 'confirm', confirm)
     intent, target = domain.admission(context)
     assert pending == [intent.upload_id] and intent.upload_url is not None
     store.upload(target)
-    assert tasks.process_wake(factory, intent.upload_id, store) == 'pending'
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'pending'
     with factory() as db:
         assert service.complete(db, 1, intent.upload_id).state == 'queued'
-    assert tasks.process_wake(factory, intent.upload_id, store) == 'terminal'
-    assert tasks.process_wake(factory, intent.upload_id, store) == 'terminal'
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'terminal'
+    assert store.inspect_object(target.quarantine_bucket, target.quarantine_name).retired
+    assert not store.inspect_object(target.clean_bucket, target.clean_name).retired
+    monkeypatch.setattr(store, 'retire', lambda *args: pytest.fail('duplicate wake retired an object'))
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'terminal'
     with factory() as db:
         assert db.query(domain.core.Resume).count() == 1
         assert db.get(ResumeUpload, intent.upload_id).attempt_count == 1
+
+
+def test_expired_wake_defers_ack_until_both_upload_targets_are_closed(context):
+    factory, store = context
+    intent, target = domain.admission(context)
+    domain.expire(context, intent.upload_id)
+    store.fail_retire = True
+
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'pending'
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'pending'
+    with factory() as db:
+        assert db.get(ResumeUpload, intent.upload_id).state == 'expired'
+        work = db.query(ResumeUploadCleanup).one()
+        assert work.attempt_count == 1 and work.next_attempt_at > utcnow()
+        work.next_attempt_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+
+    store.fail_retire = False
+    assert coordinator._run_wake(factory, store, intent.upload_id).status == 'terminal'
+    assert store.inspect_object(target.quarantine_bucket, target.quarantine_name).retired
+    assert store.inspect_object(target.clean_bucket, target.clean_name).retired
+    domain.assert_no_saved(context)
 
 
 def test_wake_preserves_owner_completion_and_only_processes_the_named_upload(context, monkeypatch):
