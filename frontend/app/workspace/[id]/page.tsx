@@ -77,6 +77,7 @@ type Tab = "overview" | "resume" | "learning" | "interview" | "activity" | "outc
 type SourceState = "no_selection" | "loading" | "request_error" | "missing_row" | "unknown_metadata" | "confirmed_absent" | "ready";
 type MatchScope = { ownerKey: string; opportunityId: string; resumeId: number };
 type ScopedMatchRun = { runId: string; scope: MatchScope };
+type ScopedInterviewRun = { runId: string; resumeId: number | null };
 type Outcome = "offer_accepted" | "offer_declined" | "rejected" | "withdrawn";
 type TailorResult = {
   resume_version_id: string;
@@ -181,7 +182,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const [scopedMatchRun, setScopedMatchRun] = useState<ScopedMatchRun | null>(null);
   const matchRunId = scopedMatchRun?.runId ?? null;
   const quotedMatchScope = useRef<MatchScope | null>(null);
-  const [interviewRunId, setInterviewRunId] = useState<string | null>(null);
+  const [scopedInterviewRun, setScopedInterviewRun] = useState<ScopedInterviewRun | null>(null);
   const [tailorRunId, setTailorRunId] = useState<string | null>(null);
   const [openedLearningMatch, setOpenedLearningMatch] = useState<string | null>(null);
   const [reminderMessage, setReminderMessage] = useState("");
@@ -213,6 +214,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
   const pendingConnection = queryClient.getQueryData<PendingWorkspaceConnection>(workspaceConnectionKey(ownerKey, opportunityId));
   const prefix = workspaceKey(ownerKey, opportunityId);
   const opportunity = { ...workspace, data: workspace.data?.opportunity };
+  const interviewResumeId = opportunity.data?.resume_id ?? null;
   const pageArgs = { owner: ownerKey, opportunity: opportunityId, tab, source: opportunity.data?.resume_id,
     enabled: workspace.isSuccess && !workspace.isError, refreshing: workspace.isFetching, refresh: () => workspace.refetch() };
   const versionPage = useWorkspacePage({ ...pageArgs, collection: "resume_versions", seed: workspace.data?.pages.resume_versions });
@@ -306,7 +308,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     onSuccess: async () => {
       setSubmittedVersionId(""); setOpenedEvidence(null); setEditingEvidenceId(null); setEditingEvidenceVersion(null);
       setEvidenceDraft(""); setOpenedTranscription(null); setComparedTranscription(false); setReviewedVersionIds({});
-      setScopedMatchRun(null); setTailorRunId(null); setInterviewRunId(null); setOpenedLearningMatch(null);
+      setScopedMatchRun(null); setTailorRunId(null); setOpenedLearningMatch(null);
       // Mark the old match stale without fetching it during the source change.
       await queryClient.invalidateQueries({ queryKey: learningMatchKey, refetchType: "none" });
       await queryClient.invalidateQueries({ queryKey: prefix,
@@ -341,8 +343,11 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     && scopedMatchRun.scope.resumeId === opportunity.data?.resume_id);
   const matchRun = useRun(matchRunId);
   const matchRunResult = useRunResult(matchRun.data, matchRunCurrent);
-  const interviewRun = useRun(interviewRunId);
-  const interviewResult = useRunResult(interviewRun.data);
+  const interviewRun = useRun(scopedInterviewRun?.runId ?? null);
+  // Keep status tracking for completed work, but show questions only for the current source.
+  const interviewRunCurrent = workspace.isSuccess && !connectResume.isPending
+    && scopedInterviewRun !== null && scopedInterviewRun.resumeId === interviewResumeId;
+  const interviewResult = useRunResult(interviewRun.data, interviewRunCurrent);
   const tailorRun = useRun(tailorRunId);
   const tailorResult = useRunResult(tailorRun.data);
 
@@ -453,7 +458,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     context: reviewContext, selectionKey: `${selectionIdentity}:${interviewMode}`, availability: creditAvailability.data,
     onRun: (run, reused) => {
       rememberObservedRun(run, reused);
-      setInterviewRunId(run.id);
+      setScopedInterviewRun({ runId: run.id, resumeId: interviewResumeId });
     },
   });
   const tailoringAction = useQuotedAnalysis({
@@ -490,9 +495,9 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
       { operation: "interview_questions", opportunity_id: opportunityId, input: { num_questions: interviewQuestionCount, mode: interviewMode } },
       { "Idempotency-Key": crypto.randomUUID() },
     ),
-    onSuccess: (run) => {
+    onSuccess: (run, resumeId: number | null) => {
       rememberObservedRun(run);
-      setInterviewRunId(run.id);
+      setScopedInterviewRun({ runId: run.id, resumeId });
       trackEvent("analysis_run_created", { operation: "interview_questions", estimated_units: run.estimated_units });
     },
   });
@@ -725,10 +730,12 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
     : createVersion.isPending ? "Saving your source snapshot. Please wait."
     : null);
   const sourceCanRefresh = sourceState === "request_error" || sourceState === "missing_row" || sourceState === "unknown_metadata";
-  const questions = interviewResult.data?.result as unknown as InterviewResult | undefined;
+  const currentInterviewStatus = interviewRunCurrent ? interviewRun.data : undefined;
+  const questions = (interviewRunCurrent ? interviewResult.data?.result : undefined) as unknown as InterviewResult | undefined;
   const interviewQuestions = questions?.questions || [];
   const evidenceBackedCount = interviewQuestions.filter((question) => question.answer_state === "evidence_backed").length;
-  const interviewIsRunning = startInterview.isPending || Boolean(interviewRunId && (!interviewRun.data || !terminal.has(interviewRun.data.status)));
+  const interviewIsRunning = startInterview.isPending
+    || (interviewRunCurrent && (!currentInterviewStatus || !terminal.has(currentInterviewStatus.status)));
   const tailored = tailorResult.data?.result as unknown as TailorResult | undefined;
 
   function reviewResumeEvidence() {
@@ -1150,7 +1157,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
                   <h2 id="interview-heading" className="font-display mt-2 text-3xl font-normal">Interview questions</h2>
                   <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">Prepare {interviewQuestionCount} practice questions for this role. Curated questions use a role catalog; enhanced generation sends role and approved evidence to AI. Review guidance before practicing.</p>
                 </div>
-                <div className="grid min-w-0 gap-3 sm:w-72 sm:shrink-0"><label className="grid gap-2 text-xs font-semibold text-muted-foreground">Question mode{interviewMode === "curated" && curatedAllowance ? " · 0 credits" : !unifiedServices && pricingKnown ? " · 1 analysis unit" : ""}<select className="field-control" value={interviewMode} disabled={interviewIsRunning} onChange={(event) => setInterviewMode(event.target.value as "curated" | "enhanced")}><option value="curated">Curated role catalog · no generative AI</option><option value="enhanced" disabled={unifiedServices && !interviewAction.available}>{unifiedServices ? "Enhanced questions · review AI credit charge" : "Enhanced questions · uses AI"}</option></select></label><Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => unifiedServices && interviewMode === "enhanced" ? interviewAction.requestQuote() : startInterview.mutate()} disabled={!pricingKnown || interviewIsRunning || interviewAction.pending || Boolean(interviewAction.review) || (unifiedServices && interviewMode === "enhanced" && !interviewAction.available)}>
+                <div className="grid min-w-0 gap-3 sm:w-72 sm:shrink-0"><label className="grid gap-2 text-xs font-semibold text-muted-foreground">Question mode{interviewMode === "curated" && curatedAllowance ? " · 0 credits" : !unifiedServices && pricingKnown ? " · 1 analysis unit" : ""}<select className="field-control" value={interviewMode} disabled={interviewIsRunning} onChange={(event) => setInterviewMode(event.target.value as "curated" | "enhanced")}><option value="curated">Curated role catalog · no generative AI</option><option value="enhanced" disabled={unifiedServices && !interviewAction.available}>{unifiedServices ? "Enhanced questions · review AI credit charge" : "Enhanced questions · uses AI"}</option></select></label><Button className="min-h-11 shrink-0 self-start sm:self-auto" onClick={() => unifiedServices && interviewMode === "enhanced" ? interviewAction.requestQuote() : startInterview.mutate(interviewResumeId)} disabled={!pricingKnown || connectResume.isPending || interviewIsRunning || interviewAction.pending || Boolean(interviewAction.review) || (unifiedServices && interviewMode === "enhanced" && !interviewAction.available)}>
                   {interviewIsRunning ? <LoaderCircle size={16} className="animate-spin" /> : <BrainCircuit size={16} />}
                   {interviewIsRunning ? "Generating questions" : interviewQuestions.length ? "Regenerate questions" : "Generate questions"}
                 </Button></div>
@@ -1165,13 +1172,13 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
               ) : null}
               {interviewMode === "curated" && curatedAllowance ? <p className="mt-3 text-xs text-muted-foreground">Curated question allowance: up to {curatedAllowance.per_account_30_days} new requests in a rolling 30-day period, subject to available capacity. Saved questions remain accessible.</p> : null}
               <div className="mt-5"><QuotedAnalysisReview action={interviewAction} /></div>
-              <AnalysisRunFeedback run={interviewRun.data} />
-              <RunStatusCheck query={interviewRun} label="interview" />
-              {startInterview.isError ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
-              {interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
-              {interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}
+              <AnalysisRunFeedback run={currentInterviewStatus} />
+              {interviewRunCurrent ? <RunStatusCheck query={interviewRun} label="interview" /> : null}
+              {startInterview.isError && startInterview.variables === interviewResumeId ? <p className="mt-4 text-sm text-coral" role="alert">{startInterview.error instanceof Error ? startInterview.error.message : "Could not generate questions. Please try again."}</p> : null}
+              {interviewRunCurrent && interviewResult.isLoading ? <div className="mt-6"><LoadingBlock rows={3} /></div> : null}
+              {interviewRunCurrent && interviewResult.isError ? <div className="mt-4 flex flex-wrap items-center gap-3 text-sm" role="alert"><p className="text-coral">Could not load your interview questions.</p><Button variant="secondary" size="sm" onClick={() => void interviewResult.refetch()}>Retry loading</Button></div> : null}
               <InterviewQuestionList questions={interviewQuestions} reviewEvidence={reviewResumeEvidence} />
-              {!interviewQuestions.length && !interviewIsRunning && !interviewResult.isLoading && !interviewResult.isError && (!interviewRun.data || interviewRun.data.status === "succeeded") ? (
+              {!interviewQuestions.length && !interviewIsRunning && (!interviewRunCurrent || (!interviewResult.isLoading && !interviewResult.isError && currentInterviewStatus?.status === "succeeded")) ? (
                 <EmptyState icon={MessageSquareText} title={questions ? "No questions returned" : "Prepare from the actual role"} description={questions ? "Try generating another set of questions for this opportunity." : "Generate questions from the saved job description, then review your evidence before practicing."} />
               ) : null}
               {workspace.isSuccess && workspace.data.pages.interview_results ? (

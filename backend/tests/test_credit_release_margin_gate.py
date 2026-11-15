@@ -80,6 +80,19 @@ def test_paid_checkout_stays_closed_for_low_margin_review(minimum, target, monke
     assert release.checkout_ready() is False
 
 
+def test_commercial_checkout_requires_an_exact_reviewed_catalog(monkeypatch):
+    candidate = release.ReleaseReview.model_validate(payload())
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("UNIFIED_CREDITS_ENABLED", "true")
+    monkeypatch.setattr(release.RazorpaySettings, "from_env", lambda: SimpleNamespace(checkout_enabled=True))
+    for catalog_hash, expected in [(None, False), ("0" * 64, False), (pricing.catalog_pricing_sha256(), True)]:
+        pricing_review = (None if catalog_hash is None else
+                          pricing.PurchasePricingReview(catalog_sha256=catalog_hash, campaign_sha256=None))
+        review = candidate.model_copy(update={"purchase_pricing": pricing_review})
+        monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", review.model_dump_json())
+        assert release.checkout_ready() is expected
+
+
 def execution_config(candidate):
     return runtime.RuntimeConfig(policy=candidate,
         budgets=dict(version="owned-budgets", evidence_sha256="c"*64,

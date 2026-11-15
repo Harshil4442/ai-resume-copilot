@@ -27,12 +27,12 @@ VALID_STAGES = {
 }
 
 
-def _owned_resume(db: Session, user_id: int, resume_id: int) -> models.Resume:
-    resume = (
+def _owned_resume(db: Session, user_id: int, resume_id: int, *, lock: bool = False) -> models.Resume:
+    query = (
         db.query(models.Resume)
         .filter(models.Resume.id == resume_id, models.Resume.user_id == user_id)
-        .first()
     )
+    resume = (query.populate_existing().with_for_update() if lock else query).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
     return resume
@@ -626,12 +626,47 @@ def delete_evidence(db: Session, user_id: int, evidence_id: str, *, expected_fin
     db.commit()
 
 
+def _check_version_evidence(db: Session, user_id: int, evidence_ids: list[str], *, resume_id: int | None = None) -> None:
+    if not evidence_ids:
+        return
+    owned = db.query(func.count(models.EvidenceItem.id)).filter(
+        models.EvidenceItem.user_id == user_id,
+        models.EvidenceItem.id.in_(evidence_ids),
+        models.EvidenceItem.approval_state == "approved",
+    )
+    if resume_id is not None:
+        owned = owned.filter(models.EvidenceItem.resume_id == resume_id)
+    if int(owned.scalar() or 0) != len(set(evidence_ids)):
+        raise HTTPException(422, "Every referenced evidence item must be owned and approved")
+
+
+def _lock_version_resume(db: Session, user_id: int, payload: schemas.ResumeVersionCreate) -> models.Resume:
+    # Lock the version's FK parents in owner, opportunity, resume order. Workspace
+    # takes the opportunity before the resume, and never enters this direct path.
+    if db.query(models.User.id).filter_by(id=user_id).with_for_update(read=True, key_share=True).first() is None:
+        raise HTTPException(404, "Resume not found")
+    if payload.opportunity_id:
+        opportunity = db.query(models.Opportunity.id).filter_by(
+            id=payload.opportunity_id, user_id=user_id,
+        ).with_for_update(read=True, key_share=True).first()
+        if opportunity is None:
+            raise HTTPException(404, "Opportunity not found")
+    return _owned_resume(db, user_id, payload.resume_id, lock=True)
+
+
 def create_resume_version(
     db: Session,
     user_id: int,
     payload: schemas.ResumeVersionCreate,
+    *,
+    workspace_resume: models.Resume | None = None,
+    prepared_native_snapshot: dict[str, Any] | None = None,
 ) -> models.ResumeVersion:
-    resume = _owned_resume(db, user_id, payload.resume_id)
+    resume = workspace_resume if workspace_resume is not None else _owned_resume(db, user_id, payload.resume_id)
+    if resume.id != payload.resume_id or resume.user_id != user_id:
+        raise HTTPException(404, "Resume not found")
+    if prepared_native_snapshot is not None and resume.source_format not in {"tex", "texzip"}:
+        raise HTTPException(409, "The original resume source changed during preparation")
     if payload.opportunity_id:
         get_opportunity(db, user_id, payload.opportunity_id)
     if payload.generation_run_id:
@@ -645,28 +680,10 @@ def create_resume_version(
         )
         if not run:
             raise HTTPException(status_code=404, detail="Analysis run not found")
-    if payload.evidence_ids:
-        owned_count = (
-            db.query(func.count(models.EvidenceItem.id))
-            .filter(
-                models.EvidenceItem.user_id == user_id,
-                models.EvidenceItem.id.in_(payload.evidence_ids),
-                models.EvidenceItem.approval_state == "approved",
-            )
-            .scalar()
-        )
-        if int(owned_count or 0) != len(set(payload.evidence_ids)):
-            raise HTTPException(
-                status_code=422,
-                detail="Every referenced evidence item must be owned and approved",
-            )
-    next_version = int(
-        db.query(func.max(models.ResumeVersion.version_number))
-        .filter(models.ResumeVersion.resume_id == resume.id)
-        .scalar()
-        or 0
-    ) + 1
+    _check_version_evidence(db, user_id, payload.evidence_ids,
+                            resume_id=resume.id if prepared_native_snapshot is not None else None)
     content = payload.structured_content
+    rendered_source = None
     if not content:
         if resume.source_available and resume.source_format in {"pdf", "docx", "tex", "texzip"}:
             content = {
@@ -686,12 +703,13 @@ def create_resume_version(
         from ...services.resume_layout import ResumeLayoutError
         if content.get("format_preservation") != "source" or content.get("source_format") != resume.source_format or not isinstance(content.get("source_edits"), list):
             raise HTTPException(422, "Native resume versions must preserve the uploaded source and identify exact source edits.")
+        source_format, source = resume.source_format, resume.source_document
         try:
             allowed = {}
             if content["source_edits"]:
                 from ...services.llm_client import _validate_tailoring_edit
                 from ...services.resume_layout import extract_source_units
-                units = {unit["unit_id"]: unit for unit in extract_source_units(resume.source_document, resume.source_format)}
+                units = {unit["unit_id"]: unit for unit in extract_source_units(source, source_format)}
                 evidence = db.query(models.EvidenceItem).filter(
                     models.EvidenceItem.user_id == user_id, models.EvidenceItem.resume_id == resume.id,
                     models.EvidenceItem.approval_state == "approved", models.EvidenceItem.id.in_(payload.evidence_ids)).all()
@@ -702,18 +720,43 @@ def create_resume_version(
                     validated.append(_validate_tailoring_edit(edit, units, allowed, seen))
                     seen.add(edit["unit_id"])
                 content = {**content, "source_edits": validated}
-            if resume.source_format == "docx":
+            if workspace_resume is None:
+                rendered_source = (source_format, source)
+                db.rollback()  # No transaction or row lock during native preparation.
+            if source_format == "docx":
                 from ...services.docx_artifact import prepare_artifact as prepare_docx
-                seal = prepare_docx(resume.source_document, content["source_edits"])
-            else:
+                seal = prepare_docx(source, content["source_edits"])
+            elif prepared_native_snapshot is None:
                 from ...services.native_tex import prepare_artifact as prepare_tex
-                seal = prepare_tex(resume.source_document, resume.source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()])
-            if resume.source_format == "docx" and seal is None:
+                seal = prepare_tex(source, source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()])
+            else:
+                from ...services.native_tex import sealed_bytes
+
+                # Only the in-process workspace path can supply a prepared seal.
+                # The public version API still validates and renders its own source edits.
+                seal = prepared_native_snapshot
+                if (content["source_edits"] or seal.get("classification") != "unchanged_source_snapshot"
+                        or seal.get("inspection_version") != 1
+                        or sealed_bytes(seal, source, source_format, [], source_format) != source):
+                    raise ResumeLayoutError("This snapshot does not preserve the original TeX source.")
+            if source_format == "docx" and seal is None:
                 content = {key: value for key, value in content.items() if key != "sealed_native_artifact"}
             else:
                 content = {**content, "sealed_native_artifact": seal}
         except (ResumeLayoutError, TailoringOutputError) as exc:
             raise HTTPException(422, str(exc)) from exc
+    if workspace_resume is None:
+        resume = _lock_version_resume(db, user_id, payload)
+    if rendered_source is not None:
+        if (resume.source_format, resume.source_document) != rendered_source:
+            raise HTTPException(409, "The original resume source changed during preparation")
+        _check_version_evidence(db, user_id, payload.evidence_ids)
+    next_version = int(
+        db.query(func.max(models.ResumeVersion.version_number))
+        .filter(models.ResumeVersion.resume_id == resume.id)
+        .scalar()
+        or 0
+    ) + 1
     version = models.ResumeVersion(
         id=public_id("rsv"),
         user_id=user_id,

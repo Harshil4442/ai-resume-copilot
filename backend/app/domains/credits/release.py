@@ -21,7 +21,7 @@ from .finance import (
     require_commercial_margins,
     require_current_policy,
 )
-from .pricing import CATALOG_VERSION, PRODUCTS
+from .pricing import CATALOG_VERSION, PRODUCTS, PurchasePricingReview, catalog_pricing_sha256
 
 
 class ReleaseReview(Closed):
@@ -36,6 +36,7 @@ class ReleaseReview(Closed):
     monthly_additional_business_minor: int = Field(strict=True, ge=0)
     planning_paid_packs: int = Field(strict=True, gt=0, le=2000)
     funded_runway_minor: int = Field(strict=True, gt=0)
+    purchase_pricing: PurchasePricingReview | None = None
 
     @model_validator(mode="after")
     def complete_review(self):
@@ -74,12 +75,15 @@ def rollout_enabled() -> bool:
     return os.getenv("UNIFIED_CREDITS_ENABLED", "").lower() == "true"
 
 
+def commercial_runtime() -> bool:
+    return os.getenv("APP_ENV", "production").lower() not in {"test", "development", "dev", "local", "staging"}
+
+
 def current_review(*, now: datetime | None = None) -> ReleaseReview:
     instant = now or datetime.now(UTC)
     try:
         review = ReleaseReview.model_validate_json(os.getenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", ""))
-        production = os.getenv("APP_ENV", "production").lower() not in {"test", "development", "dev", "local", "staging"}
-        require_current_policy(review.policy, now=instant, commercial=production)
+        require_current_policy(review.policy, now=instant, commercial=commercial_runtime())
         if review.catalog_version != CATALOG_VERSION or review.shadow_ended_at > instant:
             raise ValueError("Release evidence does not match this release")
         if instant - review.shadow_ended_at > timedelta(days=31):
@@ -93,7 +97,9 @@ def checkout_ready() -> bool:
     if not rollout_enabled() or not RazorpaySettings.from_env().checkout_enabled:
         return False
     try:
-        current_review()
-        return True
+        pricing = current_review().purchase_pricing
+        if pricing is None:
+            return not commercial_runtime()
+        return pricing.catalog_sha256 == catalog_pricing_sha256()
     except FundingUnavailable:
         return False

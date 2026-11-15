@@ -108,19 +108,41 @@ def test_catalog_has_no_invented_active_offer():
 
 def test_campaign_boundaries_and_evidence():
     row = campaign(start=NOW, verified=True)
-    before = pricing.public_catalog(campaign=row, now=NOW - timedelta(seconds=1))
-    start = pricing.public_catalog(campaign=row, now=NOW)
-    end = pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30))
+    review = pricing.PurchasePricingReview(
+        catalog_sha256=pricing.catalog_pricing_sha256(),
+        campaign_sha256=pricing.campaign_pricing_sha256(row),
+        reference_prices={"starter_pass": pricing.ReferencePriceReview(
+            standard_amount_minor=7900, terms_version=pricing.TERMS_VERSION, market="IN", currency="INR",
+            approved_at=NOW, evidence_sha256="a" * 64,
+        )},
+    )
+    before = pricing.public_catalog(campaign=row, now=NOW - timedelta(seconds=1), review=review)
+    start = pricing.public_catalog(campaign=row, now=NOW, review=review)
+    end = pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30), review=review)
     assert before.products[0].campaign.status == "scheduled"
     assert start.products[0].amount_minor == 5900
-    assert start.products[0].campaign.reference_price_verified
+    assert [item.campaign.reference_price_verified for item in start.products] == [True, False, False]
     assert end.products[0].amount_minor == 7900
     assert end.products[0].campaign.status == "ended"
     assert not before.products[0].campaign.reference_price_verified
     assert not end.products[0].campaign.reference_price_verified
-    row.reference_evidence_id = None
-    with pytest.raises(pricing.CreditContractError, match="reference evidence"):
-        pricing.public_catalog(campaign=row, now=NOW)
+    without_review = pricing.public_catalog(campaign=row, now=NOW)
+    assert all(not item.campaign.reference_price_verified for item in without_review.products)
+    future_review = pricing.PurchasePricingReview.model_validate(review.model_dump() | {
+        "reference_prices": {"starter_pass": review.reference_prices["starter_pass"].model_dump()
+                             | {"approved_at": NOW + timedelta(hours=1)}},
+    })
+    assert not pricing.public_catalog(campaign=row, now=NOW, review=future_review).products[0].campaign.reference_price_verified
+
+    with pytest.raises(ValueError, match="exact pack price"):
+        pricing.PurchasePricingReview(
+            catalog_sha256=review.catalog_sha256, campaign_sha256=review.campaign_sha256,
+            reference_prices={"growth_pass": review.reference_prices["starter_pass"]},
+        )
+    row.starts_at += timedelta(days=1)
+    row.ends_at += timedelta(days=1)
+    with pytest.raises(pricing.CreditContractError, match="has changed since review"):
+        pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30), review=review)
 
 
 @pytest.mark.parametrize(
@@ -201,6 +223,56 @@ def test_expired_and_other_owner_quotes_are_not_accepted(factory):
             )
         assert db.query(CreditGrant).count() == 0
         assert db.query(CreditPurchaseQuote).one().state == "quoted"
+
+
+def test_new_quote_uses_campaign_price_after_owner_lock(factory, monkeypatch):
+    lock_released = False
+    lock_owner = service._lock_owner
+
+    def acquire_owner(db, user_id):
+        nonlocal lock_released
+        lock_owner(db, user_id)
+        lock_released = True
+
+    monkeypatch.setattr(service, "_lock_owner", acquire_owner)
+    monkeypatch.setattr(service, "utcnow", lambda: NOW if lock_released else NOW - timedelta(seconds=1))
+    with factory() as db:
+        db.add(campaign(start=NOW - timedelta(days=30)))
+        db.commit()
+        quote = service.issue_purchase_quote(
+            db, user_id=1, sku="starter_pass", idempotency_key="purchase-after-cutoff", checkout_enabled=True,
+        )
+        response = service.quote_response(quote)
+        assert response.campaign.status == "ended"
+        assert response.amount_minor == 7900
+        assert response.created_at == NOW
+        assert response.expires_at == NOW + pricing.PURCHASE_QUOTE_LIFETIME
+
+
+def test_quote_expiring_while_order_waits_remains_unaccepted(factory, monkeypatch):
+    lock_released = False
+    lock_owner = service._lock_owner
+
+    def acquire_owner(db, user_id):
+        nonlocal lock_released
+        lock_owner(db, user_id)
+        lock_released = True
+
+    cutoff = NOW + pricing.PURCHASE_QUOTE_LIFETIME
+    monkeypatch.setattr(service, "_lock_owner", acquire_owner)
+    monkeypatch.setattr(service, "utcnow", lambda: cutoff if lock_released else cutoff - timedelta(seconds=1))
+    with factory() as db:
+        quote = service.issue_purchase_quote(
+            db, user_id=1, sku="starter_pass", idempotency_key="purchase-before-cutoff", checkout_enabled=True, now=NOW,
+        )
+        db.commit()
+        quote_id = quote.id
+        lock_released = False
+        with pytest.raises(pricing.CreditContractError, match="quote expired"):
+            service.accept_purchase_quote(db, user_id=1, quote_id=quote_id, order_id="late-checkout")
+        db.commit()
+        retained = db.get(CreditPurchaseQuote, quote_id)
+        assert retained.state == "quoted" and retained.accepted_order_id is None
 
 
 def test_fulfillment_is_idempotent_and_late_webhook_keeps_30_usable_days(factory):

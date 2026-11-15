@@ -47,6 +47,13 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check uv==0.11.32
           uv sync --project backend --frozen --all-groups
+      - name: Verify isolated checkout and document custody
+        working-directory: backend
+        run: >-
+          .venv/bin/python -B -m pytest -q
+          tests/test_purchase_quote_isolated.py
+          tests/test_billing_reconciliation_isolated.py
+          tests/test_docx_version_custody.py
       - name: Verify deployment source pin before native builds
         working-directory: backend
         run: .venv/bin/python -I -B -m pytest --noconftest -q tests/test_nologin_role_source_pin.py

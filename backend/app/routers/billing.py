@@ -39,6 +39,7 @@ from ..billing.service import (
     process_razorpay_webhook,
 )
 from ..database import get_db
+from ..domains.employer.admissions import lock_application_set
 from ..models import (
     EntitlementLedger,
     PaymentEvent,
@@ -173,6 +174,7 @@ def create_order(
     current_user: User = Depends(get_current_user),
 ):
     _no_store(response)
+    lock_application_set(db, current_user.id)
     user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -639,8 +641,11 @@ def reconcile_order(
         return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
 
     try:
-        # Match settlement's order-before-owner lock order. NOWAIT also avoids
-        # waiting on admission's owner lock while holding the original order.
+        # Match settlement: owner advisory lock before Order and User rows.
+        # A busy owner preserves the existing status-only reconciliation response.
+        if not lock_application_set(db, owner_id, nowait=True):
+            db.rollback()
+            return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
         order = (db.query(PaymentOrder)
                  .filter(PaymentOrder.user_id == owner_id, PaymentOrder.public_id == order_reference)
                  .populate_existing().with_for_update(nowait=True).first())

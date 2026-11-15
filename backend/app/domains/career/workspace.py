@@ -254,30 +254,60 @@ def evidence_detail(db: Session, user_id: int, opportunity: schemas.OpportunityH
         transcription=review, transcription_unavailable=unavailable)
 
 
+def _lock_snapshot_resume(db: Session, user_id: int, resume_id: int | None) -> models.Resume:
+    resume = (db.query(models.Resume)
+        .filter(models.Resume.user_id == user_id, models.Resume.id == resume_id)
+        .populate_existing().with_for_update().first())
+    if resume is None or not resume.source_available or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
+        raise HTTPException(409, "Connect a resume with its original source first")
+    return resume
+
+
+def _snapshot_source_changed() -> HTTPException:
+    return HTTPException(409, {"code": "source_snapshot_resume_changed",
+        "message": "The connected resume changed. Review the current resume before saving a source snapshot."})
+
+
 def source_snapshot(db: Session, user_id: int, opportunity_id: str, *, expected_resume_id: int | None = None) -> models.ResumeVersion:
     """Save the unchanged source and the complete approved-ID set at selection.
 
     Later approvals do not join this immutable selection. Existing version
-    creation revalidates every selected ID before commit. Do not lock evidence:
+    creation revalidates every selected ID before commit. Native preparation
+    releases both locks, then rechecks the source under the same locks. Do not lock evidence:
     transcription review locks Evidence then Resume, so Resume->Evidence would
     invert that order. No evidence text or proposed edit is copied here.
     A supplied resume identity must still match after locking the opportunity.
     """
     opportunity = header(db, user_id, opportunity_id, locked=True)
     if expected_resume_id is not None and expected_resume_id != opportunity.resume_id:
-        raise HTTPException(409, {"code": "source_snapshot_resume_changed",
-            "message": "The connected resume changed. Review the current resume before saving a source snapshot."})
-    resume = db.query(models.Resume).filter(models.Resume.user_id == user_id, models.Resume.id == opportunity.resume_id).with_for_update().first()
-    if resume is None or not resume.source_available or resume.source_format not in {"pdf", "docx", "tex", "texzip"}:
-        raise HTTPException(409, "Connect a resume with its original source first")
+        raise _snapshot_source_changed()
+    resume = _lock_snapshot_resume(db, user_id, opportunity.resume_id)
     ids = [row.id for row in db.query(models.EvidenceItem.id).filter(models.EvidenceItem.user_id == user_id,
         models.EvidenceItem.resume_id == resume.id, models.EvidenceItem.approval_state == "approved").order_by(models.EvidenceItem.id).limit(501).all()]
     if len(ids) > 500:
         raise HTTPException(409, {"code": "source_snapshot_evidence_scope_exceeded",
             "message": "This source has more than the supported 500 approved evidence links. No partial snapshot was saved."})
+    seal = None
+    if resume.source_format in {"tex", "texzip"}:
+        from ...services.native_tex import prepare_artifact
+        from ...services.resume_layout import ResumeLayoutError
+
+        resume_id, source, source_format = resume.id, resume.source_document, resume.source_format
+        db.rollback()  # Release the source locks before inspection and rendering.
+        try:
+            seal = prepare_artifact(source, source_format, [])
+        except ResumeLayoutError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        opportunity = header(db, user_id, opportunity_id, locked=True)
+        if opportunity.resume_id != resume_id:
+            raise _snapshot_source_changed()
+        resume = _lock_snapshot_resume(db, user_id, resume_id)
+        if (resume.source_document, resume.source_format) != (source, source_format):
+            raise _snapshot_source_changed()
     return service.create_resume_version(db, user_id, schemas.ResumeVersionCreate(resume_id=resume.id, opportunity_id=opportunity_id,
         label=f"{opportunity.company or opportunity.title} source snapshot"[:160],
-        structured_content={"format_preservation": "source", "source_format": resume.source_format, "source_edits": []}, evidence_ids=ids))
+        structured_content={"format_preservation": "source", "source_format": resume.source_format, "source_edits": []}, evidence_ids=ids),
+        workspace_resume=resume, prepared_native_snapshot=seal)
 
 
 def resume_version_page(db: Session, user_id: int, resume_id: int, *, limit: int = DEFAULT_PAGE,

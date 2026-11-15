@@ -24,7 +24,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from backend.app import security
 from backend.app.billing.service import process_razorpay_webhook
+from backend.app.database import get_db
 from backend.app.domains.career import evidence_fence_definition, evidence_write_fence
 from backend.app.domains.career import schemas as career_schemas
 from backend.app.domains.career import service as career_service
@@ -53,8 +55,12 @@ from backend.app.models import (
     ResumeVersion,
     User,
 )
+from backend.app.routers import credits as credit_routes
+from backend.app.routers import resume as resume_routes
+from backend.app.routers.v1 import employer as employer_routes
 from backend.app.services.resume_artifacts import render_resume_version
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from psycopg.errors import CheckViolation, ForeignKeyViolation, InsufficientPrivilege
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
@@ -359,6 +365,54 @@ def assert_application_recovery(engine, expected, monkeypatch, *, subsequent_sea
         with pytest.raises(HTTPException) as conflict:
             admissions.reserve(db, replacement, source)
         assert conflict.value.status_code == 409 and conflict.value.detail["code"] == "canonical_opening_conflict"
+
+
+def recovery_client(engine):
+    app = FastAPI()
+    app.include_router(resume_routes.router, prefix="/api")
+    app.include_router(credit_routes.router, prefix="/api")
+    app.include_router(employer_routes.router, prefix="/api/v1")
+
+    def get_owned_session():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = get_owned_session
+    return TestClient(app)
+
+
+def recovery_api_readback(engine, application, credits, owner, other_owner):
+    identity, original, approved, _ = application
+    application_url = f"/api/v1/employer-jobs/applications/{identity}"
+    original_url = "/api/resume/2/source"
+    artifact_url = f"{application_url}/artifact"
+    wallet_url = "/api/v1/credits/wallet"
+
+    with recovery_client(engine) as client:
+        for url in (original_url, application_url, artifact_url):
+            assert client.get(url).status_code == 401
+            assert client.get(url, headers=other_owner).status_code == 404
+        assert client.get(wallet_url).status_code == 401
+        other_wallet = client.get(wallet_url, headers=other_owner)
+        assert other_wallet.status_code == 200
+        assert other_wallet.json()["available_credits"] == 0
+
+        original_response = client.get(original_url, headers=owner)
+        artifact_response = client.get(artifact_url, headers=owner)
+        assert original_response.status_code == artifact_response.status_code == 200
+        assert original_response.content == original
+        assert artifact_response.content == approved
+        assert artifact_response.headers["X-Artifact-SHA256"] == hashlib.sha256(approved).hexdigest()
+
+        application_response = client.get(application_url, headers=owner)
+        wallet_response = client.get(wallet_url, headers=owner)
+        assert application_response.status_code == wallet_response.status_code == 200
+        view, wallet = application_response.json(), wallet_response.json()
+        assert view["status"] == "unknown" and view["receipt"] is None
+        assert (view["reserved_credits"], view["charged_credits"]) == (5, 0)
+        assert (wallet["available_credits"], wallet["reserved_credits"], wallet["debt_credits"]) == (credits - 8, 8, 0)
+        del wallet["server_time"]
+        return view, wallet
 
 
 def seed_saved_search_recovery(engine, monkeypatch):
@@ -805,12 +859,21 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
             _migrate(source, schema27.SCHEMA)
             with Session(source) as db:
                 db.add(User(id=1, email="restore27@example.test", ai_credits=17, job_service_credits=13))
+                if physical:
+                    db.add(User(id=2, email="physical-other-owner@example.test"))
                 db.commit()
             publish_employer(source)
             application_recovery = seed_application_recovery(source, stamp)
             saved_search = seed_saved_search_recovery(source, monkeypatch) if canonical else None
             # The later synthetic payment and model rows must not fund the earlier accepted application.
             source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
+            if physical:
+                monkeypatch.setattr(security, "JWT_SECRET", secrets.token_hex(32))
+                owner, other_owner, after_backup_owner = (
+                    {"Authorization": f"Bearer {security.create_access_token(subject=str(identity))}"}
+                    for identity in (1, 2, 3)
+                )
+                before_api = recovery_api_readback(source, application_recovery, credits, owner, other_owner)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
                 if not physical:
@@ -851,6 +914,12 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
             backup_measurement = "owned_physical_backup_verify_seconds" if physical else f"owned_{method}_backup_seconds"
             record_property(backup_measurement, round(time.monotonic() - started, 3))
             assert snapshot(source) == expected
+            if physical:
+                with Session(source) as db:
+                    db.add(User(id=3, email="committed-after-backup@example.test"))
+                    db.commit()
+                with recovery_client(source) as client:
+                    assert client.get("/api/v1/credits/wallet", headers=after_backup_owner).status_code == 200
 
         started = time.monotonic()
         if not physical:
@@ -922,6 +991,14 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                     assert db.scalar(text("SELECT has_table_privilege('owned_archive_reader',"
                                           "'public.employer_catalogue_source_revisions','UPDATE')")) is False
             assert snapshot(restored) == expected
+            if physical:
+                assert recovery_api_readback(restored, application_recovery, credits, owner, other_owner) == before_api
+                with recovery_client(restored) as client:
+                    assert client.get("/api/v1/credits/wallet", headers=after_backup_owner).status_code == 401
+                record_property("owned_physical_stopped_source_to_authenticated_readback_seconds",
+                                round(time.monotonic() - started, 3))
+                record_property("owned_physical_preserved_pre_backup_and_excluded_post_backup_commits", True)
+                record_property("owned_physical_authenticated_readback_and_owner_scope", True)
             assert_payment_and_reserve_replay(restored, stamp, capture, reservation_id, source_bytes, credits)
             assert_application_recovery(restored, application_recovery, monkeypatch,
                                         subsequent_search_credits=saved_search[2].search.charged_credits if saved_search else 0)

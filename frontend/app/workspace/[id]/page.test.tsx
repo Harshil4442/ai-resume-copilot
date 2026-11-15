@@ -519,6 +519,54 @@ it("records completion when a saved interview lookup races an already-observed r
   expect(state.wire.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(2);
   expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "analysis_completed")).toHaveLength(1);
 });
+
+it.each(["before", "after"])("keeps questions returned %s a resume change in the saved history only", async (timing) => {
+  state.tab = "interview";
+  const role = state.id;
+  const run = { id: "previous-resume-interview", opportunity_id: role, operation: "interview_questions", status: "succeeded",
+    estimated_units: 1, committed_units: 0, usage_state: "not_charged" };
+  const question = "How did you use evidence from resume one?";
+  const statusPath = `/v1/analysis-runs/${run.id}`;
+  const resultPath = `${statusPath}/result`;
+  state.direct.mockImplementation((url: string) => {
+    if (url.includes("/workspace?")) {
+      const workspace = matchWorkspace("none");
+      return Promise.resolve({ ...workspace, pages: { ...workspace.pages,
+        interview_results: { items: [{ id: run.id, completed_at: stamp }], next_cursor: null },
+      } });
+    }
+    if (url === statusPath) return Promise.resolve(run);
+    if (url === resultPath) return Promise.resolve({ id: run.id, operation: run.operation,
+      result: { opportunity_id: role, mode: "curated", questions: [{ question, answer: "Use your first resume.",
+        answer_state: "evidence_backed", evidence_ids: ["source-one"] }] } });
+  });
+  let finish!: (value: typeof run) => void;
+  state.post.mockImplementationOnce(() => new Promise<typeof run>((resolve) => { finish = resolve; }));
+  await page();
+  const generate = screen.getByRole("button", { name: "Generate questions" });
+  await waitFor(() => expect(generate).toBeEnabled());
+  fireEvent.click(generate);
+  await waitFor(() => expect(requests()[0]?.[1]).toEqual({
+    operation: "interview_questions", opportunity_id: role, input: { num_questions: 8, mode: "curated" },
+  }));
+  if (timing === "before") {
+    await act(async () => finish(run));
+    expect(await screen.findByRole("heading", { name: question })).toBeVisible();
+  }
+  await remoteResumeChange();
+  if (timing === "after") await act(async () => finish(run));
+  await waitFor(() => expect(vi.mocked(trackEvent).mock.calls.filter(([name]) => name === "analysis_completed")).toHaveLength(1));
+  const resultReads = () => state.wire.mock.calls.filter(([url]) => url === resultPath).length;
+  expect(resultReads()).toBe(timing === "before" ? 1 : 0);
+  expect(screen.queryByRole("heading", { name: question })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Generate questions" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: /Open saved interview from/ }));
+  expect(await screen.findByRole("heading", { name: question })).toBeVisible();
+  expect(screen.getByText("Linked at generation · 1 source")).toBeVisible();
+  expect(resultReads()).toBe(timing === "before" ? 2 : 1);
+  expect(requests()).toHaveLength(1);
+});
+
 it("keeps snapshots accessible when no paid route is qualified", async () => {
   enableCreditExecution([]); await page(); expect(screen.getByRole("button", { name: "Generate tailored version" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Save source snapshot" })).toBeEnabled(); expect(state.post).not.toHaveBeenCalled();

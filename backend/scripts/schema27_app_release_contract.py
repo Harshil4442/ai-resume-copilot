@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'cadde8ada005bfdd09039af112d26f4606c504d9236d679362dc43c3ac10da9b'
+CANDIDATE_APP_SHA256 = '35524841712a8b30b752c0d06c7687eb034e35163b662c9f22938d43eb7c3a3b'
 CANDIDATE_APP_FILES = 316
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -132,6 +132,7 @@ F07_PATHS = (
     "frontend/app/api/backend/[...path]/route.ts", "frontend/app/api/backend/[...path]/notificationRoutes.test.ts",
     "frontend/instrumentation-client.ts", "frontend/components/SessionProviderWrapper.tsx", "frontend/next.config.mjs",
     "backend/app/domains/career/workspace.py", "backend/tests/test_workspace_skill_roi.py",
+    "backend/tests/test_workspace_native_snapshot_postgres.py",
     "backend/tests/test_career_workspace_pagination.py",
     "frontend/app/workspace/[id]/page.tsx", "frontend/app/workspace/[id]/page.test.tsx",
     "frontend/components/career/WorkspaceInterviewHistory.tsx", "frontend/lib/useQuotedAnalysis.ts",

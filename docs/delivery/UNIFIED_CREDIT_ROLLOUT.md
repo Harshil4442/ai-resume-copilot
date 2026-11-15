@@ -492,6 +492,23 @@ introductory price and real campaign end date. Do not use an invented crossed-ou
 former price or a resetting countdown. Freeze the eligible service list in each
 purchase quote so a pass is never sold with an empty or unreviewed service claim.
 
+Before opening checkout, record `purchase_pricing` in
+`UNIFIED_CREDIT_RELEASE_REVIEW_JSON`. Obtain `catalog_sha256` from
+`catalog_pricing_sha256()` in `backend/app/domains/credits/pricing.py`. Use
+`campaign_pricing_sha256()` on the reviewed campaign row for
+`campaign_sha256`. An explicit null campaign hash approves the standard
+catalog without a campaign. If a campaign is approved, leave the same row
+enabled through its scheduled end. The offer ends at the reviewed timestamp
+and the unchanged catalog then uses its reviewed standard prices.
+
+Leave `reference_prices` empty for the introductory launch. Each later
+comparison-price entry must name the exact SKU and record the reviewed standard
+amount in paise, current terms version, IN market, INR currency, approval time
+and evidence digest. An existing campaign flag alone grants no comparison
+authority. Changing the approved dates, timezone, catalog terms or pack amounts
+requires a matching review before issuing new quotes or orders. Keep existing
+payment records and quoted terms available for reconciliation.
+
 ## Stop and rollback
 
 Pause the affected new route for fabricated claims, original-format corruption,
