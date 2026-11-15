@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import getpass
+import hmac
 import json
 import os
 import re
@@ -233,6 +234,16 @@ def wait_loopback(url: str, process, *, tls=True, status: int = 200) -> None:
     raise CheckoutLabError("A local checkout process did not become ready")
 
 
+def verify_webhook_signing(backend: str, secret: str) -> None:
+    # Deliberately omit the event ID so no provider event can reach the ledger.
+    body = b"{}"
+    signature = hmac.new(secret.encode(), body, "sha256").hexdigest()
+    with httpx.Client(base_url=backend, trust_env=False, timeout=5) as client:
+        response = client.post(WEBHOOK_PATH, content=body, headers={"X-Razorpay-Signature": signature})
+        require(response.status_code == 400 and response.json().get("detail") == "Missing webhook event identifier.",
+                "The local billing API did not verify the Test webhook signing secret")
+
+
 def verify_closed_checkout(frontend: str, ingress: str, tls) -> None:
     """Exercise the same auth, BFF, catalog and webhook routes used by the UI."""
     with httpx.Client(base_url=frontend, verify=tls, trust_env=False, timeout=10) as client:
@@ -361,9 +372,17 @@ def run(credentials: dict[str, str], duration: int, *, wallet_directory: Path | 
         receiver_env = python_env
         control_dir = home / "test-webhook-control"
         if credentials:
-            control_dir.mkdir(mode=0o700)
+            signing_secret = credentials["RAZORPAY_WEBHOOK_SECRET"]
+            verify_webhook_signing(backend, signing_secret)
+            if wallet_directory is not None:
+                control_dir = wallet_directory / "test-webhook-control"
+            if not resume:
+                control_dir.mkdir(mode=0o700)
+            owner = control_dir.lstat()
+            require(stat.S_ISDIR(owner.st_mode) and owner.st_uid == os.getuid()
+                    and stat.S_IMODE(owner.st_mode) == 0o700, "The Test webhook control directory must be owner-only")
             receiver_command.extend(["--test-control-dir", str(control_dir)])
-            receiver_env = python_env | {"HIREWIZ_TEST_WEBHOOK_SECRET": credentials["RAZORPAY_WEBHOOK_SECRET"]}
+            receiver_env = python_env | {"HIREWIZ_TEST_WEBHOOK_SECRET": signing_secret}
         receiver = start(receiver_command, receiver_env, ROOT)
         wait_loopback(ingress + "/api/health", receiver, status=405)
         processes.append(receiver)

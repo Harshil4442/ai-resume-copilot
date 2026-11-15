@@ -88,7 +88,10 @@ PostgreSQL cluster on port `55434` and an existing owner-only directory. Add
 `--wallet-directory /absolute/path/to/private-test-wallet` to the Test checkout
 command. The launcher retains its disposable schema and records its local
 database identity. Shut down both the temporary relay and the dedicated cluster
-while the refund processes. Keep the Test event eligible for replay in Razorpay.
+while the refund processes. Before stopping checkout, verify that the original
+Test order and payment are bound to one credit lot. Resolve any incomplete
+order binding through the original Test checkout session before resuming with
+the signing secret alone. Keep the Test event eligible for replay in Razorpay.
 After Razorpay processes it, restart the same cluster and run:
 
 ```sh
@@ -103,7 +106,10 @@ Point the Test callback at its temporary relay and replay the exact pending Test
 refund event if Razorpay offers replay. Verify its credit adjustment in the same
 retained wallet, then retire the temporary callback, relay and disposable cluster.
 The wallet record contains only the schema, migration revision and local database
-identity. [Razorpay replay controls](https://razorpay.com/docs/webhooks/replay-events/)
+identity. Preserve the separate private webhook control directory with the wallet
+so an interrupted capture can still be matched to its original delivery digest.
+Remove the capture hold rule after verifying the retry and before refund testing.
+[Razorpay replay controls](https://razorpay.com/docs/webhooks/replay-events/)
 
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
 verify they settle one credit lot. To verify a genuine Razorpay retry, atomically
