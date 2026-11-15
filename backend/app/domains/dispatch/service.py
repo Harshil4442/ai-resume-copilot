@@ -141,7 +141,7 @@ def enqueue(
     return event
 
 
-def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
+def _cloud_task(event: DispatchOutbox | DispatchSnapshot, *, rpc_timeout: float | None = None) -> str:
     project = _setting("GOOGLE_CLOUD_PROJECT")
     location = _setting("ANALYSIS_TASKS_LOCATION")
     service_account = _setting("ANALYSIS_TASKS_SERVICE_ACCOUNT")
@@ -173,8 +173,9 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
     if event.topic == "employer.search" and event.available_at is not None:
         stamp = event.available_at.timestamp()
         task["schedule_time"] = {"seconds": int(stamp), "nanos": int((stamp - int(stamp)) * 1_000_000_000)}
+    rpc_options = {} if rpc_timeout is None else {"retry": None, "timeout": rpc_timeout}
     try:
-        return str(client.create_task(parent=parent, task=tasks_v2.Task(task)).name)
+        return str(client.create_task(parent=parent, task=tasks_v2.Task(task), **rpc_options).name)
     except AlreadyExists:
         return name
 
@@ -252,7 +253,10 @@ def dispatch_pending(
                     # so the publisher can record and retry that failure safely.
                     process_event(event_id)
                 else:
-                    task_name = _cloud_task(snapshot)
+                    if aggregate_id is None:
+                        task_name = _cloud_task(snapshot)
+                    else:
+                        task_name = _cloud_task(snapshot, rpc_timeout=3.0)
                     db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
                         {"status": "dispatched", "task_name": task_name, "lease_token": None,
                          "lease_until": None, "last_error": case((and_(DispatchOutbox.topic == "employer.search",

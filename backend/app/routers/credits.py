@@ -367,6 +367,8 @@ def create_discovery_batch(payload: DiscoveryCreate, request: Request, response:
     try:
         batch = discovery.create(db, user_id=current_user.id, payload=payload)
         if batch.status == "preparing":
+            # Replays may still hold the owner lock after reading the committed batch.
+            db.rollback()
             background_tasks.add_task(kick_employer_search, batch.id)
         return batch
     except pricing.CreditContractError as exc:

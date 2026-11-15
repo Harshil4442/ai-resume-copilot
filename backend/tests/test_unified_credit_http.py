@@ -287,7 +287,17 @@ def test_discovery_http_quote_accept_replay_cancel_and_owner_boundary(discovery_
     client, factory = discovery_api
     from backend.app.routers import credits as router_module
     published = []
+    request_sessions = []
+
+    def tracked_database():
+        with factory() as db:
+            request_sessions.append(db)
+            yield db
+
+    monkeypatch.setitem(client.app.dependency_overrides, get_db, tracked_database)
+
     def read_committed_outbox(search_id):
+        assert not request_sessions[-1].in_transaction()
         with factory() as db:
             event = db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=search_id).one()
             assert event.status == "pending"

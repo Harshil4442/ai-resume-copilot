@@ -180,8 +180,17 @@ def test_accepted_legacy_search_kicks_only_the_committed_intent(context, monkeyp
 
     factory, client, _ = context
     published = []
+    request_sessions = []
+
+    def tracked_database():
+        with factory() as db:
+            request_sessions.append(db)
+            yield db
+
+    monkeypatch.setitem(client.app.dependency_overrides, get_db, tracked_database)
 
     def publish(search_id):
+        assert not request_sessions[-1].in_transaction()
         with factory() as db:
             intent = db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=search_id).one()
             assert intent.status == "pending"

@@ -103,7 +103,9 @@ def create_search(
     if isinstance(result, models.EmployerSearchPreparation) or result.status == "preparing":
         status = service.search_preparation_status(db, user.id, result.id)
         if status["status"] == "pending":
-            background_tasks.add_task(kick_employer_search, result.id)
+            # Release the status-read transaction before the publisher opens its own session.
+            db.rollback()
+            background_tasks.add_task(kick_employer_search, status["id"])
         return JSONResponse(status_code=202, content=jsonable_encoder(status),
                             headers={"Cache-Control": "private, no-store"})
     return service.search_response(result)

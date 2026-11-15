@@ -67,7 +67,8 @@ def test_immediate_search_publish_is_exact_and_recovers_same_task_after_lost_ack
 
     requests = []
 
-    def publish(event):
+    def publish(event, *, rpc_timeout=None):
+        assert rpc_timeout == (3.0 if not requests else None)
         requests.append((event.id, event.task_name))
         if len(requests) == 1:
             raise RuntimeError("Synthetic publication response lost")
