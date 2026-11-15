@@ -175,6 +175,34 @@ def test_paid_search_partial_delivery_idempotency_and_no_premium_waiver(context,
         assert db.query(models.EmployerJobDelivery).count() == 2
 
 
+def test_accepted_legacy_search_kicks_only_the_committed_intent(context, monkeypatch):
+    from backend.app.routers.v1 import employer as router_module
+
+    factory, client, _ = context
+    published = []
+
+    def publish(search_id):
+        with factory() as db:
+            intent = db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=search_id).one()
+            assert intent.status == "pending"
+            assert db.get(models.EmployerSearch, search_id).status == "preparing"
+        published.append(search_id)
+
+    def wait_for_paid_history(*args):
+        raise HTTPException(409, {"code": "paid_delivery_history_preparing"})
+
+    monkeypatch.setattr(router_module, "kick_employer_search", publish)
+    monkeypatch.setattr(service, "_prepare_bounded_search", wait_for_paid_history)
+    payload = {"resume_id": 10, "role": "Python", "desired_count": 1,
+               "idempotency_key": "dispatch-accepted-search", "accepted_quote": _search_quote(client, 1)}
+    response = client.post("/api/v1/employer-jobs/searches", json=payload)
+    assert response.status_code == 202, response.text
+    assert published == [response.json()["id"]]
+    assert response.json()["reserved_credits"] == 1
+    with factory() as db:
+        assert db.query(DispatchOutbox).count() == 1
+
+
 def test_service_credits_required_even_with_promotional_credits_and_premium(context):
     factory, client, _ = context
     with factory() as db:

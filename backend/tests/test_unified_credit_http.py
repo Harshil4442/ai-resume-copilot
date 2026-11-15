@@ -285,6 +285,15 @@ def discovery_api(api, monkeypatch):
 
 def test_discovery_http_quote_accept_replay_cancel_and_owner_boundary(discovery_api, monkeypatch):
     client, factory = discovery_api
+    from backend.app.routers import credits as router_module
+    published = []
+    def read_committed_outbox(search_id):
+        with factory() as db:
+            event = db.query(DispatchOutbox).filter_by(topic="employer.search", aggregate_id=search_id).one()
+            assert event.status == "pending"
+            assert db.query(CreditReservation).count() == 1
+        published.append(search_id)
+    monkeypatch.setattr(router_module, "kick_employer_search", read_committed_outbox)
     payload = {"resume_id": 1, "role": "Python Engineer", "desired_count": 5}
     headers = {"Idempotency-Key": "http-discovery-quote"}
     quoted = client.post("/api/v1/credits/discovery-quotes", json=payload, headers=headers)
@@ -301,6 +310,7 @@ def test_discovery_http_quote_accept_replay_cancel_and_owner_boundary(discovery_
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "false")
     assert client.post("/api/v1/credits/discovery-batches", json=accepted).json() == created.json()
     assert client.get(f"/api/v1/credits/discovery-batches/{search_id}").json() == created.json()
+    assert published == [search_id, search_id]
     cancelled = client.post(f"/api/v1/credits/discovery-batches/{search_id}/cancel")
     assert cancelled.status_code == 200, cancelled.text
     assert cancelled.json()["refunded_credits"] == 1 and cancelled.json()["charged_credits"] == 0
