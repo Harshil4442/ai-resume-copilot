@@ -18,6 +18,36 @@ The launch product is the unified credit pass in the [current requirements](requ
 - [ ] Approve actual start and end dates for the introductory campaign separately from each purchased pass's validity. Use an introductory-price label until same-pack reference-price evidence is approved. The catalog and immutable quote control the payable price, services and expiry terms.
 - [ ] Preserve the original Premium, job-service, analysis-unit and dual-balance orders and entitlements. Historical ₹999 Premium and ₹499 service SKUs remain available for original-order fulfillment. New legacy bundle sales are disabled while `UNIFIED_CREDITS_ENABLED=true`. Leave the existing balances on their recorded terms.
 
+### Reconcile an issued customer invoice
+
+The payment email confirms capture. Reconcile separately against the invoice
+actually issued by the approved issuer. Prepare one private normalized JSON
+record after reviewing the issued artifact and the matching Razorpay capture
+and refunds. Use the read-only PostgreSQL role with access to the payment and
+entitlement records. From the repository root, run the following command with
+that role's connection already configured in `DATABASE_URL`.
+
+```sh
+backend/.venv/bin/python -m backend.scripts.audit_purchase_invoice /private/path/invoice-evidence.json
+```
+
+Set `schema_version` to `hirewiz-purchase-invoice-v1` and use the correct
+`mode` of `live` or `test`. Record the original invoice's `invoice_sha256`,
+the HireWiz `order_reference`, the `provider_order_id` and
+`provider_payment_id`, the purchased `catalog_version` and `sku`, and
+`currency` of `INR`. Record the invoice's `subtotal_minor`,
+`customer_tax_minor` and `invoice_total_minor` in paise. Copy
+`gateway_captured_minor` and `gateway_refunded_minor` from the verified payment.
+Keep the original invoice total even after a refund. Avoid personal details
+or payment instruments in this record.
+
+The command compares the original purchase terms, one recorded capture,
+processed refunds and the retained entitlement in one read-only snapshot.
+`customer_tax_match: null` means the ledger has no recorded customer tax for
+that purchase. Resolve it during finance review. Keep historical invoices and
+any credit notes in the approved accounting system. Test-mode receipts and
+normalized evidence do not qualify commercial invoicing on their own.
+
 ## 2. Verify the checkout and webhook configuration
 
 The 15 November serving revision `ai-resume-parser-neonfree-20261115` has live
