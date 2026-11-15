@@ -119,6 +119,13 @@ def test_continuity_role_migrates_and_audits_together_after_atomic_refusal(owned
             with pytest.raises(contract.Schema27Denied, match="intent_custody_mismatch"):
                 prepare(db, "0" * 64)
         with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.observer}" WITH INHERIT FALSE, SET TRUE')
+        with db.begin():
+            with pytest.raises(contract.Schema27Denied, match="bootstrap_membership_mismatch"):
+                prepare(db, intent.sha256())
+        with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'REVOKE "{identity.migrator}" FROM "{identity.observer}"')
+        with owned26.engine.begin() as admin:
             admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.bootstrap}" WITH SET TRUE')
         with db.begin():
             with pytest.raises(contract.Schema27Denied, match="bootstrap_membership_mismatch"):

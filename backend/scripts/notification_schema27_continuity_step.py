@@ -81,15 +81,15 @@ class MigrationIntent:
 def _verify_bootstrap_scope(connection, identity: identity_step.MigrationIdentity) -> None:
     identity_step.verify_identity(connection, identity)
     memberships = connection.execute(text(
-        "SELECT m.grantor,g.rolname,m.admin_option,m.inherit_option,m.set_option "
+        "SELECT m.member,m.grantor,g.rolname,m.admin_option,m.inherit_option,m.set_option "
         "FROM pg_catalog.pg_auth_members m LEFT JOIN pg_catalog.pg_roles g ON g.oid=m.grantor "
-        "WHERE m.member=:bootstrap AND m.roleid=:migrator ORDER BY m.grantor LIMIT 3"
-    ), {"bootstrap": identity.bootstrap_oid, "migrator": identity.migrator_oid}).all()
+        "WHERE m.roleid=:migrator ORDER BY m.member,m.grantor LIMIT 3"
+    ), {"migrator": identity.migrator_oid}).all()
     # The provider's role-creation grant can administer membership only.
     # The bootstrap's explicit grant independently permits SET for this role.
     expected_memberships = [
-        (PROVIDER_ADMIN_GRANTOR_OID, PROVIDER_ADMIN_GRANTOR, True, False, False),
-        (identity.bootstrap_oid, identity.bootstrap, False, False, True),
+        (identity.bootstrap_oid, PROVIDER_ADMIN_GRANTOR_OID, PROVIDER_ADMIN_GRANTOR, True, False, False),
+        (identity.bootstrap_oid, identity.bootstrap_oid, identity.bootstrap, False, False, True),
     ]
     attributes = connection.execute(text(
         "SELECT b.rolcanlogin,b.rolsuper,pg_catalog.pg_has_role(b.oid,:migrator,'USAGE'),"
