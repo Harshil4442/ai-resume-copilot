@@ -142,11 +142,18 @@ The selected email channel is enabled. Its default
 request channel verification. Actual prior owner-INBOX receipts establish
 scanner-definition attention open/resolved and missing-heartbeat delivery. Fresh
 read-only metadata confirms the listed policies and the separate terminal Cloud
-Build policy remain enabled and mapped to that same channel. These receipts do
-not establish condition-specific delivery for API 5xx, latency, terminal Cloud
-Build or Vercel failures; those routes remain configured or unexercised until an
-actual corresponding receipt exists. No production incident or test notification
-was induced. Preserve the channel and policy handles during future deployments.
+Build policy remain enabled and mapped to that same channel. The owner inbox
+received a terminal Cloud Build cancellation on October 28 and a failure on
+October 31, both matched to native Build records. API 5xx, latency and Vercel
+failure delivery remain unverified.
+
+On November 15, the scanner attention incident opened at 08:27 UTC and closed
+at 08:37 UTC as the five-minute count went from one to zero. The scheduled
+monitor still reported expired definitions. The live attention policy now
+explains that transition and directs operators to verify recovery from a new
+`fresh` maintenance result. Readback matched the original alert conditions and
+email channel after the documentation update. Preserve these settings during
+deployments.
 See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
 and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).
 
