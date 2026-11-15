@@ -4,7 +4,6 @@ Never starts/discovers a database. These component schedules do not establish
 real native custody, provider/mail delivery, production owner recovery or rollout.
 """
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
@@ -17,7 +16,6 @@ from test_schema25_app_compatibility_postgres import ROOT, app25_database  # noq
 from alembic import command
 from app.domains.candidate_accounts import email_erasure as recovery
 from app.domains.notifications import privacy_erasure as mail
-from app.domains.notifications import service as notifications
 from app.models import (
     AdminAuditEvent,
     CandidatePasswordAccount,
@@ -71,35 +69,6 @@ def test_concurrent_same_fresh_intent_commits_one_erasure_and_one_detached_compl
         assert db.query(AdminAuditEvent).filter_by(action=recovery.ACTION).count() == 1
         assert db.scalar(text("SELECT count(*) FROM model_cost_liabilities")) == 0
         recovery.confirm_erasure(db, token, True, read_native=lambda *_: pytest.fail("Completed intent needs no native action"))
-
-
-def test_exact_erasure_email_retry_preserves_delayed_and_unknown_delivery(owned_erasure, monkeypatch):
-    from app.domains.notifications.mail_budget import MailBudgetError
-
-    engine, _ = owned_erasure
-    with Session(engine, autoflush=False) as db:
-        item = db.query(NotificationOutbox).filter_by(notification_type=mail.TYPE).one()
-        identity = item.id
-        db.rollback()
-        attempts = []
-
-        def send(outgoing):
-            assert not db.in_transaction()
-            attempts.append(outgoing.idempotency_key)
-            raise MailBudgetError("known_retryable" if len(attempts) == 1 else "unknown")
-
-        monkeypatch.setattr(notifications, "_send", send)
-        first = notifications.retry_security_email(db, identity)
-        assert first.status == "retry" and first.available_at > datetime.now(UTC)
-        assert notifications.retry_security_email(db, identity) == first and len(attempts) == 1
-        item = db.get(NotificationOutbox, identity)
-        item.available_at = datetime.now(UTC) - timedelta(seconds=1)
-        db.commit()
-        assert notifications.retry_security_email(db, identity).status == "finished"
-        assert notifications.retry_security_email(db, identity).status == "finished"
-        assert len(attempts) == 2 and attempts[0] == attempts[1]
-        item = db.get(NotificationOutbox, identity)
-        assert item.status == mail.UNKNOWN and item.claimed_at is None and item.attempt_count == 2
 
 
 @pytest.mark.parametrize("committed", [False, True])

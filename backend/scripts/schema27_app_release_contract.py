@@ -91,6 +91,7 @@ F07_PATHS = (
     "backend/tests/test_source27_current_application_profile.py", "backend/tests/test_neon_schema27_release_transport.py",
     "backend/tests/test_neon_schema27_release_postgres.py", "backend/tests/test_notification_schema_compat_postgres.py",
     "backend/tests/test_mail_budget_postgres.py", "backend/tests/test_mail_provider.py",
+    "backend/tests/test_privacy_erasure_email_retry_postgres.py",
     "backend/tests/test_notification_preferences_projection.py", "backend/tests/test_notification_preference_admission.py",
     "backend/tests/test_notification_digest_content.py", "backend/tests/test_notification_consent_contract.py",
     "backend/tests/test_notification_digest_emulator.py", "backend/tests/test_notification_schema26_reader_compatibility.py",
