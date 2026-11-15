@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from ipaddress import ip_address
@@ -32,6 +32,9 @@ OBSERVER = "hirewiz_free_observer_20261115"
 OBSERVER_OID = 49156
 CLUSTER_SHA256 = "0d7476d0f01af04502bb5f3f30642420e3a3108db3ed8f5cbdd5e6e34709eab0"
 APPLICATION = "hirewiz_neon_continuity_observer"
+RUNTIME = "hirewiz_free_runtime_20261115"
+RUNTIME_OID = 49154
+RUNTIME_APPLICATION = "hirewiz_neon_continuity_runtime_readback"
 
 
 class Purpose(StrEnum):
@@ -59,31 +62,43 @@ class Observation:
 
 def observe(purpose: Purpose, *, observer_password: str) -> Observation:
     """Connect using only the fixed observer. The caller retains private custody."""
+    with _connection(purpose, observer_password, OBSERVER, APPLICATION) as connection:
+        return _observe_catalog(connection, purpose)
+
+
+def observe_runtime(purpose: Purpose, *, runtime_password: str) -> int:
+    """Verify the runtime login independently of the observer."""
+    with _connection(purpose, runtime_password, RUNTIME, RUNTIME_APPLICATION) as connection:
+        _verify_catalog(connection, purpose, RUNTIME, RUNTIME_OID)
+    return RUNTIME_OID
+
+
+@contextmanager
+def _connection(purpose: Purpose, password: str, actor: str, application: str):
     if type(purpose) is not Purpose:
         raise retained.NeonIdentityDenied("neon_continuity_purpose_invalid")
-    if (type(observer_password) is not str or not observer_password or "\x00" in observer_password
-            or len(observer_password) > 8192 or any(key.startswith("PG") for key in os.environ)):
+    if (type(password) is not str or not password or "\x00" in password
+            or len(password.encode()) > 8192 or any(key.startswith("PG") for key in os.environ)):
         raise retained.NeonIdentityDenied("neon_continuity_connection_settings_invalid")
     try:
         settings = {
             "host": HOST,
             "dbname": DATABASE,
-            "user": OBSERVER,
+            "user": actor,
             "sslmode": "verify-full",
             "sslcertmode": "disable",
             "sslrootcert": certifi.where(),
             "channel_binding": "require",
             "connect_timeout": "5",
-            "application_name": APPLICATION,
+            "application_name": application,
             "options": retained.CAPTURE_OPTIONS,
         }
-        with closing(psycopg.connect(**settings, port=5432, password=observer_password)) as connection:
+        with closing(psycopg.connect(**settings, port=5432, password=password)) as connection:
             _verify_transport(connection, settings)
             connection.read_only = True
             connection.isolation_level = IsolationLevel.REPEATABLE_READ
-            result = _observe_catalog(connection, purpose)
+            yield connection
             connection.rollback()
-            return result
     except retained.NeonIdentityDenied:
         raise
     except Exception:
@@ -104,11 +119,16 @@ def _verify_transport(connection: Connection, expected: dict[str, str]) -> None:
             or set(parameters) - {*expected, "hostaddr", "port"}
             or any(parameters.get(key) != value for key, value in expected.items())
             or parameters.get("port", "5432") != "5432"
-            or (info.host, info.port, info.dbname, info.user) != (HOST, 5432, DATABASE, OBSERVER)):
+            or (info.host, info.port, info.dbname, info.user) != (HOST, 5432, DATABASE, expected["user"])):
         raise retained.NeonIdentityDenied("neon_continuity_effective_transport_mismatch")
 
 
 def _observe_catalog(connection: Connection, purpose: Purpose) -> Observation:
+    _verify_catalog(connection, purpose, OBSERVER, OBSERVER_OID)
+    return Observation(purpose, PROJECT, BRANCH, ENDPOINT, DATABASE_OID, CLUSTER_SHA256, OBSERVER_OID, purpose.schema)
+
+
+def _verify_catalog(connection: Connection, purpose: Purpose, actor: str, actor_oid: int) -> None:
     control = connection.execute(
         """
         SELECT p.oid, p.proowner, p.prosecdef, p.prosrc, l.lanname
@@ -142,12 +162,11 @@ def _observe_catalog(connection: Connection, purpose: Purpose) -> Observation:
         """,
         (DATABASE,),
     ).fetchone()
-    if (row is None or row[:-1] != (DATABASE_OID, DATABASE_OWNER, OBSERVER_OID, OBSERVER,
-            OBSERVER, 2200, NAMESPACE_OWNER_OID, 17, "on", "repeatable read", True)
+    if (row is None or row[:-1] != (DATABASE_OID, DATABASE_OWNER, actor_oid, actor,
+            actor, 2200, NAMESPACE_OWNER_OID, 17, "on", "repeatable read", True)
             or type(row[-1]) is not str
             or hashlib.sha256(row[-1].encode()).hexdigest() != CLUSTER_SHA256):
         raise retained.NeonIdentityDenied("neon_continuity_catalog_target_mismatch")
     versions = connection.execute("SELECT version_num FROM public.alembic_version LIMIT 2").fetchall()
     if versions != [(purpose.schema,)]:
         raise retained.NeonIdentityDenied("neon_continuity_exact_schema_mismatch")
-    return Observation(purpose, PROJECT, BRANCH, ENDPOINT, DATABASE_OID, CLUSTER_SHA256, OBSERVER_OID, purpose.schema)
