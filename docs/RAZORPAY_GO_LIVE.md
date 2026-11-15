@@ -50,9 +50,19 @@ coordinator keep their existing identities during the rehearsal.
 
 Use `infra.gcp.schema27_api_identity_readback` to compare the private projected
 before and after observations. Pass the owner-only JSON with `--review` and its
-reviewed digest with `--sha256`. The check verifies the zero-traffic candidate,
+reviewed digest with `--sha256`. The candidate is untagged unless the reviewed
+transition explicitly names a tag. The check verifies the zero-traffic candidate,
 unchanged workloads and the exact private document invoker additions. Verify
 effective credential access separately using the deployed identities.
+
+Use `--prepare` to compute the untagged request digest offline. Set the reviewed
+JSON `kind` to `hirewiz_schema27_api_identity_prepare_v1` and include the typed
+transition as `plan`, the projected prior API as `before`, and its `etag`.
+Provide the fresh native `service`, its `revisions` keyed by short name, and
+`candidate_lookup` with the exact candidate resource `name` and integer
+`status` of `404` on private piped stdin. The command preserves current traffic
+and aliases and prints only the request digest and local status. It has no
+Cloud Run write capability.
 
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.

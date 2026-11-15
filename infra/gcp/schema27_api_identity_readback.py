@@ -3,6 +3,9 @@
 The operator uses existing native readers to collect metadata separately.
 Project full responses in memory with project_service before saving a review
 bundle. This command reads only that local bundle and makes no provider call.
+In --prepare mode the reviewed bundle pins the prior API projection and ETag.
+Pass the independent native-shaped observations on private stdin. The request
+is assembled in memory and only its digest is printed.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import json
 import os
 import re
 import stat
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,7 +32,9 @@ COORDINATOR_ACCOUNT = f"{COORDINATOR}@{rolling.release.PROJECT}.iam.gserviceacco
 DOCUMENTS = ("hirewiz-document-inspector", "hirewiz-native-tex")
 SERVICES = (API, *WORKERS, COORDINATOR)
 KIND = "hirewiz_schema27_api_identity_readback_v1"
+PREPARE_KIND = "hirewiz_schema27_api_identity_prepare_v1"
 MAX_REVIEW = 131072
+MAX_NATIVE_INPUT = 1048576
 REVISION_TRAFFIC = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION"
 IMAGE = f"{rolling.release.REGION}-docker.pkg.dev/{rolling.release.PROJECT}/cloud-run-source-deploy/hirewiz"
 
@@ -58,7 +64,7 @@ class Transition:
     service_uid: str
     old_revision: str
     candidate_revision: str
-    candidate_tag: str
+    candidate_tag: str | None = None
 
     def validate(self):
         suffix = re.escape("@" + rolling.release.PROJECT + ".iam.gserviceaccount.com")
@@ -70,7 +76,14 @@ class Transition:
         need(self.old_revision != self.candidate_revision
              and all(rolling.short_revision(revision, API) == revision for revision in
                      (self.old_revision, self.candidate_revision))
-             and re.fullmatch(r"[a-z][a-z0-9-]{0,62}", self.candidate_tag), "revision_pin")
+             and (self.candidate_tag is None or re.fullmatch(r"[a-z][a-z0-9-]{0,62}", self.candidate_tag)),
+             "revision_pin")
+
+
+def _transition(data):
+    plan = Transition(**(data | {"old_api": Identity(**data["old_api"]), "new_api": Identity(**data["new_api"])}))
+    plan.validate()
+    return plan
 
 
 def project_identity(account, keys):
@@ -102,6 +115,7 @@ def project_service(name, service, revisions):
     resource = rolling.PARENT + "/services/" + name
     need(name in SERVICES and service.get("name") == resource
          and service.get("reconciling", False) is False
+         and re.fullmatch(r"[1-9][0-9]{0,18}", str(service["generation"]))
          and str(service["generation"]) == str(service["observedGeneration"])
          and service.get("terminalCondition", {}).get("state") == "CONDITION_SUCCEEDED", "service_not_ready")
     template = service["template"]
@@ -125,6 +139,28 @@ def project_service(name, service, revisions):
             "traffic": traffic, "revisions": projected}
 
 
+def _prior_api(plan, prior):
+    need(prior["uid"] == plan.service_uid and _hash(prior["static_sha256"])
+         and type(prior["generation"]) is int and prior["generation"] > 0
+         and prior["ready"] == prior["created"] == plan.old_revision, "api_prior_service")
+    old = prior["template"]
+    need(set(old) == {"account", "common_sha256", "checkout_closed"} and old["account"] == plan.old_api.email
+         and _hash(old["common_sha256"]) and old["checkout_closed"] is True, "api_prior_template")
+    traffic = rolling.pinned_traffic(API, {"trafficStatuses": prior["traffic"]}, prior_revision=plan.old_revision)
+    need(len(traffic) == len(prior["traffic"]) and all(row.get("type") in {
+        REVISION_TRAFFIC, "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
+    } for row in prior["traffic"]) and not any(
+        row["revision"] == plan.candidate_revision
+        or (plan.candidate_tag is not None and row.get("tag") == plan.candidate_tag) for row in traffic
+    ), "prior_traffic")
+    retained = prior["revisions"]
+    need(set(retained) == {row["revision"] for row in traffic}
+         and retained[plan.old_revision] == old | {"uid": retained[plan.old_revision]["uid"]}
+         and all(row["account"] == plan.old_api.email and row["checkout_closed"] is True
+                 for row in retained.values()), "api_prior_revisions")
+    return old, traffic, retained
+
+
 def _validate_services(plan, before, after):
     need(set(before) == set(after) == set(SERVICES), "service_scope")
     for service, account in {
@@ -137,32 +173,19 @@ def _validate_services(plan, before, after):
     prior, target = before[API], after[API]
     need(set(prior) == set(target) == {
         "uid", "generation", "ready", "created", "static_sha256", "template", "traffic", "revisions",
-    } and prior["uid"] == target["uid"] == plan.service_uid
-         and _hash(prior["static_sha256"]) and prior["static_sha256"] == target["static_sha256"]
-         and type(prior["generation"]) is type(target["generation"]) is int
+    } and prior["uid"] == target["uid"]
+         and prior["static_sha256"] == target["static_sha256"]
+         and type(target["generation"]) is int
          and target["generation"] == prior["generation"] + 1
-         and prior["ready"] == prior["created"] == plan.old_revision
          and target["ready"] == target["created"] == plan.candidate_revision, "api_service_changed")
-    old, new = prior["template"], target["template"]
-    need(set(old) == {"account", "common_sha256", "checkout_closed"} and old["account"] == plan.old_api.email
-         and _hash(old["common_sha256"]) and old["checkout_closed"] is True
-         and new["checkout_closed"] is True
-         and new == (old | {"account": plan.new_api.email}), "api_template_diff")
-    traffic = rolling.pinned_traffic(API, {"trafficStatuses": prior["traffic"]}, prior_revision=plan.old_revision)
-    need(len(traffic) == len(prior["traffic"]) and all(row.get("type") in {
-        REVISION_TRAFFIC, "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST",
-    } for row in prior["traffic"]) and not any(row.get("tag") == plan.candidate_tag for row in traffic),
-         "prior_traffic")
-    tagged = {"type": REVISION_TRAFFIC, "revision": plan.candidate_revision, "tag": plan.candidate_tag}
-    expected = sorted([*traffic, tagged], key=rolling.canonical)
-    need(target["traffic"] == expected, "api_traffic_changed")
-    retained = prior["revisions"]
+    old, traffic, retained = _prior_api(plan, prior)
+    new = target["template"]
+    need(new["checkout_closed"] is True and new == (old | {"account": plan.new_api.email}), "api_template_diff")
+    if plan.candidate_tag is not None:
+        traffic.append({"type": REVISION_TRAFFIC, "revision": plan.candidate_revision, "tag": plan.candidate_tag})
+    need(target["traffic"] == sorted(traffic, key=rolling.canonical), "api_traffic_changed")
     candidate = target["revisions"][plan.candidate_revision]
-    need(set(retained) == {row["revision"] for row in traffic}
-         and retained[plan.old_revision] == old | {"uid": retained[plan.old_revision]["uid"]}
-         and all(row["account"] == plan.old_api.email and row["checkout_closed"] is True
-                 for row in retained.values())
-         and re.fullmatch(r"[a-f0-9-]{36}", candidate["uid"])
+    need(re.fullmatch(r"[a-f0-9-]{36}", candidate["uid"])
          and all(row["uid"] != candidate["uid"] for row in retained.values())
          and candidate == new | {"uid": candidate["uid"]}
          and target["revisions"] == retained | {plan.candidate_revision: candidate}, "api_revision_diff")
@@ -195,12 +218,37 @@ def _validate_callers(plan, before, after):
              "document_caller_diff")
 
 
+def prepare(review, native):
+    """Compute the exact request hash from the reviewed API preimage and fresh observation."""
+    need(type(review) is dict and set(review) == {"kind", "plan", "before", "etag"}
+         and review["kind"] == PREPARE_KIND and type(native) is dict
+         and set(native) == {"service", "revisions", "candidate_lookup"}, "prepare_kind")
+    plan = _transition(review["plan"])
+    need(plan.candidate_tag is None, "prepare_requires_untagged")
+    service = native["service"]
+    etag = review["etag"]
+    need(type(etag) is str and re.fullmatch(r"[!-~]{1,256}", etag) and service.get("etag") == etag,
+         "prepare_etag_changed")
+    candidate = service["name"] + "/revisions/" + plan.candidate_revision
+    lookup = native["candidate_lookup"]
+    need(lookup == {"name": candidate, "status": 404} and type(lookup["status"]) is int
+         and plan.candidate_revision not in native["revisions"], "prepare_candidate_not_absent")
+    prior = project_service(API, service, native["revisions"])
+    need(prior == review["before"], "prepare_preimage_changed")
+    _, traffic, _ = _prior_api(plan, prior)
+    template = service["template"]
+    need(rolling.environment(template).get("AUTO_DB_MIGRATE") == {"name": "AUTO_DB_MIGRATE", "value": "false"},
+         "prepare_startup_migration_not_closed")
+    body = {"name": service["name"], "etag": etag, "traffic": traffic,
+            "template": template | {"revision": plan.candidate_revision, "serviceAccount": plan.new_api.email}}
+    return {"status": "api_identity_request_prepared", "request_sha256": rolling.sha(body),
+            "native_approval": False, "native_mutations": 0}
+
+
 def validate(review):
     need(type(review) is dict and set(review) == {"kind", "plan", "before", "after"}
          and review["kind"] == KIND, "review_kind")
-    data = review["plan"]
-    plan = Transition(**(data | {"old_api": Identity(**data["old_api"]), "new_api": Identity(**data["new_api"])}))
-    plan.validate()
+    plan = _transition(review["plan"])
     before, after = review["before"], review["after"]
     need(set(before) == set(after) == {"services", "identities", "callers"}
          and before["identities"] == after["identities"] and set(before["identities"]) == {"old_api", "new_api"}
@@ -215,6 +263,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--review", type=Path, required=True)
     parser.add_argument("--sha256", required=True)
+    parser.add_argument("--prepare", action="store_true", help="hash an untagged request using bounded private stdin")
     args = parser.parse_args()
     try:
         descriptor = os.open(args.review, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -225,7 +274,15 @@ def main():
             raw = stream.read(MAX_REVIEW + 1)
         need(len(raw) == info.st_size and _hash(args.sha256)
              and hashlib.sha256(raw).hexdigest() == args.sha256, "review_hash")
-        print(json.dumps(validate(rolling.release._json(raw))))
+        review = rolling.release._json(raw)
+        if args.prepare:
+            need(not sys.stdin.isatty(), "prepare_requires_private_pipe")
+            native = sys.stdin.buffer.read(MAX_NATIVE_INPUT + 1)
+            need(0 < len(native) <= MAX_NATIVE_INPUT, "prepare_input_bound")
+            result = prepare(review, rolling.release._json(native))
+        else:
+            result = validate(review)
+        print(json.dumps(result))
         return 0
     except (OSError, RuntimeError, ValueError, TypeError, KeyError, AttributeError):
         print(json.dumps({"status": "api_identity_readback_refused", "native_approval": False}))
