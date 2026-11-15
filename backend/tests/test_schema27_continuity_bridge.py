@@ -22,11 +22,13 @@ def lane(context, current, tmp_path, monkeypatch):
         revision["containers"] = copy.deepcopy(templates[pin.service]["template"]["containers"])
     boundary = object.__new__(native.NativeContinuityBoundary)
     for name in ("service", "revision", "iam", "patch", "operation", "health", "_identity", "_reference",
-                 "_sources", "_resources", "observer"):
+                 "_resources", "observer"):
         setattr(boundary, name, getattr(context.boundary, name))
     pins = tuple(boundary._pin(service, plan.prior_source) for service in native.rolling.release.SERVICES)
     plan = replace(plan, services=pins, reachable_revisions=boundary._reachable(pins, plan.prior_source))
     fixture.plan = plan
+    source_reads = []
+    boundary._verify_sources = lambda *pins: source_reads.append(pins)
     database = SimpleNamespace(catalog_sha256=plan.financial_sha256)
 
     def observe(custody, journal, *, expected_liabilities):
@@ -44,7 +46,7 @@ def lane(context, current, tmp_path, monkeypatch):
     folder = tmp_path / "continuity"
     folder.mkdir(mode=0o700)
     return SimpleNamespace(plan=plan, boundary=boundary, fixture=fixture, database=database,
-                           journal=native._bind_new(plan, folder))
+                           source_reads=source_reads, journal=native._bind_new(plan, folder))
 
 
 def run(lane, mode):
@@ -57,6 +59,11 @@ def test_stage_preserves_prior_and_advance_uses_owned_promotions(lane):
     assert outcome == {"status": "continuity_bridge_staged", "rolling_release_complete": False,
                        "schema": native.bridge.DB_SCHEMA, "replay_authorized": False}
     assert len(lane.fixture.writes) == 3
+    assert lane.source_reads
+    assert all(pins == (
+        lane.plan.controller_release, lane.plan.controller_source_sha256,
+        lane.plan.controller_ci_run_id, lane.plan.source, lane.plan.prior_source,
+    ) for pins in lane.source_reads)
     assert all(mask == "template,traffic" for _, _, mask in lane.fixture.writes)
     assert all(any(row["revision"] == pin.prior_revision and row["percent"] == 100
                    for row in native.rolling.pinned_traffic(pin.service, lane.boundary.service(pin.service)))

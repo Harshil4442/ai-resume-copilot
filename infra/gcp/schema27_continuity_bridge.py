@@ -32,6 +32,13 @@ class NativeContinuityBoundary(successor.NativeSuccessorBoundary):
         super().__init__(root, target_root, prior_root)
         self.observer = native27.Source27BridgeBoundary(self.target_root)
 
+    def _sources(self, plan):
+        need(type(plan) is bridge.ContinuityBridgePlan, "source_plan_kind")
+        self._verify_sources(
+            plan.controller_release, plan.controller_source_sha256, plan.controller_ci_run_id,
+            plan.source, plan.prior_source,
+        )
+
     def verify_global(self, plan):
         from infra.gcp import schema27_continuity_catalog as catalog
 
