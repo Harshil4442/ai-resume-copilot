@@ -15,6 +15,7 @@ import threading
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 
@@ -178,6 +179,29 @@ genai.Client = forbidden
 GenerationBudget.admit = forbidden
 
 from backend.app.domains.dispatch import service as dispatch  # noqa: E402
+
+if os.getenv("COLD_BROWSER_SCENARIO") == "source":
+    from backend.app.domains.resume_uploads import service as source_service
+    from backend.app.routers import resume_uploads
+
+    class SyntheticReadSigner:
+        def sign_read(self, row, expiry):
+            assert row.clean_bucket == "synthetic-resumes" and row.clean_generation == "1"
+            assert row.clean_name == "clean/rup_" + "2" * 32 + "/source"
+            issued = expiry - timedelta(seconds=source_service.READ_GRANT_SECONDS)
+            date = issued.strftime("%Y%m%d")
+            query = urlencode({
+                "X-Goog-Algorithm": "GOOG4-RSA-SHA256", "X-Goog-SignedHeaders": "host",
+                "X-Goog-Date": issued.strftime("%Y%m%dT%H%M%SZ"),
+                "X-Goog-Expires": str(source_service.READ_GRANT_SECONDS),
+                "X-Goog-Credential": f"fixture-signer@synthetic-resumes.iam.gserviceaccount.com/{date}/auto/storage/goog4_request",
+                "X-Goog-Signature": "a" * 512, "generation": "1", "response-content-type": "application/pdf",
+            })
+            count("synthetic_saved_source_grants")
+            return f"https://storage.googleapis.com/{row.clean_bucket}/{row.clean_name}?{query}"
+
+    resume_uploads.GCSObjectStore = SyntheticReadSigner
+
 from backend.app.main import app  # noqa: E402
 
 assert not app.dependency_overrides
