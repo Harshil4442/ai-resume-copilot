@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from urllib.parse import urlencode
 
 import pytest
-import schema27_continuity_runtime as runtime
-import schema27_continuity_scope as scope
+from infra.gcp import schema27_continuity_runtime as runtime
+from infra.gcp import schema27_continuity_scope as scope
 
 from scripts import neon_continuity_identity as neon
 

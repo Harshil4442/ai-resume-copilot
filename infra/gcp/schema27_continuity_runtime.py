@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from subprocess import SubprocessError
 
-import schema27_continuity_scope as scope
 from scripts.neon_direct_identity import NativeReleaseSecretReader
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
+
+from infra.gcp import schema27_continuity_scope as scope
 
 PROJECT_NUMBER = "157225724590"
 PRODUCTION_TLS = {

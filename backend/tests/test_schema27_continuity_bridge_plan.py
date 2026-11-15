@@ -8,6 +8,7 @@ from dataclasses import asdict, replace
 
 import pytest
 from infra.gcp import schema27_continuity_bridge_plan as bridge
+from infra.gcp import schema27_continuity_runtime as runtime
 from test_schema26_app_successor import context as context
 
 
@@ -53,7 +54,7 @@ def current(context):
     return plan, templates
 
 
-def test_continuity_plan_round_trip_and_stock_traffic_builder(current, tmp_path):
+def test_continuity_plan_round_trip_and_stock_traffic_builder(current, tmp_path, monkeypatch):
     plan, templates = current
     loaded = load(asdict(plan))
     assert loaded == plan
@@ -70,7 +71,12 @@ def test_continuity_plan_round_trip_and_stock_traffic_builder(current, tmp_path)
     custody = loaded.custody()
     journal = bridge.rolling.Journal(directory, custody)
     journal.record(bridge.scope.JOURNAL_BINDING, custody.journal_binding())
-    assert bridge.bind(loaded, directory).plan_hash == journal.plan_hash
+    bound = bridge.bind(loaded, directory)
+    assert bound.plan_hash == journal.plan_hash
+    monkeypatch.setattr(runtime, "_runtime_password", lambda _reader, pin: "synthetic" if pin == loaded.database else "")
+    monkeypatch.setattr(bridge.scope.neon, "observe_runtime",
+                        lambda _purpose, *, runtime_password: 49154 if runtime_password == "synthetic" else 0)
+    assert runtime.observe_runtime(custody, bound, bridge.scope.neon.Purpose.BEFORE_SCHEMA27, None) == 49154
 
 
 def test_plan_swaps_refused_before_observer_or_patch(current, context, tmp_path, monkeypatch):
