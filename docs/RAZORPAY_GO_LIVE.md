@@ -40,6 +40,14 @@ after validation. Staging, promotion and checkout activation use the existing
 release gates.
 [Cloud Run CLI validation](https://cloud.google.com/sdk/gcloud/reference/beta/run/services/update)
 
+Keep the current database rollout on its qualified identity profile. In a later
+same-image, zero-traffic API rehearsal, review the dedicated keyless API account
+against the exact serving revision's required IAM resources. Verify sign-in,
+saved reads, task enqueueing, approved browser and document service access, and
+worker denial of secret reads and API-account impersonation before granting any
+new payment secret access. The analysis worker, employer worker and résumé
+coordinator keep their existing identities during the rehearsal.
+
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
 - [ ] Subscribe to `payment.captured`, `order.paid`, `payment.failed` and `refund.processed`. Verify the signature on the raw request body and the provider event identifier. Confirm that duplicate deliveries and both capture event types for the same payment settle at most once. Unmatched events require reconciliation. See [Razorpay webhook validation and testing](https://razorpay.com/docs/webhooks/validate-test/).
