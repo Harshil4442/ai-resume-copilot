@@ -1,6 +1,6 @@
 """Real PostgreSQL selection updates with an intercepted TeX worker."""
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Barrier, Event
 from types import SimpleNamespace
 
 import pytest
@@ -22,8 +22,8 @@ from sqlalchemy.orm import sessionmaker
 PATH = "/api/v1/opportunities/opp_native_snapshot"
 
 
-@pytest.mark.parametrize("during_compile", ["switch", "legacy_switch", "approve", "revoke"])
-def test_native_snapshot_does_not_hold_selection_lock_during_compile(pg_engine, composition, monkeypatch, during_compile):
+@pytest.fixture
+def native_version_context(pg_engine, composition, monkeypatch):
     models.Base.metadata.create_all(pg_engine)
     factory = sessionmaker(bind=pg_engine)
     with factory() as db:
@@ -56,6 +56,14 @@ def test_native_snapshot_does_not_hold_selection_lock_during_compile(pg_engine, 
     async def database_failure(_request: Request, exc: DBAPIError):
         return JSONResponse(status_code=503, content={"sqlstate": exc.orig.sqlstate})
 
+    monkeypatch.setattr(native_tex, "validate_layout", lambda *_: {"changed_spans": 0})
+    with TestClient(app) as client:
+        yield client, factory
+
+
+@pytest.mark.parametrize("during_compile", ["switch", "legacy_switch", "approve", "revoke"])
+def test_native_snapshot_does_not_hold_selection_lock_during_compile(native_version_context, composition, monkeypatch, during_compile):
+    client, factory = native_version_context
     entered, release = Event(), Event()
     compile_fixture = composition[2]
 
@@ -65,8 +73,7 @@ def test_native_snapshot_does_not_hold_selection_lock_during_compile(pg_engine, 
         return compile_fixture(*args, **kwargs)
 
     monkeypatch.setattr(native_tex_transport, "remote_compile", delayed_compile)
-    monkeypatch.setattr(native_tex, "validate_layout", lambda *_: {"changed_spans": 0})
-    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as pool:
+    with ThreadPoolExecutor(max_workers=1) as pool:
         endpoint = PATH + "/workspace/source-snapshot"
         if during_compile == "legacy_switch":
             snapshot = pool.submit(client.post, endpoint)
@@ -106,3 +113,33 @@ def test_native_snapshot_does_not_hold_selection_lock_during_compile(pg_engine, 
             assert result.json()["detail"]["code"] == "source_snapshot_resume_changed"
         with factory() as db:
             assert db.query(models.ResumeVersion).count() == 0
+
+
+@pytest.mark.parametrize("second_endpoint", ["direct", "workspace"])
+def test_prepared_native_versions_allocate_distinct_numbers(native_version_context, composition, monkeypatch, second_endpoint):
+    client, factory = native_version_context
+    renderers = Barrier(2, timeout=5)
+    compile_fixture = composition[2]
+
+    def compile_together(*args, **kwargs):
+        renderers.wait()
+        return compile_fixture(*args, **kwargs)
+
+    monkeypatch.setattr(native_tex_transport, "remote_compile", compile_together)
+    direct = "/api/v1/resume-versions"
+    payload = {"resume_id": 1, "opportunity_id": "opp_native_snapshot", "label": "Native source",
+               "evidence_ids": ["initial-fact"]}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(client.post, direct, json=payload)
+        if second_endpoint == "direct":
+            second = pool.submit(client.post, direct, json=payload)
+        else:
+            second = pool.submit(client.post, PATH + "/workspace/source-snapshot/selected", json={"expected_resume_id": 1})
+        results = [response.result(timeout=10) for response in (first, second)]
+    assert [response.status_code for response in results] == [201, 201], [
+        response.json() for response in results if response.status_code != 201
+    ]
+    assert sorted(response.json()["version_number"] for response in results) == [1, 2]
+    assert sum(event[0] == "compile" for event in composition[0]) == 2
+    with factory() as db:
+        assert [row.version_number for row in db.query(models.ResumeVersion).order_by(models.ResumeVersion.version_number)] == [1, 2]

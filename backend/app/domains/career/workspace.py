@@ -307,7 +307,7 @@ def source_snapshot(db: Session, user_id: int, opportunity_id: str, *, expected_
     return service.create_resume_version(db, user_id, schemas.ResumeVersionCreate(resume_id=resume.id, opportunity_id=opportunity_id,
         label=f"{opportunity.company or opportunity.title} source snapshot"[:160],
         structured_content={"format_preservation": "source", "source_format": resume.source_format, "source_edits": []}, evidence_ids=ids),
-        prepared_native_snapshot=seal)
+        workspace_resume=resume, prepared_native_snapshot=seal)
 
 
 def resume_version_page(db: Session, user_id: int, resume_id: int, *, limit: int = DEFAULT_PAGE,
