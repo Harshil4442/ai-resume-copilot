@@ -396,5 +396,13 @@ refusals and all eight consolidated journeys to finish in 32 List calls. It
 compares the shared contents of every successful original read with the
 consolidated result, verifies ownership and cache policy, and allows no Get
 fallback or measured SQL writes. The total is at most 61 HTTP requests including
-controls. The default workload is unchanged. The composed Linux run and actual
-production capacity remain unverified.
+controls. The default workload is unchanged.
+
+The [25% buyer Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43696832920/job/132759146859)
+verified all eight consolidated journeys. The original path returned 21 capacity
+refusals across 32 Jobs requests and used 40 List calls. The consolidated path
+returned eight successes, used 32 List calls, and made zero measured SQL writes.
+The 20% job stopped before measurement because the evaluation runner's catalog
+check depended on ORM import order. The correction passed all 28 owned PostgreSQL
+evaluation tests. The [corrected hosted run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43697756968)
+is pending. Production capacity remains unverified.
