@@ -591,21 +591,26 @@ def test_periodic_refresh_pause_keeps_manual_and_queued_refreshes(source_ingesti
     assert len(requests) == 2
 
 
-@pytest.mark.parametrize("permanent", [True, False])
-def test_refresh_dispatch_ack_requires_definitive_connector_failure(source_ingestion, monkeypatch, permanent):
-    factory, cache, _, _, _ = source_ingestion
+@pytest.mark.parametrize("posting_tenant", ["verified", "unrelated", None],
+                         ids=["case-mismatch", "different-tenant", "transient-provider-error"])
+def test_ashby_refresh_dispatch_ack_requires_definitive_origin_failure(source_ingestion, monkeypatch, posting_tenant):
+    factory, cache, _, feed, requests = source_ingestion
     monkeypatch.delenv("ANALYSIS_TASK_TOKEN", raising=False)
     monkeypatch.setattr(dispatch, "SessionLocal", factory)
     now = utcnow()
     monkeypatch.setattr(tasks, "utcnow", lambda: now)
-    def provider_failure(source, **_kwargs):
-        requests.append(source.board_token)
-        raise connectors.ConnectorError("job_destination_tenant_mismatch" if permanent else "source_http_503",
-                                       safe_to_retry=not permanent)
-    requests = []
-    monkeypatch.setattr(connectors, "fetch_source_scan", provider_failure)
+    permanent = posting_tenant is not None
+    if permanent:
+        feed["jobs"] = [{"id": "job-example", "isListed": True, "title": "Python engineer",
+                         "descriptionPlain": "Build services.",
+                         "jobUrl": f"https://jobs.ashbyhq.com/{posting_tenant}/job-example"}]
+    else:
+        feed["status"] = 503
     with factory() as db:
         source = db.get(models.EmployerSource, "source_test")
+        source.platform, source.board_token = "ashby", "Verified"
+        source.submission_enabled = source.form_parity_verified = False
+        db.commit()
         checkpoint = source.last_success_at
         posting = db.get(models.EmployerPosting, "job_1")
         old_posting_state = (posting.is_open, posting.last_checked_at, posting.content_sha256)
@@ -613,13 +618,15 @@ def test_refresh_dispatch_ack_requires_definitive_connector_failure(source_inges
     if permanent:
         assert execute_dispatch_task(event_id, None, None)["status"] == "unavailable"
         assert execute_dispatch_task(event_id, None, None)["status"] == "completed"
-        assert requests == ["verified"]
+        assert len(requests) == 1
     else:
         for previous_calls in range(2):
             with pytest.raises(HTTPException) as failure:
                 execute_dispatch_task(event_id, None, None)
             assert failure.value.status_code == 503
             assert len(requests) == previous_calls + 1
+    assert all(str(request.url) == "https://api.ashbyhq.com/posting-api/job-board/Verified"
+               for request in requests)
     with factory() as db:
         source = db.get(models.EmployerSource, "source_test")
         event = db.get(DispatchOutbox, event_id)
@@ -630,6 +637,7 @@ def test_refresh_dispatch_ack_requires_definitive_connector_failure(source_inges
         assert service._utc(source.next_refresh_at) == now + (timedelta(hours=6) if permanent else timedelta(minutes=15))
         posting = db.get(models.EmployerPosting, "job_1")
         assert (posting.is_open, posting.last_checked_at, posting.content_sha256) == old_posting_state
+        assert db.query(models.EmployerPosting.id).filter_by(source_id=source.id, external_id="job-example").first() is None
         assert (event.status, event.execution_attempts) == (("completed", 1) if permanent else ("retry", 2))
     assert not cache.published
 

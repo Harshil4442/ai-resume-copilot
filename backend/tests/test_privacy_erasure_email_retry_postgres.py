@@ -121,3 +121,22 @@ def test_password_reset_proof_uses_same_utc_binding_across_database_sessions(own
         email_reset.confirm_reset(db, token, "synthetic-verified-reset", now=issued + timedelta(seconds=30))
         assert db.get(User, 2).credential_epoch == 2
         assert db.query(PasswordResetToken).filter_by(user_id=2, purpose="password_reset").one().status == "COMPLETED"
+
+
+def test_outbox_and_mail_budget_keep_exact_time_during_daylight_saving_fold(owned_erasure):
+    from app.domains.notifications.mail_budget import RESERVATION
+    from app.models import AdminAuditEvent
+
+    engine, _ = owned_erasure
+    first_occurrence = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
+    with engine.connect() as connection, Session(connection, autoflush=False) as db:
+        connection.exec_driver_sql("SET TIME ZONE 'America/New_York'")
+        connection.commit()
+        item = db.query(NotificationOutbox).filter_by(notification_type=mail.TYPE).one()
+        budget = db.query(AdminAuditEvent).filter_by(action=RESERVATION).one()
+        item.available_at, item.claimed_at = first_occurrence, first_occurrence
+        budget.created_at = first_occurrence
+        db.commit()
+        assert item.available_at.astimezone(UTC) == first_occurrence
+        assert item.claimed_at.astimezone(UTC) == first_occurrence
+        assert budget.created_at.astimezone(UTC) == first_occurrence

@@ -682,12 +682,12 @@ class NotificationOutbox(Base):
     idempotency_key = Column(String(200), nullable=False)
     status = Column(String(24), nullable=False, default="pending")
     attempt_count = Column(Integer, nullable=False, default=0)
-    available_at = Column(DateTime, nullable=False, default=_utcnow)
-    claimed_at = Column(DateTime, nullable=True)
-    sent_at = Column(DateTime, nullable=True)
+    available_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    claimed_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(String(500), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utcnow)
-    updated_at = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
 class AdminAuditEvent(Base):
@@ -706,7 +706,7 @@ class AdminAuditEvent(Base):
     before_state = Column(JSON, nullable=False, default=dict)
     after_state = Column(JSON, nullable=False, default=dict)
     correlation_id = Column(String(64), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 # Register employer-domain tables for metadata and controlled Alembic releases.
