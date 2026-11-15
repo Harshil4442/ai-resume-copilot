@@ -13,17 +13,17 @@ import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from alembic.config import Config
-from sqlalchemy import text
-
 from alembic import command
+from alembic.config import Config
 from scripts import browser_schema19_step as identity_step
 from scripts import notification_schema27_contract as contract
 from scripts import notification_schema27_step as retained_step
+from sqlalchemy import text
 
 KIND = "hirewiz_schema27_continuity_additive_v1"
 ACTION = "schema27_continuity_additive_migration"
 AUDIT_PREFIX = "schema27-continuity-"
+AUDIT_REASON = "One-use additive continuity migration"
 PROVIDER_ADMIN_GRANTOR = "cloud_admin"
 PROVIDER_ADMIN_GRANTOR_OID = 10
 HASH = re.compile(r"[a-f0-9]{64}")
@@ -117,8 +117,8 @@ def _verify_table_ownership(connection, identity: identity_step.MigrationIdentit
     )
 
 
-def _write_receipt(connection, intent: MigrationIntent, catalog_sha256: str) -> dict:
-    value = {
+def receipt(intent: MigrationIntent, catalog_sha256: str) -> dict:
+    return {
         "kind": KIND,
         "intent_sha256": intent.sha256(),
         "plan_sha256": intent.plan_sha256,
@@ -130,6 +130,10 @@ def _write_receipt(connection, intent: MigrationIntent, catalog_sha256: str) -> 
         "retained_acl_sha256": intent.retained_acl_sha256,
         "replay_authorized": False,
     }
+
+
+def _write_receipt(connection, intent: MigrationIntent, catalog_sha256: str) -> dict:
+    value = receipt(intent, catalog_sha256)
     before = intent.snapshot()
     result = connection.execute(text(
         "INSERT INTO public.admin_audit_events "
@@ -137,20 +141,20 @@ def _write_receipt(connection, intent: MigrationIntent, catalog_sha256: str) -> 
         "correlation_id,created_at) "
         "VALUES (:id,NULL,:actor,:action,'database_schema',:target,:reason,CAST(:before AS json),"
         "CAST(:after AS json),:nonce,timezone('UTC',clock_timestamp())) "
-        "RETURNING id,actor_user_id,actor_email,action,target_type,target_id,before_state,after_state,correlation_id"
+        "RETURNING id,actor_user_id,actor_email,action,target_type,target_id,reason,before_state,after_state,correlation_id"
     ), {
         "id": AUDIT_PREFIX + intent.nonce,
         "actor": intent.actor_email,
         "action": ACTION,
         "target": contract.SCHEMA,
-        "reason": "One-use additive continuity migration",
+        "reason": AUDIT_REASON,
         "before": _canonical(before),
         "after": _canonical(value),
         "nonce": intent.nonce,
     }).one()
     contract.need(
         tuple(result) == (AUDIT_PREFIX + intent.nonce, None, intent.actor_email, ACTION,
-                          "database_schema", contract.SCHEMA, before, value, intent.nonce),
+                          "database_schema", contract.SCHEMA, AUDIT_REASON, before, value, intent.nonce),
         "continuity_detached_receipt_mismatch",
     )
     return value
