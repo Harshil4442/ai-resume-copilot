@@ -132,6 +132,12 @@ audit; an existing intent never causes DDL to be replayed.
    run `reconcile` and leave notification flags closed, including when the
    observer reports schema26.
 
+If scanner or funding evidence has expired, run `inspect-migration-outcome`
+with the same arguments as `reconcile` and both original journals. The command
+reports the observed schema and commit outcome through the authenticated
+read-only observer. Formal reconciliation and release admission still require
+their normal live checks.
+
 The actual Neon Free schema26 catalog, five protected liability groups and
 the bootstrap SQL role were verified through read-only checks on November 15.
 The traffic and migration dispatchers were exercised against local fixtures.

@@ -375,3 +375,13 @@ two successful requests, with the longest successful response ranging from about
 p95. The remaining benchmarks include native SQL CU, Redis allowance, autoscaling,
 browser p75 metrics, invoice costs, cost envelopes and 10,000-user peaks. Any
 change to the live governor and Stage5 acceptance remain gated.
+
+On November 15, a local production build of Jobs held a single loading area
+until search availability resolved. In one unthrottled Chromium run per viewport
+with a fixture backend, Jobs CLS moved from 0.388 to 0.009 at 768 px, from 0.362
+to 0.008 at 1024 px, and from 0.089 to 0.003 at 1440 px. Both mobile widths
+reported 0 in both runs. The application review button now has an accessible
+name that separates its role, employer and status. The revised browser run
+covered five widths, keyboard focus restoration, manual handoff, protected
+overview retry and the saved Dashboard, Workspace, résumé and Billing surfaces.
+Hosted behavior and field p75 remain pending.
