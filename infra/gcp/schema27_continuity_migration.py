@@ -11,8 +11,6 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
-from scripts import notification_schema27_continuity_step as step
-from scripts import notification_schema27_contract as contract
 from sqlalchemy import event
 
 from infra.gcp import schema27_continuity_bootstrap as bootstrap
@@ -21,6 +19,10 @@ from infra.gcp import schema27_continuity_bridge_plan as bridge
 from infra.gcp import schema27_continuity_catalog as catalog
 from infra.gcp import schema27_continuity_runtime as runtime
 from infra.gcp import schema27_continuity_scope as scope
+
+# isort: split
+from scripts import notification_schema27_continuity_step as step
+from scripts import notification_schema27_contract as contract
 
 rolling = scope.rolling
 SCHEMA_KIND = "hirewiz_schema27_continuity_migration_v1"
@@ -45,7 +47,7 @@ class MigrationPlan:
     def validate(self, bridge_plan, bridge_journal):
         scope.verify_journal(bridge_plan.custody(), bridge_journal)
         need(type(self) is MigrationPlan and self.kind == SCHEMA_KIND and scope._nonce(self.nonce)
-             and self.nonce != bridge_plan.nonce
+             and self.nonce == bridge_plan.nonce
              and self.bridge_plan_sha256 == bridge_journal.plan_hash
              and self.catalog26_sha256 == bridge_plan.financial_sha256
              and all(scope._hash(value) for value in
@@ -94,9 +96,8 @@ def _verify_live(boundary, bridge_plan, bridge_journal, plan):
         need(revisions == {pin.prior_revision}, "unexpected_reachable_revision")
 
 
-def capture(boundary, bridge_plan, bridge_journal, nonce):
-    need(type(boundary) is native.NativeContinuityBoundary and scope._nonce(nonce)
-         and nonce != bridge_plan.nonce, "capture_inputs")
+def capture(boundary, bridge_plan, bridge_journal):
+    need(type(boundary) is native.NativeContinuityBoundary, "capture_inputs")
     scope.verify_journal(bridge_plan.custody(), bridge_journal)
     boundary.journal = bridge_journal
     with bridge_journal.locked():
@@ -104,7 +105,7 @@ def capture(boundary, bridge_plan, bridge_journal, nonce):
         receipts = native.promoted_receipts(bridge_plan, bridge_journal)
         before = catalog.observe_schema26(bridge_plan.custody(), bridge_journal,
                                           expected_liabilities=bridge_plan.protected_liabilities)
-        plan = MigrationPlan(nonce, bridge_journal.plan_hash, receipts, contract.verify_source(boundary.root),
+        plan = MigrationPlan(bridge_plan.nonce, bridge_journal.plan_hash, receipts, contract.verify_source(boundary.root),
                              before.catalog_sha256, before.retained_acl_sha256, _pins(boundary, bridge_plan))
         _verify_live(boundary, bridge_plan, bridge_journal, plan)
         return plan
@@ -156,6 +157,9 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
     intent = plan.intent(identity, native.successor.native.host_auth.ACCOUNT)
     with bridge_journal.locked(), migration_journal.locked():
         plan.validate(bridge_plan, bridge_journal)
+        recovery.validate_custody(custody, bridge_journal, migration_journal, identity, intent,
+                                  bridge_plan_sha256=plan.bridge_plan_sha256,
+                                  bridge_receipts_sha256=plan.bridge_receipts_sha256)
         started = migration_journal.read(recovery.STARTED)
         need((started is not None) == (mode == "reconcile"), "started_reconcile_only")
         _verify_live(boundary, bridge_plan, bridge_journal, plan)
@@ -214,7 +218,6 @@ def main():
     parser.add_argument("--bridge-plan-sha256", required=True)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
-    parser.add_argument("--nonce")
     args = parser.parse_args()
     need(Path(__file__).resolve() == args.root.resolve() / "infra/gcp/schema27_continuity_migration.py",
          "controller_origin")
@@ -224,7 +227,7 @@ def main():
     boundary = native.NativeContinuityBoundary(args.root.resolve(), args.target_root, args.prior_root)
     try:
         if args.mode == "capture":
-            plan = capture(boundary, bridge_plan, journal, args.nonce)
+            plan = capture(boundary, bridge_plan, journal)
             result = {"status": "continuity_migration_captured", "native_mutations": 0,
                       "plan_sha256": native._write_plan(args.plan, plan)}
         else:
