@@ -139,6 +139,83 @@ def test_targeted_send_is_independent_of_marketing_and_has_no_open_sql_transacti
         assert mail.deliver(db, identity) is False and len(calls) == 1
 
 
+def test_exact_security_email_retry_keeps_original_send_and_does_not_scan_other_work(owned, monkeypatch):
+    from app.domains.notifications.mail_budget import MailBudgetError
+
+    _, factory = owned
+    _, identity = issue(factory)
+    unrelated = "ntf_" + "f" * 32
+    with factory() as db:
+        db.add(NotificationOutbox(id=unrelated, user_id=1, notification_type="welcome", channel="email",
+            recipient=EMAIL, payload={}, idempotency_key="unrelated", status="pending", available_at=datetime.now(UTC)))
+        db.commit()
+        attempts = []
+
+        def send(item):
+            assert not db.in_transaction()
+            attempts.append(item.idempotency_key)
+            if len(attempts) == 1:
+                raise MailBudgetError("known_retryable")
+
+        monkeypatch.setattr(notifications, "_send", send)
+        with pytest.raises(ValueError, match="Invalid security email ID"):
+            notifications.retry_security_email(db, "malformed")
+        assert notifications.retry_security_email(db, unrelated).status == "finished"
+        assert notifications.retry_security_email(db, "ntf_" + "e" * 32).status == "finished"
+        with monkeypatch.context() as unconfigured:
+            unconfigured.delenv("RESEND_API_KEY")
+            assert notifications.retry_security_email(db, identity).status == "unavailable"
+            assert attempts == []
+        first = notifications.retry_security_email(db, identity)
+        item = db.get(NotificationOutbox, identity)
+        assert first.status == "retry" and first.available_at == item.available_at.replace(tzinfo=UTC)
+        db.rollback()
+        assert notifications.retry_security_email(db, identity) == first and len(attempts) == 1
+        item = db.get(NotificationOutbox, identity)
+        item.available_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+        assert notifications.retry_security_email(db, identity).status == "sent"
+        assert notifications.retry_security_email(db, identity).status == "finished"
+        assert len(attempts) == 2 and attempts[0] == attempts[1]
+        assert db.get(NotificationOutbox, identity).payload == {}
+        assert db.get(NotificationOutbox, unrelated).status == "pending"
+
+
+def test_exact_security_email_retry_never_resends_an_active_or_stale_claim(owned, monkeypatch):
+    _, factory = owned
+    token, _ = issue(factory)
+    with factory() as db:
+        reset.confirm_reset(db, token, NEW)
+        item = db.query(NotificationOutbox).filter_by(notification_type="password_changed").one()
+        identity = item.id
+        start = datetime.now(UTC) - timedelta(seconds=1)
+        item.status, item.claimed_at = "processing", start
+        db.commit()
+        monkeypatch.setattr(notifications, "_send", lambda *_: pytest.fail("Cannot resend an uncertain delivery"))
+        assert notifications.retry_security_email(db, identity) == notifications.SecurityEmailRetry(
+            "retry", start + timedelta(minutes=15))
+        item = db.get(NotificationOutbox, identity)
+        item.claimed_at = start - timedelta(minutes=15)
+        db.commit()
+        for _ in range(2):
+            assert notifications.retry_security_email(db, identity).status == "finished"
+        item = db.get(NotificationOutbox, identity)
+        assert item.status == "mail_unknown" and item.claimed_at is None and item.attempt_count == 0
+
+
+def test_exact_security_email_retry_cancels_expired_token_without_sending(owned, monkeypatch):
+    _, factory = owned
+    _, identity = issue(factory)
+    with factory() as db:
+        token = db.query(PasswordResetToken).one()
+        token.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+        monkeypatch.setattr(notifications, "_send", lambda *_: pytest.fail("Cannot send an expired link"))
+        assert notifications.retry_security_email(db, identity).status == "finished"
+        item = db.get(NotificationOutbox, identity)
+        assert item.status == "cancelled" and item.payload == {} and item.attempt_count == 0
+
+
 def test_request_http_only_schedules_generic_background_work(monkeypatch):
     from starlette.requests import Request
     monkeypatch.setattr(routes, "configured", lambda: True)
