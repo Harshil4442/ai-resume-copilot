@@ -110,6 +110,29 @@ def test_crash_recovery_reuses_original_hold_and_quote(bounded_db, monkeypatch):
     assert (_hold(db, identity).committed_amount, _hold(db, identity).released_amount) == (2, 4)
 
 
+@pytest.mark.parametrize(("accepted_age", "worker_age", "delivered"), [(24, 6, 1), (6, 24, 0)])
+def test_resumed_search_uses_accepted_source_age(bounded_db, monkeypatch, accepted_age, worker_age, delivered):
+    db = bounded_db
+    balance = db.get(core.User, 1).job_service_credits
+    db.get(models.EmployerPosting, "bounded-job").last_checked_at = utcnow() - timedelta(hours=12)
+    db.commit()
+    monkeypatch.setenv("EMPLOYER_MAX_SOURCE_AGE_HOURS", str(accepted_age))
+    row = service._admit_bounded_search(db, 1, _payload("bounded-accepted-source-age"))
+    identity = row.id
+    assert row.scope["max_source_age_hours"] == accepted_age
+    db.close()
+    monkeypatch.setenv("EMPLOYER_MAX_SOURCE_AGE_HOURS", str(worker_age))
+
+    result = service.resume_bounded_search(db, 1, identity)
+
+    assert result.status == "completed"
+    assert [item["posting"]["id"] for item in result.items] == ["bounded-job"] * delivered
+    charged = 2 * delivered
+    assert (result.delivered_count, result.charged_credits, result.refunded_credits) == (delivered, charged, 6 - charged)
+    assert (_hold(db, identity).committed_amount, _hold(db, identity).released_amount) == (charged, 6 - charged)
+    assert db.get(core.User, 1).job_service_credits == balance - charged
+
+
 def test_completed_replay_and_seen_only_search_do_not_charge_again(bounded_db, monkeypatch):
     db = bounded_db
     balance = db.get(core.User, 1).job_service_credits
