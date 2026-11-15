@@ -58,7 +58,7 @@ class ContinuityDatabasePin:
     database_oid: int = neon.DATABASE_OID
     cluster_sha256: str = neon.CLUSTER_SHA256
     runtime_reference: str = RUNTIME_REFERENCE
-    runtime_role: tuple[str, int] = ("hirewiz_free_runtime_20261115", 49154)
+    runtime_role: tuple[str, int] = (neon.RUNTIME, neon.RUNTIME_OID)
     coordinator_reference: str = COORDINATOR_REFERENCE
     coordinator_role: tuple[str, int] = ("hirewiz_free_resume_coordinator_20261115", 49158)
     observer_role: tuple[str, int] = (neon.OBSERVER, neon.OBSERVER_OID)
