@@ -134,6 +134,87 @@ describe("unified billing account", () => {
     expect(screen.getByRole("button", { name: "Load older activity" })).toBeEnabled();
     expect(state.post).not.toHaveBeenCalled(); noCheckout();
   });
+  it.each([
+    { label: "no processed refund", before: 0, refunded: 0, credits: 40, complete: false },
+    { label: "a processed partial refund", before: 0, refunded: 2950, credits: 20, complete: false },
+    { label: "the processed remaining refund", before: 2950, refunded: 5900, credits: 0, complete: true },
+  ])("checks $label once on explicit owner action", async ({ before, refunded, credits, complete }) => {
+    const original = order({
+      status: "paid", payment_status: before ? "partially_refunded" : "paid", fulfilled: true,
+      checkout_available: false, paid_at: stamp, pass_expires_at: quote.pass_expires_at, refunded_amount_minor: before,
+    });
+    const current = {
+      ...original, status: complete ? "refunded" : "paid", payment_status: complete ? "refunded" : refunded ? "partially_refunded" : "paid",
+      fulfilled: !complete, refunded_amount_minor: refunded,
+    };
+    let checked = false;
+    let finish!: (value: unknown) => void;
+    const getOrder = "/v1/credits/orders/order_unified";
+    const postCheck = "/billing/orders/order_unified/reconcile";
+    const availableBefore = before ? 20 : 40;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/v1/credits/recent-order") return Promise.resolve(original);
+      if (url === getOrder) return Promise.resolve(current);
+      if (url === "/auth/bootstrap") {
+        const creditCount = checked ? credits : availableBefore;
+        return Promise.resolve(ownedBootstrapFixture({ wallet: { ...wallet, available_credits: creditCount, lots: [] } }));
+      }
+      if (url === "/v1/credits/history?limit=20" && checked && before !== refunded) {
+        return Promise.resolve({ schema_version: schema, items: [{ id: "refund-delta", event_type: "revoke",
+          amount: credits - availableBefore, balance_after: credits, created_at: stamp }], next_cursor: null });
+      }
+      return read(url);
+    });
+    state.post.mockImplementation((url: string) => url === postCheck
+      ? new Promise((resolve) => { finish = resolve; })
+      : post(url));
+    render(<BillingPage />);
+    const button = await screen.findByRole("button", { name: "Check refund status" });
+    const available = within((await screen.findByText("Available credits")).parentElement!);
+    expect(await available.findByText(String(availableBefore))).toBeVisible();
+    await screen.findByText("No credit activity yet.");
+    expect(state.post).not.toHaveBeenCalled();
+    expect(state.get.mock.calls.some(([url]) => url === getOrder)).toBe(false);
+
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(state.post).toHaveBeenCalledExactlyOnceWith(postCheck, undefined);
+    await act(async () => {
+      checked = true;
+      finish({ resolution: "settled", message: "The original payment outcome is recorded." });
+    });
+    const changed = refunded !== before;
+    await screen.findByText(changed
+      ? "Refund updated. Review your credit balance and history."
+      : "No additional refund is recorded for this order yet.");
+    expect(state.get.mock.calls.filter(([url]) => url === getOrder)).toHaveLength(1);
+    expect(await available.findByText(String(credits))).toBeVisible();
+    if (changed) expect(await screen.findByText("-20 credits")).toBeVisible();
+    if (refunded) expect(screen.getByText(`Refunded: ${complete ? "₹59" : "₹29.5"}`)).toBeVisible();
+    if (complete) expect(screen.queryByRole("button", { name: "Check refund status" })).not.toBeInTheDocument();
+    else expect(button).toBeEnabled();
+    expect(state.post).toHaveBeenCalledTimes(1);
+    noCheckout();
+  });
+  it("retains the verified partial refund when a status check returns an older amount", async () => {
+    const partial = order({ status: "paid", payment_status: "partially_refunded", fulfilled: true,
+      checkout_available: false, refunded_amount_minor: 2950, paid_at: stamp, pass_expires_at: quote.pass_expires_at });
+    const orderPath = "/v1/credits/orders/order_unified";
+    state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(partial)
+      : url === orderPath ? Promise.resolve({ ...partial, payment_status: "paid", refunded_amount_minor: 0 }) : read(url));
+    state.post.mockResolvedValue({ resolution: "settled" });
+    render(<BillingPage />);
+    expect(await screen.findByText("Refunded: ₹29.5")).toBeVisible();
+    const check = screen.getByRole("button", { name: "Check refund status" });
+    fireEvent.click(check);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Refund status could not be verified.");
+    expect(screen.getByText("Refunded: ₹29.5")).toBeVisible();
+    expect(state.post).toHaveBeenCalledExactlyOnceWith("/billing/orders/order_unified/reconcile", undefined);
+    expect(state.get.mock.calls.filter(([url]) => url === orderPath)).toHaveLength(1);
+    expect(check).toBeEnabled();
+    noCheckout();
+  });
   it.each([undefined, null, -1, "3", 1.5])("does not invent a wallet balance for malformed data %j", async (available_credits) => {
     state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: { ...wallet, available_credits } })) : read(url));
     render(<BillingPage />); await screen.findByText(/Your credit balance is unavailable/); expect(screen.queryByText("Available credits")).not.toBeInTheDocument();
@@ -263,6 +344,7 @@ describe("unified purchase review and payment", () => {
     state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(unknown) : read(url));
     state.post.mockImplementation((url: string) => url.endsWith("/reconcile") ? Promise.resolve({ resolution: "checkout_ready", message: "Original payment ready" }) : post(url));
     render(<BillingPage />); const resume = await screen.findByRole("button", { name: "Resume original checkout" }); expect(resume).toBeDisabled(); expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Check refund status" })).not.toBeInTheDocument();
     await confirmIndia(); fireEvent.click(screen.getByRole("button", { name: "Reconcile original payment" })); await screen.findByText("Original payment ready");
     expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked(); expect(resume).toBeDisabled(); noCheckout();
     await confirmIndia(); fireEvent.click(resume); await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
