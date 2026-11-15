@@ -20,9 +20,10 @@ The launch product is the unified credit pass in the [current requirements](requ
 
 ## 2. Verify the checkout and webhook configuration
 
-The 13 November serving revision has live checkout disabled. Its Razorpay
-credential settings are present as environment values. Before activation,
-move those bindings into managed secrets. Preserve the key ID used by
+The 15 November serving revision `ai-resume-parser-neonfree-20261115` has live
+checkout disabled. A metadata-only read found direct environment bindings for
+`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`. Before
+activation, move those bindings into managed secrets. Preserve the key ID used by
 outstanding orders and the signing configuration used by their webhooks.
 If rotation is needed, reconcile the original orders first and verify the
 callback overlap before retiring any earlier credential.
