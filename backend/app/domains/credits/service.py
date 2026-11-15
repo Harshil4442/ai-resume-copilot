@@ -120,7 +120,6 @@ def issue_purchase_quote(
     now: datetime | None = None,
 ) -> CreditPurchaseQuote:
     """Persist accepted-facing price terms; a retry never silently renews a quote."""
-    stamp = _stamp(now)
     _key(idempotency_key)
     _lock_owner(db, user_id)
     prior = (
@@ -134,7 +133,10 @@ def issue_purchase_quote(
         return prior
     if not checkout_enabled:
         raise CreditContractError("Credit purchases are not enabled.")
-    catalog = public_catalog(campaign=configured_campaign(db), now=stamp, checkout_enabled=True)
+    campaign = configured_campaign(db)
+    # Price a new quote at the admission decision, after waiting for the owner.
+    stamp = _stamp(now)
+    catalog = public_catalog(campaign=campaign, now=stamp, checkout_enabled=True)
     product = next((item for item in catalog.products if item.sku == sku), None)
     if product is None:
         raise CreditContractError("This credit pack is not available.")
@@ -177,7 +179,6 @@ def accept_purchase_quote(
     Once accepted, later webhook fulfillment uses this immutable snapshot even
     after the campaign or quote expires. The caller must check checkout readiness.
     """
-    stamp = _stamp(now)
     _key(order_id, 64)
     _lock_owner(db, user_id)
     quote = (
@@ -193,6 +194,7 @@ def accept_purchase_quote(
         if quote.accepted_order_id != order_id:
             raise CreditContractError("This quote already belongs to another checkout.")
         return quote
+    stamp = _stamp(now)
     if not aware(quote.created_at) <= stamp < aware(quote.expires_at):
         raise CreditContractError("The purchase quote expired. Review a new quote.")
     # Validate the persisted public contract before accepting, without repricing.

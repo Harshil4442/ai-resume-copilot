@@ -203,6 +203,56 @@ def test_expired_and_other_owner_quotes_are_not_accepted(factory):
         assert db.query(CreditPurchaseQuote).one().state == "quoted"
 
 
+def test_new_quote_uses_campaign_price_after_owner_lock(factory, monkeypatch):
+    lock_released = False
+    lock_owner = service._lock_owner
+
+    def acquire_owner(db, user_id):
+        nonlocal lock_released
+        lock_owner(db, user_id)
+        lock_released = True
+
+    monkeypatch.setattr(service, "_lock_owner", acquire_owner)
+    monkeypatch.setattr(service, "utcnow", lambda: NOW if lock_released else NOW - timedelta(seconds=1))
+    with factory() as db:
+        db.add(campaign(start=NOW - timedelta(days=30)))
+        db.commit()
+        quote = service.issue_purchase_quote(
+            db, user_id=1, sku="starter_pass", idempotency_key="purchase-after-cutoff", checkout_enabled=True,
+        )
+        response = service.quote_response(quote)
+        assert response.campaign.status == "ended"
+        assert response.amount_minor == 7900
+        assert response.created_at == NOW
+        assert response.expires_at == NOW + pricing.PURCHASE_QUOTE_LIFETIME
+
+
+def test_quote_expiring_while_order_waits_remains_unaccepted(factory, monkeypatch):
+    lock_released = False
+    lock_owner = service._lock_owner
+
+    def acquire_owner(db, user_id):
+        nonlocal lock_released
+        lock_owner(db, user_id)
+        lock_released = True
+
+    cutoff = NOW + pricing.PURCHASE_QUOTE_LIFETIME
+    monkeypatch.setattr(service, "_lock_owner", acquire_owner)
+    monkeypatch.setattr(service, "utcnow", lambda: cutoff if lock_released else cutoff - timedelta(seconds=1))
+    with factory() as db:
+        quote = service.issue_purchase_quote(
+            db, user_id=1, sku="starter_pass", idempotency_key="purchase-before-cutoff", checkout_enabled=True, now=NOW,
+        )
+        db.commit()
+        quote_id = quote.id
+        lock_released = False
+        with pytest.raises(pricing.CreditContractError, match="quote expired"):
+            service.accept_purchase_quote(db, user_id=1, quote_id=quote_id, order_id="late-checkout")
+        db.commit()
+        retained = db.get(CreditPurchaseQuote, quote_id)
+        assert retained.state == "quoted" and retained.accepted_order_id is None
+
+
 def test_fulfillment_is_idempotent_and_late_webhook_keeps_30_usable_days(factory):
     with factory() as db:
         quote = service.issue_purchase_quote(
