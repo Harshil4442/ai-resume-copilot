@@ -28,6 +28,18 @@ outstanding orders and the signing configuration used by their webhooks.
 If rotation is needed, reconcile the original orders first and verify the
 callback overlap before retiring any earlier credential.
 
+The API, analysis worker and employer worker currently share a runtime service
+account. Any of those workloads could read a secret granted to that account.
+Review the effective scope and same-value custody for all three bindings before
+provisioning them. Once the API has the approved access to verified numeric
+versions, validate the same-image change with `gcloud beta run services update`
+using `--dry-run`, `--no-traffic`, the three exact names in `--remove-env-vars`,
+and the same names mapped to numeric versions in `--update-secrets`. Keep
+output to the service name and compare serving revision and traffic before and
+after validation. Staging, promotion and checkout activation use the existing
+release gates.
+[Cloud Run CLI validation](https://cloud.google.com/sdk/gcloud/reference/beta/run/services/update)
+
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
 - [ ] Subscribe to `payment.captured`, `order.paid`, `payment.failed` and `refund.processed`. Verify the signature on the raw request body and the provider event identifier. Confirm that duplicate deliveries and both capture event types for the same payment settle at most once. Unmatched events require reconciliation. See [Razorpay webhook validation and testing](https://razorpay.com/docs/webhooks/validate-test/).
