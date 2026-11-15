@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, get_db
 from ..domains.candidate_accounts import email_erasure
-from ..domains.notifications.privacy_erasure import configured, deliver
+from ..domains.notifications.privacy_erasure import configured
+from ..domains.notifications.wake import deliver_link_with_wake
 from ..domains.recovery.pairing_contracts import PairingContract
 from ..rate_limiter import limiter
 from .sensitive_auth import SensitiveAuthRoute
@@ -59,7 +60,7 @@ def _delivery(email):
         with SessionLocal() as db:
             identifier = email_erasure.request_erasure(db, email)
             if identifier is not None:
-                deliver(db, identifier)
+                deliver_link_with_wake(db, identifier)
     except Exception:
         logging.getLogger(__name__).error("Privacy erasure email request unavailable")
 

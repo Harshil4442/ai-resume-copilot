@@ -103,19 +103,31 @@ def refresh_source(source_id: str) -> str:
     try:
         result = connectors.fetch_source_scan(contract, baseline=baseline, deadline=deadline)
     except connectors.ConnectorError as exc:
+        permanent = exc.safe_to_retry is False
         with SessionLocal() as db:
             source = db.query(models.EmployerSource).filter_by(id=source_id, scan_token=token).with_for_update().first()
             if source:
                 if source_config is not None and source_revalidation.source_fingerprint(source) == source_config:
+                    now = utcnow()
+                    if permanent:
+                        current_checkpoint = service._utc(source.last_success_at) if source.last_success_at is not None else None
+                        started = service._utc(source.scan_started_at) if source.scan_started_at is not None else None
+                        if (not source.enabled or not config.discovery_enabled() or current_checkpoint != checkpoint
+                                or started != scan_started or scan_started <= now - timedelta(minutes=5)):
+                            raise
                     source.status = "unavailable"
                     source.last_error_code = exc.code
-                    source.next_refresh_at = utcnow() + timedelta(minutes=15)
+                    source.next_refresh_at = now + (timedelta(hours=6) if permanent else timedelta(minutes=15))
                 else:
+                    if permanent:
+                        raise
                     # A failed read of an old configuration says nothing about
                     # its replacement; release only this scan's own claim.
                     source.next_refresh_at = utcnow()
                 source.scan_token, source.scan_started_at = None, None
                 db.commit()
+                if permanent:
+                    return "unavailable"
         raise
     with SessionLocal() as db:
         source = db.query(models.EmployerSource).filter_by(id=source_id, scan_token=token).with_for_update().first()

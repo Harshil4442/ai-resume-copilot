@@ -20,8 +20,8 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = '7047543482c3395694653a5da48954ad3be22ef5a569d2652d03323eb6428d34'
-CANDIDATE_APP_FILES = 313
+CANDIDATE_APP_SHA256 = 'cadde8ada005bfdd09039af112d26f4606c504d9236d679362dc43c3ac10da9b'
+CANDIDATE_APP_FILES = 316
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
 RETAINED_STEP = "Qualify schema26 app v3 compatibility"
@@ -91,6 +91,7 @@ F07_PATHS = (
     "backend/tests/test_source27_current_application_profile.py", "backend/tests/test_neon_schema27_release_transport.py",
     "backend/tests/test_neon_schema27_release_postgres.py", "backend/tests/test_notification_schema_compat_postgres.py",
     "backend/tests/test_mail_budget_postgres.py", "backend/tests/test_mail_provider.py",
+    "backend/tests/test_privacy_erasure_email_retry_postgres.py",
     "backend/tests/test_notification_preferences_projection.py", "backend/tests/test_notification_preference_admission.py",
     "backend/tests/test_notification_digest_content.py", "backend/tests/test_notification_consent_contract.py",
     "backend/tests/test_notification_digest_emulator.py", "backend/tests/test_notification_schema26_reader_compatibility.py",

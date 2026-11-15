@@ -375,3 +375,38 @@ two successful requests, with the longest successful response ranging from about
 p95. The remaining benchmarks include native SQL CU, Redis allowance, autoscaling,
 browser p75 metrics, invoice costs, cost envelopes and 10,000-user peaks. Any
 change to the live governor and Stage5 acceptance remain gated.
+
+On November 15, a local production build of Jobs held a single loading area
+until search availability resolved. In one unthrottled Chromium run per viewport
+with a fixture backend, Jobs CLS moved from 0.388 to 0.009 at 768 px, from 0.362
+to 0.008 at 1024 px, and from 0.089 to 0.003 at 1440 px. Both mobile widths
+reported 0 in both runs. The application review button now has an accessible
+name that separates its role, employer and status. The revised browser run
+covered five widths, keyboard focus restoration, manual handoff, protected
+overview retry and the saved Dashboard, Workspace, résumé and Billing surfaces.
+Hosted behavior and field p75 remain pending.
+
+The opt-in `--jobs-journey` diagnostic (workflow input `jobs_journey`) uses
+eight synthetic signed-in accounts with their own saved résumé, search and
+application. After at least 61 seconds of normal budget cooldown in each arm,
+they load Dashboard and request Jobs 27 seconds later. The original arm offers
+four Jobs reads per account. The consolidated arm offers one. The diagnostic
+requires the original arm to exhaust the 40-call budget with valid capacity
+refusals and all eight consolidated journeys to finish in 32 List calls. It
+compares the shared contents of every successful original read with the
+consolidated result, verifies ownership and cache policy, and allows no Get
+fallback or measured SQL writes. The total is at most 61 HTTP requests including
+controls. The default workload is unchanged.
+
+The [25% buyer Linux run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43696832920/job/132759146859)
+verified all eight consolidated journeys. The original path returned 21 capacity
+refusals across 32 Jobs requests and used 40 List calls. The consolidated path
+returned eight successes, used 32 List calls, and made zero measured SQL writes.
+The 20% job stopped before measurement because the evaluation runner's catalog
+check depended on ORM import order. After the correction, all 28 owned PostgreSQL
+evaluation tests passed. Both scenarios in the
+[corrected hosted run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43697756968)
+reproduced the same results on commit `ccdba8ac212118b67945ad0c28090e4b2a8bde4d`.
+All eight Dashboard loads succeeded in each arm. Each consolidated arm had zero
+capacity refusals, SQL writes and external provider calls. The runner reported
+cleanup of its isolated services. Production capacity remains unverified.

@@ -106,7 +106,7 @@ def test_new_family_is_not_the_neverqualified294_or_retained_producer():
     assert c.PRIOR_RELEASE == "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
     assert c.PRIOR_APP_FILES == 290 and c.PRIOR_APP_SHA256.startswith("f2775c3b")
     app = c.current_app(Path(__file__).resolve().parents[2])
-    assert len(app) == c.CANDIDATE_APP_FILES == 313
+    assert len(app) == c.CANDIDATE_APP_FILES
     assert c.app_digest(app) == c.CANDIDATE_APP_SHA256
     assert c.HTTP_PATHS == c.v3.HTTP_PATHS | c.NEW_HTTP_PATHS
     assert c.HTTP_SCHEMAS == c.v3.HTTP_SCHEMAS | c.NEW_HTTP_SCHEMAS

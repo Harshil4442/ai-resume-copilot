@@ -5,7 +5,10 @@ import hashlib
 import os
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Literal
 from uuid import uuid4
+
+from sqlalchemy import and_, or_
 
 from ... import models as core
 from ..common import utcnow
@@ -15,6 +18,15 @@ from .privacy import ensure_cleanup
 from .storage import ObjectStore, StorageMismatch, StorageUnavailable, valid_generation
 
 MAX_ATTEMPTS, LEASE_SECONDS = 3, 300
+TERMINAL_STATES = {"released", "rejected", "failed", "cancelled", "expired"}
+WakeState = Literal["pending", "terminal"]
+ScanResult = Literal["pending", "terminal", "released"]
+
+
+def _wake_state(row, now) -> WakeState:
+    if row is None or row.user_id is None or row.expires_at <= now or row.state in TERMINAL_STATES:
+        return "terminal"
+    return "pending"
 
 
 def _current(db, identifier, token):
@@ -27,19 +39,22 @@ def _current(db, identifier, token):
     return row
 
 
-def _lost(factory, identifier):
+def _lost(factory, identifier) -> WakeState:
     with factory() as db:
         row = db.query(ResumeUpload).filter_by(id=identifier).with_for_update().one_or_none()
         if row is not None:
             ensure_cleanup(db, row)
+            state = _wake_state(row, utcnow())
             db.commit()
+            return state
+        return "terminal"
 
 
-def _failure(factory, identifier, token, *, refused=False):
+def _failure(factory, identifier, token, *, refused=False) -> WakeState:
     with factory() as db:
         row = db.query(ResumeUpload).filter_by(id=identifier).with_for_update().one_or_none()
         if row is None:
-            return
+            return "terminal"
         if row.lease_token == token and row.state == "inspecting":
             if row.user_id is None:
                 row.state = "cancelled"
@@ -55,25 +70,38 @@ def _failure(factory, identifier, token, *, refused=False):
             row.lease_token = row.lease_until = None
         if row.state not in ("queued", "inspecting", "awaiting_upload"):
             ensure_cleanup(db, row)
+        state = _wake_state(row, utcnow())
         db.commit()
+        return state
 
 
 def process(factory, identifier: str, store: ObjectStore) -> bool:
     if os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "false") != "true":
         return False
+    return _process(factory, identifier, store) == "released"
+
+
+def process_wake(factory, identifier: str, store: ObjectStore) -> WakeState:
+    """Return a definitive task outcome using the existing scan claim lock."""
+    if os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "false") != "true":
+        return "pending"
+    return "pending" if _process(factory, identifier, store) == "pending" else "terminal"
+
+
+def _process(factory, identifier: str, store: ObjectStore) -> ScanResult:
     token = uuid4().hex
     with factory() as db:
         row = db.query(ResumeUpload).filter_by(id=identifier).with_for_update().one_or_none()
         now = utcnow()
         if row is None or row.user_id is None or row.expires_at <= now or row.next_attempt_at > now:
-            return False
+            return _wake_state(row, now)
         if row.state not in ("queued", "inspecting") or (row.state == "inspecting" and row.lease_until and row.lease_until > now):
-            return False
+            return _wake_state(row, now)
         if row.attempt_count >= MAX_ATTEMPTS:
             row.state = "failed"
             ensure_cleanup(db, row)
             db.commit()
-            return False
+            return "terminal"
         row.state, row.lease_token, row.lease_until = "inspecting", token, now + timedelta(seconds=LEASE_SECONDS)
         row.attempt_count += 1
         target = SimpleNamespace(**{column.name: getattr(row, column.name) for column in ResumeUpload.__table__.columns})
@@ -89,8 +117,7 @@ def process(factory, identifier: str, store: ObjectStore) -> bool:
             current = _current(db, identifier, token)
             if current is None:
                 db.rollback()
-                _lost(factory, identifier)
-                return False
+                return _lost(factory, identifier)
             if current.quarantine_generation is not None and current.quarantine_generation != info.generation:
                 raise StorageMismatch("source_generation_mismatch")
             current.quarantine_generation = info.generation
@@ -103,8 +130,7 @@ def process(factory, identifier: str, store: ObjectStore) -> bool:
             current = _current(db, identifier, token)
             if current is None:
                 db.rollback()
-                _lost(factory, identifier)
-                return False
+                return _lost(factory, identifier)
             db.commit()
         # Targets were recorded before this write. Cleanup replaces either target
         # by a retained live generation, so a late generation0 write cannot resurrect it.
@@ -116,8 +142,7 @@ def process(factory, identifier: str, store: ObjectStore) -> bool:
             current = _current(db, identifier, token)
             if owner is None or current is None:
                 db.rollback()
-                _lost(factory, identifier)
-                return False
+                return _lost(factory, identifier)
             if current.quarantine_generation != info.generation:
                 raise StorageMismatch("source_generation_mismatch")
             raw, sections, skills, years, contact = inspected.parsed
@@ -137,20 +162,23 @@ def process(factory, identifier: str, store: ObjectStore) -> bool:
                 complete(db, user_id=target.user_id, source_type="resume_upload", source_id=identifier, result_id=str(resume.id))
             ensure_cleanup(db, current)
             db.commit()
-        return True
+        return "released"
     except (scanner.ScanRefused, StorageMismatch):
-        _failure(factory, identifier, token, refused=True)
+        return _failure(factory, identifier, token, refused=True)
     except (scanner.ScanUnavailable, StorageUnavailable):
-        _failure(factory, identifier, token)
-    return False
+        return _failure(factory, identifier, token)
 
 
 def process_due(factory, store: ObjectStore, *, limit: int = 10) -> int:
     if not 1 <= limit <= 10:
         raise ValueError("inspection_batch_limit")
     now = utcnow()
+    eligible_state = or_(
+        ResumeUpload.state == "queued",
+        and_(ResumeUpload.state == "inspecting", or_(ResumeUpload.lease_until.is_(None), ResumeUpload.lease_until <= now)),
+    )
     with factory() as db:
         identifiers = [row.id for row in db.query(ResumeUpload).filter(
-            ResumeUpload.state.in_(("queued", "inspecting")), ResumeUpload.next_attempt_at <= now,
+            eligible_state, ResumeUpload.next_attempt_at <= now,
             ResumeUpload.expires_at > now).order_by(ResumeUpload.next_attempt_at).limit(limit).all()]
     return sum(process(factory, identifier, store) for identifier in identifiers)

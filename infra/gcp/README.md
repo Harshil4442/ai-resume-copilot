@@ -142,11 +142,18 @@ The selected email channel is enabled. Its default
 request channel verification. Actual prior owner-INBOX receipts establish
 scanner-definition attention open/resolved and missing-heartbeat delivery. Fresh
 read-only metadata confirms the listed policies and the separate terminal Cloud
-Build policy remain enabled and mapped to that same channel. These receipts do
-not establish condition-specific delivery for API 5xx, latency, terminal Cloud
-Build or Vercel failures; those routes remain configured or unexercised until an
-actual corresponding receipt exists. No production incident or test notification
-was induced. Preserve the channel and policy handles during future deployments.
+Build policy remain enabled and mapped to that same channel. The owner inbox
+received a terminal Cloud Build cancellation on October 28 and a failure on
+October 31, both matched to native Build records. API 5xx, latency and Vercel
+failure delivery remain unverified.
+
+On November 15, the scanner attention incident opened at 08:27 UTC and closed
+at 08:37 UTC as the five-minute count went from one to zero. The scheduled
+monitor still reported expired definitions. The live attention policy now
+explains that transition and directs operators to verify recovery from a new
+`fresh` maintenance result. Readback matched the original alert conditions and
+email channel after the documentation update. Preserve these settings during
+deployments.
 See [channel verification semantics](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.notificationChannels)
 and [metric-absence behavior](https://docs.cloud.google.com/monitoring/alerts/metric-absence).
 
@@ -195,3 +202,40 @@ Razorpay callback failures. Enable the generation metric with the dashboard. Rev
 the additive Terraform plan, the existing channel, and current monitoring prices
 before activation. Verify the deployed filters and dashboard under the operator's
 account. Read actual delivery evidence when an incident occurs.
+
+### Private security link wake
+
+The optional queue can retry one committed password-reset or privacy-erasure email
+at a time. Both runtime flags and the Terraform lane default off. Keep immediate
+delivery and the existing scheduled sweep active during qualification.
+
+The queue requires a separately reviewed, internal-only Cloud Run service named
+`hirewiz-security-mail-worker` in the same project and region. Use the default
+`run.app` origin with Cloud Run Invoker IAM enabled. Start its reviewed,
+digest-pinned image with
+`uvicorn app.security_mail_worker:app --host 0.0.0.0 --port 8080 --no-access-log`.
+The service entry point exposes only health and exact-ID delivery. Limit its
+concurrency to one and its request timeout to less than the 60-second task
+deadline. The application emits fixed status codes and receives only an opaque
+outbox ID. Cloud Run request logs can still contain that opaque path identifier.
+
+Prepare the worker runtime separately from the queue caller. Existing outbox
+ciphertext needs the current security-email key custody. Delivery needs the
+existing approved sender, restricted Resend credential and access to the
+outbox, proof, owner, candidate-state and detached mail-budget ledger rows.
+Review exact grants and verified database TLS before deployment. Queue Terraform
+leaves deployment, database roles, secret grants and credential versions under
+the release process. The API publisher receives only `cloudtasks.tasks.create`
+on this queue. The caller can invoke only the dedicated service.
+
+With both flags off, bind the service to its project via `GOOGLE_CLOUD_PROJECT`
+and set `SERVICE_ROLE=security-mail-worker`. Pin `SECURITY_MAIL_WORKER_AUDIENCE`
+to the verified default origin, `SECURITY_MAIL_WORKER_CALLER_EMAIL` to the
+queue's caller and `SECURITY_MAIL_WORKER_CALLER_SUBJECT` to that account's
+numeric `uniqueId`. The API needs the same project and audience,
+`SECURITY_MAIL_TASK_LOCATION` and `SECURITY_MAIL_TASK_QUEUE=hirewiz-security-mail-wake`.
+Enable `SECURITY_MAIL_WORKER_ENABLED` in isolated staging and verify that a
+real queue-generated OIDC token reaches the exact POST path and an unapproved
+caller cannot reach SQL. Use synthetic outbox records and a controlled mail
+provider. Turn on `SECURITY_MAIL_TASK_WAKE_ENABLED` only after those checks
+and the worker and queue readbacks pass.

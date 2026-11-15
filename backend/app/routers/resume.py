@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import models, schemas
 from ..database import get_db
 from ..domains.resume_uploads import browsing as resume_browsing
+from ..domains.resume_uploads import service as resume_uploads
 from ..domains.resume_uploads.browsing import (
     MAX_LEGACY_RESUMES,
     MAX_RESUME_PAGE,
@@ -236,7 +237,7 @@ async def parse_resume(
     # this legacy synchronous route as well as durable direct uploads.
     # The legacy endpoint predates the durable-upload flag; an absent flag keeps
     # its existing behavior. The transition writes and verifies explicit false.
-    if os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "true") != "true":
+    if not resume_uploads.admission_enabled() or os.getenv("RESUME_DIRECT_UPLOAD_ENABLED", "true") != "true":
         raise HTTPException(status_code=503, detail="Resume upload is temporarily unavailable. Please try again shortly.")
     owner_id = current_user.id
     filename = file.filename or ""

@@ -2,22 +2,28 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import getpass
+import hmac
+import json
 import os
 import re
 import secrets
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Mapping
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from backend.app.billing.reconciliation import MAX_PAGES, PAGE_SIZE
 from backend.scripts.razorpay_test_webhook_ingress import WEBHOOK_PATH
 from backend.scripts.run_cold_browser_journey import (
@@ -44,6 +50,67 @@ LAUNCH_PRICES = frozenset({
 
 class CheckoutLabError(RuntimeError):
     """A safe, fixed operator message."""
+
+
+@contextmanager
+def lock_wallet_directory(directory: Path):
+    require(directory.is_absolute() and directory.resolve() == directory,
+            "Use an absolute path to the private Test wallet directory")
+    fd = os.open(directory, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_RDONLY)
+    try:
+        owner = os.fstat(fd)
+        require(owner.st_uid == os.getuid() and stat.S_IMODE(owner.st_mode) == 0o700,
+                "The Test wallet directory must be owner-only")
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(fd)
+
+
+def wallet_identity(db, schema: str) -> dict[str, str]:
+    require(bool(re.fullmatch(r"razorpay_test_[a-f0-9]{32}", schema)), "Invalid Test wallet schema")
+    owner = db.scalar(text("SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = :schema AND nspowner = "
+                           "(SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)"), {"schema": schema})
+    require(owner == 1, "The retained Test wallet is missing or has a different owner")
+    revision = db.execute(text(f'SELECT version_num FROM "{schema}".alembic_version')).scalar_one()
+    expected = ScriptDirectory.from_config(Config(str(ROOT / "backend" / "alembic.ini"))).get_current_head()
+    require(revision == expected, "The retained Test wallet requires its original migration revision")
+    database, cluster = db.execute(text("SELECT pg_catalog.current_database(), system_identifier::text "
+                                        "FROM pg_catalog.pg_control_system()")).one()
+    return {"schema": schema, "database": database, "cluster": cluster, "revision": revision}
+
+
+def save_wallet_state(path: Path, identity: dict[str, str]) -> None:
+    fd = os.open(path, os.O_WRONLY | os.O_EXCL | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(identity, stream, sort_keys=True)
+        stream.flush()
+        os.fsync(stream.fileno())
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def load_wallet_state(path: Path, db) -> str:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        status = os.fstat(stream.fileno())
+        require(stat.S_ISREG(status.st_mode) and status.st_uid == os.getuid()
+                and stat.S_IMODE(status.st_mode) == 0o600 and status.st_size <= 1024,
+                "The Test wallet record must be a private regular file")
+        record = json.loads(stream.read(1025))
+    require(type(record) is dict and type(record.get("schema")) is str, "Invalid Test wallet record")
+    schema = record["schema"]
+    require(wallet_identity(db, schema) == record, "The retained Test wallet belongs to a different database")
+    return schema
+
+
+def webhook_environment(webhook_secret: str) -> dict[str, str]:
+    if len(webhook_secret) < 32 or webhook_secret != webhook_secret.strip():
+        raise ValueError("Enter a separate webhook secret of at least 32 characters")
+    return {"RAZORPAY_WEBHOOK_SECRET": webhook_secret}
 
 
 def provider_environment(key_id: str, key_secret: str, webhook_secret: str) -> dict[str, str]:
@@ -128,7 +195,7 @@ def serve_api(port: int, postgres_port: int) -> None:
                 or event == "socket.getaddrinfo" and tuple(args[:2]) not in {local_api, local_sql}):
             raise PermissionError("Outbound connection outside the checkout lab")
 
-    httpx.Client.send = guarded_send
+    httpx.Client.send = guarded_send  # type: ignore[method-assign,assignment]
     sys.addaudithook(audit)
     uvicorn.run("backend.app.main:app", host="127.0.0.1", port=port, access_log=False)
 
@@ -167,6 +234,16 @@ def wait_loopback(url: str, process, *, tls=True, status: int = 200) -> None:
     raise CheckoutLabError("A local checkout process did not become ready")
 
 
+def verify_webhook_signing(backend: str, secret: str) -> None:
+    # Deliberately omit the event ID so no provider event can reach the ledger.
+    body = b"{}"
+    signature = hmac.new(secret.encode(), body, "sha256").hexdigest()
+    with httpx.Client(base_url=backend, trust_env=False, timeout=5) as client:
+        response = client.post(WEBHOOK_PATH, content=body, headers={"X-Razorpay-Signature": signature})
+        require(response.status_code == 400 and response.json().get("detail") == "Missing webhook event identifier.",
+                "The local billing API did not verify the Test webhook signing secret")
+
+
 def verify_closed_checkout(frontend: str, ingress: str, tls) -> None:
     """Exercise the same auth, BFF, catalog and webhook routes used by the UI."""
     with httpx.Client(base_url=frontend, verify=tls, trust_env=False, timeout=10) as client:
@@ -200,13 +277,11 @@ def verify_closed_checkout(frontend: str, ingress: str, tls) -> None:
         require(client.post(WEBHOOK_PATH, json={}).status_code == 503, "Default webhook must be disabled")
 
 
-def run(credentials: dict[str, str], duration: int) -> None:
+def run(credentials: dict[str, str], duration: int, *, wallet_directory: Path | None = None,
+        resume: bool = False) -> None:
     for location in (ROOT, ROOT / "backend", ROOT / "frontend"):
         require(not any(location.glob(".env*")), "Use a clean checkout without dotenv files")
     postgres = _disposable_postgres()
-    schema = "razorpay_test_" + uuid4().hex
-    options = f"-csearch_path={schema} -clock_timeout=4000 -cstatement_timeout=10000"
-    database = postgres.update_query_dict({"options": options})
     backend_port, frontend_port, ingress_port = _port(), _port(), _port()
     require(len({backend_port, frontend_port, ingress_port}) == 3, "Loopback port allocation collided")
     backend, frontend, ingress = (f"http://127.0.0.1:{backend_port}", f"https://127.0.0.1:{frontend_port}",
@@ -214,8 +289,30 @@ def run(credentials: dict[str, str], duration: int) -> None:
 
     with tempfile.TemporaryDirectory(prefix="hirewiz-razorpay-test-") as temporary, ExitStack() as cleanup:
         home = Path(temporary)
+        wallet_path = None
+        if wallet_directory is not None:
+            require(postgres.port == 55434 and bool(credentials), "Use the dedicated Razorpay Test PostgreSQL on port 55434")
+            cleanup.enter_context(lock_wallet_directory(wallet_directory))
+            wallet_path = wallet_directory / "wallet.json"
+        require(not resume or (wallet_path is not None and set(credentials) == {"RAZORPAY_WEBHOOK_SECRET"}),
+                "Test wallet resume requires only the Test signing secret")
+        admin = create_engine(postgres, hide_parameters=True, connect_args={
+            "hostaddr": "127.0.0.1", "options": "", "sslmode": "disable", "connect_timeout": 5,
+        })
+        cleanup.callback(admin.dispose)
+        schema = "razorpay_test_" + uuid4().hex
+        if resume:
+            assert wallet_path is not None
+            with admin.begin() as db:
+                db.execute(text("SET TRANSACTION READ ONLY"))
+                schema = load_wallet_state(wallet_path, db)
+        elif wallet_path is not None:
+            require(not os.path.lexists(wallet_path), "This directory already has a retained Test wallet")
+        options = f"-csearch_path={schema} -clock_timeout=4000 -cstatement_timeout=10000"
+        database = postgres.update_query_dict({"options": options})
+
         key, cert = home / "loopback-key.pem", home / "loopback-cert.pem"
-        tls = _create_owned_tls(key, cert)
+        tls = _create_owned_tls(key, cert) if not resume else None
         process_env = runtime_environment(home, os.environ)
         python_env = process_env | {"PYTHONPATH": str(ROOT)}
         api_env = python_env | credit_policy() | {
@@ -229,31 +326,30 @@ def run(credentials: dict[str, str], duration: int) -> None:
             "NEXT_TELEMETRY_DISABLED": "1", "PORT": str(frontend_port), "HIREWIZ_TEST_TLS_KEY": str(key),
             "HIREWIZ_TEST_TLS_CERT": str(cert),
         }
-        admin = create_engine(postgres, hide_parameters=True, connect_args={
-            "hostaddr": "127.0.0.1", "options": "", "sslmode": "disable", "connect_timeout": 5,
-        })
-        cleanup.callback(admin.dispose)
+        retain = False
 
         def drop_schema() -> None:
-            with admin.begin() as db:
-                db.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            if not retain:
+                with admin.begin() as db:
+                    db.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
 
-        with admin.begin() as db:
-            db.execute(text(f'CREATE SCHEMA "{schema}"'))
-        cleanup.callback(drop_schema)
-        print("Migrating the isolated checkout database and building the frontend.", flush=True)
-        migration = _run_bounded([sys.executable, "-m", "alembic", "upgrade", "head"],
-                                 cwd=ROOT / "backend", env=api_env, timeout=90)
-        require(migration.returncode == 0, "Local database migration failed")
-        if credentials:
+        if not resume:
             with admin.begin() as db:
-                db.execute(text(f'INSERT INTO "{schema}".credit_campaigns '
-                    '(id, version, catalog_version, enabled, starts_at, ends_at, timezone, '
-                    'reference_price_verified, created_at) VALUES '
-                    '(:id, :version, :catalog_version, :enabled, :starts_at, :ends_at, :timezone, '
-                    ':reference_price_verified, :created_at)'), synthetic_campaign(datetime.now(UTC)))
-        build = _run_bounded(["npm", "run", "build"], cwd=ROOT / "frontend", env=next_env, timeout=240)
-        require(build.returncode == 0, "Local production frontend build failed")
+                db.execute(text(f'CREATE SCHEMA "{schema}"'))
+            cleanup.callback(drop_schema)
+            print("Migrating the isolated checkout database and building the frontend.", flush=True)
+            migration = _run_bounded([sys.executable, "-m", "alembic", "upgrade", "head"],
+                                     cwd=ROOT / "backend", env=api_env, timeout=90)
+            require(migration.returncode == 0, "Local database migration failed")
+            if credentials:
+                with admin.begin() as db:
+                    db.execute(text(f'INSERT INTO "{schema}".credit_campaigns '
+                        '(id, version, catalog_version, enabled, starts_at, ends_at, timezone, '
+                        'reference_price_verified, created_at) VALUES '
+                        '(:id, :version, :catalog_version, :enabled, :starts_at, :ends_at, :timezone, '
+                        ':reference_price_verified, :created_at)'), synthetic_campaign(datetime.now(UTC)))
+            build = _run_bounded(["npm", "run", "build"], cwd=ROOT / "frontend", env=next_env, timeout=240)
+            require(build.returncode == 0, "Local production frontend build failed")
 
         def start(command, env, cwd):
             process = _spawn_owned(command, cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -265,18 +361,31 @@ def run(credentials: dict[str, str], duration: int) -> None:
                      "serve_api(int(sys.argv[1]), int(sys.argv[2]))", str(backend_port), str(postgres.port)],
                     api_env | credentials, ROOT)
         wait_loopback(backend + "/api/health", api)
-        next_app = start(["node", "tests/candidate-https-server.mjs"], next_env, ROOT / "frontend")
-        wait_loopback(frontend + "/register", next_app, tls=tls)
+        processes = [api]
+        if not resume:
+            assert tls is not None
+            next_app = start(["node", "tests/candidate-https-server.mjs"], next_env, ROOT / "frontend")
+            wait_loopback(frontend + "/register", next_app, tls=tls)
+            processes.append(next_app)
         receiver_command = [sys.executable, "-m", "backend.scripts.razorpay_test_webhook_ingress",
                             "--listen-port", str(ingress_port), "--upstream-port", str(backend_port)]
         receiver_env = python_env
         control_dir = home / "test-webhook-control"
         if credentials:
-            control_dir.mkdir(mode=0o700)
+            signing_secret = credentials["RAZORPAY_WEBHOOK_SECRET"]
+            verify_webhook_signing(backend, signing_secret)
+            if wallet_directory is not None:
+                control_dir = wallet_directory / "test-webhook-control"
+            if not resume:
+                control_dir.mkdir(mode=0o700)
+            owner = control_dir.lstat()
+            require(stat.S_ISDIR(owner.st_mode) and owner.st_uid == os.getuid()
+                    and stat.S_IMODE(owner.st_mode) == 0o700, "The Test webhook control directory must be owner-only")
             receiver_command.extend(["--test-control-dir", str(control_dir)])
-            receiver_env = python_env | {"HIREWIZ_TEST_WEBHOOK_SECRET": credentials["RAZORPAY_WEBHOOK_SECRET"]}
+            receiver_env = python_env | {"HIREWIZ_TEST_WEBHOOK_SECRET": signing_secret}
         receiver = start(receiver_command, receiver_env, ROOT)
         wait_loopback(ingress + "/api/health", receiver, status=405)
+        processes.append(receiver)
 
         if not credentials:
             verify_closed_checkout(frontend, ingress, tls)
@@ -287,23 +396,38 @@ def run(credentials: dict[str, str], duration: int) -> None:
             print("Local auth, catalog, wallet, purchase denial and callback isolation passed.")
             return
 
-        with httpx.Client(base_url=frontend, verify=tls, trust_env=False, timeout=10) as client:
-            catalog = client.get("/api/backend/public/credits/catalog")
-            require(catalog.status_code == 200, "Test checkout catalog is unavailable")
-            payload = catalog.json()
-            require(payload.get("checkout_enabled") is True, "Test checkout catalog is closed")
-            offers = {(row["sku"], row["amount_minor"], row["credits"]) for row in payload["products"]
-                      if isinstance(row.get("campaign"), dict) and row["campaign"]["status"] == "active"
-                      and row["campaign"]["reference_price_verified"] is False}
-            require(offers == LAUNCH_PRICES, "Test catalog did not return the expected launch terms")
-        print(f"Checkout lab is available at {frontend}/register", flush=True)
-        print(f"Use the lab's loopback certificate at {cert}", flush=True)
+        if resume:
+            with httpx.Client(base_url=backend, trust_env=False, timeout=5) as client:
+                catalog = client.get("/api/public/credits/catalog")
+                require(catalog.status_code == 200 and catalog.json().get("checkout_enabled") is False,
+                        "A resumed Test wallet must keep checkout closed")
+            print("Test refund receiver is available. Checkout and provider API access are closed.", flush=True)
+        else:
+            assert tls is not None
+            with httpx.Client(base_url=frontend, verify=tls, trust_env=False, timeout=10) as client:
+                catalog = client.get("/api/backend/public/credits/catalog")
+                require(catalog.status_code == 200, "Test checkout catalog is unavailable")
+                payload = catalog.json()
+                require(payload.get("checkout_enabled") is True, "Test checkout catalog is closed")
+                offers = {(row["sku"], row["amount_minor"], row["credits"]) for row in payload["products"]
+                          if isinstance(row.get("campaign"), dict) and row["campaign"]["status"] == "active"
+                          and row["campaign"]["reference_price_verified"] is False}
+                require(offers == LAUNCH_PRICES, "Test catalog did not return the expected launch terms")
+            if wallet_path is not None:
+                with admin.begin() as db:
+                    db.execute(text("SET TRANSACTION READ ONLY"))
+                    identity = wallet_identity(db, schema)
+                save_wallet_state(wallet_path, identity)
+                retain = True
+                print(f"The disposable Test wallet will be retained in its cluster. Record at {wallet_path}", flush=True)
+            print(f"Checkout lab is available at {frontend}/register", flush=True)
+            print(f"Use the lab's loopback certificate at {cert}", flush=True)
         print(f"Point the temporary Test webhook tunnel only to {ingress}{WEBHOOK_PATH}", flush=True)
         print(f"Optional signed Test delivery hold file: {control_dir / 'hold.json'}", flush=True)
         print(f"The lab ends after {duration} minutes or Ctrl+C.", flush=True)
         deadline = time.monotonic() + duration * 60
         while time.monotonic() < deadline:
-            require(all(_owned_status(process) is None for process in (api, next_app, receiver)),
+            require(all(_owned_status(process) is None for process in processes),
                     "A checkout lab process exited")
             time.sleep(0.5)
 
@@ -311,16 +435,25 @@ def run(credentials: dict[str, str], duration: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-disposable-postgres", action="store_true", required=True)
-    parser.add_argument("--razorpay-test", action="store_true", help="Interactively enable Razorpay Test checkout")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--razorpay-test", action="store_true", help="Interactively enable Razorpay Test checkout")
+    mode.add_argument("--resume-test-wallet", action="store_true", help="Receive signed Test callbacks with checkout closed")
+    parser.add_argument("--wallet-directory", type=Path, help="Owner-only directory for the disposable Test wallet record")
     parser.add_argument("--minutes", type=int, default=30, choices=range(5, 61), metavar="5-60")
     args = parser.parse_args()
     credentials = {}
-    if args.razorpay_test:
+    if (args.resume_test_wallet and args.wallet_directory is None
+            or args.wallet_directory is not None and not (args.razorpay_test or args.resume_test_wallet)):
+        parser.error("Supply a private wallet directory for retention or resume in Test mode")
+    if args.razorpay_test or args.resume_test_wallet:
         if not sys.stdin.isatty() or not sys.stderr.isatty():
             parser.error("Razorpay Test credentials require an interactive terminal")
         try:
-            credentials = provider_environment(getpass.getpass("Razorpay Test key ID: "),
-                getpass.getpass("Razorpay Test key secret: "), getpass.getpass("Separate Test webhook secret: "))
+            if args.razorpay_test:
+                credentials = provider_environment(getpass.getpass("Razorpay Test key ID: "),
+                    getpass.getpass("Razorpay Test key secret: "), getpass.getpass("Separate Test webhook secret: "))
+            else:
+                credentials = webhook_environment(getpass.getpass("Separate Test webhook secret: "))
         except ValueError as exc:
             parser.error(str(exc))
 
@@ -329,7 +462,7 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, stop)
     try:
-        run(credentials, args.minutes)
+        run(credentials, args.minutes, wallet_directory=args.wallet_directory, resume=args.resume_test_wallet)
     except KeyboardInterrupt:
         print("Checkout lab stopped.")
     except CheckoutLabError as exc:

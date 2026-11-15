@@ -392,6 +392,70 @@ def _seed_http(backend, *, verify=True):
         raise AssertionError("Actual durable refresh failed to index the finite synthetic feed")
 
 
+SOURCE_UPLOAD_ID = "rup_" + "2" * 32
+SOURCE_SIZE = 4_980_736
+
+
+def _seed_saved_source(engine, backend, tls, evidence):
+    import reportlab.pdfgen.canvas
+
+    padding = SOURCE_SIZE - 2048
+    for _ in range(4):
+        buffer = io.BytesIO()
+        pdf = reportlab.pdfgen.canvas.Canvas(buffer, pageCompression=0)
+        pdf.drawString(80, 740, "Synthetic retained resume")
+        # Place padding inside the content stream, leaving the xref and EOF readable.
+        pdf._code.append("%" + " " * padding)
+        pdf.save()
+        content = buffer.getvalue()
+        if len(content) == SOURCE_SIZE:
+            break
+        padding += SOURCE_SIZE - len(content)
+    assert len(content) == SOURCE_SIZE
+    (evidence / "retained-original.pdf").write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    email = "archive-owner.browser@example.com"
+    with httpx.Client(base_url=backend, timeout=10, verify=tls) as client:
+        for address in (email, "archive-foreign.browser@example.com"):
+            _post(client, "/api/auth/register", {"email": address, "password": "synthetic-browser-password-123",
+                "accepted_terms": True, "confirmed_age_18": True})
+    with engine.begin() as db:
+        row = {"email": email, "bytes": content, "upload": SOURCE_UPLOAD_ID, "size": len(content), "digest": digest}
+        identity = db.execute(text("""
+            INSERT INTO resumes (user_id,original_filename,source_format,source_document,raw_text,skills,
+                experience_years,sections,contact_info,created_at)
+            SELECT id,'retained-original.pdf','pdf',:bytes,'Synthetic retained resume','[]',0,'{}','{}',now()
+            FROM users WHERE email=:email RETURNING id
+        """), row).scalar_one()
+        db.execute(text("""
+            INSERT INTO resume_uploads (id,user_id,idempotency_sha256,request_sha256,original_filename,
+                source_format,media_type,size_bytes,source_sha256,quarantine_bucket,quarantine_name,
+                clean_bucket,clean_name,clean_generation,scan_receipt,enrich_skills,state,expires_at,
+                upload_grant_expires_at,next_attempt_at,attempt_count,result_resume_id,created_at,completed_at)
+            SELECT CAST(:upload AS text),id,CAST(:digest AS text),CAST(:digest AS text),
+                'retained-original.pdf','pdf','application/pdf',:size,
+                CAST(:digest AS text),'synthetic-quarantine','fixture','synthetic-resumes',
+                'clean/' || CAST(:upload AS text) || '/source','1',
+                json_build_object('sha256',CAST(:digest AS text),'size_bytes',CAST(:size AS integer),'source_format','pdf'),
+                false,'released',now(),now(),now(),1,:resume,now(),now()
+            FROM users WHERE email=:email
+        """), row | {"resume": identity})
+    return identity
+
+
+def _saved_source_snapshot(engine):
+    with engine.connect() as db:
+        snapshot = db.execute(text("""
+            SELECT (SELECT count(*) FROM resumes), (SELECT count(*) FROM resume_uploads),
+              (SELECT count(*) FROM model_call_events), (SELECT count(*) FROM analysis_runs),
+              (SELECT count(*) FROM payment_orders), (SELECT sum(ai_credits) FROM users),
+              (SELECT sum(job_service_credits) FROM users),
+              (SELECT encode(sha256(source_document),'hex') FROM resumes LIMIT 1),
+              (SELECT state FROM resume_uploads LIMIT 1)
+        """)).one()
+    return tuple(snapshot)
+
+
 def _sql_proof(engine):
     with engine.connect() as db:
         def scalar(sql):
@@ -469,7 +533,7 @@ def _sql_unified_proof(engine):
 
 
 def run_journey(evidence: Path, *, scenario: str = "legacy"):
-    assert scenario in {"legacy", "unified"}, "Unknown bounded cold-browser scenario"
+    assert scenario in {"legacy", "unified", "source"}, "Unknown bounded cold-browser scenario"
     assert not any(ROOT.glob("**/.env*")), "Run from a credential-free source archive"
     pg = _disposable_postgres()
     schema = "cold_browser_" + uuid4().hex
@@ -501,6 +565,11 @@ def run_journey(evidence: Path, *, scenario: str = "legacy"):
         "backend/tests/test_fresh_user_no_ai_journey.py", "backend/tests/test_cold_browser_runner.py",
         "docs/delivery/FRESH_USER_NO_AI_BROWSER_JOURNEY_2026-10-09.md", "backend/uv.lock",
     )}
+    if scenario == "source":
+        for name in ("frontend/journey/cold-saved-source.spec.ts", "frontend/lib/resumeSource.ts",
+                     "frontend/app/resume/preview/page.tsx", "backend/app/routers/resume_uploads.py",
+                     "backend/app/domains/resume_uploads/service.py"):
+            source_hashes[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     summary = {"status": "failed", "source_hashes": source_hashes,
                "source_bundle_sha256": hashlib.sha256(json.dumps(source_hashes, sort_keys=True).encode()).hexdigest(),
                "scope": "Local synthetic connected workflow only", "production_proof": False}
@@ -538,8 +607,13 @@ def run_journey(evidence: Path, *, scenario: str = "legacy"):
     if scenario == "unified":
         from backend.tests.fixtures.cold_browser_credit_policy import environment
         env.update(environment())
-    _docx(evidence / "original.docx", "Original source resume")
-    _docx(evidence / "custom.docx", "Candidate-written custom resume")
+    if scenario == "source":
+        env.update(RESUME_DIRECT_UPLOAD_ENABLED="true", RESUME_UPLOAD_ADMISSION_ENABLED="false",
+                   NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED="true", RAZORPAY_CHECKOUT_ENABLED="false",
+                   EMPLOYER_DISCOVERY_ENABLED="false")
+    else:
+        _docx(evidence / "original.docx", "Original source resume")
+        _docx(evidence / "custom.docx", "Candidate-written custom resume")
     admin, processes, logs = create_engine(pg), [], []
     engine = create_engine(database_url)
     try:
@@ -569,9 +643,14 @@ def run_journey(evidence: Path, *, scenario: str = "legacy"):
         phase = "next_startup"
         _wait(frontend_url + "/register", processes[1], verify=tls)
         phase = "source_refresh"
-        _seed_http(backend_url, verify=tls)
-        with engine.connect() as db:
-            assert db.execute(text("SELECT count(*) FROM employer_postings")).scalar_one() == 4, "Finite fixture feed must normalize four actual postings"
+        before_source = None
+        if scenario == "source":
+            env["COLD_BROWSER_ARCHIVE_RESUME"] = str(_seed_saved_source(engine, backend_url, tls, evidence))
+            before_source = _saved_source_snapshot(engine)
+        else:
+            _seed_http(backend_url, verify=tls)
+            with engine.connect() as db:
+                assert db.execute(text("SELECT count(*) FROM employer_postings")).scalar_one() == 4, "Finite fixture feed must normalize four actual postings"
         phase = "browser"
         browser = _run_bounded(["npx", "playwright", "test", "-c", "playwright.cold.config.ts"], cwd=ROOT / "frontend", env=env, timeout=180)
         (evidence / "browser.log").write_text(browser.stdout + browser.stderr)
@@ -579,13 +658,23 @@ def run_journey(evidence: Path, *, scenario: str = "legacy"):
             summary["browser_failure"] = _browser_failure_summary(evidence / "playwright.json")
         assert browser.returncode == 0, "Actual Chromium journey failed; inspect local browser log"
         phase = "sql_verification"
-        proof = _sql_unified_proof(engine) if scenario == "unified" else _sql_proof(engine)
+        if scenario == "source":
+            assert before_source == _saved_source_snapshot(engine)
+            assert before_source is not None and before_source[:5] == (1, 1, 0, 0, 0)
+            proof = {"retained_source_and_accounting_unchanged": True, "model_calls": 0, "analysis_runs": 0}
+        else:
+            proof = _sql_unified_proof(engine) if scenario == "unified" else _sql_proof(engine)
         provider = json.loads((evidence / "provider.json").read_text())
         for name in ("forbidden_model_calls", "unexpected_external_requests", "unexpected_socket_egress", "dispatch_errors"):
             assert provider.get(name, 0) == 0
-        assert provider["synthetic_checkout_orders"] == provider["synthetic_feed_gets"] == 1
-        assert provider["synthetic_document_inspections"] == provider["synthetic_document_identity_requests"] == (1 if scenario == "unified" else 2)
-        summary.update({"status": "passed", "scope": f"Local production Next + Chromium + actual FastAPI/auth/SQL; {scenario} credit journey; finite synthetic external providers only",
+        if scenario == "source":
+            assert provider["synthetic_saved_source_grants"] == 3 and provider.get("synthetic_external_requests", 0) == 0
+        else:
+            assert provider["synthetic_checkout_orders"] == provider["synthetic_feed_gets"] == 1
+            assert provider["synthetic_document_inspections"] == provider["synthetic_document_identity_requests"] == (1 if scenario == "unified" else 2)
+        summary.update({"status": "passed", "scope": f"Local production Next + Chromium + actual FastAPI/auth/SQL; "
+                            f"{'saved source' if scenario == 'source' else scenario + ' credit'} journey; "
+                            "finite synthetic external providers only",
                    "new_unified_purchase_proof": scenario == "unified", "legacy_order_created_by_fixture_api": scenario == "legacy",
                    "scenario": scenario, "synthetic_policy_only": scenario == "unified",
                    "production_proof": False, "real_payment": False, "real_employer_contact": False,
@@ -623,6 +712,6 @@ if __name__ == "__main__":
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--allow-disposable-postgres", action="store_true", required=True,
                         help="Allow only the unique-schema loopback disposable database contract")
-    parser.add_argument("--scenario", choices=("legacy", "unified"), default="legacy")
+    parser.add_argument("--scenario", choices=("legacy", "unified", "source"), default="legacy")
     args = parser.parse_args()
     run_journey(args.evidence.resolve(), scenario=args.scenario)

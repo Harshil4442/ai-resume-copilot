@@ -21,6 +21,7 @@ const messageOf = (error: unknown, fallback: string) => error instanceof Error ?
 const failedButPayable = (order: UnifiedCreditOrder | null) => order?.status === "failed"
   && order.payment_status === "payment_failed" && Boolean(order.provider_order_id);
 const unsettled = (order: UnifiedCreditOrder | null) => order?.status === "pending" || (order?.status === "paid" && !order.fulfilled) || failedButPayable(order);
+const canCheckRefund = (order: UnifiedCreditOrder | null) => order?.status === "paid" && order.fulfilled && Boolean(order.provider_order_id);
 
 export function UnifiedBillingPanel({ legacyPending, requestedSku, participationRevision = 0 }: { legacyPending: boolean; requestedSku: string | null; participationRevision?: number }) {
   const client = useQueryClient();
@@ -90,7 +91,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       if (mounted.current && recentReadId.current === read) setRecentRead("ready");
     }).catch(() => { if (mounted.current && recentReadId.current === read) setRecentRead("failed"); });
   }, [acceptStatus]);
-  const readOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
+  const readVerifiedOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
     const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`, signal));
     signal?.throwIfAborted();
     if (!mounted.current) throw new DOMException("Status check stopped", "AbortError");
@@ -98,6 +99,12 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     const previous = currentOrder.current;
     const expected = originalTerms ?? (previous?.order_id === identity ? previous.accepted_quote : undefined);
     if (expected && !sameUnifiedPurchaseQuote(value.accepted_quote, expected)) throw new Error("The original order terms changed. Checkout remains paused.");
+    return value;
+  }, []);
+  const readOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
+    const value = await readVerifiedOrder(identity, signal, originalTerms);
+    signal?.throwIfAborted();
+    const previous = currentOrder.current;
     const refresh = !unsettled(value) && (previous?.order_id !== identity || unsettled(previous));
     if (refresh) {
       recentReadId.current += 1;
@@ -107,7 +114,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     await acceptStatus(value);
     if (refresh && mounted.current && !signal?.aborted) await readRecent(true);
     return value;
-  }, [acceptStatus, readRecent]);
+  }, [acceptStatus, readRecent, readVerifiedOrder]);
 
   useEffect(() => {
     mounted.current = true;
@@ -240,6 +247,37 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
     finally { actionPending.current = false; if (mounted.current) setBusy(false); }
   }
 
+  async function checkRefund() {
+    if (!order || !canCheckRefund(order) || actionPending.current || statusWork.current || busy) return;
+    actionPending.current = true;
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      const result = await apiPostJson<{ resolution: string }>(`/billing/orders/${encodeURIComponent(order.order_id)}/reconcile`, undefined);
+      if (result?.resolution !== "settled") throw new Error("Refund status could not be verified.");
+      const fresh = await readVerifiedOrder(order.order_id, undefined, order.accepted_quote);
+      if (!mounted.current || currentOrder.current?.order_id !== order.order_id) return;
+      const fullyRefunded = fresh.refunded_amount_minor === fresh.amount_minor;
+      if (fresh.provider_order_id !== order.provider_order_id || fresh.refunded_amount_minor < order.refunded_amount_minor
+        || (fullyRefunded ? fresh.status !== "refunded" : !canCheckRefund(fresh))) {
+        throw new Error("Refund status could not be verified.");
+      }
+      currentOrder.current = fresh;
+      setOrder(fresh);
+      if (fresh.refunded_amount_minor === order.refunded_amount_minor) {
+        setMessage("No additional refund is recorded for this order yet.");
+        return;
+      }
+      setMessage("Refund updated. Review your credit balance and history.");
+      window.dispatchEvent(new Event("refresh_unified_credits"));
+      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+    } catch (failure) {
+      if (mounted.current) setError(messageOf(failure, "Could not check the refund status."));
+    } finally {
+      actionPending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   return <section className="space-y-8" aria-label="Credit wallet and purchases">
     <section className="surface-panel p-5 sm:p-6" aria-labelledby="credit-wallet-heading">
       <h2 id="credit-wallet-heading" className="font-display text-2xl">Your credit wallet</h2>
@@ -266,6 +304,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       <p className="text-sm">{order.accepted_quote.credits} credits for {formatCreditPrice(order.amount_minor)} · no automatic renewal</p><p className="break-all text-xs">Order reference: {order.order_id}</p>
       {order.pass_expires_at ? <p className="text-sm">Credits expire <time dateTime={order.pass_expires_at}>{formatCreditDate(order.pass_expires_at)}</time> (Asia/Kolkata).</p> : null}
       {order.refunded_amount_minor > 0 ? <p className="text-sm">Refunded: {formatCreditPrice(order.refunded_amount_minor)}</p> : null}
+      {canCheckRefund(order) ? <Button variant="secondary" disabled={busy || reviewingSku !== null} onClick={() => void checkRefund()}>Check refund status</Button> : null}
       <section aria-label="Original credit pass terms" className="space-y-4 border-t border-border pt-4">
         <p className="text-sm leading-6">This order keeps its original {order.accepted_quote.duration_days}-day pass and supported services below, even if today’s offers change. Its minimum guaranteed credit expiry is <time dateTime={order.accepted_quote.pass_expires_at}>{formatCreditDate(order.accepted_quote.pass_expires_at)}</time> (Asia/Kolkata). Verified payment provides at least 30 full days; a later confirmation can extend this minimum.</p>
         <EligibleCreditServices services={order.accepted_quote.eligible_services} />

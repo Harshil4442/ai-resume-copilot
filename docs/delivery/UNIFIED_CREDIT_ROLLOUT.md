@@ -20,9 +20,11 @@ started all five jobs on 13 November after the additional fixes were pushed.
 Release qualification still requires passing CI and a verified build for the
 final candidate commit.
 
-Last verified production context remains DB8 on committed schema26 with the
-three original services and restored schedules/coordinator. The current
-frontend and its independent changes are recorded in the
+The 15 November production readback verified 100% traffic on four Neon Free
+continuity revisions after moving the retained DB8 API and workers and the
+résumé coordinator to the replacement schema26 database. The inspected checkout,
+optional AI and employer auto-submit flags remained off. The last independently
+pinned frontend source and its verified changes are in
 [deployment progress](AUTO_APPLY_PROGRESS.md#latest-verified-runtime-and-pending-releases).
 The public companion package is 0.8.9. The owner original-file review/download,
 cancel-before-Fill and exact-device revocation portion is verified. Actual
@@ -95,7 +97,7 @@ The future application-submission tariff does not enable final submission.
 | 3. Deterministic processing and reuse | Basic/curated paths, owned saved-result reuse and employer-origin batch discovery | Complete application journeys with real supported sources; no unsupported coverage claim |
 | 4. Qualified AI and document routes | Paid operation adapters, complete-input checks, factuality/count contracts and 200 materialized synthetic native inputs | Actual funded model outputs, complete native runtime/render receipts, blinded human comparison and statistical evidence |
 | 5. Capacity privacy and responsive experience | Account export/erasure, funded free limits, responsive review screens | Representative load/performance measurements and integrated privacy/security review |
-| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and observed; retained data, financial digests and ACL preserved; captured resources restored. Read-only production baseline observation completed for 6–13 November UTC. | Representative seven-day/200-operation shadow accounting |
+| 6. Shadow accounting and migration preparation | Guarded production schema21 to25 migration committed and observed; retained data, financial digests and ACL preserved; captured resources restored. Read-only production baseline observation completed for 6–13 November UTC. On 15 November, the planned schema26 Neon Free cutover matched 83 tables, nine sequence states and access grants before opening traffic. The existing signed-in Dashboard, credits and saved work readback passed 21 minutes 3 seconds after the closure acknowledgement. | Representative seven-day/200-operation shadow accounting and full R03 recovery qualification |
 | 7. Controlled deployment and commercial decision | PR57 merged; tested immutable API/workers promoted; frontend canonical production alias promoted; separate pilot reopening checked | Current account/companion acceptance after lifecycle repair, qualified optimized-route canary, commercial hosting and payment gates |
 | 8. Ongoing quality and economics | Stop conditions and accounting signals defined | Operational alert ownership, regular invoice/quality review and measured ongoing evidence |
 
@@ -518,6 +520,32 @@ With a published employer source, the same data import stopped atomically.
 The source insert created a revision row that was also present in the archive.
 The drill verified the refusal and unchanged target rows. A complete restore
 must retain that archived history and verify catalogue invariants before use.
+
+The owned logical archive rehearsal uses `HIREWIZ_SCHEMA27_LOGICAL_PG_BIN`
+and a full archive that retains database-object ownership and ACLs. The two
+separately initialized clusters use matching synthetic role names. The archive
+preserves populated catalogue history, table and sequence state, trigger and
+routine definitions, effective reader grants, and payment and application replay.
+Recreating the résumé format check with its original migration predicate restores
+that exact check. The unchanged strict verifier still refuses the independently
+restored password-reset purpose/status checks, and comparison identifies other
+deparsed check differences. This logical restore remains unqualified for rollout.
+
+The [migration-built rehearsal](../../backend/tests/test_schema27_application_restore_postgres.py)
+uses `HIREWIZ_SCHEMA27_CANONICAL_PG_BIN`. The target starts with the exact
+Alembic schema. In one transaction, the fixture replaces its empty catalogue
+clock with the archived row, pauses only the source and posting publication
+INSERT triggers, imports the data, and reenables those same triggers. A foreign
+key is exercised while the two triggers are paused, and the evidence writer
+uses its existing version contract. The strict verifier accepts the restored
+database. Table contents, sequences, trigger and routine definitions, constraint
+definitions, the test reader's ACLs, and payment and application replay match.
+The fixture also restores a completed one-job search and its original paid
+history. The saved-search triggers validate the archived item, prove the original
+snapshot and authorize publication to its owner in their normal order. The owner
+can read the same result, another user is refused, and replay leaves the ledger
+unchanged. Production roles and broader data recovery remain outside this local
+test.
 
 The owned physical recovery test uses PostgreSQL 17 `pg_basebackup` with
 streamed WAL and `pg_verifybackup`. Start it only with an explicitly selected

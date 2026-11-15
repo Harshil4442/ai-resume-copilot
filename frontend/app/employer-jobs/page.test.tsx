@@ -74,6 +74,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); client.clear(); });
 
 describe("employer page saved-search composition", () => {
+  it("keeps one stable Jobs loading area until search availability is known", async () => {
+    let resolveAvailability!: (value: ReturnType<typeof ownedBootstrapFixture>) => void;
+    const pending = new Promise<ReturnType<typeof ownedBootstrapFixture>>((resolve) => { resolveAvailability = resolve; });
+    state.get.mockImplementation((url: string) => url === "/auth/bootstrap" ? pending : read(url));
+
+    render(<EmployerJobsPage />, { wrapper: withClient() });
+    expect(screen.getByRole("heading", { name: "Find your next role. Apply with control." })).toBeVisible();
+    expect(screen.getByText("Checking search availability…")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Pilot source availability" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Your applications" })).not.toBeInTheDocument();
+    expect(state.get.mock.calls.some(([url]) => url === overviewPath)).toBe(false);
+
+    await act(async () => { resolveAvailability(ownedBootstrapFixture()); });
+    expect(await screen.findByRole("heading", { name: "Your applications" })).toBeVisible();
+    expect(await screen.findByText("Python Engineer one")).toBeVisible();
+    expect(state.get.mock.calls.filter(([url]) => url === overviewPath)).toHaveLength(1);
+    expect(state.post).not.toHaveBeenCalled();
+  });
+
   it("keeps saved records readable and disables paid search when the refreshed overview is malformed", async () => {
     render(<EmployerJobsPage />, { wrapper: withClient() });
     await screen.findByText("Python Engineer one");

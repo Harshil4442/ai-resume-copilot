@@ -12,6 +12,8 @@ from ..common import utcnow
 from .models import ResumeUpload, ResumeUploadCleanup
 from .storage import ObjectStore, StorageMismatch, StorageUnavailable, valid_generation
 
+_ACTIVE_UPLOAD_STATES = ("awaiting_upload", "queued", "inspecting")
+
 
 def _closed_marker(store: ObjectStore, bucket: str, name: str, generation: str, upload_id: str) -> None:
     """Fresh native facts, never a saved cleanup flag or an upload ACK alone."""
@@ -35,6 +37,14 @@ def ensure_cleanup(db: Session, row: ResumeUpload) -> ResumeUploadCleanup:
     return work
 
 
+def _mark_ended(row: ResumeUpload) -> None:
+    if row.user_id is None or (row.state == "released" and row.result_resume_id is None):
+        row.state, row.original_filename, row.enrich_skills, row.scan_receipt = "cancelled", None, False, None
+        row.lease_token = row.lease_until = None
+    elif row.state in _ACTIVE_UPLOAD_STATES:
+        row.state, row.lease_token, row.lease_until = "expired", None, None
+
+
 def sweep(db: Session, *, limit: int = 100) -> int:
     if not 1 <= limit <= 100:
         raise ValueError("cleanup_batch_limit")
@@ -48,16 +58,47 @@ def sweep(db: Session, *, limit: int = 100) -> int:
             (ResumeUpload.state != "released") & ResumeUploadCleanup.clean_closed_generation.is_(None))
     ).order_by(ResumeUpload.created_at).with_for_update(of=ResumeUpload, skip_locked=True).limit(limit).all()
     for row in rows:
-        if row.user_id is None or (row.state == "released" and row.result_resume_id is None):
-            row.state, row.original_filename, row.enrich_skills, row.scan_receipt = "cancelled", None, False, None
-            row.lease_token = row.lease_until = None
-        elif row.state not in ("released", "cancelled", "expired", "failed", "rejected"):
-            row.state, row.lease_token, row.lease_until = "expired", None, None
+        _mark_ended(row)
         # Existing failed work keeps its retry delay; this sweep never spins it.
         if db.query(ResumeUploadCleanup).filter_by(upload_id=row.id).one_or_none() is None:
             ensure_cleanup(db, row)
     db.commit()
     return len(rows)
+
+
+def _targets_closed(row: ResumeUpload, work: ResumeUploadCleanup | None) -> bool:
+    if row.user_id is None or work is None or work.quarantine_closed_generation is None:
+        return False
+    live_source = row.state == "released" and row.result_resume_id is not None
+    return (valid_generation(work.quarantine_closed_generation)
+            and (live_source or (work.clean_closed_generation is not None
+                                 and valid_generation(work.clean_closed_generation))))
+
+
+def end_upload_wake(factory, upload_id: str, store: ObjectStore) -> bool:
+    """Retire the targets of this upload before acknowledging its terminal wake."""
+    with factory() as db:
+        row = db.query(ResumeUpload).filter_by(id=upload_id).with_for_update().one_or_none()
+        if row is None:
+            return True
+        if row.user_id is not None and row.state in _ACTIVE_UPLOAD_STATES and row.expires_at > utcnow():
+            return False
+        work = db.query(ResumeUploadCleanup).filter_by(upload_id=upload_id).with_for_update().one_or_none()
+        if _targets_closed(row, work):
+            return True
+        _mark_ended(row)
+        if work is None:
+            ensure_cleanup(db, row)
+        db.commit()
+
+    run_cleanup(factory, upload_id, store)
+    # Deletion may have raced the external quarantine retirement. Read the
+    # current upload and markers together before deciding whether to retry.
+    with factory() as db:
+        state = db.query(ResumeUpload, ResumeUploadCleanup).outerjoin(
+            ResumeUploadCleanup, ResumeUploadCleanup.upload_id == ResumeUpload.id,
+        ).filter(ResumeUpload.id == upload_id).one_or_none()
+        return state is None or _targets_closed(*state)
 
 
 def run_cleanup(factory, upload_id: str, store: ObjectStore) -> bool:
@@ -70,7 +111,7 @@ def run_cleanup(factory, upload_id: str, store: ObjectStore) -> bool:
             return False
         live = row.state == "released" and row.user_id is not None and row.result_resume_id is not None
         orphaned = row.user_id is None
-        if row.state in ("awaiting_upload", "queued", "inspecting") and row.user_id is not None and row.expires_at > now:
+        if row.state in _ACTIVE_UPLOAD_STATES and row.user_id is not None and row.expires_at > now:
             return False
         work.lease_token, work.lease_until = token, now + timedelta(seconds=300)
         work.attempt_count = min(work.attempt_count + 1, 1000000)

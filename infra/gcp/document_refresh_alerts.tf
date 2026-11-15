@@ -43,6 +43,14 @@ resource "google_monitoring_alert_policy" "document_refresh_expiry" {
   display_name          = "HireWiz document definitions require attention (24h before expiry)"
   combiner              = "OR"
   notification_channels = var.document_refresh_notification_channels
+  documentation {
+    mime_type = "text/markdown"
+    content   = <<-MARKDOWN
+      This policy counts recent scanner checks that reported expired, nearing-expiry, or unavailable definitions.
+      Google Monitoring closes the incident when the recent count returns to zero.
+      Verify recovery with a new maintenance check reporting `fresh` before reopening uploads.
+    MARKDOWN
+  }
   conditions {
     display_name = "Definition refresh refused, unavailable or nearing unchanged 3-day limit"
     condition_threshold {

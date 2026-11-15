@@ -238,11 +238,17 @@ def fetch_reconciliation(original: OriginalOrder, settings: Any,
                 if refund_id in seen or refund.get("entity") != "refund" or refund.get("payment_id") != payment_id:
                     raise ReconciliationUnavailable("refund_ownership_mismatch")
                 seen.add(refund_id)
-                if refund.get("currency") != original.quote["currency"] or refund.get("status") != "processed":
-                    raise ReconciliationUnavailable("refund_not_final")
+                if refund.get("currency") != original.quote["currency"]:
+                    raise ReconciliationUnavailable("refund_currency_mismatch")
                 if _integer(refund, "amount") <= 0:
                     raise ReconciliationUnavailable("invalid_refund_amount")
-                refunds.append(refund)
+                status = refund.get("status")
+                if status == "processed":
+                    refunds.append(refund)
+                elif status not in ("pending", "failed"):
+                    raise ReconciliationUnavailable("invalid_refund_status")
+            # The approved payment total still has to agree with the processed
+            # entries. Failed and in-flight attempts do not move credits.
             if sum(refund["amount"] for refund in refunds) != refunded:
                 raise ReconciliationUnavailable("incomplete_refund_proof")
         elif payment["status"] != "captured":

@@ -180,8 +180,9 @@ def request_erasure(db: Session, email: str, *, now: datetime | None = None, rea
     if clock() >= row.expires_at.replace(tzinfo=UTC):
         db.rollback()
         return None
+    identifier = item.id
     db.commit()
-    return item.id
+    return identifier
 
 
 def confirm_erasure(db: Session, token: str, confirm_erasure: bool, *, now=None, read_native=None):

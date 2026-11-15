@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy.orm import Session
 
@@ -225,6 +226,69 @@ def _send_failure(item: models.NotificationOutbox, error: Exception) -> str:
     else:
         item.status = "mail_unknown"
     return item.status
+
+
+@dataclass(frozen=True)
+class SecurityEmailRetry:
+    status: Literal["sent", "finished", "retry", "unavailable"]
+    available_at: datetime | None = None
+
+
+def _security_email_row(db: Session, notification_id: str, *, link_only: bool) -> models.NotificationOutbox | None:
+    kinds = ("password_reset", "privacy_erasure") if link_only else ("password_reset", "password_changed", "privacy_erasure")
+    return db.query(models.NotificationOutbox).filter(
+        models.NotificationOutbox.id == notification_id,
+        models.NotificationOutbox.channel == "email",
+        models.NotificationOutbox.notification_type.in_(kinds),
+    ).populate_existing().with_for_update().one_or_none()
+
+
+def _security_email_state(db: Session, item: models.NotificationOutbox | None, now: datetime) -> SecurityEmailRetry:
+    if item is not None:
+        from . import privacy_erasure
+
+        erasure = item.notification_type == privacy_erasure.TYPE
+        if item.status == (privacy_erasure.PENDING if erasure else "pending"):
+            result = SecurityEmailRetry("retry", item.available_at.replace(tzinfo=UTC))
+            db.rollback()
+            return result
+        if item.status == (privacy_erasure.PROCESSING if erasure else "processing"):
+            if item.claimed_at is not None:
+                claim_end = item.claimed_at.replace(tzinfo=UTC) + timedelta(minutes=2 if erasure else 15)
+                if claim_end > now:
+                    db.rollback()
+                    return SecurityEmailRetry("retry", claim_end)
+            # An interrupted provider call can have sent mail. Never send it again.
+            item.status = privacy_erasure.UNKNOWN if erasure else "mail_unknown"
+            item.claimed_at = None
+            db.commit()
+            return SecurityEmailRetry("finished")
+    db.rollback()
+    return SecurityEmailRetry("finished")
+
+
+def retry_security_email(db: Session, notification_id: str, *, link_only: bool = False) -> SecurityEmailRetry:
+    """Process one previously accepted outbox ID in a dedicated worker session."""
+    if type(notification_id) is not str or re.fullmatch(r"ntf_[a-f0-9]{32}", notification_id) is None:
+        raise ValueError("Invalid security email ID")
+    from . import password_reset, privacy_erasure
+
+    item = _security_email_row(db, notification_id, link_only=link_only)
+    now = utcnow()
+    if item is None:
+        db.rollback()
+        return SecurityEmailRetry("finished")
+    lane = privacy_erasure if item.notification_type == privacy_erasure.TYPE else password_reset
+    if item.status != (privacy_erasure.PENDING if lane is privacy_erasure else "pending") or item.available_at.replace(tzinfo=UTC) > now:
+        return _security_email_state(db, item, now)
+    db.rollback()
+    if not lane.configured():
+        return SecurityEmailRetry("unavailable")
+    # Existing senders re-lock the exact row and validate ownership, token,
+    # expiry and the central mail budget before making a provider call.
+    if lane.deliver(db, notification_id):
+        return SecurityEmailRetry("sent")
+    return _security_email_state(db, _security_email_row(db, notification_id, link_only=link_only), utcnow())
 
 
 def deliver_pending_notifications(db: Session, *, limit: int = 50) -> DeliverySummary:

@@ -20,12 +20,49 @@ The launch product is the unified credit pass in the [current requirements](requ
 
 ## 2. Verify the checkout and webhook configuration
 
-The 13 November serving revision has live checkout disabled. Its Razorpay
-credential settings are present as environment values. Before activation,
-move those bindings into managed secrets. Preserve the key ID used by
+The 15 November serving revision `ai-resume-parser-neonfree-20261115` has live
+checkout disabled. A metadata-only read found direct environment bindings for
+`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` and `RAZORPAY_WEBHOOK_SECRET`. Before
+activation, move those bindings into managed secrets. Preserve the key ID used by
 outstanding orders and the signing configuration used by their webhooks.
 If rotation is needed, reconcile the original orders first and verify the
 callback overlap before retiring any earlier credential.
+
+The API, analysis worker and employer worker currently share a runtime service
+account. Any of those workloads could read a secret granted to that account.
+Review the effective scope and same-value custody for all three bindings before
+provisioning them. Once the API has the approved access to verified numeric
+versions, validate the same-image change with `gcloud beta run services update`
+using `--dry-run`, `--no-traffic`, the three exact names in `--remove-env-vars`,
+and the same names mapped to numeric versions in `--update-secrets`. Keep
+output to the service name and compare serving revision and traffic before and
+after validation. Staging, promotion and checkout activation use the existing
+release gates.
+[Cloud Run CLI validation](https://cloud.google.com/sdk/gcloud/reference/beta/run/services/update)
+
+Keep the current database rollout on its qualified identity profile. In a later
+same-image, zero-traffic API rehearsal, review the dedicated keyless API account
+against the exact serving revision's required IAM resources. Verify sign-in,
+saved reads, task enqueueing, approved browser and document service access, and
+worker denial of secret reads and API-account impersonation before granting any
+new payment secret access. The analysis worker, employer worker and résumé
+coordinator keep their existing identities during the rehearsal.
+
+Use `infra.gcp.schema27_api_identity_readback` to compare the private projected
+before and after observations. Pass the owner-only JSON with `--review` and its
+reviewed digest with `--sha256`. The candidate is untagged unless the reviewed
+transition explicitly names a tag. The check verifies the zero-traffic candidate,
+unchanged workloads and the exact private document invoker additions. Verify
+effective credential access separately using the deployed identities.
+
+Use `--prepare` to compute the untagged request digest offline. Set the reviewed
+JSON `kind` to `hirewiz_schema27_api_identity_prepare_v1` and include the typed
+transition as `plan`, the projected prior API as `before`, and its `etag`.
+Provide the fresh native `service`, its `revisions` keyed by short name, and
+`candidate_lookup` with the exact candidate resource `name` and integer
+`status` of `404` on private piped stdin. The command preserves current traffic
+and aliases and prints only the request digest and local status. It has no
+Cloud Run write capability.
 
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
@@ -79,21 +116,53 @@ Point the HTTPS tunnel only at the printed loopback
 the exact printed callback path in the Test dashboard. The
 receiver relays the raw body and the Razorpay signature and event ID. It returns
 only the HTTP status and keeps no delivery records. Verify that `GET /api/health`
-and unrelated POST paths are refused at the public endpoint. The launcher
-stops its local processes and drops only its own schema on exit. Capture
-sanitized evidence while the launcher is running.
+and unrelated POST paths are refused at the public endpoint. By default the
+launcher stops its local processes and drops its disposable schema on exit.
+Capture sanitized evidence while the launcher is running.
+
+If a refund may outlast the checkout window, use the dedicated disposable
+PostgreSQL cluster on port `55434` and an existing owner-only directory. Add
+`--wallet-directory /absolute/path/to/private-test-wallet` to the Test checkout
+command. The launcher retains its disposable schema and records its local
+database identity. Shut down both the temporary relay and the dedicated cluster
+while the refund processes. Before stopping checkout, verify that the original
+Test order and payment are bound to one credit lot. Resolve any incomplete
+order binding through the original Test checkout session before resuming with
+the signing secret alone. Keep the Test event eligible for replay in Razorpay.
+After Razorpay processes it, restart the same cluster and run:
+
+```sh
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout \
+  --allow-disposable-postgres --resume-test-wallet --minutes 15 \
+  --wallet-directory /absolute/path/to/private-test-wallet
+```
+
+Enter the separate Test webhook signing secret at the hidden prompt. The restored
+receiver accepts signed callbacks with checkout and outbound provider calls closed.
+Point the Test callback at its temporary relay and replay the exact pending Test
+refund event if Razorpay offers replay. Verify its credit adjustment in the same
+retained wallet, then retire the temporary callback, relay and disposable cluster.
+The wallet record contains only the schema, migration revision and local database
+identity. Preserve the separate private webhook control directory with the wallet
+so an interrupted capture can still be matched to its original delivery digest.
+Remove the capture hold rule after verifying the retry and before refund testing.
+[Razorpay replay controls](https://razorpay.com/docs/webhooks/replay-events/)
 
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
 verify they settle one credit lot. To verify a genuine Razorpay retry, atomically
 write `{"ack_loss_order":"order_<exact-Test-order-ID>"}` to the printed private
 `hold.json` with mode `0600` before paying. Use this rule by itself. For the first
 matching signed `order.paid` with an event ID, the receiver returns 503 only after
-the local billing handler confirms that the event committed. Its empty,
-order-specific marker keeps that response one-shot across receiver restarts.
-Leave the receiver and webhook running, and verify one recorded event and one
-credit lot after Razorpay retries the original event ID. If the retry is not
-observed, record it as pending. Remove the rule before testing partial and
-remaining refunds, when the Test payment method supports them.
+the local billing handler confirms that the event committed. The private
+`ack-loss-<order-digest>.used` marker records only the SHA-256 digest of that
+event ID and keeps the response one-shot across receiver restarts. Keep the rule
+armed until the same signed event gets a successful `duplicate` response and
+the companion `.replayed` marker contains the same digest. Confirm the first
+failed delivery in Razorpay and verify one recorded event and one credit lot in
+the isolated ledger. If either delivery observation is unavailable, keep the
+retry verification pending. A legacy empty `.used` marker prevents another
+deliberate failure but cannot verify which event retried. Remove the rule
+before testing partial and remaining refunds, when supported.
 
 If a previous lab runner is already active, a second receiver can target that
 runner's verified loopback API port directly. Use a new loopback receiver port,
