@@ -16,13 +16,16 @@ before acting on a plan. The cutover receipts establish lineage to the old
 database and do not substitute for fresh readback.
 
 Keep the old plan shapes, journal hashes, collectors and retained evidence as
-recorded. Use a versioned outer scope for the new bridge plan if reusing the
-existing `SuccessorPlan` traffic machinery. Bind the new scope to the complete
-inner plan hash and fresh journal nonce. Verify that relation before each
-operation, including rollback and reconciliation. Give the migration a new
-plan kind that hashes the same database scope, bridge plan and bridge receipts
-into its intent and same-transaction audit. All phases must refuse swapped
-plans, receipts, scopes or journals before using credentials or issuing actions.
+recorded. Use a distinct bridge plan with
+[continuity database custody](../../infra/gcp/schema27_continuity_scope.py).
+The old `SuccessorPlan` requires numeric observer and retired secret fields
+that the recovered database does not have. Reuse the traffic builders and
+journal format. Bind the database scope to the complete bridge metadata hash
+and fresh journal nonce, and verify it before every operation. Give the
+migration a new plan kind that hashes the same database scope, bridge plan and
+bridge receipts into its intent and same-transaction audit. All phases must
+refuse swapped plans, receipts, scopes or journals before accessing credentials
+or issuing actions.
 
 Validate the exact native Git SHA, successful CI, Cloud Build output digest,
 bridge image and controller source. Keep scanner proof, funding and model
@@ -38,6 +41,14 @@ database continuity scope does not qualify any of those gates.
 | Resume coordinator, OID `49158` | Independently verify `hirewiz-resume-coordinator-db-20261015:2`, current revision and rollout state. Keep it under the external resource check while the three app services are rolled. |
 | Migrator, OID `49152` | Verify `NOLOGIN`, no active migrator session, no persistent schema `CREATE` privilege and no extra role authority. The recovered role has no issuance history for a numeric migrator credential. Old disabled secret metadata, when retained for lineage, describes the old project. |
 | Bootstrap, `neondb_owner` | Verify the direct endpoint and database owner through the normal Neon manager. Pin its native OID by readback before building the write connection. It can assume the exact NOLOGIN migrator for the reviewed transaction; establish that membership from native SQL. |
+
+Capture a nonce-scoped commitment to the existing observer credential in the
+private bridge plan. The controller must match the committed scope to the
+journal before resolving the credential. The continuity reader opens the
+same-user role bundle read only and refuses permission drift, symlinks, and
+missing files. It verifies the commitment in memory before authenticating
+the exact database observer. Keep the resolved credential and its private
+plan out of logs and provider requests.
 
 The current [continuity observer](../../backend/scripts/neon_continuity_identity.py)
 returns only identity metadata. To implement the release port, extract a
