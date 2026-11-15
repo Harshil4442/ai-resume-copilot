@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from sqlalchemy import text
-from sqlalchemy.engine import Connection
-
 from infra.gcp import schema27_continuity_bridge_plan as bridge
 from infra.gcp import schema27_continuity_catalog as catalog
 from infra.gcp import schema27_continuity_scope as scope
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+from sqlalchemy.orm import Session
 
 # isort: split
 from scripts import browser_schema19_step as identity_step
@@ -141,6 +141,24 @@ def _observe_after(
                              rolling.sha(expected))
 
 
+def _started_records(migration_journal, intent):
+    started = migration_journal.read(STARTED)
+    ack = migration_journal.read(COMMIT_ACK)
+    checked = migration_journal.read(CHECKED)
+    _need(started is not None, "started_required")
+    _need(rolling.canonical(started) == rolling.canonical(intent.snapshot()), "started_intent_changed")
+    _need(ack is None or (set(ack) == {"plan_sha256", "receipt_sha256"} and scope._hash(ack["receipt_sha256"])),
+          "commit_ack_changed")
+    return ack, checked
+
+
+def _verify_observation(migration_journal, observed, ack, checked):
+    _need(ack is None or (observed.migration_committed and ack["receipt_sha256"] == observed.receipt_sha256),
+          "commit_ack_changed")
+    _need(checked is None or (observed.migration_committed and rolling.canonical(checked) == rolling.canonical(
+        observed.journal_payload() | {"plan_sha256": migration_journal.plan_hash})), "checked_observation_changed")
+
+
 def reconcile_locked(
     custody: scope.BridgeCustody, bridge_journal: rolling.Journal, migration_journal: rolling.Journal,
     identity: identity_step.MigrationIdentity, intent: step.MigrationIntent, *,
@@ -149,13 +167,7 @@ def reconcile_locked(
     """Called under the bridge then migration journal locks. Never replay SQL or write a journal."""
     validate_custody(custody, bridge_journal, migration_journal, identity, intent,
                      bridge_plan_sha256=bridge_plan_sha256, bridge_receipts_sha256=bridge_receipts_sha256)
-    started = migration_journal.read(STARTED)
-    ack = migration_journal.read(COMMIT_ACK)
-    checked = migration_journal.read(CHECKED)
-    _need(started is not None, "started_required")
-    _need(rolling.canonical(started) == rolling.canonical(intent.snapshot()), "started_intent_changed")
-    _need(ack is None or (set(ack) == {"plan_sha256", "receipt_sha256"} and scope._hash(ack["receipt_sha256"])),
-          "commit_ack_changed")
+    ack, checked = _started_records(migration_journal, intent)
     _need(type(expected_liabilities) is tuple, "liability_pins_invalid")
     entered_before = False
     try:
@@ -175,8 +187,44 @@ def reconcile_locked(
             if str(after_error) == TRANSACTION_PENDING:
                 _need(False, "original_transaction_pending")
             _need(False, "observer_unavailable")
-    _need(ack is None or (observed.migration_committed and ack["receipt_sha256"] == observed.receipt_sha256),
-          "commit_ack_changed")
-    _need(checked is None or (observed.migration_committed and rolling.canonical(checked) == rolling.canonical(
-        observed.journal_payload() | {"plan_sha256": migration_journal.plan_hash})), "checked_observation_changed")
+    _verify_observation(migration_journal, observed, ack, checked)
     return observed
+
+
+def funding_facts_locked(
+    custody: scope.BridgeCustody, bridge_journal: rolling.Journal, migration_journal: rolling.Journal,
+    identity: identity_step.MigrationIdentity, intent: step.MigrationIntent, *,
+    bridge_plan_sha256: str, bridge_receipts_sha256: str, expected_liabilities: LiabilityPins, policy,
+) -> dict:
+    """Inspect complete expense facts on the same authenticated snapshot as the migration receipt."""
+    from app.domains.credits import finance, payment_expenses
+
+    validate_custody(custody, bridge_journal, migration_journal, identity, intent,
+                     bridge_plan_sha256=bridge_plan_sha256, bridge_receipts_sha256=bridge_receipts_sha256)
+    ack, checked = _started_records(migration_journal, intent)
+    _need(type(expected_liabilities) is tuple, "liability_pins_invalid")
+    finance.require_current_policy(policy)
+    entered = False
+    try:
+        with catalog.authenticated_observer(custody.database, custody.nonce, Purpose.AFTER_SCHEMA27, recovery=True) as db:
+            entered = True
+            observed = _observe_after(db, identity, intent, expected_liabilities)
+            _need(observed.migration_committed, "same_transaction_receipt_required")
+            _verify_observation(migration_journal, observed, ack, checked)
+            with Session(bind=db, autoflush=False) as reader:
+                snapshot = payment_expenses.collect_expenses(reader, policy=policy)
+    except NeonIdentityDenied as error:
+        if not entered and str(error) == TRANSACTION_PENDING:
+            _need(False, "original_transaction_pending")
+        if not entered and str(error) == SCHEMA_MISMATCH:
+            _need(False, "funding_schema27_required")
+        _need(False, "funding_observer_unavailable")
+    finance.require_current_policy(policy)
+    return {
+        "status": "continuity_funding_facts_inspected", "schema": observed.schema,
+        "migration_receipt_sha256": observed.receipt_sha256, "facts_sha256": snapshot.facts_sha256,
+        "policy_sha256": rolling.sha(policy.model_dump(mode="json")),
+        "total_components_count": len(snapshot.components), "unresolved_count": len(snapshot.unresolved),
+        "bank_cash_independently_verified": False, "activation_granted": False,
+        "replay_authorized": False, "cloud_resource_mutations": 0,
+    }

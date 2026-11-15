@@ -29,6 +29,7 @@ rolling = scope.rolling
 SCHEMA_KIND = "hirewiz_schema27_continuity_migration_v1"
 METADATA_URL = "postgresql+psycopg://migration_metadata@127.0.0.1:1/metadata"
 INSPECT = "inspect-migration-outcome"
+INSPECT_FUNDING = "inspect-funding-facts"
 
 
 def need(value, reason):
@@ -199,10 +200,12 @@ def _verify_inspection_source(boundary, bridge_plan, bridge_journal, plan, recov
          "inspection_bridge_receipts")
 
 
-def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal):
+def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal, *, funding_policy=None):
     from infra.gcp import schema27_continuity_reconcile as recovery
 
-    need(mode in {"upgrade", "reconcile", INSPECT} and type(boundary) is native.NativeContinuityBoundary
+    need(mode in {"upgrade", "reconcile", INSPECT, INSPECT_FUNDING}
+         and (funding_policy is not None) == (mode == INSPECT_FUNDING)
+         and type(boundary) is native.NativeContinuityBoundary
          and type(bridge_plan) is bridge.ContinuityBridgePlan and type(bridge_journal) is rolling.Journal
          and type(plan) is MigrationPlan and type(migration_journal) is rolling.Journal
          and migration_journal.plan_hash == rolling.sha(asdict(plan))
@@ -211,7 +214,8 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
     custody = bridge_plan.custody()
     identity = bootstrap.migration_identity(bridge_plan.database)
     intent = plan.intent(identity, native.successor.native.host_auth.ACCOUNT)
-    with _journal_locks(bridge_journal, migration_journal, inspection=mode == INSPECT):
+    inspection = mode in {INSPECT, INSPECT_FUNDING}
+    with _journal_locks(bridge_journal, migration_journal, inspection=inspection):
         plan.validate(bridge_plan, bridge_journal)
         recovery.validate_custody(custody, bridge_journal, migration_journal, identity, intent,
                                   bridge_plan_sha256=plan.bridge_plan_sha256,
@@ -225,9 +229,20 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
         retained_fence = bridge_journal.read(scope.MIGRATION_FENCE)
         matched_fence = retained_fence == fence | {"plan_sha256": bridge_journal.plan_hash}
         need(matched_fence or (retained_fence is None and mode == "upgrade"), "bridge_migration_intent")
-        if mode == INSPECT:
+        if inspection:
             need(rolling.canonical(started) == rolling.canonical(intent.snapshot()), "inspection_intent_changed")
             _verify_inspection_source(boundary, bridge_plan, bridge_journal, plan, recovery)
+        if mode == INSPECT_FUNDING:
+            with _metadata(boundary.root):
+                from app.domains.credits.finance import FinancialPolicy
+
+                return recovery.funding_facts_locked(
+                    custody, bridge_journal, migration_journal, identity, intent,
+                    bridge_plan_sha256=plan.bridge_plan_sha256, bridge_receipts_sha256=plan.bridge_receipts_sha256,
+                    expected_liabilities=bridge_plan.protected_liabilities,
+                    policy=FinancialPolicy.model_validate(funding_policy),
+                )
+        if mode == INSPECT:
             observed = recovery.reconcile_locked(
                 custody, bridge_journal, migration_journal, identity, intent,
                 bridge_plan_sha256=plan.bridge_plan_sha256, bridge_receipts_sha256=plan.bridge_receipts_sha256,
@@ -292,13 +307,17 @@ def load(raw):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("capture", "upgrade", "reconcile", INSPECT))
+    parser.add_argument("mode", choices=("capture", "upgrade", "reconcile", INSPECT, INSPECT_FUNDING))
     for name in ("root", "target-root", "prior-root", "bridge-plan", "bridge-journal", "plan"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--bridge-plan-sha256", required=True)
     parser.add_argument("--plan-sha256")
     parser.add_argument("--journal", type=Path)
+    parser.add_argument("--funding-policy", type=Path)
+    parser.add_argument("--funding-policy-sha256")
     args = parser.parse_args()
+    need((args.funding_policy is not None) == (args.mode == INSPECT_FUNDING)
+         and (args.funding_policy_sha256 is not None) == (args.mode == INSPECT_FUNDING), "funding_policy_arguments")
     need(Path(__file__).resolve() == args.root.resolve() / "infra/gcp/schema27_continuity_migration.py",
          "controller_origin")
     read = native.app26.initial._read_pinned
@@ -314,7 +333,11 @@ def main():
             need(args.journal is not None and type(args.plan_sha256) is str, "private_migration_plan")
             plan = load(read(args.plan, args.plan_sha256))
             migration = rolling.Journal(args.journal, plan)
-            result = execute(args.mode, boundary, bridge_plan, journal, plan, migration)
+            policy = None
+            if args.mode == INSPECT_FUNDING:
+                policy = rolling.release._json(read(args.funding_policy, args.funding_policy_sha256))
+                need(type(policy) is dict, "funding_policy_shape")
+            result = execute(args.mode, boundary, bridge_plan, journal, plan, migration, funding_policy=policy)
         print(json.dumps(result))
     finally:
         boundary.close()

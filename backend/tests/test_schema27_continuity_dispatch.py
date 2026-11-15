@@ -5,6 +5,8 @@ import json
 import sys
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from shutil import copytree
 from types import SimpleNamespace
@@ -230,7 +232,8 @@ def test_inspection_does_not_create_missing_owner_lock(ready):
     assert not lock.exists()
 
 
-def test_inspector_cli_initializes_without_cloud_or_bootstrap(ready, monkeypatch, tmp_path, capsys):
+@pytest.mark.parametrize("mode", [migration.INSPECT, migration.INSPECT_FUNDING])
+def test_inspector_cli_initializes_without_cloud_or_bootstrap(ready, monkeypatch, tmp_path, capsys, mode):
     retain_inspection_proof(ready)
     root, bridge_plan = ready.lane.boundary.root, ready.lane.plan
     bridge_file, migration_file = tmp_path / "bridge-plan.json", tmp_path / "migration-plan.json"
@@ -250,14 +253,37 @@ def test_inspector_cli_initializes_without_cloud_or_bootstrap(ready, monkeypatch
         "schema26_observed_reconcile_only", migration.contract.BEFORE,
         ready.plan.catalog26_sha256, ready.plan.retained_acl_sha256, None,
     ))
+    policy_args = []
+    if mode == migration.INSPECT_FUNDING:
+        policy_file = tmp_path / "financial-policy.json"
+        now = datetime.now(UTC)
+        policy_bytes = migration.rolling.canonical({
+            "version": "owned-loss-test", "valid_from": (now - timedelta(hours=1)).isoformat(),
+            "expires_at": (now + timedelta(hours=1)).isoformat(),
+            "provenance": "synthetic_test", "evidence_sha256": "a" * 64,
+        })
+        policy_file.write_bytes(policy_bytes)
+        policy_file.chmod(0o600)
+        policy_sha = sha256(policy_bytes).hexdigest()
+        policy_args = ["--funding-policy", str(policy_file), "--funding-policy-sha256", policy_sha]
+        monkeypatch.setattr(migration, "_metadata", lambda _root: nullcontext())
+
+        def funding_inspect(*_args, policy, **_options):
+            assert policy.version == "owned-loss-test"
+            return {"status": "continuity_funding_facts_inspected", "activation_granted": False}
+
+        monkeypatch.setattr(recovery, "funding_facts_locked", funding_inspect)
     monkeypatch.setattr(sys, "argv", [
-        "schema27_continuity_migration", migration.INSPECT,
+        "schema27_continuity_migration", mode,
         "--root", str(root), "--target-root", str(root), "--prior-root", str(root),
         "--bridge-plan", str(bridge_file), "--bridge-plan-sha256", bridge_sha,
         "--bridge-journal", str(ready.lane.journal.directory),
         "--plan", str(migration_file), "--plan-sha256", migration_sha, "--journal", str(ready.journal.directory),
-    ])
+    ] + policy_args)
     migration.main()
     summary = json.loads(capsys.readouterr().out)
-    assert summary["status"] == "continuity_migration_outcome_inspected"
-    assert summary["migration_committed"] is summary["formal_reconciliation"] is False
+    if mode == migration.INSPECT:
+        assert summary["status"] == "continuity_migration_outcome_inspected"
+        assert summary["migration_committed"] is summary["formal_reconciliation"] is False
+    else:
+        assert summary == {"status": "continuity_funding_facts_inspected", "activation_granted": False}

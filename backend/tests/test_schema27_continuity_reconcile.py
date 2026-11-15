@@ -3,11 +3,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 from types import SimpleNamespace
 
 import pytest
+from infra.gcp import schema27_continuity_reconcile as recovery
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 from test_mail_budget_postgres import owned_pg_url as owned_pg_url
 from test_neon_continuity_migration_permissions_postgres import owned26 as owned26
@@ -15,8 +18,7 @@ from test_neon_continuity_migration_permissions_postgres import (
     set_only_bootstrap as set_only_bootstrap,
 )
 from test_notification_schema27_step_postgres import FLAGS, ROOT
-
-from infra.gcp import schema27_continuity_reconcile as recovery
+from test_payment_expenses import paid
 
 NONCE = "a" * 32
 RECEIPTS = "b" * 64
@@ -183,7 +185,56 @@ def test_sql_receipt_json_requires_exact_types_and_unique_keys():
     assert not recovery._same_json('{"replay_authorized":true,"replay_authorized":false}', {"replay_authorized": False})
 
 
-def test_owned_postgres_readback_requires_same_transaction_detached_audit(owned26, set_only_bootstrap):
+def current_policy(**changes):
+    from app.domains.credits.finance import FinancialPolicy
+
+    now = datetime.now(UTC)
+    return FinancialPolicy.model_validate({
+        "version": "owned-loss-test", "valid_from": now - timedelta(hours=1), "expires_at": now + timedelta(hours=1),
+        "provenance": "synthetic_test", "evidence_sha256": "a" * 64,
+    } | changes)
+
+
+def funding(case, policy):
+    with case.bridge.locked(), case.migration.locked():
+        return recovery.funding_facts_locked(
+            case.binding, case.bridge, case.migration, case.identity, case.intent,
+            bridge_plan_sha256=case.bridge.plan_hash, bridge_receipts_sha256=RECEIPTS,
+            expected_liabilities=getattr(case, "liabilities", ()), policy=policy,
+        )
+
+
+@pytest.mark.parametrize(("reason", "error"), [
+    (recovery.SCHEMA_MISMATCH, "funding_schema27_required"),
+    (recovery.TRANSACTION_PENDING, "original_transaction_pending"),
+    ("wrong_native_target", "funding_observer_unavailable"),
+])
+def test_funding_requires_exact_after_schema_transport(started, monkeypatch, reason, error):
+    seen = install_observer(monkeypatch, started, after_error=reason)
+    monkeypatch.setattr(recovery, "Session", lambda *_a, **_kw: pytest.fail("Unverified target reached expense read"))
+    with pytest.raises(recovery.rolling.RollingDenied, match=error):
+        funding(started, current_policy())
+    assert seen == [recovery.Purpose.AFTER_SCHEMA27]
+
+
+def test_funding_refuses_changed_ack_before_expense_read(started, monkeypatch):
+    install_observer(monkeypatch, started)
+    started.migration.record(recovery.COMMIT_ACK, {"receipt_sha256": "1" * 64})
+    monkeypatch.setattr(recovery, "Session", lambda *_a, **_kw: pytest.fail("Unverified receipt reached expense read"))
+    with pytest.raises(recovery.rolling.RollingDenied, match="commit_ack_changed"):
+        funding(started, current_policy())
+
+
+def test_funding_refuses_expired_policy_before_accessing_target(started, monkeypatch):
+    from app.domains.credits.finance import FundingUnavailable
+
+    seen = install_observer(monkeypatch, started)
+    with pytest.raises(FundingUnavailable, match="needs a current review"):
+        funding(started, current_policy(expires_at=datetime.now(UTC) - timedelta(minutes=1)))
+    assert not seen
+
+
+def test_owned_postgres_readback_requires_same_transaction_detached_audit(owned26, set_only_bootstrap, custody, monkeypatch):
     identity = set_only_bootstrap
     engine, step, contract = owned26.engine, recovery.step, recovery.contract
     password = token_urlsafe(24)
@@ -191,7 +242,7 @@ def test_owned_postgres_readback_requires_same_transaction_detached_audit(owned2
         admin.exec_driver_sql(f'ALTER ROLE "{identity.observer}" PASSWORD \'{password}\'')
         admin.exec_driver_sql(f'GRANT SELECT ON ALL TABLES IN SCHEMA public TO "{identity.observer}"')
         intent = step.MigrationIntent(
-            NONCE, "owned@example.invalid", "1" * 64, recovery.rolling.sha(asdict(identity)),
+            NONCE, "owned@example.invalid", custody.migration.plan_hash, recovery.rolling.sha(asdict(identity)),
             RECEIPTS, contract.verify_source(ROOT), contract.before.observe(admin),
             recovery.rolling.sha(recovery.retained_step.old_acls(admin, identity)),
         )
@@ -203,20 +254,33 @@ def test_owned_postgres_readback_requires_same_transaction_detached_audit(owned2
             result = step.upgrade_transaction(writer, identity, intent, root=ROOT, flags=FLAGS,
                                               journal_intent_sha256=intent.sha256())
 
-    def read_after():
+    @contextmanager
+    def observer_connection(_pin, _nonce, purpose, **options):
+        assert purpose is recovery.Purpose.AFTER_SCHEMA27 and options == {"recovery": True}
         observer_engine = create_engine(engine.url.set(username=identity.observer, password=password), poolclass=NullPool, hide_parameters=True)
         try:
             with observer_engine.begin() as observer:
                 observer.exec_driver_sql("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-                return recovery._observe_after(observer, identity, intent, liabilities)
+                assert observer.scalar(text("SHOW transaction_read_only")) == "on"
+                yield observer
         finally:
             observer_engine.dispose()
 
-    observed = read_after()
-    assert observed.migration_committed and observed.receipt_sha256 == result["receipt_sha256"]
+    custody.intent, custody.identity, custody.liabilities = intent, identity, liabilities
+    custody.migration.record(recovery.STARTED, intent.snapshot())
+    custody.migration.record(recovery.COMMIT_ACK, {"receipt_sha256": result["receipt_sha256"]})
+    monkeypatch.setattr(recovery.catalog, "_identity", lambda _pin: identity)
+    monkeypatch.setattr(recovery.catalog, "authenticated_observer", observer_connection)
+    with Session(engine) as db:
+        paid(db, refund=1)
+        db.commit()
+    observed = funding(custody, current_policy())
+    assert observed["migration_receipt_sha256"] == result["receipt_sha256"]
+    assert observed["total_components_count"] == 2 and observed["unresolved_count"] == 0
+    assert observed["bank_cash_independently_verified"] is observed["activation_granted"] is False
     with engine.begin() as admin:
         admin.execute(text("UPDATE public.admin_audit_events SET after_state=jsonb_set(after_state::jsonb, "
                            "'{replay_authorized}', '0'::jsonb)::json WHERE id=:id"),
                       {"id": step.AUDIT_PREFIX + intent.nonce})
     with pytest.raises(recovery.rolling.RollingDenied, match="same_transaction_receipt_required"):
-        read_after()
+        funding(custody, current_policy())
