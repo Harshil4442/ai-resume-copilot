@@ -16,12 +16,15 @@ before acting on a plan. The cutover receipts establish lineage to the old
 database and do not substitute for fresh readback.
 
 Keep the old plan shapes, journal hashes, collectors and retained evidence as
-recorded. Use a distinct bridge plan with
+recorded. The [continuity bridge plan](../../infra/gcp/schema27_continuity_bridge_plan.py)
+uses a separate typed plan with
 [continuity database custody](../../infra/gcp/schema27_continuity_scope.py).
 The old `SuccessorPlan` requires numeric observer and retired secret fields
-that the recovered database does not have. Reuse the traffic builders and
-journal format. Bind the database scope to the complete bridge metadata hash
-and fresh journal nonce, and verify it before every operation. Give the
+that the recovered database does not have. The new loader checks the supplied
+file hash and kind, validates the source and service pins locally, and binds
+the complete bridge metadata and database scope to the existing journal
+format. The normal traffic builders accept the resulting immutable plan.
+The native dispatcher still needs to verify this custody before acting. Give the
 migration a new plan kind that hashes the same database scope, bridge plan and
 bridge receipts into its intent and same-transaction audit. All phases must
 refuse swapped plans, receipts, scopes or journals before accessing credentials
