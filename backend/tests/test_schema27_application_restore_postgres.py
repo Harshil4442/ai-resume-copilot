@@ -25,13 +25,18 @@ from uuid import uuid4
 
 import pytest
 from backend.app import security
+from backend.app.billing.purchase_quote import purchase_request_id
 from backend.app.billing.service import process_razorpay_webhook
 from backend.app.database import get_db
 from backend.app.domains.career import evidence_fence_definition, evidence_write_fence
 from backend.app.domains.career import schemas as career_schemas
 from backend.app.domains.career import service as career_service
 from backend.app.domains.credits import service
-from backend.app.domains.credits.models import CreditExecutionAttempt, CreditExecutionHold
+from backend.app.domains.credits.models import (
+    CreditExecutionAttempt,
+    CreditExecutionHold,
+    CreditGrant,
+)
 from backend.app.domains.dispatch.models import DispatchOutbox
 from backend.app.domains.employer import (
     admissions,
@@ -55,6 +60,7 @@ from backend.app.models import (
     ResumeVersion,
     User,
 )
+from backend.app.routers import billing as billing_routes
 from backend.app.routers import credits as credit_routes
 from backend.app.routers import resume as resume_routes
 from backend.app.routers.v1 import employer as employer_routes
@@ -69,7 +75,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 from test_employer_admissions_postgres import _migrate
 from test_employer_services import ANSWERS, FORM
-from test_razorpay_billing import _capture_payload
+from test_razorpay_billing import (
+    TEST_KEY_ID,
+    TEST_KEY_SECRET,
+    TEST_WEBHOOK_SECRET,
+    _capture_payload,
+    _post_event,
+)
 from test_resume_layout import _edit, _first_unit, _pdf
 from test_unified_credits import reserve
 
@@ -169,6 +181,20 @@ def assert_payment_and_reserve_replay(engine, stamp, capture, reservation_id, so
         db.commit()
 
 
+def seed_credit_purchase(db, stamp, *, idempotency_key, reference, provider_order_id, provider_key_id=None):
+    quote = service.issue_purchase_quote(db, user_id=1, sku="starter_pass",
+                                         idempotency_key=idempotency_key, checkout_enabled=True, now=stamp)
+    quote = service.accept_purchase_quote(db, user_id=1, quote_id=quote.id, order_id=reference, now=stamp)
+    view = service.quote_response(quote, now=stamp)
+    payment = PaymentOrder(public_id=reference, user_id=1, provider_mode="test", provider_key_id=provider_key_id,
+                           provider_order_id=provider_order_id, sku=view.sku, catalog_version=view.catalog_version,
+                           cost_policy_snapshot={"unified_purchase_quote": quote.snapshot},
+                           entitlement_kind="credit_pass", entitlement_quantity=view.credits,
+                           billing_country_confirmed_at=stamp, gross_amount_minor=view.amount_minor, status="created")
+    db.add(payment)
+    return payment
+
+
 def seed_application(source, stamp):
     source_bytes = b"\\documentclass{article}\n\\begin{document}Synthetic Candidate\\end{document}\n"
     with Session(source) as db:
@@ -184,20 +210,9 @@ def seed_application(source, stamp):
                             quarantine_bucket="owned-quarantine", quarantine_name="owned/source.tex",
                             clean_bucket="owned-clean", clean_name="owned/source.tex",
                             expires_at=stamp + timedelta(days=1), upload_grant_expires_at=stamp))
-        quote = service.issue_purchase_quote(db, user_id=1, sku="starter_pass",
-                                            idempotency_key="owned-quote", checkout_enabled=True, now=stamp)
-        order_id = "owned-schema27-order"
-        quote = service.accept_purchase_quote(db, user_id=1, quote_id=quote.id,
-                                              order_id=order_id, now=stamp)
-        view = service.quote_response(quote, now=stamp)
-        payment = PaymentOrder(public_id=order_id, user_id=1, provider_mode="test",
-                               provider_order_id="order_owned_schema27", sku=view.sku,
-                               catalog_version=view.catalog_version,
-                               cost_policy_snapshot={"unified_purchase_quote": quote.snapshot},
-                               entitlement_kind="credit_pass", entitlement_quantity=view.credits,
-                               billing_country_confirmed_at=stamp, gross_amount_minor=view.amount_minor,
-                               status="created")
-        db.add(payment)
+        payment = seed_credit_purchase(db, stamp, idempotency_key="owned-quote",
+                                       reference="owned-schema27-order", provider_order_id="order_owned_schema27")
+        credits = payment.entitlement_quantity
         db.commit()
         capture = json.dumps(_capture_payload(payment)).encode()
         assert process_razorpay_webhook(db, raw_body=capture, provider_event_id="evt_owned_schema27",
@@ -228,7 +243,7 @@ def seed_application(source, stamp):
         evidence_write_fence.flush_evidence_writes(db, [evidence])
         db.execute(text("SELECT setval('public.users_id_seq',41,true),setval('public.resumes_id_seq',72,false)"))
         db.commit()
-    return source_bytes, capture, reservation_id, view.credits
+    return source_bytes, capture, reservation_id, credits
 
 
 def publish_employer(source):
@@ -369,6 +384,7 @@ def assert_application_recovery(engine, expected, monkeypatch, *, subsequent_sea
 
 def recovery_client(engine):
     app = FastAPI()
+    app.include_router(billing_routes.router, prefix="/api")
     app.include_router(resume_routes.router, prefix="/api")
     app.include_router(credit_routes.router, prefix="/api")
     app.include_router(employer_routes.router, prefix="/api/v1")
@@ -413,6 +429,76 @@ def recovery_api_readback(engine, application, credits, owner, other_owner):
         assert (wallet["available_credits"], wallet["reserved_credits"], wallet["debt_credits"]) == (credits - 8, 8, 0)
         del wallet["server_time"]
         return view, wallet
+
+
+def seed_pending_recovery_purchase(engine, stamp):
+    idempotency_key = "owned-backup-gap-order"
+    reference = purchase_request_id(1, "unified:" + idempotency_key)
+    with Session(engine) as db:
+        order = seed_credit_purchase(db, stamp, idempotency_key=idempotency_key, reference=reference,
+                                     provider_order_id="order_RecoveryGap", provider_key_id=TEST_KEY_ID)
+        db.flush()
+        credits = order.entitlement_quantity
+        capture = _capture_payload(order, event="order.paid")
+        db.commit()
+    capture["payload"]["order"]["entity"]["attempts"] = 1
+    capture["payload"]["payment"]["entity"].update(id="pay_RecoveryGap", amount_refunded=0)
+    return reference, capture, credits
+
+
+def assert_capture_recovered_after_backup(engine, pending_purchase, owner, other_owner, monkeypatch):
+    reference, capture, recovered_credits = pending_purchase
+    order = capture["payload"]["order"]["entity"]
+    payment = capture["payload"]["payment"]["entity"]
+    order_path = f"orders/{order['id']}"
+    replies = {
+        "orders": {"entity": "collection", "count": 1, "items": [order]},
+        order_path: order,
+        f"{order_path}/payments": {"entity": "collection", "count": 1, "items": [payment]},
+        f"payments/{payment['id']}": payment,
+    }
+    reads = []
+
+    def read(settings, path, params, timeout):
+        assert not settings.checkout_enabled
+        if path == "orders":
+            assert params["receipt"] == order["receipt"]
+        reads.append(path)
+        return replies[path]
+
+    monkeypatch.setattr("backend.app.billing.reconciliation._provider_json", read)
+    with Session(engine) as db:
+        before = service.wallet(db, user_id=1)
+    status_path = f"/api/v1/credits/orders/{reference}"
+    reconcile_path = f"/api/billing/orders/{reference}/reconcile"
+    with recovery_client(engine) as client:
+        pending = client.get(status_path, headers=owner).json()
+        assert pending["payment_status"] == "created" and not pending["checkout_available"]
+        assert not pending["fulfilled"]
+        assert client.post(reconcile_path, headers=other_owner).status_code == 404
+        assert not reads
+        for _ in range(2):
+            response = client.post(reconcile_path, headers=owner)
+            assert response.status_code == 200
+            settled = response.json()
+            assert settled["resolution"] == "settled"
+            assert settled["order"]["status"] == "paid" and settled["order"]["fulfilled"]
+        restored = client.get(status_path, headers=owner).json()
+        assert restored["fulfilled"] and restored["payment_status"] == "paid"
+        pending["accepted_quote"].pop("server_time")
+        restored["accepted_quote"].pop("server_time")
+        assert restored["accepted_quote"] == pending["accepted_quote"]
+        late_callback = _post_event(client, "evt_owned_backup_gap", capture)
+        assert late_callback.status_code == 200 and late_callback.json()["status"] == "processed"
+        retry = _post_event(client, "evt_owned_backup_gap", capture)
+        assert retry.status_code == 200 and retry.json()["status"] == "duplicate"
+    assert reads == list(replies) * 2
+    with Session(engine) as db:
+        after = service.wallet(db, user_id=1)
+        grant = db.query(CreditGrant).filter_by(user_id=1, origin_id=reference).one()
+        assert (grant.quantity, grant.remaining_credits) == (recovered_credits, recovered_credits)
+        assert after.available_credits == before.available_credits + recovered_credits
+        assert (after.reserved_credits, after.debt_credits) == (before.reserved_credits, before.debt_credits)
 
 
 def seed_saved_search_recovery(engine, monkeypatch):
@@ -869,10 +955,17 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
             source_bytes, capture, reservation_id, credits = seed_application(source, stamp)
             if physical:
                 monkeypatch.setattr(security, "JWT_SECRET", secrets.token_hex(32))
+                monkeypatch.setenv("APP_ENV", "test")
+                monkeypatch.setenv("RAZORPAY_MODE", "test")
+                monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "false")
+                monkeypatch.setenv("RAZORPAY_KEY_ID", TEST_KEY_ID)
+                monkeypatch.setenv("RAZORPAY_KEY_SECRET", TEST_KEY_SECRET)
+                monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", TEST_WEBHOOK_SECRET)
                 owner, other_owner, after_backup_owner = (
                     {"Authorization": f"Bearer {security.create_access_token(subject=str(identity))}"}
                     for identity in (1, 2, 3)
                 )
+                pending_purchase = seed_pending_recovery_purchase(source, stamp)
                 before_api = recovery_api_readback(source, application_recovery, credits, owner, other_owner)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
@@ -915,7 +1008,11 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
             record_property(backup_measurement, round(time.monotonic() - started, 3))
             assert snapshot(source) == expected
             if physical:
+                with recovery_client(source) as client:
+                    captured = _post_event(client, "evt_owned_backup_gap", pending_purchase[1])
+                    assert captured.status_code == 200 and captured.json()["status"] == "processed"
                 with Session(source) as db:
+                    assert service.wallet(db, user_id=1).available_credits == credits - 8 + pending_purchase[2]
                     db.add(User(id=3, email="committed-after-backup@example.test"))
                     db.commit()
                 with recovery_client(source) as client:
@@ -1028,6 +1125,9 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                 )).all() == [(1, 3, True), (3, 4, False), (4, None, True)]
                 db.rollback()
             assert snapshot(restored) == expected
+            if physical:
+                assert_capture_recovered_after_backup(restored, pending_purchase, owner, other_owner, monkeypatch)
+                record_property("owned_physical_backup_gap_purchase_reconciled_once", True)
             record_property(f"owned_{method}_start_and_verify_seconds", round(time.monotonic() - started, 3))
         record_property(f"owned_{method}_public_tables", len(tables))
         record_property(f"owned_{method}_public_sequences", len(sequences))

@@ -576,6 +576,17 @@ the sealed application, the unknown attempt and its five-credit hold. Two worker
 redeliveries made zero employer calls, and the same opening refused a replacement
 application. These results use a disposable PostgreSQL 17 cluster.
 
+The physical drill also covers a purchase captured after the backup. The
+backup retained the accepted quote and pending order. A signed fixture event
+settled that order on the source before the source stopped. With checkout
+closed on the restored database, the owner reconciled the original purchase
+through the billing API using synthetic Razorpay read responses. A second
+reconciliation, a late signed callback and its retry left one credit grant.
+Another account received 404 before any provider read. The original quote,
+existing holds and wallet debt stayed intact. These results cover a purchase
+whose original order is in the backup. A provider capture for an order absent
+from the backup requires separate verification.
+
 Production backup coverage, role and permission recovery, independent authority
 replay and recovery times still need verification before reopening after a
 database failure. The provider reports a six-hour point-in-time history window
