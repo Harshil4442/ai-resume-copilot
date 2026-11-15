@@ -357,17 +357,21 @@ def prepare(factory, packet_root, native_root, auth, authorization_root, native_
     schema = _schema(auth)
     with engine.begin() as conn:
         conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
-    extra_tables = set(inspect(engine).get_table_names(schema=schema)) - set(Base.metadata.tables)
-    if extra_tables:
-        # A migrated, still loopback-only experiment has three additional
-        # catalog/legacy tables. Verify the revision and projection before use.
+    physical_tables = set(inspect(engine).get_table_names(schema=schema))
+    extra_tables = physical_tables - set(Base.metadata.tables)
+    if "alembic_version" in physical_tables:
+        # ORM registration can change when a caller imports account erasure.
+        # Identify a migrated experiment by its physical catalog instead.
         from ..notification_consent.schema_compat import projection_available
 
-        if extra_tables != {"alembic_version", "resume_upload_cleanups", "resume_uploads"}:
+        migrated_tables = {"alembic_version", "notification_preferences", "resume_upload_cleanups", "resume_uploads"}
+        if not migrated_tables <= physical_tables or extra_tables - migrated_tables:
             raise ValueError("Unknown tables exist in this evaluation schema")
         with factory() as db:
             if not projection_available(db, namespace=schema):
                 raise ValueError("The migrated evaluation schema must support notification erasure")
+    elif extra_tables:
+        raise ValueError("Unknown tables exist in this evaluation schema")
     Base.metadata.create_all(engine)
     # This already-authorized owned evaluation namespace has no complete
     # Alembic catalog. Install the identical real fence, never a no-op marker or

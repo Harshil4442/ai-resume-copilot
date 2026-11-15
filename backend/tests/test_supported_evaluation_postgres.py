@@ -18,6 +18,7 @@ from types import SimpleNamespace
 
 import psycopg
 import pytest
+from sqlalchemy import text
 
 from app import models
 from app.domains.analysis import supported_evaluation as runner
@@ -79,9 +80,9 @@ def prepared(evaluation, owned_postgres, request):  # noqa: F811
     factory = runner.local_factory(owned_postgres["url"], values["auth"])
     try:
         if getattr(request, "param", None) == "migrated":
-            from alembic import command
             from alembic.config import Config
-            from sqlalchemy import text
+
+            from alembic import command
 
             schema = runner._schema(values["auth"])
             with factory.kw["bind"].begin() as connection:
@@ -348,6 +349,10 @@ def test_real_account_erase_retains_detached_model_and_native_obligations(prepar
         assert db.query(FreeCoreReservation).count() == 80
         assert all(r.user_id is None and r.settled_minor is None and r.reserved_minor > 0 for r in db.query(FreeCoreReservation))
     with pytest.raises(ValueError, match="erased experiment"):
+        runner.prepare(factory, **values)
+    with factory.kw["bind"].begin() as connection:
+        connection.execute(text("CREATE TABLE unexpected_evaluation_table (id integer)"))
+    with pytest.raises(ValueError, match="Unknown tables"):
         runner.prepare(factory, **values)
 
 
