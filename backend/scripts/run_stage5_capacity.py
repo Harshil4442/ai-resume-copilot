@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT))
 
-from scripts import stage5_first_minute, stage5_skill_roi  # noqa: E402
+from scripts import stage5_first_minute, stage5_jobs_journey, stage5_skill_roi  # noqa: E402
 from scripts.stage5_capacity import (  # noqa: E402
     BOOTSTRAP_PATH,
     FRESH_WINDOW_COOLDOWN_SECONDS,
@@ -55,6 +55,7 @@ def parser():
     mode.add_argument("--fresh-window", action="store_true", help="Measure three governed batches with a natural cooldown")
     mode.add_argument("--skill-roi-journey", action="store_true", help="Compare the owned Skill ROI learning-tab reads")
     mode.add_argument("--first-minute", action="store_true", help="Measure overlapping owned reads in one shared governed window")
+    mode.add_argument("--jobs-journey", action="store_true", help="Compare governed Dashboard → Jobs routes")
     result.add_argument("--output", type=Path)
     result.add_argument("--pg-bin", type=Path)
     result.add_argument("--redis-server", type=Path)
@@ -237,7 +238,7 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert, *, fre
     return results, time.perf_counter() - start
 
 
-def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, first_minute=False):
+def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, first_minute=False, jobs_journey=False):
     import pytest
     import uvicorn
 
@@ -311,6 +312,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
         data = seed(source, plan)
         if first_minute:
             data.update(stage5_first_minute.seed_pending(source, plan))
+        if jobs_journey:
+            data.update(stage5_jobs_journey.seed_jobs(source))
         resources.partial_report.update(postgres_identity=identity, data=data,
                                         emulator=resources.emulator_identity)
         guards.setattr(native_metadata_admission, "_shared_storage", lambda: storage)
@@ -378,6 +381,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                 preflight.update(stage5_first_minute.control_reads(client, actors, plan.buyers_percent))
                 if preflight != stage5_first_minute.READ_CONTROLS:
                     raise RuntimeError("Owned progress controls differ")
+            if jobs_journey:
+                preflight.update(stage5_jobs_journey.controls(client, actors))
         # Enforce read-only PostgreSQL at the server as well as observing SQL.
         with source.begin() as connection:
             connection.exec_driver_sql("ALTER ROLE stage5_owned SET default_transaction_read_only=on")
@@ -386,7 +391,7 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
         actual_connect = instrumented_pool.connect
         source.pool.connect = acquire
         cpu_before = resource.getrusage(resource.RUSAGE_SELF)
-        if skill_roi_journey or first_minute:
+        if skill_roi_journey or first_minute or jobs_journey:
             async def governed_journey():
                 os.environ.update(CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED="true",
                                   CANDIDATE_METADATA_ADMISSION_ENABLED="true")
@@ -397,6 +402,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                         measurement = await stage5_first_minute.measure(client, plan, actors, storage, counters)
                         results.append(measurement)
                         return measurement.get("measurement_seconds", 0)
+                    if jobs_journey:
+                        return await stage5_jobs_journey.measure(client, plan, actors, counters, results)
                     return await stage5_skill_roi.measure(client, plan, actors, storage, counters, results)
 
             results = resources.partial_report["results"]
@@ -441,6 +448,10 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
             report["limitations"].append("One fixed first-minute schedule with synthetic pending orders and queued uploads; "
                 "no provider payment or file is created. Times are ideal initial arrival ticks, and Redis INFO sampling adds "
                 "one local command per observation. No native quota change, production latency or paid-customer behavior is inferred.")
+        elif jobs_journey:
+            report["validation"] = stage5_jobs_journey.validate(results, preflight)
+            report["limitations"].append("Fixed-order Dashboard then Jobs at 27 seconds in each fresh window; "
+                "legacy A/B comparisons cover successful projections only. Cold starts and hosted capacity are unmeasured.")
         elif skill_roi_journey:
             report["validation"] = stage5_skill_roi.validate(results, preflight)
             report["limitations"].append("Fixed-order same-source A/B; only the number of journey HTTP and native calls "
@@ -479,7 +490,10 @@ def main():
             raise ValueError("Skill ROI comparison must fit both natural cooldowns")
         if args.first_minute and plan.measurement_seconds <= stage5_first_minute.MINIMUM_SECONDS:
             raise ValueError("First-minute diagnostic must fit cooldown, one window and response grace")
-        version = (stage5_first_minute.VERSION if args.first_minute
+        if args.jobs_journey and plan.measurement_seconds <= stage5_jobs_journey.MINIMUM_SECONDS:
+            raise ValueError("Jobs diagnostic must fit both fresh bounded windows")
+        version = (stage5_jobs_journey.VERSION if args.jobs_journey else
+                   stage5_first_minute.VERSION if args.first_minute
                    else stage5_skill_roi.VERSION if args.skill_roi_journey else VERSION)
         if not args.execute:
             preview = {"version": version, "plan": asdict(plan), "maximum_requests_including_controls": plan.requests_per_phase * 6 + 3,
@@ -498,11 +512,17 @@ def main():
                                window_seconds=stage5_first_minute.WINDOW_SECONDS,
                                minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS,
                                shared_admin_limit=stage5_first_minute.ADMIN_LIMIT)
+            if args.jobs_journey:
+                preview.update(maximum_requests_including_controls=stage5_jobs_journey.MAX_REQUESTS,
+                               journeys_per_arm=len(stage5_jobs_journey.ACTORS),
+                               jobs_start_seconds=stage5_jobs_journey.JOBS_AT,
+                               shared_admin_limit=stage5_jobs_journey.ADMIN_LIMIT,
+                               minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS)
             print(json.dumps(preview))
             return 0
         if not args.output or not args.pg_bin or not args.redis_server:
             raise ValueError("Execute requires a new output directory and explicit PG17/TLS Redis binaries")
-        if (args.skill_roi_journey or args.first_minute) and sys.platform != "linux":
+        if (args.skill_roi_journey or args.first_minute or args.jobs_journey) and sys.platform != "linux":
             raise RuntimeError("The owned HTTP diagnostic requires a native Linux Docker host")
         resources = Resources(args.output.resolve(), args.pg_bin, args.redis_server)
         resources.partial_report = {"version": version,
@@ -516,7 +536,9 @@ def main():
             # Fixed diagnostic labels only. No auth body, token, SQL parameter or
             # exception message is emitted by the runner or its private report.
             logging.disable(logging.CRITICAL)
-            if args.first_minute:
+            if args.jobs_journey:
+                result = execute(plan, resources, jobs_journey=True)
+            elif args.first_minute:
                 result = execute(plan, resources, first_minute=True)
             elif args.skill_roi_journey:
                 result = execute(plan, resources, skill_roi_journey=True)

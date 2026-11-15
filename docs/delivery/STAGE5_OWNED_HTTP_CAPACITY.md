@@ -385,3 +385,16 @@ name that separates its role, employer and status. The revised browser run
 covered five widths, keyboard focus restoration, manual handoff, protected
 overview retry and the saved Dashboard, Workspace, résumé and Billing surfaces.
 Hosted behavior and field p75 remain pending.
+
+The opt-in `--jobs-journey` diagnostic (workflow input `jobs_journey`) uses
+eight synthetic signed-in accounts with their own saved résumé, search and
+application. After at least 61 seconds of normal budget cooldown in each arm,
+they load Dashboard and request Jobs 27 seconds later. The original arm offers
+four Jobs reads per account. The consolidated arm offers one. The diagnostic
+requires the original arm to exhaust the 40-call budget with valid capacity
+refusals and all eight consolidated journeys to finish in 32 List calls. It
+compares the shared contents of every successful original read with the
+consolidated result, verifies ownership and cache policy, and allows no Get
+fallback or measured SQL writes. The total is at most 61 HTTP requests including
+controls. The default workload is unchanged. The composed Linux run and actual
+production capacity remain unverified.
