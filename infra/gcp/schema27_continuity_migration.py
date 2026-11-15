@@ -1,13 +1,15 @@
-"""Capture, execute once, and reconcile the schema27 continuity migration."""
+"""Capture, execute once, reconcile, or inspect the schema27 continuity migration."""
 from __future__ import annotations
 
 import argparse
+import fcntl
 import importlib
 import json
 import os
 import re
+import stat
 import sys
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -26,6 +28,7 @@ from scripts import notification_schema27_contract as contract
 rolling = scope.rolling
 SCHEMA_KIND = "hirewiz_schema27_continuity_migration_v1"
 METADATA_URL = "postgresql+psycopg://migration_metadata@127.0.0.1:1/metadata"
+INSPECT = "inspect-migration-outcome"
 
 
 def need(value, reason):
@@ -144,10 +147,63 @@ def _metadata(root):
                 os.environ[name] = value
 
 
+@contextmanager
+def _existing_lock(path):
+    """Join the owner's existing lock without creating or rewriting files."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        observed = os.fstat(descriptor)
+        need(stat.S_ISREG(observed.st_mode) and observed.st_uid == os.getuid()
+             and stat.S_IMODE(observed.st_mode) == 0o600 and observed.st_nlink == 1, "inspection_lock_unverified")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+@contextmanager
+def _journal_locks(bridge_journal, migration_journal, *, inspection):
+    with ExitStack() as stack:
+        if inspection:
+            location = scope.journal_location(bridge_journal)
+            expected = location | {"plan_sha256": bridge_journal.plan_hash}
+            need(bridge_journal.read(scope.JOURNAL_LOCATION) == expected, "inspection_bridge_journal_location")
+            stack.enter_context(_existing_lock(bridge_journal.directory / "continuity-lifecycle.lock"))
+            stack.enter_context(_existing_lock(bridge_journal.directory / "owner.lock"))
+            stack.enter_context(_existing_lock(migration_journal.directory / "owner.lock"))
+            need(bridge_journal.read(scope.JOURNAL_LOCATION) == expected
+                 and scope.journal_location(bridge_journal) == location, "inspection_bridge_journal_location")
+        else:
+            stack.enter_context(scope.lifecycle_lock(bridge_journal))
+            stack.enter_context(bridge_journal.locked())
+            stack.enter_context(migration_journal.locked())
+        yield
+
+
+def _verify_inspection_source(boundary, bridge_plan, bridge_journal, plan, recovery):
+    root = boundary.root.resolve()
+    modules = (
+        (recovery, "infra/gcp/schema27_continuity_reconcile.py"),
+        (catalog, "infra/gcp/schema27_continuity_catalog.py"),
+        (scope, "infra/gcp/schema27_continuity_scope.py"),
+        (scope.neon, "backend/scripts/neon_continuity_identity.py"),
+        (step, "backend/scripts/notification_schema27_continuity_step.py"),
+    )
+    need(Path(__file__).resolve() == root / "infra/gcp/schema27_continuity_migration.py"
+         and all(Path(module.__file__).resolve() == root / path for module, path in modules)
+         and native.successor.controller_source(root) == (
+             bridge_plan.controller_release, bridge_plan.controller_source_sha256,
+         )
+         and contract.verify_source(root) == plan.source_sha256, "inspection_source_changed")
+    need(native.promoted_receipts(bridge_plan, bridge_journal) == plan.bridge_receipts_sha256,
+         "inspection_bridge_receipts")
+
+
 def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal):
     from infra.gcp import schema27_continuity_reconcile as recovery
 
-    need(mode in {"upgrade", "reconcile"} and type(boundary) is native.NativeContinuityBoundary
+    need(mode in {"upgrade", "reconcile", INSPECT} and type(boundary) is native.NativeContinuityBoundary
+         and type(bridge_plan) is bridge.ContinuityBridgePlan and type(bridge_journal) is rolling.Journal
          and type(plan) is MigrationPlan and type(migration_journal) is rolling.Journal
          and migration_journal.plan_hash == rolling.sha(asdict(plan))
          and migration_journal.directory != bridge_journal.directory, "exact_owner")
@@ -155,17 +211,33 @@ def execute(mode, boundary, bridge_plan, bridge_journal, plan, migration_journal
     custody = bridge_plan.custody()
     identity = bootstrap.migration_identity(bridge_plan.database)
     intent = plan.intent(identity, native.successor.native.host_auth.ACCOUNT)
-    with scope.lifecycle_lock(bridge_journal), bridge_journal.locked(), migration_journal.locked():
+    with _journal_locks(bridge_journal, migration_journal, inspection=mode == INSPECT):
         plan.validate(bridge_plan, bridge_journal)
         recovery.validate_custody(custody, bridge_journal, migration_journal, identity, intent,
                                   bridge_plan_sha256=plan.bridge_plan_sha256,
                                   bridge_receipts_sha256=plan.bridge_receipts_sha256)
         started = migration_journal.read(recovery.STARTED)
-        need((started is not None) == (mode == "reconcile"), "started_reconcile_only")
-        fence = {"migration_plan_sha256": migration_journal.plan_hash, "intent_sha256": intent.sha256()}
+        need((started is not None) == (mode != "upgrade"), "started_reconcile_only")
+        fence = {
+            "migration_plan_sha256": migration_journal.plan_hash, "intent_sha256": intent.sha256(),
+            "migration_journal_location": scope.journal_location(migration_journal),
+        }
         retained_fence = bridge_journal.read(scope.MIGRATION_FENCE)
         matched_fence = retained_fence == fence | {"plan_sha256": bridge_journal.plan_hash}
         need(matched_fence or (retained_fence is None and mode == "upgrade"), "bridge_migration_intent")
+        if mode == INSPECT:
+            need(rolling.canonical(started) == rolling.canonical(intent.snapshot()), "inspection_intent_changed")
+            _verify_inspection_source(boundary, bridge_plan, bridge_journal, plan, recovery)
+            observed = recovery.reconcile_locked(
+                custody, bridge_journal, migration_journal, identity, intent,
+                bridge_plan_sha256=plan.bridge_plan_sha256, bridge_receipts_sha256=plan.bridge_receipts_sha256,
+                expected_liabilities=bridge_plan.protected_liabilities,
+            )
+            return {
+                "status": "continuity_migration_outcome_inspected", "schema": observed.schema,
+                "migration_committed": observed.migration_committed, "formal_reconciliation": False,
+                "replay_authorized": False, "new_admission_enabled": False, "cloud_resource_mutations": 0,
+            }
         _verify_live(boundary, bridge_plan, bridge_journal, plan)
         if mode == "upgrade":
             need(migration_journal.read(recovery.COMMIT_ACK) is None
@@ -220,7 +292,7 @@ def load(raw):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("capture", "upgrade", "reconcile"))
+    parser.add_argument("mode", choices=("capture", "upgrade", "reconcile", INSPECT))
     for name in ("root", "target-root", "prior-root", "bridge-plan", "bridge-journal", "plan"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--bridge-plan-sha256", required=True)
