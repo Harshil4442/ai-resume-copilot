@@ -403,6 +403,10 @@ verified all eight consolidated journeys. The original path returned 21 capacity
 refusals across 32 Jobs requests and used 40 List calls. The consolidated path
 returned eight successes, used 32 List calls, and made zero measured SQL writes.
 The 20% job stopped before measurement because the evaluation runner's catalog
-check depended on ORM import order. The correction passed all 28 owned PostgreSQL
-evaluation tests. The [corrected hosted run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43697756968)
-is pending. Production capacity remains unverified.
+check depended on ORM import order. After the correction, all 28 owned PostgreSQL
+evaluation tests passed. Both scenarios in the
+[corrected hosted run](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43697756968)
+reproduced the same results on commit `ccdba8ac212118b67945ad0c28090e4b2a8bde4d`.
+All eight Dashboard loads succeeded in each arm. Each consolidated arm had zero
+capacity refusals, SQL writes and external provider calls. The runner reported
+cleanup of its isolated services. Production capacity remains unverified.
