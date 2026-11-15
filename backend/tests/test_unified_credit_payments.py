@@ -6,7 +6,7 @@ import httpx
 import pytest
 from backend.app.billing.razorpay import RAZORPAY_ORDERS_URL, RazorpayAdapter, RazorpayProviderError
 from backend.app.billing.reconciliation import OriginalOrder
-from backend.app.domains.credits import canary, release, service
+from backend.app.domains.credits import canary, pricing, release, service
 from backend.app.domains.credits.finance import FinancialPolicy, FundingUnavailable
 from backend.app.domains.credits.models import CreditCampaign, CreditGrant, CreditPurchaseQuote
 from backend.app.domains.credits.pricing import CATALOG_VERSION
@@ -89,6 +89,46 @@ def start(client, *, key="first-purchase"):
     payload = {"quote_id": quote.json()["quote_id"], "billing_country": "IN", "idempotency_key": key}
     result = client.post("/api/v1/credits/orders", json=payload)
     return quote.json(), payload, result
+
+
+def bind_campaign_review(monkeypatch, campaign):
+    reviewed = pricing.PurchasePricingReview(
+        catalog_sha256=pricing.catalog_pricing_sha256(),
+        campaign_sha256=pricing.campaign_pricing_sha256(campaign),
+    )
+    release_review = release.current_review().model_copy(update={"purchase_pricing": reviewed})
+    monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", release_review.model_dump_json())
+
+
+def test_changed_campaign_cannot_create_a_quote_or_payable_order(unified, monkeypatch, session_factory):
+    client, calls = unified
+    with session_factory() as db:
+        bind_campaign_review(monkeypatch, db.query(CreditCampaign).one())
+
+    first = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "campaign-boundary-first",
+    })
+    assert first.status_code == 200 and first.json()["amount_minor"] == 5900
+    with session_factory() as db:
+        row = db.query(CreditCampaign).one()
+        row.starts_at += timedelta(days=1)
+        row.ends_at += timedelta(days=1)
+        db.commit()
+
+    assert client.get("/api/v1/credits/catalog").status_code == 503
+    second = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "campaign-boundary-second",
+    })
+    assert second.status_code == 409
+    checkout = client.post("/api/v1/credits/orders", json={
+        "quote_id": first.json()["quote_id"], "billing_country": "IN",
+        "idempotency_key": "campaign-boundary-order",
+    })
+    assert checkout.status_code == 409 and checkout.json()["detail"]["order_created"] is False
+    assert calls == []
+    with session_factory() as db:
+        assert db.query(PaymentOrder).count() == 0
+        assert db.query(CreditPurchaseQuote).one().state == "quoted"
 
 
 def test_legacy_checkout_respects_owned_unified_order_during_mode_switch(unified, monkeypatch, session_factory):
@@ -304,12 +344,13 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
 
 def test_campaign_cutoff_keeps_unexpired_offer_quote_payable(unified, monkeypatch, session_factory):
     client, calls = unified
-    cutoff = datetime.now(UTC) + timedelta(minutes=1)
+    cutoff = datetime.now(UTC) - timedelta(minutes=1)
     with session_factory() as db:
         campaign = db.query(CreditCampaign).one()
         campaign.starts_at = cutoff - timedelta(days=30)
         campaign.ends_at = cutoff
         db.commit()
+        bind_campaign_review(monkeypatch, campaign)
 
     issued_at = cutoff - timedelta(seconds=1)
     monkeypatch.setattr(service, "utcnow", lambda: issued_at)
@@ -347,6 +388,14 @@ def test_campaign_cutoff_keeps_unexpired_offer_quote_payable(unified, monkeypatc
         stored = db.query(PaymentOrder).one()
         assert stored.gross_amount_minor == 5900
         assert OriginalOrder.from_order(stored).quote["amount_minor"] == 5900
+        capture = _capture_payload(stored, event="order.paid")
+
+    monkeypatch.delenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON")
+    assert _post_event(client, "evt_reviewed_cutoff_capture", capture).status_code == 200
+    assert _post_event(client, "evt_reviewed_cutoff_capture", capture).status_code == 200
+    with session_factory() as db:
+        grant = db.query(CreditGrant).one()
+        assert grant.source_id == order["order_id"] and grant.remaining_credits == 40
 
 
 def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed_order(unified, session_factory):

@@ -108,19 +108,41 @@ def test_catalog_has_no_invented_active_offer():
 
 def test_campaign_boundaries_and_evidence():
     row = campaign(start=NOW, verified=True)
-    before = pricing.public_catalog(campaign=row, now=NOW - timedelta(seconds=1))
-    start = pricing.public_catalog(campaign=row, now=NOW)
-    end = pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30))
+    review = pricing.PurchasePricingReview(
+        catalog_sha256=pricing.catalog_pricing_sha256(),
+        campaign_sha256=pricing.campaign_pricing_sha256(row),
+        reference_prices={"starter_pass": pricing.ReferencePriceReview(
+            standard_amount_minor=7900, terms_version=pricing.TERMS_VERSION, market="IN", currency="INR",
+            approved_at=NOW, evidence_sha256="a" * 64,
+        )},
+    )
+    before = pricing.public_catalog(campaign=row, now=NOW - timedelta(seconds=1), review=review)
+    start = pricing.public_catalog(campaign=row, now=NOW, review=review)
+    end = pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30), review=review)
     assert before.products[0].campaign.status == "scheduled"
     assert start.products[0].amount_minor == 5900
-    assert start.products[0].campaign.reference_price_verified
+    assert [item.campaign.reference_price_verified for item in start.products] == [True, False, False]
     assert end.products[0].amount_minor == 7900
     assert end.products[0].campaign.status == "ended"
     assert not before.products[0].campaign.reference_price_verified
     assert not end.products[0].campaign.reference_price_verified
-    row.reference_evidence_id = None
-    with pytest.raises(pricing.CreditContractError, match="reference evidence"):
-        pricing.public_catalog(campaign=row, now=NOW)
+    without_review = pricing.public_catalog(campaign=row, now=NOW)
+    assert all(not item.campaign.reference_price_verified for item in without_review.products)
+    future_review = pricing.PurchasePricingReview.model_validate(review.model_dump() | {
+        "reference_prices": {"starter_pass": review.reference_prices["starter_pass"].model_dump()
+                             | {"approved_at": NOW + timedelta(hours=1)}},
+    })
+    assert not pricing.public_catalog(campaign=row, now=NOW, review=future_review).products[0].campaign.reference_price_verified
+
+    with pytest.raises(ValueError, match="exact pack price"):
+        pricing.PurchasePricingReview(
+            catalog_sha256=review.catalog_sha256, campaign_sha256=review.campaign_sha256,
+            reference_prices={"growth_pass": review.reference_prices["starter_pass"]},
+        )
+    row.starts_at += timedelta(days=1)
+    row.ends_at += timedelta(days=1)
+    with pytest.raises(pricing.CreditContractError, match="has changed since review"):
+        pricing.public_catalog(campaign=row, now=NOW + timedelta(days=30), review=review)
 
 
 @pytest.mark.parametrize(

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pydantic import AwareDatetime, Field, model_validator
+
 from .models import CreditCampaign
-from .schemas import CampaignView, CreditCatalogView, CreditProductView
+from .schemas import CampaignView, Closed, CreditCatalogView, CreditProductView
 
 CATALOG_VERSION = "inr-unified-2026-10-27-v1"
 TERMS_VERSION = "credit-pass-2026-10-27-v1"
@@ -36,9 +41,12 @@ class CreditContractError(ValueError):
     """A stale, ambiguous or unsupported financial contract cannot be admitted."""
 
 
+PassSku = Literal["starter_pass", "growth_pass", "scale_pass"]
+
+
 @dataclass(frozen=True)
 class CreditProduct:
-    sku: str
+    sku: PassSku
     name: str
     offer_amount_minor: int
     standard_amount_minor: int
@@ -55,14 +63,66 @@ PRODUCTS = {
 }
 
 
+class ReferencePriceReview(Closed):
+    standard_amount_minor: int = Field(strict=True, gt=0)
+    terms_version: Literal["credit-pass-2026-10-27-v1"]
+    market: Literal["IN"]
+    currency: Literal["INR"]
+    approved_at: AwareDatetime
+    evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class PurchasePricingReview(Closed):
+    catalog_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    # A null digest explicitly approves the standard catalog without a campaign.
+    campaign_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
+    reference_prices: dict[PassSku, ReferencePriceReview] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def exact_reference_prices(self):
+        if self.reference_prices and self.campaign_sha256 is None:
+            raise ValueError("Comparison prices require a reviewed campaign")
+        for sku, review in self.reference_prices.items():
+            if review.standard_amount_minor != PRODUCTS[sku].standard_amount_minor:
+                raise ValueError("Reference evidence must match the exact pack price")
+        return self
+
+
+def _pricing_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def catalog_pricing_sha256() -> str:
+    return _pricing_digest({
+        "catalog_version": CATALOG_VERSION, "terms_version": TERMS_VERSION, "market": "IN", "currency": "INR",
+        "duration_days": PASS_LIFETIME.days, "auto_renews": False,
+        "products": {sku: [item.offer_amount_minor, item.standard_amount_minor, item.credits] for sku, item in PRODUCTS.items()},
+    })
+
+
 def aware(value: datetime) -> datetime:
     # SQLite returns naive UTC despite timezone-aware metadata. Public inputs
     # must already have been validated; only persisted timestamps use this helper.
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def campaign_pricing_sha256(campaign: CreditCampaign) -> str:
+    return _pricing_digest({
+        "id": campaign.id, "version": campaign.version, "catalog_version": campaign.catalog_version,
+        "starts_at": aware(campaign.starts_at).isoformat(), "ends_at": aware(campaign.ends_at).isoformat(),
+        "timezone": campaign.timezone,
+    })
+
+
+def require_reviewed_purchase_pricing(review: PurchasePricingReview, campaign: CreditCampaign | None) -> None:
+    campaign_sha256 = campaign_pricing_sha256(campaign) if campaign is not None else None
+    if review.catalog_sha256 != catalog_pricing_sha256() or review.campaign_sha256 != campaign_sha256:
+        raise CreditContractError("The catalog or launch campaign has changed since review.")
+
+
 def campaign_view(
-    campaign: CreditCampaign | None, product: CreditProduct, *, now: datetime
+    campaign: CreditCampaign | None, product: CreditProduct, *, now: datetime,
+    reference: ReferencePriceReview | None = None,
 ) -> CampaignView | None:
     if campaign is None:
         return None
@@ -75,13 +135,6 @@ def campaign_view(
         ZoneInfo(campaign.timezone)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise CreditContractError("The campaign timezone is invalid.") from exc
-    verified = bool(campaign.reference_price_verified)
-    if verified and (
-        not campaign.reference_evidence_id
-        or campaign.reference_approved_at is None
-        or aware(campaign.reference_approved_at) > stamp
-    ):
-        raise CreditContractError("A crossed-out price requires reviewed reference evidence.")
     status = "scheduled" if stamp < start else "active" if stamp < end else "ended"
     return CampaignView(
         id=campaign.id,
@@ -91,16 +144,20 @@ def campaign_view(
         timezone=campaign.timezone,
         status=status,
         standard_amount_minor=product.standard_amount_minor,
-        reference_price_verified=verified and status == "active",
+        reference_price_verified=bool(reference and reference.approved_at <= stamp and status == "active"),
     )
 
 
 def public_catalog(
-    *, campaign: CreditCampaign | None, now: datetime, checkout_enabled: bool = False
+    *, campaign: CreditCampaign | None, now: datetime, checkout_enabled: bool = False,
+    review: PurchasePricingReview | None = None,
 ) -> CreditCatalogView:
+    if review is not None:
+        require_reviewed_purchase_pricing(review, campaign)
+    references = review.reference_prices if review is not None else {}
     products = []
     for product in PRODUCTS.values():
-        offer = campaign_view(campaign, product, now=now)
+        offer = campaign_view(campaign, product, now=now, reference=references.get(product.sku))
         amount = (
             product.offer_amount_minor
             if offer and offer.status == "active"

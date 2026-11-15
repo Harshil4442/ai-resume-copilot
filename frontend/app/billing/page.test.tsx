@@ -367,6 +367,22 @@ describe("unified purchase review and payment", () => {
     await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
     expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/credits/orders", { quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified" });
   });
+  it("resumes only the verified original order when current pricing is unavailable", async () => {
+    state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order())
+      : url === "/v1/credits/catalog" ? Promise.reject(new ApiError("Credit pricing is temporarily unavailable", 503, {})) : read(url));
+    render(<BillingPage />);
+    await screen.findByRole("heading", { name: "Credit passes are currently unavailable" });
+    expect(screen.queryByRole("button", { name: "Review Starter pass" })).not.toBeInTheDocument();
+    await confirmIndia();
+    const resume = await screen.findByRole("button", { name: "Resume original checkout" });
+    await waitFor(() => expect(resume).toBeEnabled());
+    fireEvent.click(resume);
+    await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
+    expect(state.post).toHaveBeenCalledExactlyOnceWith("/v1/credits/orders", {
+      quote_id: quote.quote_id, billing_country: "IN", idempotency_key: expect.any(String), order_reference: "order_unified",
+    });
+    expect(hostedCheckout.mock.calls[0][0]).toMatchObject({ amount: 5900, order_id: "provider_unified" });
+  });
   it("keeps historical status readable but refuses to resume a pass whose original services are missing", async () => {
     state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(order({ accepted_quote: { ...quote, eligible_services: [] } })) : read(url));
     render(<BillingPage />); await screen.findByText(/The original supported services could not be verified/);

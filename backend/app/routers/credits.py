@@ -210,9 +210,15 @@ def _catalog(db: Session, user_id: int | None = None, email: str = "") -> Credit
     if not release.rollout_enabled():
         raise HTTPException(404, "Unified credits are not available yet.")
     try:
+        try:
+            pricing_review = release.current_review().purchase_pricing
+        except FundingUnavailable:
+            pricing_review = None
+        show_campaign = pricing_review is not None or not release.commercial_runtime()
+        campaign = service.configured_campaign(db) if show_campaign else None
         offers = _service_offers(user_id, email, db=db)
-        result = pricing.public_catalog(campaign=service.configured_campaign(db), now=datetime.now(UTC),
-                                        checkout_enabled=_purchase_enabled(user_id, email, db=db))
+        result = pricing.public_catalog(campaign=campaign, now=datetime.now(UTC), review=pricing_review,
+                                        checkout_enabled=show_campaign and _purchase_enabled(user_id, email, db=db))
         return CreditCatalogView.model_validate(result.model_dump() | {"eligible_services": offers})
     except pricing.CreditContractError:
         raise HTTPException(503, "Credit pricing is temporarily unavailable.") from None
@@ -241,10 +247,11 @@ def purchase_quote(payload: PurchaseQuoteRequest, request: Request, response: Re
         offers = _service_offers(current_user.id, current_user.email, db=db)
         if not offers:
             raise FundingUnavailable("No qualified service is available for this pass.")
-        assert_new_exposure_funded(db, policy=release.current_review().policy, now=datetime.now(UTC))
+        review = release.current_review()
+        assert_new_exposure_funded(db, policy=review.policy, now=datetime.now(UTC))
         quote = service.issue_purchase_quote(db, user_id=current_user.id, sku=payload.sku,
                                              idempotency_key=payload.idempotency_key, checkout_enabled=True,
-                                             eligible_services=offers)
+                                             eligible_services=offers, pricing_review=review.purchase_pricing)
         view = service.quote_response(quote)
         db.commit()
         return view
@@ -576,6 +583,8 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
         if pending:
             raise _order_status_required(pending)
         review = release.current_review()
+        if review.purchase_pricing is not None:
+            pricing.require_reviewed_purchase_pricing(review.purchase_pricing, service.configured_campaign(db))
         quote = service.accept_purchase_quote(db, user_id=user.id, quote_id=payload.quote_id, order_id=identity)
         view = service.quote_response(quote)
         if not _offers_remain_available(view, current_user.id, current_user.email, db=db):

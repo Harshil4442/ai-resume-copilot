@@ -33,6 +33,7 @@ from .pricing import (
     PURCHASE_QUOTE_LIFETIME,
     RESTORATION_LIFETIME,
     CreditContractError,
+    PurchasePricingReview,
     aware,
     public_catalog,
 )
@@ -117,6 +118,7 @@ def issue_purchase_quote(
     idempotency_key: str,
     checkout_enabled: bool,
     eligible_services: list[dict] | None = None,
+    pricing_review: PurchasePricingReview | None = None,
     now: datetime | None = None,
 ) -> CreditPurchaseQuote:
     """Persist accepted-facing price terms; a retry never silently renews a quote."""
@@ -136,7 +138,7 @@ def issue_purchase_quote(
     campaign = configured_campaign(db)
     # Price a new quote at the admission decision, after waiting for the owner.
     stamp = _stamp(now)
-    catalog = public_catalog(campaign=campaign, now=stamp, checkout_enabled=True)
+    catalog = public_catalog(campaign=campaign, now=stamp, checkout_enabled=True, review=pricing_review)
     product = next((item for item in catalog.products if item.sku == sku), None)
     if product is None:
         raise CreditContractError("This credit pack is not available.")
