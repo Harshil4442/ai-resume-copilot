@@ -48,6 +48,12 @@ worker denial of secret reads and API-account impersonation before granting any
 new payment secret access. The analysis worker, employer worker and résumé
 coordinator keep their existing identities during the rehearsal.
 
+Use `infra.gcp.schema27_api_identity_readback` to compare the private projected
+before and after observations. Pass the owner-only JSON with `--review` and its
+reviewed digest with `--sha256`. The check verifies the zero-traffic candidate,
+unchanged workloads and the exact private document invoker additions. Verify
+effective credential access separately using the deployed identities.
+
 - [ ] Keep Test and Live keys and webhooks separate. Use `APP_ENV=staging` or `test` with `RAZORPAY_MODE=test` and a `rzp_test_` key in an isolated environment. Production requires `RAZORPAY_MODE=live` and a `rzp_live_` key. Bind the key ID, key secret and webhook secret to that environment through managed configuration.
 - [ ] Configure the approved capture behavior and the direct backend HTTPS endpoint `POST /api/billing/webhooks/razorpay`. Set a separate webhook secret of at least 32 characters. During a reviewed rotation, retain `RAZORPAY_WEBHOOK_SECRET_PREVIOUS` for outstanding callbacks and remove it after the retry window.
 - [ ] Subscribe to `payment.captured`, `order.paid`, `payment.failed` and `refund.processed`. Verify the signature on the raw request body and the provider event identifier. Confirm that duplicate deliveries and both capture event types for the same payment settle at most once. Unmatched events require reconciliation. See [Razorpay webhook validation and testing](https://razorpay.com/docs/webhooks/validate-test/).
