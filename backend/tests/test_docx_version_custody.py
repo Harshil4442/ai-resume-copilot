@@ -67,6 +67,7 @@ class Database:
     def __init__(self, harness):
         self.harness = harness
         self.added, self.commits = [], 0
+        self.in_transaction = False
 
     def query(self, entity):
         if entity is self.harness.models.EvidenceItem:
@@ -75,12 +76,20 @@ class Database:
         return Query(rows, entity.kind, entity.column)
 
     def add(self, value):
+        assert self.in_transaction
         self.harness.events.append("add")
         self.added.append(value)
 
+    def rollback(self):
+        assert self.in_transaction
+        self.harness.events.append("rollback")
+        self.in_transaction = False
+
     def commit(self):
+        assert self.in_transaction
         self.harness.events.append("commit")
         self.commits += 1
+        self.in_transaction = False
 
     def refresh(self, value):
         assert value in self.added
@@ -91,8 +100,9 @@ class Harness:
     def __init__(self):
         self.events, self.prepared, self.validated = [], [], []
         self.native_failure = None
-        self.resume = SimpleNamespace(id=7, source_available=True, source_format="docx",
+        self.resume = SimpleNamespace(id=7, user_id=22, source_available=True, source_format="docx",
                                       source_document=b"synthetic immutable uploaded source")
+        self.locked_resume = self.resume
         self.evidence = [SimpleNamespace(id="ev-approved", user_id=22, resume_id=7,
                                         approval_state="approved", evidence_text="Verified Python skill",
                                         skills=["Python"])]
@@ -112,9 +122,10 @@ class Harness:
             "services.native_tex": SimpleNamespace(prepare_artifact=self.prepare_tex),
         }
         tree = ast.parse((ROOT / "backend/app/domains/career/service.py").read_bytes())
+        function_names = {"_check_version_evidence", "create_resume_version"}
         nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                 and node.name == "create_resume_version"]
-        assert len(nodes) == 1
+                 and node.name in function_names]
+        assert {node.name for node in nodes} == function_names
         namespace = {
             "__name__": "private_docx_custody", "__package__": "private_docx_custody.domains.career",
             "__builtins__": {**vars(builtins), "__import__": self.synthetic_import},
@@ -122,6 +133,7 @@ class Harness:
             "func": SimpleNamespace(count=lambda column: SimpleNamespace(kind="count", column=column),
                                     max=lambda column: SimpleNamespace(kind="max", column=column)),
             "_owned_resume": self.owned_resume,
+            "_lock_version_resume": self.lock_resume,
             "public_id": lambda prefix: prefix + "-synthetic", "utcnow": lambda: "synthetic-time",
         }
         module = ast.Module(body=nodes, type_ignores=[])
@@ -134,8 +146,16 @@ class Harness:
         return self.imports[name]
 
     def owned_resume(self, db, user_id, resume_id):
-        assert db is self.db and user_id == 22 and resume_id == self.resume.id
+        assert db is self.db and user_id == self.resume.user_id and resume_id == self.resume.id
+        db.in_transaction = True
         return self.resume
+
+    def lock_resume(self, db, user_id, payload):
+        assert db is self.db and user_id == self.resume.user_id and payload.resume_id == self.resume.id
+        assert not db.in_transaction
+        self.events.append("lock_resume")
+        db.in_transaction = True
+        return self.locked_resume
 
     def units(self, source, kind):
         assert source == self.resume.source_document and kind == self.resume.source_format
@@ -150,6 +170,7 @@ class Harness:
         return {**edit, "replacement_text": edit["replacement_text"].strip()}
 
     def prepare_docx(self, source, edits):
+        assert not self.db.in_transaction
         self.events.append("prepare_docx")
         self.prepared.append(("docx", source, copy.deepcopy(edits)))
         if self.native_failure is not None:
@@ -157,6 +178,7 @@ class Harness:
         return copy.deepcopy(self.seal)
 
     def prepare_tex(self, source, kind, edits, evidence):
+        assert not self.db.in_transaction
         self.events.append("prepare_tex")
         self.prepared.append((kind, source, copy.deepcopy(edits), copy.deepcopy(evidence)))
         return copy.deepcopy(self.seal)
@@ -190,8 +212,8 @@ def test_edited_docx_seals_validated_edits_once_before_persistence(custody):
     assert version.structured_content["sealed_native_artifact"] == custody.seal
     assert payload.structured_content == before
     assert custody.db.added == [version] and custody.db.commits == 1
-    assert version.version_number == 3 and version.approval_state == "draft"
-    assert custody.events == ["validate", "prepare_docx", "add", "commit", "refresh"]
+    assert (version.user_id, version.version_number, version.approval_state) == (22, 3, "draft")
+    assert custody.events == ["validate", "rollback", "prepare_docx", "lock_resume", "add", "commit", "refresh"]
 
 
 def test_unchanged_docx_preserves_snapshot_and_replaces_client_seal(custody):
@@ -205,7 +227,17 @@ def test_unchanged_docx_preserves_snapshot_and_replaces_client_seal(custody):
     assert version.structured_content == {key: value for key, value in before.items()
                                          if key != "sealed_native_artifact"}
     assert payload.structured_content == before and custody.resume.source_document == source
-    assert custody.events == ["prepare_docx", "add", "commit", "refresh"]
+    assert custody.events == ["rollback", "prepare_docx", "lock_resume", "add", "commit", "refresh"]
+
+
+def test_changed_docx_refuses_to_persist_the_seal_for_the_old_source(custody):
+    custody.locked_resume = SimpleNamespace(**vars(custody.resume))
+    custody.locked_resume.source_document = b"replacement uploaded during rendering"
+    with pytest.raises(HTTPFailure) as caught:
+        custody.create(custody.db, 22, custody.payload(custody.edited_content(), ["ev-approved"]))
+    assert caught.value.status_code == 409
+    assert custody.events == ["validate", "rollback", "prepare_docx", "lock_resume"]
+    assert custody.db.added == [] and custody.db.commits == 0
 
 
 def test_docx_source_kind_mismatch_refuses_before_prepare_or_persistence(custody):
@@ -233,7 +265,7 @@ def test_native_docx_refusal_cannot_commit_an_unsealed_version(custody):
     with pytest.raises(HTTPFailure) as caught:
         custody.create(custody.db, 22, custody.payload(content))
     assert caught.value.status_code == 422 and caught.value.detail == "synthetic native artifact refusal"
-    assert len(custody.prepared) == 1 and custody.events == ["prepare_docx"]
+    assert len(custody.prepared) == 1 and custody.events == ["rollback", "prepare_docx"]
     assert custody.db.added == [] and custody.db.commits == 0
 
 
@@ -245,4 +277,4 @@ def test_tex_keeps_source_kind_edits_and_approved_facts_prepare_signature(custod
     facts = [{"id": "ev-approved", "text": "Verified Python skill", "skills": ["Python"]}]
     assert custody.prepared == [("tex", custody.resume.source_document, edits, facts)]
     assert version.structured_content["sealed_native_artifact"] == custody.seal
-    assert custody.events == ["validate", "prepare_tex", "add", "commit", "refresh"]
+    assert custody.events == ["validate", "rollback", "prepare_tex", "lock_resume", "add", "commit", "refresh"]
