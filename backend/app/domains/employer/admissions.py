@@ -19,16 +19,20 @@ from . import config, models
 PENDING = {"reserved", "submitting", "unknown"}
 
 
-def lock_application_set(db, user_id):
+def lock_application_set(db, user_id, *, nowait=False):
     """Fence application creation against an erasure scan, before row locks.
 
     Row locks cannot protect an application that does not yet exist. Keep this
     transaction-scoped owner lock through creation or the caller's full account
     deletion; execution still takes application rows before the candidate row.
+    With nowait, return false on contention before any dependent row lock.
     SQLite is only a local fixture target, not the concurrent production store.
     """
     if db.get_bind().dialect.name == "postgresql":
+        if nowait:
+            return db.scalar(select(func.pg_try_advisory_xact_lock(0x48575A, user_id))) is True
         db.execute(select(func.pg_advisory_xact_lock(0x48575A, user_id)))
+    return True
 
 
 def aware(value):

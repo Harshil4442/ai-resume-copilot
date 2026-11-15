@@ -38,6 +38,7 @@ from ..domains.credits.schemas import (
     ServiceQuoteView,
 )
 from ..domains.credits.synchronous import SynchronousServiceRequest
+from ..domains.employer.admissions import lock_application_set
 from ..models import EntitlementLedger, PaymentOrder, User
 from ..rate_limiter import limiter
 from ..security import get_current_user
@@ -563,6 +564,7 @@ def create_order(payload: CreateCreditOrder, request: Request, response: Respons
     settings = RazorpaySettings.from_env()
     identity = payload.order_reference or purchase_request_id(current_user.id, "unified:" + payload.idempotency_key)
     try:
+        lock_application_set(db, current_user.id)
         original = db.query(PaymentOrder).filter_by(user_id=current_user.id, public_id=identity).with_for_update(nowait=True).first()
         if payload.order_reference and original is None:
             raise HTTPException(404, "Order not found.")

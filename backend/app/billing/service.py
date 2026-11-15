@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ..domains.employer.admissions import lock_application_set
 from ..domains.notifications import enqueue_notification
 from ..models import (
     EntitlementLedger,
@@ -17,6 +18,7 @@ from ..models import (
     PaymentTransaction,
     User,
 )
+
 PROVIDER = "razorpay"
 log = logging.getLogger("hirewiz.billing.service")
 CAPTURE_EVENTS = {"payment.captured", "order.paid"}
@@ -114,15 +116,28 @@ def _optional_minor(entity: dict[str, Any], key: str) -> int | None:
     return value
 
 
+def _lock_payment_order(db: Session, *filters: Any) -> PaymentOrder | None:
+    """Share the owner-first fence with credit mutations and account erasure."""
+    query = db.query(PaymentOrder).filter(*filters)
+    hint = query.with_entities(PaymentOrder.id, PaymentOrder.user_id).first()
+    if hint is None:
+        return None
+    if hint.user_id is not None:
+        lock_application_set(db, hint.user_id)
+    cached = db.identity_map.get(db.identity_key(PaymentOrder, hint.id))
+    if cached is not None and cached in db.dirty:
+        # Reconciliation already owns the order and may apply several receipts
+        # in one transaction whose session disables autoflush.
+        db.flush([cached])
+    locked = query.filter(PaymentOrder.id == hint.id).populate_existing().with_for_update().first()
+    if locked is None or locked.user_id not in (None, hint.user_id):
+        return None
+    return locked
+
+
 def _lock_order_by_provider_id(db: Session, provider_order_id: str) -> PaymentOrder | None:
-    return (
-        db.query(PaymentOrder)
-        .filter(
-            PaymentOrder.provider == PROVIDER,
-            PaymentOrder.provider_order_id == provider_order_id,
-        )
-        .with_for_update()
-        .first()
+    return _lock_payment_order(
+        db, PaymentOrder.provider == PROVIDER, PaymentOrder.provider_order_id == provider_order_id,
     )
 
 
@@ -414,6 +429,8 @@ def _revoke_entitlement(db: Session, order: PaymentOrder, now: datetime) -> None
     entitlement.revoked_at = now
     if entitlement.user_id is None:
         return
+    if entitlement.user_id != order.user_id:
+        raise WebhookValidationError("entitlement_ownership_mismatch")
 
     user = db.query(User).filter(User.id == entitlement.user_id).with_for_update().first()
     if user is None:
@@ -678,8 +695,8 @@ def _process_refund(
     payment = _entity(payload, "payment")
     order = None
     if payment is not None:
-        # Keep lock ordering consistent with capture/failure: order first,
-        # transaction second. This prevents capture/refund deadlocks.
+        # Keep lock ordering consistent with capture/failure: owner gate,
+        # payment order, then payment transaction.
         provider_order_id = _required_string(payment, "order_id", prefix="order_")
         order = _lock_order_by_provider_id(db, provider_order_id)
     else:
@@ -692,12 +709,7 @@ def _process_refund(
             .first()
         )
         if transaction_hint is not None:
-            order = (
-                db.query(PaymentOrder)
-                .filter(PaymentOrder.id == transaction_hint.order_id)
-                .with_for_update()
-                .first()
-            )
+            order = _lock_payment_order(db, PaymentOrder.id == transaction_hint.order_id)
     if order is None:
         return None
     transaction = (
