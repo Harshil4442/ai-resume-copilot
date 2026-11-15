@@ -39,6 +39,32 @@ class NativeContinuityBoundary(successor.NativeSuccessorBoundary):
             plan.source, plan.prior_source,
         )
 
+    def _resources(self, workers_release):
+        coordinator = historical.coordinator
+        reader = coordinator.NativeCoordinatorRun()
+        try:
+            service = reader.service(coordinator.SERVICE)
+            coordinator.ready(service)
+            targets = {
+                rolling.short_revision(service[key], coordinator.SERVICE)
+                for key in ("latestCreatedRevision", "latestReadyRevision")
+            }
+            targets.update(row["revision"] for row in rolling.pinned_traffic(coordinator.SERVICE, service))
+            secret, version = scope.COORDINATOR_REFERENCE.split(":")
+            expected = {"name": "DATABASE_URL",
+                        "valueSource": {"secretKeyRef": {"secret": secret, "version": version}}}
+            templates = [service["template"], *(coordinator.revision(reader, name) for name in sorted(targets))]
+            need(all(rolling.environment(template).get("DATABASE_URL") == expected for template in templates),
+                 "coordinator_database_reference")
+            pins = super()._resources(workers_release)
+            # Match the stock resource snapshot to the same settled service.
+            # Immutable revisions were just verified from that service's targets.
+            need(reader.service(coordinator.SERVICE) == service, "coordinator_resource_changed")
+            need(self._reference(secret, version) == version, "coordinator_secret_version")
+            return pins
+        finally:
+            reader.stock.session.close()
+
     def verify_global(self, plan):
         from infra.gcp import schema27_continuity_catalog as catalog
 

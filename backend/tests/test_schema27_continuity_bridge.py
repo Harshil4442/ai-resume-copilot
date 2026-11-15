@@ -22,8 +22,38 @@ def lane(context, current, tmp_path, monkeypatch):
         revision["containers"] = copy.deepcopy(templates[pin.service]["template"]["containers"])
     boundary = object.__new__(native.NativeContinuityBoundary)
     for name in ("service", "revision", "iam", "patch", "operation", "health", "_identity", "_reference",
-                 "_resources", "observer"):
+                 "observer"):
         setattr(boundary, name, getattr(context.boundary, name))
+    monkeypatch.setattr(native.successor.NativeSuccessorBoundary, "_resources",
+                        lambda _self, release: context.boundary._resources(release))
+    coordinator = native.historical.coordinator
+    secret, version = native.scope.COORDINATOR_REFERENCE.split(":")
+    template = {"serviceAccount": coordinator.ACCOUNT, "containers": [{
+        "image": plan.image, "env": [
+            {"name": "APP_RELEASE", "value": plan.prior_source.release},
+            {"name": "SERVICE_ROLE", "value": "resume-upload-coordinator"},
+            {"name": "DATABASE_URL", "valueSource": {"secretKeyRef": {"secret": secret, "version": version}}},
+        ],
+    }]}
+    current = coordinator.SERVICE + "-current"
+    tagged = coordinator.SERVICE + "-tagged"
+    service = {
+        "name": coordinator.RESOURCE, "generation": "2", "observedGeneration": "2", "etag": "owned",
+        "terminalCondition": {"state": "CONDITION_SUCCEEDED"}, "template": template,
+        "latestReadyRevision": current, "latestCreatedRevision": current,
+        "trafficStatuses": [{"revision": current, "percent": 100}, {"revision": tagged, "tag": "pilot"}],
+    }
+    revisions = {name: copy.deepcopy(template) | {
+        "name": f"{coordinator.RESOURCE}/revisions/{name}",
+        "conditions": [{"type": "Ready", "state": "CONDITION_SUCCEEDED"}],
+    } for name in (current, tagged)}
+    coordinator_reads = []
+    reader = SimpleNamespace(
+        service=lambda _name: copy.deepcopy(service),
+        revision=lambda _service, name: coordinator_reads.append(name) or copy.deepcopy(revisions[name]),
+        stock=SimpleNamespace(session=SimpleNamespace(close=lambda: None)),
+    )
+    monkeypatch.setattr(coordinator, "NativeCoordinatorRun", lambda: reader)
     pins = tuple(boundary._pin(service, plan.prior_source) for service in native.rolling.release.SERVICES)
     plan = replace(plan, services=pins, reachable_revisions=boundary._reachable(pins, plan.prior_source))
     fixture.plan = plan
@@ -46,7 +76,8 @@ def lane(context, current, tmp_path, monkeypatch):
     folder = tmp_path / "continuity"
     folder.mkdir(mode=0o700)
     return SimpleNamespace(plan=plan, boundary=boundary, fixture=fixture, database=database,
-                           source_reads=source_reads, journal=native._bind_new(plan, folder))
+                           source_reads=source_reads, journal=native._bind_new(plan, folder),
+                           coordinator_reads=coordinator_reads, coordinator_revisions=revisions, tagged=tagged)
 
 
 def run(lane, mode):
@@ -91,6 +122,32 @@ def test_catalog_drift_and_foreign_journal_refuse_before_patch(lane, context):
     lane.database.catalog_sha256 = "f" * 64
     with pytest.raises(native.rolling.RollingDenied, match="database_catalog"):
         run(lane, "advance")
+    assert not lane.fixture.writes
+
+
+def test_stale_coordinator_tag_refuses_before_staging(lane):
+    revision = lane.coordinator_revisions[lane.tagged]
+    env = native.rolling.environment(revision)
+    env["DATABASE_URL"]["valueSource"]["secretKeyRef"]["version"] = "1"
+    with pytest.raises(native.rolling.RollingDenied, match="coordinator_database_reference"):
+        run(lane, "stage")
+    assert lane.tagged in lane.coordinator_reads
+    assert not lane.fixture.writes
+
+
+def test_unverified_coordinator_secret_refuses_before_staging(lane):
+    original = lane.boundary._reference
+    secret, version = native.scope.COORDINATOR_REFERENCE.split(":")
+    references = []
+
+    def describe(name, selector):
+        references.append((name, selector))
+        return "1" if (name, selector) == (secret, version) else original(name, selector)
+
+    lane.boundary._reference = describe
+    with pytest.raises(native.rolling.RollingDenied, match="coordinator_secret_version"):
+        run(lane, "stage")
+    assert (secret, version) in references
     assert not lane.fixture.writes
 
 
