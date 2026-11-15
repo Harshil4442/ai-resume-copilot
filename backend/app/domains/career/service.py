@@ -630,8 +630,12 @@ def create_resume_version(
     db: Session,
     user_id: int,
     payload: schemas.ResumeVersionCreate,
+    *,
+    prepared_native_snapshot: dict[str, Any] | None = None,
 ) -> models.ResumeVersion:
     resume = _owned_resume(db, user_id, payload.resume_id)
+    if prepared_native_snapshot is not None and resume.source_format not in {"tex", "texzip"}:
+        raise HTTPException(409, "The original resume source changed during preparation")
     if payload.opportunity_id:
         get_opportunity(db, user_id, payload.opportunity_id)
     if payload.generation_run_id:
@@ -646,15 +650,14 @@ def create_resume_version(
         if not run:
             raise HTTPException(status_code=404, detail="Analysis run not found")
     if payload.evidence_ids:
-        owned_count = (
-            db.query(func.count(models.EvidenceItem.id))
-            .filter(
-                models.EvidenceItem.user_id == user_id,
-                models.EvidenceItem.id.in_(payload.evidence_ids),
-                models.EvidenceItem.approval_state == "approved",
-            )
-            .scalar()
+        owned_evidence = db.query(func.count(models.EvidenceItem.id)).filter(
+            models.EvidenceItem.user_id == user_id,
+            models.EvidenceItem.id.in_(payload.evidence_ids),
+            models.EvidenceItem.approval_state == "approved",
         )
+        if prepared_native_snapshot is not None:
+            owned_evidence = owned_evidence.filter(models.EvidenceItem.resume_id == resume.id)
+        owned_count = owned_evidence.scalar()
         if int(owned_count or 0) != len(set(payload.evidence_ids)):
             raise HTTPException(
                 status_code=422,
@@ -705,9 +708,20 @@ def create_resume_version(
             if resume.source_format == "docx":
                 from ...services.docx_artifact import prepare_artifact as prepare_docx
                 seal = prepare_docx(resume.source_document, content["source_edits"])
-            else:
+            elif prepared_native_snapshot is None:
                 from ...services.native_tex import prepare_artifact as prepare_tex
                 seal = prepare_tex(resume.source_document, resume.source_format, content["source_edits"], [{"id": identity, **item} for identity, item in allowed.items()])
+            else:
+                from ...services.native_tex import sealed_bytes
+
+                # Only the in-process workspace path can supply a prepared seal.
+                # The public version API still validates and renders its own source edits.
+                seal = prepared_native_snapshot
+                if (content["source_edits"] or seal.get("classification") != "unchanged_source_snapshot"
+                        or seal.get("inspection_version") != 1
+                        or sealed_bytes(seal, resume.source_document, resume.source_format, [], resume.source_format)
+                        != resume.source_document):
+                    raise ResumeLayoutError("This snapshot does not preserve the original TeX source.")
             if resume.source_format == "docx" and seal is None:
                 content = {key: value for key, value in content.items() if key != "sealed_native_artifact"}
             else:
