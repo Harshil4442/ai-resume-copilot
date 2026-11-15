@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from sqlalchemy.orm import Session
 
 from ... import models
-from ..common import public_id, utcnow
+from ..common import as_utc, public_id, utcnow
 
 if TYPE_CHECKING:
     from .mail_budget import ProviderResult
@@ -249,12 +249,12 @@ def _security_email_state(db: Session, item: models.NotificationOutbox | None, n
 
         erasure = item.notification_type == privacy_erasure.TYPE
         if item.status == (privacy_erasure.PENDING if erasure else "pending"):
-            result = SecurityEmailRetry("retry", item.available_at.replace(tzinfo=UTC))
+            result = SecurityEmailRetry("retry", as_utc(item.available_at))
             db.rollback()
             return result
         if item.status == (privacy_erasure.PROCESSING if erasure else "processing"):
             if item.claimed_at is not None:
-                claim_end = item.claimed_at.replace(tzinfo=UTC) + timedelta(minutes=2 if erasure else 15)
+                claim_end = as_utc(item.claimed_at) + timedelta(minutes=2 if erasure else 15)
                 if claim_end > now:
                     db.rollback()
                     return SecurityEmailRetry("retry", claim_end)
@@ -278,8 +278,19 @@ def retry_security_email(db: Session, notification_id: str, *, link_only: bool =
     if item is None:
         db.rollback()
         return SecurityEmailRetry("finished")
-    lane = privacy_erasure if item.notification_type == privacy_erasure.TYPE else password_reset
-    if item.status != (privacy_erasure.PENDING if lane is privacy_erasure else "pending") or item.available_at.replace(tzinfo=UTC) > now:
+    erasure = item.notification_type == privacy_erasure.TYPE
+    lane = privacy_erasure if erasure else password_reset
+    if item.status != (privacy_erasure.PENDING if erasure else "pending"):
+        return _security_email_state(db, item, now)
+    if item.notification_type != "password_changed":
+        payload = item.payload
+        expiry = payload.get("expires_at_ms") if isinstance(payload, dict) else None
+        if type(expiry) is int and expiry <= int(now.timestamp() * 1000):
+            item.status = "erasure_cancelled" if erasure else "cancelled"
+            item.payload, item.updated_at = {}, now
+            db.commit()
+            return SecurityEmailRetry("finished")
+    if as_utc(item.available_at) > now:
         return _security_email_state(db, item, now)
     db.rollback()
     if not lane.configured():

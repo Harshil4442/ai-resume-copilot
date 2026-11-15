@@ -209,6 +209,13 @@ The optional queue can retry one committed password-reset or privacy-erasure ema
 at a time. Both runtime flags and the Terraform lane default off. Keep immediate
 delivery and the existing scheduled sweep active during qualification.
 
+An unacknowledged publication can be attempted once more, with the same task
+name and the committed retry time, when immediate delivery leaves the link
+pending. The exact receiver cancels an expired pending link and clears its
+payload. In-flight and unknown provider outcomes still use their existing
+recovery rules. Keep the five-minute sweep as coverage for interruptions
+between outbox commit and task publication.
+
 The queue requires a separately reviewed, internal-only Cloud Run service named
 `hirewiz-security-mail-worker` in the same project and region. Use the default
 `run.app` origin with Cloud Run Invoker IAM enabled. Start its reviewed,

@@ -16,9 +16,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import column_property, deferred, relationship
+from sqlalchemy.types import TypeDecorator
 
 from .database import Base
+from .domains.common import as_utc
 
 FREE_SIGNUP_ANALYSIS_UNITS = 50
 
@@ -71,6 +74,16 @@ class CandidatePasswordAccount(Base):
     state = Column(String(24), nullable=False)
 
 
+class _UtcProofTimestamp(TypeDecorator[datetime]):
+    """Retain the proof table's existing UTC-naive PostgreSQL representation."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        return as_utc(value).replace(tzinfo=None) if value is not None else None
+
+
 class PasswordResetToken(Base):
     """One-use mailbox proof; no plaintext reset token is retained."""
     __tablename__ = "password_reset_tokens"
@@ -88,9 +101,9 @@ class PasswordResetToken(Base):
     native_revision_sha256 = Column(String(64), nullable=True)
     legacy_epoch = Column(BigInteger, nullable=False)
     status = Column(String(24), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=_utcnow)
-    expires_at = Column(DateTime, nullable=False)
-    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(_UtcProofTimestamp, nullable=False, default=_utcnow)
+    expires_at = Column(_UtcProofTimestamp, nullable=False)
+    consumed_at = Column(_UtcProofTimestamp, nullable=True)
 
 
 class CandidateLifetimeHistory(Base):

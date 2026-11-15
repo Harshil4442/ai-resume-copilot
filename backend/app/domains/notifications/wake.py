@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ...models import NotificationOutbox
-from ..common import utcnow
+from ..common import as_utc, utcnow
 from .privacy_erasure import PENDING as ERASURE_PENDING
 from .service import SecurityEmailRetry, retry_security_email
 
@@ -63,7 +63,7 @@ def _schedule_window(db: Session, notification_id: str) -> tuple[datetime, datet
         expires = datetime.fromtimestamp(expiry_ms / 1000, UTC)
     except (OverflowError, OSError, ValueError):
         return None
-    scheduled = max(utcnow() + WAKE_DELAY, available.replace(tzinfo=UTC))
+    scheduled = max(utcnow() + WAKE_DELAY, as_utc(available))
     return (scheduled, expires) if scheduled < expires else None
 
 
@@ -107,14 +107,20 @@ def publish_link_wake(db: Session, notification_id: str) -> bool:
         return False
     if window is None:
         return False
-    if not _confirm(*target, notification_id, *window):
+    try:
+        confirmed = _confirm(*target, notification_id, *window)
+    except Exception:  # noqa: BLE001 -- optional client failure must not interrupt direct security mail.
+        confirmed = False
+    if not confirmed:
         _logger.warning("Security email task acknowledgement unavailable")
-        return False
-    return True
+    return confirmed
 
 
 def deliver_link_with_wake(db: Session, notification_id: str) -> SecurityEmailRetry:
-    # Keep immediate delivery, including when queue acknowledgement is unavailable.
-    # The existing periodic sweep remains the safety net for unpublished work.
-    publish_link_wake(db, notification_id)
-    return retry_security_email(db, notification_id)
+    confirmed = publish_link_wake(db, notification_id)
+    result = retry_security_email(db, notification_id)
+    if not confirmed and result.status == "retry":
+        # The existing name deduplicates an uncertain first publish. A confirmed
+        # send or unknown provider outcome never schedules another delivery.
+        publish_link_wake(db, notification_id)
+    return result
