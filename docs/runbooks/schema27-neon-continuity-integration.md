@@ -84,12 +84,14 @@ continuity transaction that uses the migrator for the application table
 catalog/data reads, marker and FK locks, Alembic DDL, and audit insert. Use the
 bootstrap only for the physical-identity and schema-privilege operations that
 require it. Preserve the existing advisory lock, lock timeouts and final
-catalog/ACL comparisons. Rehearse with a non-superuser, SET-only bootstrap
-without direct table grants before relying on this path. Do not introduce
-standing grants to fit the old transaction. An
-[owned PostgreSQL test](../../backend/tests/test_neon_continuity_migration_permissions_postgres.py)
-already reproduces the stock refusal and verifies that the scoped owner role
-can read the marker, acquire both locks, and insert the audit row.
+catalog/ACL comparisons. The
+[successor SQL step](../../backend/scripts/notification_schema27_continuity_step.py)
+now prepares the DDL and detached audit under that transaction-local role.
+It checks the durable intent hash supplied by its caller and returns before
+commit. The operational controller must still bind and authenticate that
+input. The [owned PostgreSQL test](../../backend/tests/test_neon_continuity_migration_permissions_postgres.py)
+uses a non-superuser, SET-only bootstrap without direct table grants and
+verifies both atomic rollback after DDL and audit and a successful commit.
 
 Retain the normal durable intent before DDL, exact bridge stage/promote
 started/acknowledged/readback records, same-transaction audit row, and shared
