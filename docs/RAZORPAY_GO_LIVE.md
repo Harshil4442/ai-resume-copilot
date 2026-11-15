@@ -79,9 +79,31 @@ Point the HTTPS tunnel only at the printed loopback
 the exact printed callback path in the Test dashboard. The
 receiver relays the raw body and the Razorpay signature and event ID. It returns
 only the HTTP status and keeps no delivery records. Verify that `GET /api/health`
-and unrelated POST paths are refused at the public endpoint. The launcher
-stops its local processes and drops only its own schema on exit. Capture
-sanitized evidence while the launcher is running.
+and unrelated POST paths are refused at the public endpoint. By default the
+launcher stops its local processes and drops its disposable schema on exit.
+Capture sanitized evidence while the launcher is running.
+
+If a refund may outlast the checkout window, use the dedicated disposable
+PostgreSQL cluster on port `55434` and an existing owner-only directory. Add
+`--wallet-directory /absolute/path/to/private-test-wallet` to the Test checkout
+command. The launcher retains its disposable schema and records its local
+database identity. Shut down both the temporary relay and the dedicated cluster
+while the refund processes. Keep the Test event eligible for replay in Razorpay.
+After Razorpay processes it, restart the same cluster and run:
+
+```sh
+backend/.venv/bin/python -B -m backend.scripts.run_razorpay_test_checkout \
+  --allow-disposable-postgres --resume-test-wallet --minutes 15 \
+  --wallet-directory /absolute/path/to/private-test-wallet
+```
+
+Enter the separate Test webhook signing secret at the hidden prompt. The restored
+receiver accepts signed callbacks with checkout and outbound provider calls closed.
+Point the Test callback at its temporary relay and replay the exact pending Test
+refund event if Razorpay offers replay. Verify its credit adjustment in the same
+retained wallet, then retire the temporary callback, relay and disposable cluster.
+The wallet record contains only the schema, migration revision and local database
+identity. [Razorpay replay controls](https://razorpay.com/docs/webhooks/replay-events/)
 
 For one Test order, observe delivery of `order.paid` and `payment.captured` and
 verify they settle one credit lot. To verify a genuine Razorpay retry, atomically

@@ -37,11 +37,13 @@ commercial/finance gates and full R03/RTO qualification remain pending.
 
 Razorpay acknowledged HireWiz’s request for written confirmation of the proposed
 credit passes and candidate-reviewed application assistance. Merchant-scope
-confirmation and Razorpay Test evidence for capture, refunds and reconciliation
-remain pending. The isolated receiver can withhold signed callbacks for an exact
-Test order so recovery can be exercised before Razorpay redelivers them. A
-synthetic held callback produced zero ledger changes, then settled exactly once
-after release and replay. [Test checkout tooling](https://github.com/Harshil4442/ai-resume-copilot/pull/126)
+confirmation is pending. Two ₹59 orders settled through Razorpay’s Test API and
+each issued one 40-credit lot. The Razorpay Test dashboard later showed the
+₹29.50 refund as processed. The first lab had already removed its Test wallet.
+Provider-signed delivery and the resulting wallet adjustment still need an
+end-to-end check. The updated lab was verified locally to retain its disposable
+wallet and reopen it with checkout closed after the buyer session stops.
+[Test checkout and refund verification](../RAZORPAY_GO_LIVE.md)
 
 The production shadow observation for 6–13 November UTC completed under the
 read-only database role. The window contained no qualifying operations or

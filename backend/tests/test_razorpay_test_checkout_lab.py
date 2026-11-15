@@ -2,18 +2,30 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import httpx
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from backend.app.domains.credits.models import CreditCampaign
 from backend.app.domains.credits.pricing import public_catalog
 from backend.scripts.run_razorpay_test_checkout import (
     LAUNCH_PRICES,
+    ROOT,
+    CheckoutLabError,
     allowed_provider_request,
+    load_wallet_state,
+    lock_wallet_directory,
     provider_environment,
     runtime_environment,
+    save_wallet_state,
     synthetic_campaign,
+    wallet_identity,
+    webhook_environment,
 )
+from sqlalchemy import create_engine, text
+from test_mail_budget_postgres import owned_pg_url as owned_pg_url
 
 TEST_AUTH = ("rzp_test_synthetic123", "synthetic-checkout-test-key")
 TEST_WEBHOOK_SECRET = "a-separate-synthetic-webhook-secret"
@@ -40,6 +52,47 @@ def test_only_selected_environment_escapes_parent_process(tmp_path):
     supplied = provider_environment(*TEST_AUTH, TEST_WEBHOOK_SECRET)
     assert supplied["RAZORPAY_KEY_ID"] == TEST_AUTH[0]
     assert supplied["RAZORPAY_WEBHOOK_SECRET"] == TEST_WEBHOOK_SECRET
+
+
+def test_test_refund_resume_only_loads_the_signing_secret():
+    assert webhook_environment(TEST_WEBHOOK_SECRET) == {"RAZORPAY_WEBHOOK_SECRET": TEST_WEBHOOK_SECRET}
+    with pytest.raises(ValueError):
+        webhook_environment(" " + TEST_WEBHOOK_SECRET)
+
+
+def test_retained_test_wallet_round_trip_matches_owned_cluster_and_schema(owned_pg_url, tmp_path):
+    folder = tmp_path / "wallet"
+    folder.mkdir(mode=0o700)
+    record = folder / "wallet.json"
+    schema = "razorpay_test_" + uuid4().hex
+    revision = ScriptDirectory.from_config(Config(str(ROOT / "backend" / "alembic.ini"))).get_current_head()
+    engine = create_engine(owned_pg_url, hide_parameters=True)
+    try:
+        with engine.begin() as db:
+            db.exec_driver_sql(f'CREATE SCHEMA "{schema}"')
+            db.exec_driver_sql(f'CREATE TABLE "{schema}".alembic_version (version_num varchar NOT NULL)')
+            db.execute(text(f'INSERT INTO "{schema}".alembic_version VALUES (:revision)'), {"revision": revision})
+        with lock_wallet_directory(folder), engine.begin() as db:
+            db.execute(text("SET TRANSACTION READ ONLY"))
+            identity = wallet_identity(db, schema)
+            save_wallet_state(record, identity)
+            with pytest.raises(BlockingIOError), lock_wallet_directory(folder):
+                pytest.fail("Another process acquired the same Test wallet")
+        with lock_wallet_directory(folder), engine.begin() as db:
+            assert load_wallet_state(record, db) == schema
+            other = folder / "other.json"
+            save_wallet_state(other, identity | {"cluster": "0"})
+            with pytest.raises(CheckoutLabError, match="different database"):
+                load_wallet_state(other, db)
+            with pytest.raises(FileExistsError):
+                save_wallet_state(record, identity)
+            record.chmod(0o644)
+            with pytest.raises(CheckoutLabError, match="private regular file"):
+                load_wallet_state(record, db)
+    finally:
+        with engine.begin() as db:
+            db.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        engine.dispose()
 
 
 @pytest.mark.parametrize(("key", "secret", "hook"), [

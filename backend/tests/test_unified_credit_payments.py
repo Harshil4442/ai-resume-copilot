@@ -395,7 +395,7 @@ def test_recent_order_recovers_oldest_provider_bound_pass_before_newer_completed
     assert len(calls) == 3
 
 
-def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified, session_factory):
+def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified, session_factory, monkeypatch):
     client, _ = unified
     _, _, result = start(client)
     assert result.status_code == 200
@@ -405,6 +405,10 @@ def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified
         half = _refund_payload(order, "rfnd_half", 2950)
         rest = _refund_payload(order, "rfnd_rest", 2950)
     assert _post_event(client, "evt_capture", capture).status_code == 200
+    assert client.get("/api/v1/credits/wallet").json()["available_credits"] == 40
+    monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "false")
+    monkeypatch.delenv("RAZORPAY_KEY_ID")
+    monkeypatch.delenv("RAZORPAY_KEY_SECRET")
     assert _post_event(client, "evt_half", half).status_code == 200
     assert _post_event(client, "evt_half", half).status_code == 200
     assert client.get("/api/v1/credits/wallet").json()["available_credits"] == 20
