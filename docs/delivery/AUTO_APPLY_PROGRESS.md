@@ -1,8 +1,10 @@
 # HireWiz development and deployment progress
 
-Updated **14 November 2026 (IST)**. The API, analysis worker and employer
-worker each send 100% of their traffic to DB8 on schema26. The separate résumé
-coordinator serves its retained 7a00839 image. The live frontend reduces
+Updated **15 November 2026 (IST)**. At 05:49 UTC, the API, analysis worker,
+employer worker and separate résumé coordinator each served 100% of traffic on
+their new Neon Free continuity revisions. They use the existing schema26 and
+retained DB8 and 7a00839 application images. A signed-in browser read confirmed
+access at 05:50 UTC. The last independently pinned frontend source below reduces
 sign-in and Dashboard requests, checks that a browser-review download matches
 the selected résumé, restores keyboard focus when application review closes,
 and guides users through secure sign-out when their backend session expires.
@@ -47,18 +49,28 @@ discovery batches. The report retained two unknown and three settled provider
 liabilities, with zero SQL mutations or model calls. Representative shadow
 accounting remains pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
-The local PostgreSQL 17 recovery rehearsal restored a populated employer catalogue
-and verified the schema, 84 table contents, nine sequence states, original résumé
-bytes and payment replay. An isolated Neon recovery and measured production
-recovery times remain pending. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#schema27-database-recovery-rehearsal)
+The local PostgreSQL 17 rehearsal restored a populated employer catalogue and
+verified the schema, 84 table contents, nine sequence states, original résumé
+bytes and payment replay. On 15 November, the planned production schema26
+continuity move restored the fenced source into a separate Neon Free project.
+Independent readback before opening traffic matched the row digests and grants
+for 83 tables, nine sequence states and the existing native
+account authority. The closure request was acknowledged at 05:29:01 UTC, public
+API reopening was verified at 05:47:39 UTC, and the signed-in Dashboard,
+credits, saved opportunities and an existing detail loaded at 05:50:05 UTC.
+Elapsed time from the closure acknowledgement was **18 minutes 37 seconds** to
+verified API reopening and **21 minutes 3 seconds** to the signed-in read.
+The browser used its existing session for the read-only checks. R03 remains
+open for broader recovery qualification, including failure-time RPO/RTO and
+schema27 recovery. [Recovery runbook](UNIFIED_CREDIT_ROLLOUT.md#schema27-database-recovery-rehearsal)
 
 ## Latest verified runtime and pending releases
 
 | Component | Current evidence | Verification and boundary |
 |---|---|---|
-| Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. Neither the new application image nor the new policy pair has replaced these serving revisions. |
-| Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-d-32d98b931d16-open` | 100% serving on the retained revision. The latest-ready pointer names a different revision. |
-| Production frontend | Source `987c831fa17d98e6a6b5a2225d55960754006972`, deployment `dpl_2vM9q17SpzECqWYW1qvy1KpNisxM` | The signed-in Dashboard, saved Jobs and legacy Billing views opened with existing account data. The predecessor paced four Jobs reads that had reached the shared limit. The latest frontend updates the original order and spendable balances after partial and full refund readback, and accepts signed legacy analysis balances in the owned account response. Five browser widths used simulated refund responses. The signed-in résumé page opened and simulated inspection failures displayed the new message. Live checkout remains disabled. |
+| Serving API, analysis worker and employer worker | Source `db8a25adefaf3bc2e00a61f7543f8a1862597adf`; image `sha256:854c0361b7af3fb095f8869e02f156910ad6292d90b17c30e0d15efa53d01cbe`; schema `20261031_0026` | Retained DB8 Build `05fafcae-934e-448f-9790-26a60b6f3b64` and CI `41650961963`. The three `-neonfree-20261115` revisions each had 100% traffic on the replacement database at 05:49 UTC. The new application image and reviewed policy pair are still pending. |
+| Résumé coordinator | Source `7a00839dc90a93caebb0b3b5f2e9e03c51e941e9`; active revision `hirewiz-resume-coordinator-neonfree-20261115` | 100% traffic on the retained coordinator image and replacement database at 05:49 UTC. |
+| Production frontend | Last independently pinned on 14 November. Source `987c831fa17d98e6a6b5a2225d55960754006972`, deployment `dpl_2vM9q17SpzECqWYW1qvy1KpNisxM` | The signed-in Dashboard, saved Jobs and legacy Billing views opened with existing account data. The predecessor paced four Jobs reads that had reached the shared limit. That frontend updates the original order and spendable balances after partial and full refund readback, and accepts signed legacy analysis balances in the owned account response. Five browser widths used simulated refund responses. The signed-in résumé page opened and simulated inspection failures displayed the new message. Live checkout remains disabled. |
 | Document inspector | Accepted image `sha256:562127e194be4479be9f52756dcd21830b6e64b8b250d39237643ead2c453e36` | Definition proof expired `2026-11-05T06:24:10Z`. New documents would stop at inspection while definitions are stale. The available production logs contain no upload attempts after expiry. The 17-case maintenance and 80-document/nine-job QA holds remain. |
 | Companion | Public/source package **0.8.9** | Review `8a459084-d4ff-4819-adf1-8c1184feeb46` bound resume `28`, original SHA-256 `054559b40df2511d7ba6561b04e7e50b208a70fb4cca45d2382191a102a8dc58`, and only `first_name`. Cancellation preceded application approval, Fill, upload and submission. Device `23d49cfd-0140-4254-afd8-87881b56b423` was revoked. The exact review and revocation match the read-only SQL observation. |
 | Restored prior Cloud Run templates | Original staged source `9b9d9c33dfae519b95fbc380fc99ba6bcf68e8a4` | The qualified controller completed all three DB8 template restores on 5 November. The 13 November read confirmed the original aliases, sole 100% DB8 traffic and removal of the 9b9 staging aliases. |
@@ -72,8 +84,13 @@ The current owner review/cancel/revoke UI record has SHA-256
 `b73c37dcd010d24df5b2af19c8d9a9572110284bf91f078675ab8be563286afb`.
 The matching SQL observation has SHA-256
 `c716b36be4b13666ae39744d4fb2591736ce5bf820111f51bd56ec4c79239875`.
-The completed restore receipt has SHA-256
+The completed historical template restore receipt has SHA-256
 `0db12c8baa4ae658cf821f5d5edb69048e55cef4a9c46f0911294fea205a6511`.
+The 15 November continuity import and pre-opening readback has SHA-256
+`84dfd33cec9fef36dad677bda8333b17014f593640dc46ce1b755199687b3309`.
+The serving-state and signed-in read records have SHA-256
+`e26cb6b592c60167733d5e93cd688f73882d1cf0157cc61b0f9458bfdc47bfd5` and
+`eb77c24ec923699c9e5306a830c9ae885035376f3bd2115bcafba6a5635eb28c`.
 The old staging plan and journals remain under their original custody. The next forward rollout needs a fresh scanner proof and reviewed policies with
 at least four hours of validity at capture. New traffic promotion, rollout financial
 readback and full R03/RTO qualification remain pending.
