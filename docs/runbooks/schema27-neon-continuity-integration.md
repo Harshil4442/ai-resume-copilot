@@ -24,11 +24,11 @@ that the recovered database does not have. The new loader checks the supplied
 file hash and kind, validates the source and service pins locally, and binds
 the complete bridge metadata and database scope to the existing journal
 format. The normal traffic builders accept the resulting immutable plan.
-The native dispatcher still needs to verify this custody before acting. Give the
-migration a new plan kind that hashes the same database scope, bridge plan and
-bridge receipts into its intent and same-transaction audit. All phases must
-refuse swapped plans, receipts, scopes or journals before accessing credentials
-or issuing actions.
+The [native bridge dispatcher](../../infra/gcp/schema27_continuity_bridge.py)
+checks this custody before staging, promotion, or rollback. The separate
+[migration dispatcher](../../infra/gcp/schema27_continuity_migration.py) binds
+its plan to the original bridge journal and promotion receipts. The migration
+intent and same-transaction audit include the physical database identity.
 
 Validate the exact native Git SHA, successful CI, Cloud Build output digest,
 bridge image and controller source. Keep scanner proof, funding and model
@@ -53,18 +53,11 @@ missing files. It verifies the commitment in memory before authenticating
 the exact database observer. Keep the resolved credential and its private
 plan out of logs and provider requests.
 
-The current [continuity observer](../../backend/scripts/neon_continuity_identity.py)
-returns only identity metadata. To implement the release port, extract a
-private connection context from that module and have the observation API use
-it. Match the effective SSL and direct login settings and exact schema on the
-same connection used for catalog, native session and liability checks. For
-PostgreSQL sessions behind the Neon proxy, keep the existing distinction
-between the protocol cancellation key and the SQL backend PID. Reuse the
-native public session validation with a disjoint transport attestation covering
-the new scope. Verify the runtime separately with its one fixed credential and
-the same read-only guards, including numeric secret identity, state and
-unchanged metadata around access. The runtime can never supply the observer
-connection.
+The [catalog observer](../../infra/gcp/schema27_continuity_catalog.py) verifies
+TLS, the observer's identity, the exact schema, sessions and protected liabilities
+in a single read-only snapshot. It uses the SQL backend PID for the session
+check. The [runtime probe](../../infra/gcp/schema27_continuity_runtime.py) checks
+its own numeric secret and SQL identity independently.
 
 Replace the old database-only bridge port identified by
 [`NativeSuccessorBoundary._database`](../../backend/scripts/schema26_app_successor.py).
@@ -103,10 +96,9 @@ bootstrap only for the physical-identity and schema-privilege operations that
 require it. Preserve the existing advisory lock, lock timeouts and final
 catalog/ACL comparisons. The
 [successor SQL step](../../backend/scripts/notification_schema27_continuity_step.py)
-now prepares the DDL and detached audit under that transaction-local role.
-It checks the durable intent hash supplied by its caller and returns before
-commit. The operational controller must still bind and authenticate that
-input. The [owned PostgreSQL test](../../backend/tests/test_neon_continuity_migration_permissions_postgres.py)
+prepares the DDL and detached audit under that transaction-local role. The
+dispatcher writes and rereads the intent before passing its hash to the
+transaction. The [owned PostgreSQL test](../../backend/tests/test_neon_continuity_migration_permissions_postgres.py)
 uses a non-superuser, SET-only bootstrap without direct table grants and
 verifies both atomic rollback after DDL and audit and a successful commit.
 
@@ -130,9 +122,17 @@ audit; an existing intent never causes DDL to be replayed.
    compatible owned reads with the currently serving frontend. Promote the
    bridge using its journal, then promote the matched frontend.
 3. Reverify source, policy, resources and exact schema26 and roll-forward
-   recovery evidence. Capture the separate migration plan. Run the authorized
-   transaction once, reconcile through the continuity observer, and keep the
-   notification flags closed pending their separate qualification.
+   recovery evidence. Run `python -m infra.gcp.schema27_continuity_migration capture`
+   with the original bridge plan, its SHA-256 and its journal. Use a separate
+   private journal for `upgrade` and `reconcile`, with the captured migration
+   plan's SHA-256. After an interrupted upgrade, run `reconcile` and leave
+   notification flags closed.
+
+The actual Neon Free schema26 catalog, five protected liability groups and
+the bootstrap SQL role were verified through read-only checks on November 15.
+The traffic and migration dispatchers were exercised against local fixtures.
+Hosted staging still requires an exact source build and current policy and
+scanner evidence.
 
 Before the migration commits, rollback uses the verified schema26 revision on
 the current database. A schema27 rollback or forward recovery must have its
