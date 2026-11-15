@@ -61,7 +61,7 @@ ENTRY = PREFIX + "job.py"
 VERSION = "held-out-native-source-v2"
 MAX_SOURCE = 512 * 1024
 PORT_PATH = "backend/scripts/qualify_native_quality_acquisition.py"
-PORT_SHA256 = 'e22a35424be5ef6970389ebe8e14a8cd9ad1b035efad4602aac49ca9400b5c63'
+PORT_SHA256 = '788cf3f1fad17feba77e503789a615d6f4058e1f4710598390185a46c43609ae'
 _PORTS: types.ModuleType | None = None
 _CHILD_ROOT: Path | None = None
 
