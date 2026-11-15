@@ -18,9 +18,11 @@ import socket
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from uuid import uuid4
 
 import pytest
@@ -55,6 +57,7 @@ from backend.app.domains.resume_uploads.models import ResumeUpload
 from backend.app.models import (
     EvidenceItem,
     ModelCostLiability,
+    PaymentEvent,
     PaymentOrder,
     Resume,
     ResumeVersion,
@@ -68,7 +71,7 @@ from backend.app.services.resume_artifacts import render_resume_version
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from psycopg.errors import CheckViolation, ForeignKeyViolation, InsufficientPrivilege
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -382,7 +385,7 @@ def assert_application_recovery(engine, expected, monkeypatch, *, subsequent_sea
         assert conflict.value.status_code == 409 and conflict.value.detail["code"] == "canonical_opening_conflict"
 
 
-def recovery_client(engine):
+def recovery_client(engine, *, client_host="testclient"):
     app = FastAPI()
     app.include_router(billing_routes.router, prefix="/api")
     app.include_router(resume_routes.router, prefix="/api")
@@ -394,7 +397,7 @@ def recovery_client(engine):
             yield db
 
     app.dependency_overrides[get_db] = get_owned_session
-    return TestClient(app)
+    return TestClient(app, client=(client_host, 50000))
 
 
 def recovery_api_readback(engine, application, credits, owner, other_owner):
@@ -446,6 +449,60 @@ def seed_pending_recovery_purchase(engine, stamp):
     return reference, capture, credits
 
 
+def concurrent_webhook_responses(engine, event_id, capture):
+    def receive_capture():
+        with recovery_client(engine) as client:
+            response = _post_event(client, event_id, capture)
+            return response.status_code, response.json().get("status")
+
+    before_claim = Barrier(2, timeout=10)
+
+    def wait_before_claim(db, *_):
+        if any(isinstance(row, PaymentEvent) and row.provider_event_id == event_id for row in db.new):
+            before_claim.wait()
+
+    # Force both delivery transactions to reach the insert with no known event.
+    event.listen(Session, "before_flush", wait_before_claim)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            deliveries = [executor.submit(receive_capture) for _ in range(2)]
+            return [delivery.result(timeout=15) for delivery in deliveries]
+    finally:
+        event.remove(Session, "before_flush", wait_before_claim)
+
+
+def assert_capture_waits_for_original_order(engine, pending_purchase, owner, monkeypatch):
+    reference, capture, _ = pending_purchase
+    event_id = "evt_owned_backup_gap"
+
+    def unexpected_read(*args, **kwargs):
+        pytest.fail("Provider read attempted without the original purchase")
+
+    before, _ = snapshot(engine)
+    with monkeypatch.context() as isolated:
+        isolated.setattr("backend.app.billing.reconciliation._provider_json", unexpected_read)
+        with recovery_client(engine, client_host="pre-order-restore") as client:
+            assert client.get(f"/api/v1/credits/orders/{reference}", headers=owner).status_code == 404
+            assert client.post(f"/api/billing/orders/{reference}/reconcile", headers=owner).status_code == 404
+            assert concurrent_webhook_responses(engine, event_id, capture) == [(503, None), (503, None)]
+            assert _post_event(client, event_id, capture).status_code == 503
+
+            # An unrelated insert failure proves that no winning event exists to acknowledge.
+            with engine.begin() as db:
+                db.exec_driver_sql("ALTER TABLE public.payment_events ADD CONSTRAINT owned_reject_claim "
+                                   "CHECK (provider_event_id <> 'evt_owned_refused_claim')")
+            assert _post_event(client, "evt_owned_refused_claim", capture).status_code == 503
+
+    after, _ = snapshot(engine)
+    events = after.pop("payment_events")
+    assert after == {name: rows for name, rows in before.items() if name != "payment_events"}
+    unmatched = [event for event in events if event["provider_event_id"] == event_id]
+    assert len(unmatched) == 1
+    assert unmatched[0]["processing_status"] == "retryable_unknown_order"
+    assert unmatched[0]["order_id"] is None
+    assert [event for event in events if event["provider_event_id"] != event_id] == before["payment_events"]
+
+
 def assert_capture_recovered_after_backup(engine, pending_purchase, owner, other_owner, monkeypatch):
     reference, capture, recovered_credits = pending_purchase
     order = capture["payload"]["order"]["entity"]
@@ -488,8 +545,8 @@ def assert_capture_recovered_after_backup(engine, pending_purchase, owner, other
         pending["accepted_quote"].pop("server_time")
         restored["accepted_quote"].pop("server_time")
         assert restored["accepted_quote"] == pending["accepted_quote"]
-        late_callback = _post_event(client, "evt_owned_backup_gap", capture)
-        assert late_callback.status_code == 200 and late_callback.json()["status"] == "processed"
+        deliveries = concurrent_webhook_responses(engine, "evt_owned_backup_gap", capture)
+        assert sorted(deliveries) == [(200, "duplicate"), (200, "processed")]
         retry = _post_event(client, "evt_owned_backup_gap", capture)
         assert retry.status_code == 200 and retry.json()["status"] == "duplicate"
     assert reads == list(replies) * 2
@@ -730,6 +787,15 @@ def owned_pg_command(pg_bin, tool, *arguments, env=None, timeout=30):
     return output
 
 
+def physical_backup(pg_bin, source_port, destination, password):
+    owned_pg_command(pg_bin, "pg_basebackup", "--host=127.0.0.1", f"--port={source_port}",
+                     "--username=hirewiz", "--pgdata", destination, "--format=plain",
+                     "--wal-method=stream", "--checkpoint=fast", "--manifest-checksums=SHA256",
+                     "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
+                                           "PGSSLMODE": "disable"})
+    owned_pg_command(pg_bin, "pg_verifybackup", "--exit-on-error", destination)
+
+
 @contextmanager
 def owned_pg_cluster(pg_bin, data, password):
     # Let the OS choose an available port. The data-directory and authenticated
@@ -938,6 +1004,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
         root = Path(owned).resolve()
         password = secrets.token_hex(24)
         source_data, restored_data = root / "source", root / "restored"
+        pre_order_data = root / "pre-order"
         init_owned_pg_cluster(pg_bin, source_data, password)
         archive = root / "owned-catalogue.dump"
         stamp = datetime.now(UTC) - timedelta(seconds=1)
@@ -965,13 +1032,15 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                     {"Authorization": f"Bearer {security.create_access_token(subject=str(identity))}"}
                     for identity in (1, 2, 3)
                 )
-                pending_purchase = seed_pending_recovery_purchase(source, stamp)
-                before_api = recovery_api_readback(source, application_recovery, credits, owner, other_owner)
             with source.begin() as db:
                 db.execute(text("UPDATE public.employer_sources SET enabled=false WHERE id='owned-employer'"))
                 if not physical:
                     db.exec_driver_sql("CREATE ROLE owned_archive_reader NOLOGIN")
                     db.exec_driver_sql("GRANT SELECT ON public.employer_catalogue_source_revisions TO owned_archive_reader")
+            if physical:
+                physical_backup(pg_bin, source_port, pre_order_data, password)
+                pending_purchase = seed_pending_recovery_purchase(source, stamp)
+                before_api = recovery_api_readback(source, application_recovery, credits, owner, other_owner)
             tables, sequences = expected = snapshot(source)
             assert {(row["valid_from"], row["valid_to"], row["enabled"])
                     for row in tables["employer_catalogue_source_revisions"]} == {(1, 3, True), (3, None, False)}
@@ -998,12 +1067,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
                                  "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
                                                        "PGSSLMODE": "disable"})
             else:
-                owned_pg_command(pg_bin, "pg_basebackup", "--host=127.0.0.1", f"--port={source_port}",
-                             "--username=hirewiz", "--pgdata", restored_data, "--format=plain",
-                             "--wal-method=stream", "--checkpoint=fast", "--manifest-checksums=SHA256",
-                             "--no-password", env={"PGPASSWORD": password, "PGCONNECT_TIMEOUT": "5",
-                                                   "PGSSLMODE": "disable"})
-                owned_pg_command(pg_bin, "pg_verifybackup", "--exit-on-error", restored_data)
+                physical_backup(pg_bin, source_port, restored_data, password)
             backup_measurement = "owned_physical_backup_verify_seconds" if physical else f"owned_{method}_backup_seconds"
             record_property(backup_measurement, round(time.monotonic() - started, 3))
             assert snapshot(source) == expected
@@ -1131,3 +1195,7 @@ def _rehearse_published_catalogue_recovery(record_property, monkeypatch, *, meth
             record_property(f"owned_{method}_start_and_verify_seconds", round(time.monotonic() - started, 3))
         record_property(f"owned_{method}_public_tables", len(tables))
         record_property(f"owned_{method}_public_sequences", len(sequences))
+        if physical:
+            with owned_pg_cluster(pg_bin, pre_order_data, password) as (pre_order, _):
+                assert_capture_waits_for_original_order(pre_order, pending_purchase, owner, monkeypatch)
+            record_property("owned_physical_pre_order_backup_retained_unmatched_capture", True)

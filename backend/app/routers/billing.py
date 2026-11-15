@@ -33,6 +33,8 @@ from ..billing.reconciliation import (
     fetch_reconciliation,
 )
 from ..billing.service import (
+    RETRYABLE_EVENT_CLAIM,
+    RETRYABLE_EVENT_STATUSES,
     WebhookValidationError,
     _process_capture,
     _process_refund,
@@ -794,8 +796,8 @@ async def razorpay_webhook(request: Request, db: Session = Depends(get_db)):
         )
     except WebhookValidationError as exc:
         log.warning("Rejected Razorpay webhook event %s (%s)", event_id, exc.code)
-        raise HTTPException(status_code=400, detail="Invalid webhook payload.")
-    if result.status in {"retryable_unknown_order", "retryable_unknown_payment"}:
+        raise HTTPException(status_code=400, detail="Invalid webhook payload.") from None
+    if result.status in RETRYABLE_EVENT_STATUSES or result.status == RETRYABLE_EVENT_CLAIM:
         log.error("Razorpay webhook %s is unmatched and requires retry/reconciliation", event_id)
         raise HTTPException(status_code=503, detail="Webhook cannot be reconciled yet.")
     return {"ok": True, "status": result.status}

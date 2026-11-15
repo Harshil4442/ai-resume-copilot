@@ -26,6 +26,7 @@ FAILED_EVENTS = {"payment.failed"}
 REFUND_EVENTS = {"refund.processed"}
 IGNORED_REFUND_EVENTS = {"refund.failed", "payment.refunded"}
 RETRYABLE_EVENT_STATUSES = {"retryable_unknown_order", "retryable_unknown_payment"}
+RETRYABLE_EVENT_CLAIM = "retryable_event_claim"
 
 
 def utcnow() -> datetime:
@@ -824,6 +825,8 @@ def process_razorpay_webhook(
     if event is not None:
         if event.payload_sha256 != payload_sha256 or event.event_type != event_type:
             raise WebhookValidationError("event_replay_mismatch")
+        if event.processing_status == "received":
+            return WebhookResult(status=RETRYABLE_EVENT_CLAIM, event_type=event_type)
         if event.processing_status not in RETRYABLE_EVENT_STATUSES:
             return WebhookResult(status="duplicate", event_type=event_type)
         event.processing_status = "received"
@@ -843,8 +846,7 @@ def process_razorpay_webhook(
         try:
             db.flush()
         except IntegrityError:
-            # A concurrent delivery claimed the event. It will either complete
-            # or leave a retryable state for the provider's next attempt.
+            # A failed insert only acknowledges a matching event if the winner completed it.
             db.rollback()
             concurrent = (
                 db.query(PaymentEvent)
@@ -854,11 +856,17 @@ def process_razorpay_webhook(
                 )
                 .first()
             )
-            if concurrent and (
+            if concurrent is None:
+                return WebhookResult(status=RETRYABLE_EVENT_CLAIM, event_type=event_type)
+            if (
                 concurrent.payload_sha256 != payload_sha256
                 or concurrent.event_type != event_type
             ):
-                raise WebhookValidationError("event_replay_mismatch")
+                raise WebhookValidationError("event_replay_mismatch") from None
+            if concurrent.processing_status in RETRYABLE_EVENT_STATUSES:
+                return WebhookResult(status=concurrent.processing_status, event_type=event_type)
+            if concurrent.processing_status == "received":
+                return WebhookResult(status=RETRYABLE_EVENT_CLAIM, event_type=event_type)
             return WebhookResult(status="duplicate", event_type=event_type)
 
     try:

@@ -583,9 +583,19 @@ closed on the restored database, the owner reconciled the original purchase
 through the billing API using synthetic Razorpay read responses. A second
 reconciliation, a late signed callback and its retry left one credit grant.
 Another account received 404 before any provider read. The original quote,
-existing holds and wallet debt stayed intact. These results cover a purchase
-whose original order is in the backup. A provider capture for an order absent
-from the backup requires separate verification.
+existing holds and wallet debt stayed intact.
+
+The same drill restores a second checkpoint taken before the accepted quote and
+order existed. On that older database, the owned lookup and reconciliation
+return 404. Concurrent deliveries of the signed event and a later retry all
+return 503 and retain one unmatched event record. No order, entitlement, or
+credit grant is created. Keep checkout closed while selecting a verified recovery
+point that includes the original
+accepted quote and order. Reconcile the captured payment against those terms
+and check later refunds, credit use, and outstanding obligations before reopening.
+If the original acceptance cannot be recovered, record the confirmed provider
+receipt as an unresolved finance case. The receipt and the current price list
+cannot establish the original credit quantity, expiry, or eligible services.
 
 Production backup coverage, role and permission recovery, independent authority
 replay and recovery times still need verification before reopening after a
