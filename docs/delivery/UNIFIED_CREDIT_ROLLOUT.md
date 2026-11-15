@@ -120,11 +120,10 @@ remains pending.
 
 The schema25 procedures below retain their original release scope; they are not
 instructions to replay migration or reopen the current schema26 pilot. The
-application-only schema26 successor controller is in
-`backend/scripts/schema26_app_successor.py`; its PR103 alias fix has a separate
-qualification and planning boundary. The historical controller-only target was
-9b9. The current Source27 candidate requires its own exact-source qualification
-and release plan; the earlier image does not contain these new application fixes.
+application-only `backend/scripts/schema26_app_successor.py` controller and its
+PR103 alias fix belong to the historical schema26 release. For the current
+Source27 candidate, use the [Neon continuity controllers and plan](../runbooks/schema27-neon-continuity-integration.md)
+with exact-source qualification and the matching image.
 
 The existing GitHub `main` push trigger builds and pushes the app image with
 `cloudbuild.yaml`. Merge the tested combined candidate once, then record the
@@ -172,12 +171,12 @@ and workspace reads through the canonical host. Verify fresh sign-in separately.
 
 Before schema27 DDL, a frontend failure can be handled by restoring the prior
 frontend while the compatible bridge is serving. If the paginated frontend is
-live, restore the prior alias before moving API traffic back. Use
-`schema27_native_migration.py bridge-rollback` with the original verified bridge
-plan, plan hash and journal for the pre-DDL backend traffic rollback. The same
-lock fences rollback and DDL. The controller still requires exact schema26 and
-fresh rollback evidence. After schema27 DDL, use a recovery path verified for
-schema27 and retained customer obligations.
+live, restore the prior alias before moving API traffic back. Use the
+[continuity bridge rollback](../runbooks/schema27-neon-continuity-integration.md#roll-back-before-the-migration-fence)
+with the original verified continuity bridge plan, SHA-256 and journal. A shared
+lock fences rollback and DDL. The controller requires exact schema26 and fresh
+rollback evidence. After schema27 DDL, use a recovery path verified for schema27
+and retained customer obligations.
 
 ### Historical schema25 rollout
 
