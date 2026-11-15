@@ -24,6 +24,8 @@ from scripts import notification_schema27_step as retained_step
 KIND = "hirewiz_schema27_continuity_additive_v1"
 ACTION = "schema27_continuity_additive_migration"
 AUDIT_PREFIX = "schema27-continuity-"
+PROVIDER_ADMIN_GRANTOR = "cloud_admin"
+PROVIDER_ADMIN_GRANTOR_OID = 10
 HASH = re.compile(r"[a-f0-9]{64}")
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}")
 
@@ -79,9 +81,16 @@ class MigrationIntent:
 def _verify_bootstrap_scope(connection, identity: identity_step.MigrationIdentity) -> None:
     identity_step.verify_identity(connection, identity)
     memberships = connection.execute(text(
-        "SELECT admin_option,inherit_option,set_option FROM pg_catalog.pg_auth_members "
-        "WHERE member=:bootstrap AND roleid=:migrator LIMIT 2"
+        "SELECT m.grantor,g.rolname,m.admin_option,m.inherit_option,m.set_option "
+        "FROM pg_catalog.pg_auth_members m LEFT JOIN pg_catalog.pg_roles g ON g.oid=m.grantor "
+        "WHERE m.member=:bootstrap AND m.roleid=:migrator ORDER BY m.grantor LIMIT 3"
     ), {"bootstrap": identity.bootstrap_oid, "migrator": identity.migrator_oid}).all()
+    # The provider's role-creation grant can administer membership only.
+    # The bootstrap's explicit grant independently permits SET for this role.
+    expected_memberships = [
+        (PROVIDER_ADMIN_GRANTOR_OID, PROVIDER_ADMIN_GRANTOR, True, False, False),
+        (identity.bootstrap_oid, identity.bootstrap, False, False, True),
+    ]
     attributes = connection.execute(text(
         "SELECT b.rolcanlogin,b.rolsuper,pg_catalog.pg_has_role(b.oid,:migrator,'USAGE'),"
         "EXISTS(SELECT FROM pg_catalog.pg_auth_members WHERE member=:migrator) "
@@ -89,7 +98,7 @@ def _verify_bootstrap_scope(connection, identity: identity_step.MigrationIdentit
     ), {"bootstrap": identity.bootstrap_oid, "migrator": identity.migrator_oid}).one()
     contract.need(
         identity.database_owner_oid == identity.bootstrap_oid
-        and [tuple(row) for row in memberships] == [(False, False, True)]
+        and [tuple(row) for row in memberships] == expected_memberships
         and tuple(attributes) == (True, False, False, False),
         "continuity_bootstrap_membership_mismatch",
     )

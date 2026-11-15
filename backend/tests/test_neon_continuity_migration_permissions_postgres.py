@@ -18,16 +18,28 @@ from scripts import notification_schema27_step as step
 
 
 @pytest.fixture
-def set_only_bootstrap(owned26):
+def set_only_bootstrap(owned26, monkeypatch):
     source = owned26.identity
     database = owned26.engine.url.database
     bootstrap = "continuity_" + uuid4().hex[:12]
     with owned26.engine.begin() as admin:
         admin.exec_driver_sql(f'CREATE ROLE "{bootstrap}" LOGIN NOINHERIT')
         admin.exec_driver_sql(f'ALTER DATABASE "{database}" OWNER TO "{bootstrap}"')
-        admin.exec_driver_sql(f'GRANT "{source.migrator}" TO "{bootstrap}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE')
+        # Reproduce PostgreSQL's automatic role-creator grant and then use
+        # that real ADMIN option to issue the separate explicit SET grant.
+        admin.exec_driver_sql(f'GRANT "{source.migrator}" TO "{bootstrap}" WITH ADMIN TRUE, INHERIT FALSE, SET FALSE')
+        admin.exec_driver_sql(f'SET LOCAL ROLE "{bootstrap}"')
+        admin.exec_driver_sql(f'GRANT "{source.migrator}" TO "{bootstrap}" WITH ADMIN FALSE, INHERIT FALSE, SET TRUE')
+        admin.exec_driver_sql("RESET ROLE")
         admin.exec_driver_sql(f'GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO "{bootstrap}"')
         oid = admin.scalar(text("SELECT oid FROM pg_catalog.pg_roles WHERE rolname=:name"), {"name": bootstrap})
+        grants = admin.execute(text(
+            "SELECT m.grantor,g.rolname,m.admin_option,m.inherit_option,m.set_option "
+            "FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles g ON g.oid=m.grantor "
+            "WHERE m.member=:bootstrap AND m.roleid=:migrator ORDER BY m.grantor"
+        ), {"bootstrap": oid, "migrator": source.migrator_oid}).all()
+        assert grants == [(10, source.bootstrap, True, False, False), (oid, bootstrap, False, False, True)]
+    monkeypatch.setattr(continuity, "PROVIDER_ADMIN_GRANTOR", source.bootstrap)
     identity = replace(source, bootstrap=bootstrap, bootstrap_oid=oid, database_owner_oid=oid)
     try:
         yield identity
@@ -107,11 +119,20 @@ def test_continuity_role_migrates_and_audits_together_after_atomic_refusal(owned
             with pytest.raises(contract.Schema27Denied, match="intent_custody_mismatch"):
                 prepare(db, "0" * 64)
         with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.bootstrap}" WITH SET TRUE')
+        with db.begin():
+            with pytest.raises(contract.Schema27Denied, match="bootstrap_membership_mismatch"):
+                prepare(db, intent.sha256())
+        with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.bootstrap}" WITH SET FALSE')
+        with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'SET LOCAL ROLE "{identity.bootstrap}"')
             admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.bootstrap}" WITH INHERIT TRUE')
         with db.begin():
             with pytest.raises(contract.Schema27Denied, match="bootstrap_membership_mismatch"):
                 prepare(db, intent.sha256())
         with owned26.engine.begin() as admin:
+            admin.exec_driver_sql(f'SET LOCAL ROLE "{identity.bootstrap}"')
             admin.exec_driver_sql(f'GRANT "{identity.migrator}" TO "{identity.bootstrap}" WITH INHERIT FALSE')
         with monkeypatch.context() as patch:
             patch.setattr(continuity, "_write_receipt", fail_after_audit)

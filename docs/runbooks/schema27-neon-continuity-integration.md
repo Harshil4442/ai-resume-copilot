@@ -90,7 +90,10 @@ the previous Neon project.
 There is an additional PostgreSQL permissions difference. The old bootstrap
 had direct grants on `users`, `alembic_version`, and `admin_audit_events`.
 The continuity restore replayed the runtime, observer and coordinator grants.
-The new bootstrap has a SET-only, non-inheriting membership in the migrator.
+The new bootstrap has a self-issued SET-only membership in the migrator.
+Neon's `cloud_admin` role issued a separate ADMIN-only grant to the
+bootstrap. Both grants are non-inheriting, and the provider's grant confers
+no SET privilege.
 In [the current transaction](../../backend/scripts/notification_schema27_step.py),
 old table reads and locks precede `SET LOCAL ROLE`. The controller then inserts
 the audit row after the transaction helper has reset the role. Qualify a
