@@ -138,6 +138,12 @@ reports the observed schema and commit outcome through the authenticated
 read-only observer. Formal reconciliation and release admission still require
 their normal live checks.
 
+After observing a committed schema27 migration, `inspect-funding-facts` can
+read aggregate expense facts in the same authenticated snapshot as its migration
+receipt. Use the original inspection arguments and add `--funding-policy` and
+`--funding-policy-sha256` for the current private policy. Bank cash verification
+and authorization to fund or activate checkout remain separate.
+
 The actual Neon Free schema26 catalog, five protected liability groups and
 the bootstrap SQL role were verified through read-only checks on November 15.
 The traffic and migration dispatchers were exercised against local fixtures.
