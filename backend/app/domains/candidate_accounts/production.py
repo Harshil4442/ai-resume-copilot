@@ -180,7 +180,7 @@ def _build(config: CandidateNativeConfiguration) -> _Composition:
     retention = NativeCandidateLifetimeRetention(lifetime, protected, login_finalizer=protected)
     service = CandidateAccountService(
         sql, retention, now_ms=clock, cookie_logout=GcpCandidateCookieLogout(scoped),
-        password_login_finalizer=retention,
+        password_login_finalizer=retention, session_validation=protected.validate_session,
     )
     return _Composition(service, fence, lifetime, scoped)
 

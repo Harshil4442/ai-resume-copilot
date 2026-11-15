@@ -70,7 +70,8 @@ class CandidateAccountService:
     def __init__(self, engine: Engine, retention: CandidateLifetimeRetention, *,
                  now_ms: Callable[[], int] = lambda: time.time_ns() // 1_000_000,
                  cookie_logout: CandidateCookieLogout | None = None,
-                 password_login_finalizer: PasswordLoginFinalizer | None = None):
+                 password_login_finalizer: PasswordLoginFinalizer | None = None,
+                 session_validation: Callable[[CandidateWebSession, CandidateCredentialRevision], bool] | None = None):
         if not isinstance(engine, Engine) or engine.hide_parameters is not True:
             raise GuardUnavailable(UNAVAILABLE)
         self.sessions = sessionmaker(bind=engine, expire_on_commit=False)
@@ -78,6 +79,7 @@ class CandidateAccountService:
         self.retention, self.now_ms = retention, now_ms
         self.cookie_logout = cookie_logout
         self.password_login_finalizer = password_login_finalizer
+        self._session_validation = session_validation
 
     def google_challenge(self, candidate_id: int, proof: GoogleBearerProof) -> dict:
         from .enrollment import google_challenge
@@ -232,21 +234,24 @@ class CandidateAccountService:
                     or revision_from_row(row, user.password_hash) != revision):
                 raise GuardUnavailable(UNAVAILABLE)
 
-    def _current(self, context: CandidateWebSession, *, auth_generation: int | None = None) -> CandidateCredentialRevision:
+    def _current(self, context: CandidateWebSession, *, auth_generation: int | None = None,
+                 session_check: Callable[[CandidateWebSession, CandidateCredentialRevision], bool] | None = None,
+                 ) -> CandidateCredentialRevision:
         with self.sessions() as db:
             row = mapped_account(db, context.candidate_id)
             user = db.query(User).filter_by(id=context.candidate_id).one_or_none()
             if row is None or user is None:
                 raise GuardDenied(FAILURE)
             revision = revision_from_row(row, user.password_hash)
+        check_session = self.retention.check_session if session_check is None else session_check
         if (context.account_binding_id != revision.account_binding_id
                 or (auth_generation is not None and revision.auth_generation != auth_generation)
-                or self.retention.check_session(context, revision) is not True):
+                or check_session(context, revision) is not True):
             raise GuardDenied(FAILURE)
         return revision
 
     def validate(self, context: CandidateWebSession, *, auth_generation: int) -> None:
-        self._current(context, auth_generation=auth_generation)
+        self._current(context, auth_generation=auth_generation, session_check=self._session_validation)
 
     def logout(self, context: CandidateWebSession) -> None:
         revision = self._current(context)

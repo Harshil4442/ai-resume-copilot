@@ -90,6 +90,9 @@ class GcpProtectedCandidateLifetimes:
     def check_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool:
         return self.scoped.check_session(context, _revision(revision))
 
+    def validate_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool:
+        return self.scoped.check_session(context, _revision(revision), batch_reads=True)
+
     def revoke_session(self, context: CandidateWebSession, revision: CandidateCredentialRevision) -> bool:
         return self.scoped.revoke_session(context, _revision(revision))
 
