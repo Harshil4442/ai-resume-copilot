@@ -55,12 +55,17 @@ class Ledger(Record):
     pass
 
 
+class OwnerGate:
+    pass
+
+
 Field.__ne__ = lambda self, value: (self.name, "ne", value)
 
 
 class Query:
     def __init__(self, db, model):
         self.db, self.model, self.filters = db, model, []
+        self.fields = ()
 
     def filter(self, *conditions):
         self.filters.extend(conditions)
@@ -69,6 +74,11 @@ class Query:
     def with_for_update(self, **options):
         self.db.locks.append((self.model, options))
         return self
+
+    def with_entities(self, *fields):
+        query = Query(self.db, self.model).filter(*self.filters)
+        query.fields = fields
+        return query
 
     def populate_existing(self):
         return self
@@ -87,7 +97,10 @@ class Query:
             field, operation, value = item
             actual = getattr(row, field, None)
             return actual == value if operation == "eq" else actual != value if operation == "ne" else actual in value
-        return [row for row in self.db.rows[self.model] if all(matches(row, item) for item in self.filters)]
+        rows = [row for row in self.db.rows[self.model] if all(matches(row, item) for item in self.filters)]
+        if self.fields:
+            return [SimpleNamespace(**{field.name: getattr(row, field.name) for field in self.fields}) for row in rows]
+        return rows
 
 
 class Storage:
@@ -96,7 +109,19 @@ class Storage:
         self.rows = {User: [self.owner], Order: [order], Event: [], Transaction: [], Refund: [], Ledger: []}
         self.commits, self.writes, self.grants, self.revokes, self.adjustments = 0, [], [], [], []
         self.locks = []
+        self.owner_busy = False
+        self.identity_map = {}
         self._remember()
+
+    def lock_owner(self, user_id, *, nowait=False):
+        assert user_id == self.owner.id
+        if nowait and self.owner_busy:
+            return False
+        self.locks.append((OwnerGate, {"nowait": nowait}))
+        return True
+
+    def identity_key(self, model, primary_key):
+        return model, primary_key
 
     def _remember(self):
         self.saved = {model: [(row, copy.deepcopy(vars(row))) for row in rows] for model, rows in self.rows.items()}
@@ -201,6 +226,7 @@ def setup(db, replies, *, race=None):
 
     dependencies = {"HTTPException": HTTPException, "PaymentOrder": Order, "PaymentEvent": Event,
         "PaymentTransaction": Transaction, "PaymentRefund": Refund, "User": User,
+        "lock_application_set": Storage.lock_owner,
         "OriginalOrder": reconciliation.OriginalOrder, "ReconciliationUnavailable": reconciliation.ReconciliationUnavailable,
         "fetch_reconciliation": fetch, "_settings": lambda: SETTINGS, "_no_store": lambda value: None,
         "_utcnow": lambda: datetime.now(UTC), "utcnow": lambda: datetime.now(UTC), "as_aware": lambda value: value,
@@ -219,7 +245,7 @@ def setup(db, replies, *, race=None):
         "_revoke_entitlement": lambda db, order, now: db.revokes.append(order.public_id),
         "log": SimpleNamespace(warning=lambda *args: None),
     }
-    for name in ("_required_string", "_required_minor", "_optional_minor", "_lock_order_by_provider_id", "_receipt_for",
+    for name in ("_required_string", "_required_minor", "_optional_minor", "_lock_payment_order", "_lock_order_by_provider_id", "_receipt_for",
                  "_validate_order_notes", "_validate_payment_expenses", "_validate_payment", "_validate_provider_order",
                  "_validate_refund_payment", "_process_capture", "_process_refund"):
         service_body(name, dependencies)
@@ -261,8 +287,7 @@ class ReconciliationTest(unittest.TestCase):
         self.assertEqual((rejected.processing_status, rejected.payload_sha256), ("rejected", "original-digest"))
         self.assertEqual([path for path, params in calls], ["orders", "orders/order_original", "orders/order_original/payments"])
         self.assertEqual(calls[0][1]["receipt"], "hw_ord_original")
-        self.assertEqual([model for model, options in db.locks[:2]], [Order, User])
-        self.assertTrue(all(options == {"nowait": True} for model, options in db.locks[:2]))
+        self.assertEqual(db.locks[:3], [(OwnerGate, {"nowait": True}), (Order, {"nowait": True}), (User, {"nowait": True})])
         event_count = len(db.rows[Event])
         self.assertEqual(invoke(operation, db)["resolution"], "checkout_ready")
         self.assertEqual(len(db.rows[Event]), event_count)
@@ -275,6 +300,18 @@ class ReconciliationTest(unittest.TestCase):
             invoke(operation, db)
         self.assertEqual(error.exception.status_code, 404)
         self.assertEqual((calls, db.writes, db.commits), ([], [], 0))
+
+    def test_busy_owner_returns_original_status_without_any_settlement_lock_or_write(self):
+        order = original_order()
+        db = Storage(order)
+        db.owner_busy = True
+        operation, calls = setup(db, {"orders": collection(remote_order()), "orders/order_original": remote_order(),
+                                    "orders/order_original/payments": collection()})
+        result = invoke(operation, db)
+        self.assertEqual(result["resolution"], "unresolved")
+        self.assertEqual((order.provider_order_id, order.status), (None, "creation_unknown"))
+        self.assertEqual(len(calls), 3)
+        self.assertEqual((db.locks, db.writes, db.commits), ([], [], 0))
 
     def test_remote_other_owner_same_price_pack_and_crossowner_bound_id_never_bind(self):
         for notes in ({"hirewiz_order_id": "ord_other", "sku": "starter_bundle", "billing_country": "IN"},

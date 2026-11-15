@@ -86,6 +86,8 @@ class Query:
         return self.filter(*(getattr(self.model, name) == value for name, value in fields.items()))
 
     def with_for_update(self, **options):
+        if self.model is User:
+            assert self.db.owner_locked, "Checkout must enter the owner gate before locking the User row."
         return self
 
     def populate_existing(self):
@@ -130,6 +132,12 @@ class Storage:
         self.owner = SimpleNamespace(id=1, email="synthetic@example.test")
         self.orders = list(orders or [])
         self.writes, self.commits, self.provider_calls = [], 0, []
+        self.owner_locked = False
+
+    def lock_owner(self, user_id):
+        assert user_id == self.owner.id
+        self.owner_locked = True
+        return True
 
     def query(self, model):
         return Query(self, model)
@@ -141,6 +149,7 @@ class Storage:
 
     def commit(self):
         self.commits += 1
+        self.owner_locked = False
 
     def refresh(self, value):
         pass
@@ -161,6 +170,7 @@ def setup(db, *, product=None, version="catalog-original", mode="test", key_id="
 
         def create_order(self, **values):
             assert db.commits >= 1
+            assert not db.owner_locked, "Provider CREATE must run after releasing the owner gate."
             assert db.orders[-1].public_id == quote.purchase_request_id(db.owner.id, db.request_key)
             db.provider_calls.append(values)
             if provider_failure:
@@ -169,6 +179,7 @@ def setup(db, *, product=None, version="catalog-original", mode="test", key_id="
 
     dependencies = {
         "HTTPException": HTTPException, "PaymentOrder": Order, "User": User, "_no_store": lambda value: None,
+        "lock_application_set": Storage.lock_owner,
         "get_product": lambda sku: product, "_settings": lambda: settings,
         "product_purchase_enabled": lambda value, **options: True,
         "order_quote": quote.order_quote, "product_quote": quote.product_quote,
