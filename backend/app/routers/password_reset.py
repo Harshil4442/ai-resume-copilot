@@ -13,6 +13,7 @@ from ..database import SessionLocal, get_db
 from ..domains.candidate_accounts import email_reset
 from ..domains.notifications.password_reset import configured
 from ..domains.notifications.service import retry_security_email
+from ..domains.notifications.wake import deliver_link_with_wake
 from ..domains.recovery.pairing_contracts import PairingContract
 from ..models import NotificationOutbox
 from ..rate_limiter import limiter
@@ -62,7 +63,7 @@ def _request_delivery(email: str) -> None:
         with SessionLocal() as db:
             item = email_reset.request_reset(db, email)
             if item is not None:
-                retry_security_email(db, item)
+                deliver_link_with_wake(db, item)
     except Exception:  # noqa: BLE001 -- background error text may contain secrets.
         logging.getLogger(__name__).error("Password reset email request unavailable")
 

@@ -95,8 +95,9 @@ def request_reset(db: Session, email: str, *, now: datetime | None = None) -> st
     row.token_sha256 = digest(token)
     db.add(row)
     item = delivery.enqueue(db, user_id=owner.id, recipient=owner.email, reset_id=row.id, token=token, expires_at=row.expires_at)
+    identifier = item.id
     db.commit()
-    return item.id
+    return identifier
 
 
 def confirm_reset(db: Session, token: str, new_password: str, *, now: datetime | None = None, accounts=None) -> None:

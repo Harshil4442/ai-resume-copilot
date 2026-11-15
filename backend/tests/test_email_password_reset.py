@@ -229,6 +229,27 @@ def test_request_http_only_schedules_generic_background_work(monkeypatch):
         assert len(tasks.tasks) == 1 and tasks.tasks[0].func is routes._request_delivery
 
 
+def test_reset_background_hands_only_a_committed_id_to_wake(owned, monkeypatch):
+    _, factory = owned
+    from sqlalchemy.orm import sessionmaker
+
+    # Match production expiration semantics so identity access cannot open
+    # an implicit transaction after the link was committed.
+    monkeypatch.setattr(routes, "SessionLocal", sessionmaker(bind=factory.kw["bind"]))
+    handed_off = []
+
+    def observe(db, identifier):
+        assert not db.in_transaction()
+        with factory() as independent:
+            assert independent.get(NotificationOutbox, identifier).status == "pending"
+        handed_off.append(identifier)
+
+    monkeypatch.setattr(routes, "deliver_link_with_wake", observe)
+    routes._request_delivery(EMAIL)
+    routes._request_delivery("unknown@example.invalid")
+    assert len(handed_off) == 1
+
+
 @pytest.fixture
 def native(scoped, tmp_path, monkeypatch):
     monkeypatch.setenv("RESEND_API_KEY", "synthetic-no-provider-call")
