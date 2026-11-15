@@ -8,6 +8,7 @@ Set HIREWIZ_SCHEMA27_LOGICAL_PG_BIN for the populated logical archive rehearsal.
 Set HIREWIZ_SCHEMA27_CANONICAL_PG_BIN for the migration-built variant.
 """
 
+import copy
 import hashlib
 import json
 import os
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from uuid import uuid4
 
 import pytest
@@ -503,6 +504,53 @@ def assert_capture_waits_for_original_order(engine, pending_purchase, owner, mon
     assert [event for event in events if event["provider_event_id"] != event_id] == before["payment_events"]
 
 
+def assert_rejection_preserves_committed_event(engine, capture):
+    event_id = "evt_owned_rejection_overlap"
+    invalid = copy.deepcopy(capture)
+    invalid["payload"]["payment"]["entity"]["amount"] -= 1
+    rolled_back = Event()
+    settlement_committed = Event()
+    rejected_digest = hashlib.sha256(json.dumps(invalid, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    def mark_rejected_session(db, *_):
+        if any(isinstance(row, PaymentEvent) and row.provider_event_id == event_id
+               and row.payload_sha256 == rejected_digest for row in db.new):
+            db.info["owned_rejection_overlap"] = True
+
+    def pause_after_rollback(db, *_):
+        if db.info.pop("owned_rejection_overlap", False):
+            rolled_back.set()
+            assert settlement_committed.wait(10), "Second delivery did not settle after rollback"
+
+    def send_rejected():
+        with recovery_client(engine) as client:
+            return _post_event(client, event_id, invalid).status_code
+
+    event.listen(Session, "before_flush", mark_rejected_session)
+    event.listen(Session, "after_soft_rollback", pause_after_rollback)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            rejected = executor.submit(send_rejected)
+            try:
+                assert rolled_back.wait(10), "First delivery did not reach the rejection rollback"
+                with recovery_client(engine) as client:
+                    winner = _post_event(client, event_id, capture)
+                    assert winner.status_code == 200 and winner.json()["status"] == "processed"
+            finally:
+                settlement_committed.set()
+            assert rejected.result(timeout=10) == 400
+    finally:
+        event.remove(Session, "after_soft_rollback", pause_after_rollback)
+        event.remove(Session, "before_flush", mark_rejected_session)
+
+    accepted_digest = hashlib.sha256(json.dumps(capture, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    with Session(engine) as db:
+        settled = db.query(PaymentEvent).filter_by(provider_event_id=event_id).one()
+        assert settled.payload_sha256 == accepted_digest
+        assert settled.order_id is not None and settled.error_code is None
+        assert settled.processing_status == "processed"
+
+
 def assert_capture_recovered_after_backup(engine, pending_purchase, owner, other_owner, monkeypatch):
     reference, capture, recovered_credits = pending_purchase
     order = capture["payload"]["order"]["entity"]
@@ -550,6 +598,7 @@ def assert_capture_recovered_after_backup(engine, pending_purchase, owner, other
         retry = _post_event(client, "evt_owned_backup_gap", capture)
         assert retry.status_code == 200 and retry.json()["status"] == "duplicate"
     assert reads == list(replies) * 2
+    assert_rejection_preserves_committed_event(engine, capture)
     with Session(engine) as db:
         after = service.wallet(db, user_id=1)
         grant = db.query(CreditGrant).filter_by(user_id=1, origin_id=reference).one()

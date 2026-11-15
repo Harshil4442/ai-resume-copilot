@@ -583,7 +583,9 @@ closed on the restored database, the owner reconciled the original purchase
 through the billing API using synthetic Razorpay read responses. A second
 reconciliation, a late signed callback and its retry left one credit grant.
 Another account received 404 before any provider read. The original quote,
-existing holds and wallet debt stayed intact.
+existing holds and wallet debt stayed intact. An overlapping signed delivery with
+an invalid amount returned 400 after the valid delivery committed. The event still
+recorded the accepted payment and the wallet still contained one matching grant.
 
 The same drill restores a second checkpoint taken before the accepted quote and
 order existed. On that older database, the owned lookup and reconciliation

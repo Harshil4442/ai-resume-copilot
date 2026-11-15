@@ -899,6 +899,7 @@ def process_razorpay_webhook(
                 PaymentEvent.provider == PROVIDER,
                 PaymentEvent.provider_event_id == provider_event_id,
             )
+            .with_for_update()
             .first()
         )
         if rejected_event is None:
@@ -909,6 +910,14 @@ def process_razorpay_webhook(
                 payload_sha256=payload_sha256,
             )
             db.add(rejected_event)
+        elif (
+            rejected_event.payload_sha256 != payload_sha256
+            or rejected_event.event_type != event_type
+            or rejected_event.processing_status not in RETRYABLE_EVENT_STATUSES
+        ):
+            # A different delivery can commit while the rejected attempt rolls back.
+            db.rollback()
+            raise
         rejected_event.processing_status = "rejected"
         rejected_event.error_code = exc.code
         rejected_event.processed_at = utcnow()
