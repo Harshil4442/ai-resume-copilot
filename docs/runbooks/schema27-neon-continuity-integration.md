@@ -3,7 +3,8 @@
 This design covers the matching application bridge on schema26 and the additive
 schema27 migration. The new database is already serving schema26. The standalone
 continuity observer verified that database through the designated read-only role.
-The existing release controllers are still bound to the previous Neon project.
+The continuity controllers below are scoped to this database. The earlier
+controllers retain their pins for the previous Neon project.
 
 ## Freeze a new database scope before bridge capture
 
@@ -59,26 +60,21 @@ in a single read-only snapshot. It uses the SQL backend PID for the session
 check. The [runtime probe](../../infra/gcp/schema27_continuity_runtime.py) checks
 its own numeric secret and SQL identity independently.
 
-Replace the old database-only bridge port identified by
-[`NativeSuccessorBoundary._database`](../../backend/scripts/schema26_app_successor.py).
-Keep its schema26 catalog, permissions, evidence writer fence, role inventory,
-session checks, and protected liability comparison. Use the current serving
-revision and new DB versions as the captured rollback baseline for all three
-app services. Verify the coordinator, queue, schedule, document worker and
-IAM resource pins separately. Verify that no reachable or rollback app
-revision points to the previous database, including tagged revisions.
+The continuity bridge retains the schema26 catalog, permissions, evidence writer
+fence, role inventory, session checks and protected liability comparison. Use
+the current serving revision and its pinned database versions as the rollback
+baseline for all three app services. Verify the coordinator, queue, schedule,
+document worker and IAM resource pins separately. Verify that every reachable
+or rollback app revision, including tagged revisions, uses the current database.
 
 ## Preserve the one-transaction migration on the new target
 
-[`NativeMigration27Boundary`](../../infra/gcp/schema27_native_migration.py)
-needs three new fixed input ports. Use the continuity observer for exact26 and
-exact27 catalog reads, the continuity runtime reference for metadata
-initialization with its application Engine still non-connecting, and the
-new bootstrap via the existing native Neon manager for the one write
-transaction. Resolve the manager credential directly to private memory and
-verify effective TLS, exact database/owner OIDs, available `SET ROLE` and native
-cluster before writing. The older bootstrap helper supplies credentials for
-the previous Neon project.
+The [continuity migration controller](../../infra/gcp/schema27_continuity_migration.py)
+uses the continuity observer for exact26 and exact27 catalog reads, the
+continuity runtime reference for non-connecting application metadata setup, and
+the current bootstrap through the Neon manager for the write transaction. It
+resolves the bootstrap credential in private memory and verifies TLS, database
+and owner OIDs, `SET ROLE` and the native cluster before writing.
 
 There is an additional PostgreSQL permissions difference. The old bootstrap
 had direct grants on `users`, `alembic_version`, and `admin_audit_events`.
@@ -87,16 +83,11 @@ The new bootstrap has a self-issued SET-only membership in the migrator.
 Neon's `cloud_admin` role issued a separate ADMIN-only grant to the
 bootstrap. Both grants are non-inheriting, and the provider's grant confers
 no SET privilege.
-In [the current transaction](../../backend/scripts/notification_schema27_step.py),
-old table reads and locks precede `SET LOCAL ROLE`. The controller then inserts
-the audit row after the transaction helper has reset the role. Qualify a
-continuity transaction that uses the migrator for the application table
-catalog/data reads, marker and FK locks, Alembic DDL, and audit insert. Use the
-bootstrap only for the physical-identity and schema-privilege operations that
-require it. Preserve the existing advisory lock, lock timeouts and final
-catalog/ACL comparisons. The
-[successor SQL step](../../backend/scripts/notification_schema27_continuity_step.py)
-prepares the DDL and detached audit under that transaction-local role. The
+The [continuity SQL step](../../backend/scripts/notification_schema27_continuity_step.py)
+uses the transaction-local migrator role for application reads, marker and
+foreign-key locks, Alembic DDL and the detached audit insert. The bootstrap handles
+physical-identity and schema-privilege operations. The transaction retains the
+advisory lock, lock timeouts and final catalog and permission checks. The
 dispatcher writes and rereads the intent before passing its hash to the
 transaction. The [owned PostgreSQL test](../../backend/tests/test_neon_continuity_migration_permissions_postgres.py)
 uses a non-superuser, SET-only bootstrap without direct table grants and
@@ -150,7 +141,20 @@ The traffic and migration dispatchers were exercised against local fixtures.
 Hosted staging still requires an exact source build and current policy and
 scanner evidence.
 
-Before recording the migration fence, rollback uses the verified schema26
-revision on the current database. A schema27 rollback or forward recovery
-must have its own verified schema27-compatible release and
+### Roll back before the migration fence
+
+Restore the prior frontend alias first if the matched frontend is already
+serving. With the original bridge custody and verified schema26 revisions on the
+current database, run the continuity rollback command.
+
+```bash
+python -m infra.gcp.schema27_continuity_bridge rollback \
+  --root "$release_root" --target-root "$bridge_source_root" --prior-root "$prior_source_root" \
+  --plan "$bridge_plan" --plan-sha256 "$bridge_plan_sha256" --journal "$bridge_journal"
+```
+
+Use the captured bridge plan and the original journal at its recorded path,
+before a migration fence has been recorded. Read back the restored traffic and
+verify owned reads on the matching frontend. A schema27 rollback or forward
+recovery needs its own verified schema27-compatible release and
 customer-obligation checks.

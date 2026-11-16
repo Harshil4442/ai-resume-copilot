@@ -120,11 +120,10 @@ remains pending.
 
 The schema25 procedures below retain their original release scope; they are not
 instructions to replay migration or reopen the current schema26 pilot. The
-application-only schema26 successor controller is in
-`backend/scripts/schema26_app_successor.py`; its PR103 alias fix has a separate
-qualification and planning boundary. The historical controller-only target was
-9b9. The current Source27 candidate requires its own exact-source qualification
-and release plan; the earlier image does not contain these new application fixes.
+application-only `backend/scripts/schema26_app_successor.py` controller and its
+PR103 alias fix belong to the historical schema26 release. For the current
+Source27 candidate, use the [Neon continuity controllers and plan](../runbooks/schema27-neon-continuity-integration.md)
+with exact-source qualification and the matching image.
 
 The existing GitHub `main` push trigger builds and pushes the app image with
 `cloudbuild.yaml`. Merge the tested combined candidate once, then record the
@@ -172,12 +171,12 @@ and workspace reads through the canonical host. Verify fresh sign-in separately.
 
 Before schema27 DDL, a frontend failure can be handled by restoring the prior
 frontend while the compatible bridge is serving. If the paginated frontend is
-live, restore the prior alias before moving API traffic back. Use
-`schema27_native_migration.py bridge-rollback` with the original verified bridge
-plan, plan hash and journal for the pre-DDL backend traffic rollback. The same
-lock fences rollback and DDL. The controller still requires exact schema26 and
-fresh rollback evidence. After schema27 DDL, use a recovery path verified for
-schema27 and retained customer obligations.
+live, restore the prior alias before moving API traffic back. Use the
+[continuity bridge rollback](../runbooks/schema27-neon-continuity-integration.md#roll-back-before-the-migration-fence)
+with the original verified continuity bridge plan, SHA-256 and journal. A shared
+lock fences rollback and DDL. The controller requires exact schema26 and fresh
+rollback evidence. After schema27 DDL, use a recovery path verified for schema27
+and retained customer obligations.
 
 ### Historical schema25 rollout
 
@@ -575,6 +574,29 @@ replay remained idempotent. The expanded drill restored the exact approved PDF,
 the sealed application, the unknown attempt and its five-credit hold. Two worker
 redeliveries made zero employer calls, and the same opening refused a replacement
 application. These results use a disposable PostgreSQL 17 cluster.
+
+The physical drill also covers a purchase captured after the backup. The
+backup retained the accepted quote and pending order. A signed fixture event
+settled that order on the source before the source stopped. With checkout
+closed on the restored database, the owner reconciled the original purchase
+through the billing API using synthetic Razorpay read responses. A second
+reconciliation, a late signed callback and its retry left one credit grant.
+Another account received 404 before any provider read. The original quote,
+existing holds and wallet debt stayed intact. An overlapping signed delivery with
+an invalid amount returned 400 after the valid delivery committed. The event still
+recorded the accepted payment and the wallet still contained one matching grant.
+
+The same drill restores a second checkpoint taken before the accepted quote and
+order existed. On that older database, the owned lookup and reconciliation
+return 404. Concurrent deliveries of the signed event and a later retry all
+return 503 and retain one unmatched event record. No order, entitlement, or
+credit grant is created. Keep checkout closed while selecting a verified recovery
+point that includes the original
+accepted quote and order. Reconcile the captured payment against those terms
+and check later refunds, credit use, and outstanding obligations before reopening.
+If the original acceptance cannot be recovered, record the confirmed provider
+receipt as an unresolved finance case. The receipt and the current price list
+cannot establish the original credit quantity, expiry, or eligible services.
 
 Production backup coverage, role and permission recovery, independent authority
 replay and recovery times still need verification before reopening after a

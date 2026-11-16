@@ -59,9 +59,12 @@ def _json(value) -> dict:
     return value.model_dump(mode="json")
 
 
-def _origin(tx: BufferedTransaction, operation: UUID) -> LifetimeGrantEvidence:
-    evidence = LifetimeGrantEvidence.model_validate(tx.get("v3_activations", str(operation)))
-    full = PartitionedRecord.model_validate(tx.get("v3_records", str(operation)))
+def _origin(tx: BufferedTransaction, operation: UUID, *, batch_reads: bool = False) -> LifetimeGrantEvidence:
+    key = str(operation)
+    if batch_reads:
+        tx.prefetch_read_only((("v3_activations", key), ("v3_records", key)))
+    evidence = LifetimeGrantEvidence.model_validate(tx.get("v3_activations", key))
+    full = PartitionedRecord.model_validate(tx.get("v3_records", key))
     if full.intent != _json(evidence.intent):
         raise GuardUnavailable("Protected activation lost its full original canonical intent")
     return evidence
@@ -81,9 +84,9 @@ def _pending(tx: BufferedTransaction, namespace: str, key: str, *, owner: UUID |
 
 
 def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner: UUID | None = None,
-                    reset_owner: UUID | None = None) -> ScopedSubject:
+                    reset_owner: UUID | None = None, batch_reads: bool = False) -> ScopedSubject:
     subject = ScopedSubject.model_validate(tx.get("v3_subjects", str(subject_id)))
-    evidence = _origin(tx, subject.enrollment_operation)
+    evidence = _origin(tx, subject.enrollment_operation, batch_reads=batch_reads)
     command = evidence.intent.command
     if (not isinstance(command, EnrollPasswordAccount) or subject.subject_uuid != subject_id
             or command.subject_uuid != subject_id or command.account_binding_id != subject.account_binding_id
@@ -91,13 +94,20 @@ def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner:
         raise GuardUnavailable("Protected subject lacks its original owned enrollment")
     owner = {"subject_uuid": str(subject_id), "account_binding_id": str(subject.account_binding_id),
         "candidate_id": subject.candidate_id, "enrollment_operation": str(subject.enrollment_operation)}
+    if batch_reads:
+        tx.prefetch_read_only((("v3_account_owners", str(subject.account_binding_id)),
+                               ("v3_candidate_owners", str(subject.candidate_id))))
     if (tx.get("v3_account_owners", str(subject.account_binding_id)) != owner
             or tx.get("v3_candidate_owners", str(subject.candidate_id)) != owner):
         raise GuardUnavailable("Protected account ownership is missing or restored")
-    history = GenerationHistory.model_validate(tx.get("v3_generation_history", f"{subject_id}:{subject.auth_generation}"))
+    generation = f"{subject_id}:{subject.auth_generation}"
+    next_generation = f"{subject_id}:{subject.auth_generation + 1}"
+    if batch_reads:
+        tx.prefetch_read_only((("v3_generation_history", generation), ("v3_generation_history", next_generation)))
+    history = GenerationHistory.model_validate(tx.get("v3_generation_history", generation))
     if (history.subject_uuid != subject_id or history.auth_generation != subject.auth_generation
             or history.credential_sha256 != subject.credential_sha256
-            or tx.get("v3_generation_history", f"{subject_id}:{subject.auth_generation + 1}") is not None):
+            or tx.get("v3_generation_history", next_generation) is not None):
         raise GuardUnavailable("Protected credential generation is missing or rolled back")
     if subject.auth_generation == 1:
         if history.operation_id != subject.enrollment_operation or command.credential_sha256 != subject.credential_sha256:
@@ -120,18 +130,23 @@ def current_subject(tx: BufferedTransaction, subject_id: UUID, *, pending_owner:
                 evidence = ResetProjectionEvidence.model_validate(completion)
                 if evidence.intent.model_dump(mode="json") != full.intent:
                     raise GuardUnavailable("Protected reset completion lost its exact full native request")
+    if batch_reads:
+        tx.prefetch_read_only((("v3_subject_tombstones", str(subject_id)),
+                               ("v3_account_tombstones", str(subject.account_binding_id)),
+                               ("v3_pending_subject_denials", generation)))
     if (tx.get("v3_subject_tombstones", str(subject_id)) is not None
             or tx.get("v3_account_tombstones", str(subject.account_binding_id)) is not None):
         raise GuardDenied("Protected account or subject has been permanently denied")
-    _pending(tx, "v3_pending_subject_denials", f"{subject_id}:{subject.auth_generation}", owner=pending_owner)
+    _pending(tx, "v3_pending_subject_denials", generation, owner=pending_owner)
     return subject
 
 
 def current_session(tx: BufferedTransaction, context: CandidateWebSession, now: int, *,
-                    pending_owner: UUID | None = None) -> tuple[ScopedSubject, ScopedSession]:
-    session = ScopedSession.model_validate(tx.get("v3_sessions", str(context.session_id)))
-    subject = current_subject(tx, session.subject_uuid, pending_owner=pending_owner)
-    evidence = _origin(tx, session.activation_operation)
+                    pending_owner: UUID | None = None, batch_reads: bool = False) -> tuple[ScopedSubject, ScopedSession]:
+    key = str(context.session_id)
+    session = ScopedSession.model_validate(tx.get("v3_sessions", key))
+    subject = current_subject(tx, session.subject_uuid, pending_owner=pending_owner, batch_reads=batch_reads)
+    evidence = _origin(tx, session.activation_operation, batch_reads=batch_reads)
     command = evidence.intent.command
     if (not isinstance(command, (CreateVerifiedPasswordWebSession, CreateVerifiedOAuthWebSession))
             or not verified_session_matches(command, authentication_method=session.authentication_method,
@@ -150,9 +165,11 @@ def current_session(tx: BufferedTransaction, context: CandidateWebSession, now: 
             or session.principal_sha256 != subject.principal_sha256
             or now >= session.expires_at_ms):
         raise GuardDenied("Protected current session and credential revision do not match")
-    if tx.get("v3_session_tombstones", str(context.session_id)) is not None:
+    if batch_reads:
+        tx.prefetch_read_only((("v3_session_tombstones", key), ("v3_pending_session_denials", key)))
+    if tx.get("v3_session_tombstones", key) is not None:
         raise GuardDenied("Protected session has been revoked")
-    _pending(tx, "v3_pending_session_denials", str(context.session_id), owner=pending_owner)
+    _pending(tx, "v3_pending_session_denials", key, owner=pending_owner)
     return subject, session
 
 
@@ -260,12 +277,12 @@ class ScopedCandidateAuthority:
             self.resolve(output[0])
         return output[0]
 
-    def resolve(self, context: CandidateWebSession) -> tuple[ScopedSubject, ScopedSession]:
+    def resolve(self, context: CandidateWebSession, *, batch_reads: bool = False) -> tuple[ScopedSubject, ScopedSession]:
         frozen = CandidateWebSession.model_validate_json(canonical(_json(context)))
         output: list[tuple[ScopedSubject, ScopedSession]] = []
         def read(tx: BufferedTransaction) -> None:
             self.publication._root(tx, opened=True)
-            output[:] = [current_session(tx, frozen, self._now())]
+            output[:] = [current_session(tx, frozen, self._now(), batch_reads=batch_reads)]
         self._run(read)
         return output[0]
 
@@ -281,10 +298,11 @@ class ScopedCandidateAuthority:
         self._run(check)
         return True
 
-    def check_session(self, context: CandidateWebSession, revision: ScopedCredentialRevision) -> bool:
+    def check_session(self, context: CandidateWebSession, revision: ScopedCredentialRevision,
+                      *, batch_reads: bool = False) -> bool:
         if type(revision) is not ScopedCredentialRevision:
             raise GuardDenied("Strict server-owned credential revision required")
-        subject, _ = self.resolve(context)
+        subject, _ = self.resolve(context, batch_reads=batch_reads)
         if subject.model_dump(mode="json", exclude={"enrollment_operation"}) != _json(revision):
             raise GuardDenied("Protected session and SQL credential revision disagree")
         return True

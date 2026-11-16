@@ -78,6 +78,26 @@ def test_sparse_evidence_keeps_eight_curated_questions(role, jd):
     assert all(item['evidence_ids'] == [] for item in questions)
 
 
+@pytest.mark.parametrize(("title", "description", "first_question"), [
+    ("Senior Data-Engineer", "Build SQL and Python pipelines.", "How would you check whether a dataset"),
+    ("Machine Learning Engineer", "Evaluate inference on held-out data.", "How would you check whether a dataset"),
+    ("Senior Back-End Engineer", "Operate Python microservices.", "How would you investigate a production incident"),
+    ("Software Development Engineer, Product Search", "", "How would you investigate a production incident"),
+    ("UX Designer", "", "How would you identify the user problem"),
+    ("Account Manager", "", "How would you understand a customer need"),
+    ("Product Marketing Manager", "", "How would you understand a customer need"),
+    ("Accountant", "Prepare statements using Excel.", "How would you use Microsoft Excel"),
+    ("Mechanical Design Engineer", "", "Which experience best demonstrates your fit"),
+    ("Data Center Technician", "", "Which experience best demonstrates your fit"),
+])
+def test_curated_questions_use_explicit_role_families_and_job_description(title, description, first_question):
+    questions = curated_interview_questions(title, description)
+    assert len(questions) == 8
+    assert questions[0]["question"].startswith(first_question)
+    assert all(question["evidence_ids"] == [] and question["answer_state"] == "evidence_needed"
+               for question in questions)
+
+
 def test_public_diagnostics_never_invent_a_bullet_or_treat_a_version_as_impact():
     request = Request({'type': 'http', 'method': 'POST', 'path': '/', 'headers': [], 'client': ('127.0.0.1', 1), 'app': SimpleNamespace(state=SimpleNamespace())})
     original = 'Worked with Python 3.12 during 2025.'

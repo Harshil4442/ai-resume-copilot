@@ -5,7 +5,16 @@ import os
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -38,6 +47,7 @@ from ..domains.credits.schemas import (
     ServiceQuoteView,
 )
 from ..domains.credits.synchronous import SynchronousServiceRequest
+from ..domains.dispatch.service import kick_employer_search
 from ..domains.employer.admissions import lock_application_set
 from ..models import EntitlementLedger, PaymentOrder, User
 from ..rate_limiter import limiter
@@ -349,12 +359,18 @@ def discovery_quote(payload: DiscoveryRequest, request: Request, response: Respo
 @router.post("/discovery-batches", response_model=DiscoveryBatchView)
 @limiter.limit("10/minute")
 def create_discovery_batch(payload: DiscoveryCreate, request: Request, response: Response,
+                           background_tasks: BackgroundTasks,
                            db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from ..domains.credits import discovery
 
     _headers(response)
     try:
-        return discovery.create(db, user_id=current_user.id, payload=payload)
+        batch = discovery.create(db, user_id=current_user.id, payload=payload)
+        if batch.status == "preparing":
+            # Replays may still hold the owner lock after reading the committed batch.
+            db.rollback()
+            background_tasks.add_task(kick_employer_search, batch.id)
+        return batch
     except pricing.CreditContractError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from None

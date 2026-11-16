@@ -378,7 +378,6 @@ def _prepare_bounded_search(db, row, payload, *, only_new=False, maximum_candida
     history_generation, progress_state = progress
     user_id = row.user_id
     stale_before = utcnow() - timedelta(hours=row.scope["max_source_age_hours"])
-    stale_before = utcnow() - timedelta(hours=config.positive_int("EMPLOYER_MAX_SOURCE_AGE_HOURS", 24, 168))
     query = db.query(models.EmployerPosting, models.EmployerSource).join(models.EmployerSource, models.EmployerSource.id == models.EmployerPosting.source_id).filter(
         models.EmployerPosting.is_open.is_(True), models.EmployerSource.enabled.is_(True),
         models.EmployerPosting.last_checked_at >= stale_before,

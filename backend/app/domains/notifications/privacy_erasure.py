@@ -7,14 +7,14 @@ import hmac
 import json
 import os
 import re
-from datetime import UTC, timedelta
+from datetime import timedelta
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.orm import Session
 
 from ...models import CandidatePasswordAccount, NotificationOutbox, PasswordResetToken, User
 from ...security import JWT_SECRET
-from ..common import public_id, utcnow
+from ..common import as_utc, public_id, utcnow
 from .password_reset import configured as reset_mail_configured
 
 PURPOSE = b"hirewiz:privacy-erasure-email:v1"
@@ -38,7 +38,7 @@ def enqueue(db, *, user_id, recipient, proof_id, token, expires_at):
     from .mail_budget import reserve_messages
     key = "privacy-erasure:" + proof_id
     reserve_messages(db, [key], category=TYPE, expires_at=expires_at)
-    expiry = int(expires_at.replace(tzinfo=UTC).timestamp() * 1000)
+    expiry = int(as_utc(expires_at).timestamp() * 1000)
     nonce, now = os.urandom(12), utcnow()
     encrypted = AESGCM(_key()).encrypt(nonce, token.encode(), _aad(proof_id, recipient, expiry))
     item = NotificationOutbox(id=public_id("ntf"), user_id=user_id, notification_type=TYPE, channel="email",
@@ -76,7 +76,7 @@ def deliver(db: Session, notification_id: str) -> bool:
         db.rollback()
         return False
     now = utcnow()
-    if now < item.available_at.replace(tzinfo=UTC):
+    if now < as_utc(item.available_at):
         db.rollback()
         return False
     row = db.get(PasswordResetToken, (item.payload or {}).get("proof_id"))
@@ -86,7 +86,7 @@ def deliver(db: Session, notification_id: str) -> bool:
             or owner is None or account is None or account.state != "DELETE_DENIED" or row.user_id != owner.id
             or owner.email != item.recipient or row.email_sha256 != email_erasure.digest(owner.email)
             or row.credential_sha256 != email_erasure.digest(owner.password_hash)
-            or row.expires_at.replace(tzinfo=UTC) <= now or int(item.attempt_count or 0) >= 3):
+            or as_utc(row.expires_at) <= now or int(item.attempt_count or 0) >= 3):
         item.status, item.payload, item.updated_at = "erasure_cancelled", {}, now
         db.commit()
         return False

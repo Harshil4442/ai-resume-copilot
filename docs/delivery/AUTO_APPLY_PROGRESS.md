@@ -37,12 +37,15 @@ commercial/finance gates and full R03/RTO qualification remain pending.
 
 Razorpay acknowledged HireWiz’s request for written confirmation of the proposed
 credit passes and candidate-reviewed application assistance. Merchant-scope
-confirmation is pending. Two ₹59 orders settled through Razorpay’s Test API and
-each issued one 40-credit lot. The Razorpay Test dashboard later showed the
-₹29.50 refund as processed. The first lab had already removed its Test wallet.
-Provider-signed delivery and the resulting wallet adjustment still need an
-end-to-end check. The updated lab was verified locally to retain its disposable
-wallet and reopen it with checkout closed after the buyer session stops.
+confirmation is pending. Razorpay Test captured a ₹59 Starter purchase and
+delivered signed `order.paid` and `payment.captured` events. The receiver
+committed `order.paid`, deliberately returned HTTP 503 once, and then accepted
+Razorpay’s retry of the same signed event. The wallet retained one lot of 40
+credits. A separate retained Test wallet received a signed ₹29.50 refund that
+reduced the balance from 40 to 20 credits. A read-only provider reconciliation
+accounted for the earlier ₹29.50 refund on that purchase. The wallet showed
+₹59 refunded, one original lot, zero purchased credits remaining and zero debt.
+Production checkout remains disabled.
 [Test checkout and refund verification](../RAZORPAY_GO_LIVE.md)
 
 The production shadow observation for 6–13 November UTC completed under the

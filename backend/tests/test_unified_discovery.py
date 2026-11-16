@@ -118,6 +118,25 @@ def test_zero_results_release_credit_but_not_unknown_native_cost(discovery_db):
     )
 
 
+@pytest.mark.parametrize(("accepted_age", "worker_age", "delivered"), [(24, 6, 2), (6, 24, 0)])
+def test_batch_execution_uses_accepted_source_age(discovery_db, monkeypatch, accepted_age, worker_age, delivered):
+    db = discovery_db
+    db.query(models.EmployerPosting).update({"last_checked_at": utcnow() - timedelta(hours=12)})
+    db.commit()
+    monkeypatch.setenv("EMPLOYER_MAX_SOURCE_AGE_HOURS", str(accepted_age))
+    accepted = discovery.create(db, user_id=1, payload=quoted(db))
+    assert accepted.status == "preparing" and accepted.reserved_credits == 1
+    monkeypatch.setenv("EMPLOYER_MAX_SOURCE_AGE_HOURS", str(worker_age))
+
+    result = discovery.execute(db, user_id=1, search_id=accepted.id)
+
+    charged = int(delivered > 0)
+    assert result.status == "completed"
+    assert (result.delivered_count, result.charged_credits, result.refunded_credits) == (delivered, charged, 1 - charged)
+    assert db.query(CreditDiscoveryDelivery).count() == delivered
+    assert service.wallet(db, user_id=1).available_credits == 40 - charged
+
+
 def test_following_batch_excludes_both_physical_and_canonical_deliveries(discovery_db):
     db = discovery_db
     completed(db, "first-discovery", desired_count=1)

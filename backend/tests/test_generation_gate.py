@@ -175,6 +175,53 @@ def test_basic_and_curated_work_still_execute_with_gate_closed(factory, monkeypa
         assert db.query(models.ModelCallEvent).count() == 0
 
 
+def test_new_curated_request_uses_current_catalogue_after_update(factory, monkeypatch):
+    from backend.app.services import interview_catalog
+
+    monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "false")
+    monkeypatch.setattr(llm_client, "_chat_with_budget", forbidden)
+    with monkeypatch.context() as prior:
+        prior.setattr(interview_catalog, "CATALOG_VERSION", interview_catalog.LEGACY_FINGERPRINT_VERSION)
+        completed = create(factory, "interview_questions", key="gate-catalog-previous")
+        assert tasks.process_analysis_run(completed) == "succeeded"
+
+    assert create(factory, "interview_questions", key="gate-catalog-previous") == completed
+    current = create(factory, "interview_questions", key="gate-catalog-current")
+    assert current != completed
+    assert tasks.process_analysis_run(current) == "succeeded"
+    assert create(factory, "interview_questions", key="gate-catalog-repeat") == current
+    with factory() as db:
+        assert db.get(models.AnalysisRun, completed).result_payload["catalog_version"] == interview_catalog.LEGACY_FINGERPRINT_VERSION
+        assert db.get(models.AnalysisRun, current).result_payload["catalog_version"] == interview_catalog.CATALOG_VERSION
+        assert db.query(models.ModelCallEvent).count() == 0
+
+
+def test_queued_curated_request_remains_valid_after_catalogue_update(factory, monkeypatch):
+    from backend.app.services import interview_catalog
+
+    monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "false")
+    monkeypatch.setattr(llm_client, "_chat_with_budget", forbidden)
+    with monkeypatch.context() as prior:
+        prior.setattr(interview_catalog, "CATALOG_VERSION", interview_catalog.LEGACY_FINGERPRINT_VERSION)
+        queued = create(factory, "interview_questions", key="gate-catalog-already-queued")
+
+    assert create(factory, "interview_questions", key="gate-catalog-check-queued") == queued
+    assert tasks.process_analysis_run(queued) == "succeeded"
+    with factory() as db:
+        assert db.get(models.AnalysisRun, queued).result_payload["catalog_version"] == interview_catalog.CATALOG_VERSION
+        assert db.query(models.ModelCallEvent).count() == 0
+
+
+def test_interview_catalogue_update_keeps_enhanced_dependency_snapshot(factory, monkeypatch):
+    from backend.app.services import interview_catalog
+
+    with factory() as db:
+        payload = {"mode": "enhanced", "num_questions": 8}
+        current = analysis_service._dependency_snapshot(db, 1, "interview_questions", "opp_gate", payload)
+        monkeypatch.setattr(interview_catalog, "CATALOG_VERSION", "future-curated-catalogue")
+        assert analysis_service._dependency_snapshot(db, 1, "interview_questions", "opp_gate", payload) == current
+
+
 def test_actual_legacy_job_route_preserves_basic_and_blocks_enhanced(factory, monkeypatch):
     monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "false")
     monkeypatch.setattr(llm_client, "_chat_with_budget", forbidden)

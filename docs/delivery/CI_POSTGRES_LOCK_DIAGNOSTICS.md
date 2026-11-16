@@ -1,10 +1,12 @@
 # CI PostgreSQL lock diagnostics
 
-The backend pytest step opts into a CI-only diagnostic plugin. Application code,
-financial assertions, the fixture's four-second lock deadline and ten-second
-statement deadline remain unchanged. Diagnostics do not authorize a CI rerun or
-release. The repeated lock failures remain unexplained until the actual holder
-evidence identifies their cause.
+The backend pytest step opts into a CI-only diagnostic plugin. The general
+fixture uses a four-second lock deadline and a ten-second statement deadline.
+The payment-versus-erasure test allows its deliberately blocked contender eight
+seconds in that transaction. The holder retains its four-second deadline, so an
+inverted lock order can still fail the test. PR #142's encrypted report recorded
+the holder idle with its advisory lock for more than six seconds during a gap in
+runner samples. The test keeps its payment and erasure assertions.
 
 The plugin requires the Linux GitHub Actions backend job, an exact service
 container ID, the pinned PostgreSQL 17 service image, its published loopback test

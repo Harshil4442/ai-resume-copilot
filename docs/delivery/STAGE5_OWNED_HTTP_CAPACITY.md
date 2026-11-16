@@ -342,6 +342,30 @@ The client suppressed two and four repeat reads respectively. Both runs recorded
 zero external provider attempts and zero contract failures. The observed refusals
 limit the supported throughput under this workload.
 
+## Session validation data reads
+
+The local candidate groups known document keys inside the existing read-only
+session validation transaction. One normal validation read the same 16 ordered
+record keys in nine Firestore data calls instead of 16. The two fresh Admin List
+calls and the sequence of 18 storage calls remained equivalent in the intercepted
+SDK test. The grouped path cannot stage writes. Login, logout, credential and
+application mutations continue through their existing transaction paths.
+
+A complete snapshot with a session tombstone returns 401. An incomplete batch
+that includes the tombstone but omits another requested record returns 503.
+The original singleton path could return 401 before requesting that sibling
+record. Both paths refuse access, and no partial batch enters the transaction
+buffer. The test measures calls through the installed SDK with synthetic
+responses. It gives no production latency, document charge or Admin quota
+reduction claim.
+
+The [Linux emulator comparison](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/43762205771)
+confirmed 256 to 144 Firestore data calls in each bootstrap cohort. Each cohort
+completed eight Dashboard and eight Jobs requests with 32 Admin Lists, 200 SQL
+SELECTs and zero SQL writes or provider calls. Jobs median service latency moved
+from 157 to 138 ms in the 20% cohort and from 138 to 139 ms in the 25% cohort.
+Each timing sample covers eight Jobs requests on the isolated runner.
+
 ## Original acceptance remains open
 
 The existing target remains about one million authenticated requests/month plus

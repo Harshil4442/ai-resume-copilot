@@ -736,6 +736,90 @@ describe("legacy payment recovery", () => {
     expect(screen.queryByText("Total refunded: ₹162.25")).not.toBeInTheDocument();
     expect(state.post).not.toHaveBeenCalled(); noCheckout();
   });
+  it.each([
+    { before: 0, refunded: 16_225, availableBefore: 100, credits: 75, unitsBefore: 2, units: 1, complete: false, total: "₹162.25" },
+    { before: 16_225, refunded: 64_900, availableBefore: 75, credits: 0, unitsBefore: 1, units: 0, complete: true, total: "₹649" },
+  ])("reconciles an unrecorded legacy refund of $total on one explicit action", async ({
+    before, refunded, availableBefore, credits, unitsBefore, units, complete, total,
+  }) => {
+    const original = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false,
+      provider_order_id: "order_LegacyFixture", payment_reference: "pay_LegacyFixture", refunded_amount_minor: before });
+    const current = { ...original, status: complete ? "refunded" : "paid", fulfilled: !complete, refunded_amount_minor: refunded };
+    const reconcilePath = "/billing/orders/order_legacy/reconcile";
+    let recorded = false;
+    let finish!: (result: unknown) => void;
+    state.get.mockImplementation((url: string) => {
+      if (url === "/billing/recent-order" || url === "/billing/orders/order_legacy") return Promise.resolve(original);
+      if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: recorded ? units : unitsBefore }, wallet }));
+      if (url === "/auth/me") return Promise.resolve({ job_service_credits: recorded ? credits : availableBefore });
+      if (url === "/v1/usage-events?limit=20") return Promise.resolve({ balance: recorded ? units : unitsBefore,
+        items: recorded ? [{ id: "legacy-refund", event_type: "refund", amount: units - unitsBefore, balance_after: units, created_at: stamp }] : [] });
+      if (url === "/v1/employer-jobs/credits?limit=10") return Promise.resolve({ balance: recorded ? credits : availableBefore,
+        reserved_credits: 0, reservations: [], operations: [], items: [], next_cursor: null });
+      return read(url);
+    });
+    state.post.mockImplementation((url: string) => url === reconcilePath
+      ? new Promise((resolve) => { finish = resolve; }) : post(url));
+    render(<BillingPage />);
+    const legacy = within(await screen.findByRole("region", { name: "Legacy entitlements" }));
+    const payment = within(await legacy.findByRole("region", { name: before ? "Payment partially refunded" : "Payment confirmed" }));
+    const balance = within(legacy.getByRole("region", { name: "Current entitlement" }));
+    const serviceCredits = within(balance.getByText("Job service credits").parentElement!);
+    const analysisUnits = within(balance.getByText("Analysis units").parentElement!);
+    const historyBalance = () => legacy.getByText("Available balance").parentElement!;
+    const check = payment.getByRole("button", { name: "Check refund status" });
+    expect(await serviceCredits.findByText(String(availableBefore))).toBeVisible();
+    expect(await analysisUnits.findByText(String(unitsBefore))).toBeVisible();
+    await waitFor(() => expect(historyBalance()).toHaveTextContent(`${availableBefore} credits`));
+    expect(state.post).not.toHaveBeenCalled();
+
+    fireEvent.click(check);
+    expect(check).toBeDisabled();
+    fireEvent.click(check);
+    expect(state.post).toHaveBeenCalledExactlyOnceWith(reconcilePath, undefined);
+    await act(async () => {
+      recorded = true;
+      finish({ resolution: "settled", message: "Original payment outcome is recorded.", order: current });
+    });
+
+    expect(await legacy.findByRole("heading", { name: complete ? "Payment refunded" : "Payment partially refunded" })).toBeVisible();
+    expect(legacy.getByText(`Total refunded: ${total}`)).toBeVisible();
+    expect(await serviceCredits.findByText(String(credits))).toBeVisible();
+    expect(await analysisUnits.findByText(String(units))).toBeVisible();
+    await waitFor(() => expect(historyBalance()).toHaveTextContent(`${credits} credits`));
+    fireEvent.click(legacy.getByText("Legacy analysis history"));
+    expect(await legacy.findByText(`refund · ${new Date(stamp).toLocaleDateString("en-IN")}`)).toBeVisible();
+    if (complete) expect(legacy.queryByRole("button", { name: "Check refund status" })).not.toBeInTheDocument();
+    expect(state.post).toHaveBeenCalledExactlyOnceWith(reconcilePath, undefined);
+    noCheckout();
+  });
+  it.each([
+    { label: "a smaller cumulative amount", change: { refunded_amount_minor: 16_225 } },
+    { label: "another order", change: { order_id: "order_foreign" } },
+    { label: "another provider order", change: { provider_order_id: "order_OtherFixture" } },
+  ])("refuses a legacy refund reconciliation with $label", async ({ change }) => {
+    const original = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false,
+      provider_order_id: "order_LegacyFixture", payment_reference: "pay_LegacyFixture", refunded_amount_minor: 32_450 });
+    const reconcilePath = "/billing/orders/order_legacy/reconcile";
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order" || url === "/billing/orders/order_legacy"
+      ? Promise.resolve(original) : read(url));
+    state.post.mockResolvedValue({ resolution: "settled", order: { ...original, refunded_amount_minor: 48_675, ...change } });
+    render(<BillingPage />);
+    const legacy = within(await screen.findByRole("region", { name: "Legacy entitlements" }));
+    const payment = within(await legacy.findByRole("region", { name: "Payment partially refunded" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+    const balanceReads = state.get.mock.calls.filter(([url]) => url === "/auth/me" || url === "/v1/usage-events?limit=20" || url === "/v1/employer-jobs/credits?limit=10").length;
+    expect(state.post).not.toHaveBeenCalled();
+    fireEvent.click(payment.getByRole("button", { name: "Check refund status" }));
+
+    expect(await legacy.findByRole("alert")).toBeVisible();
+    expect(payment.getByText("Total refunded: ₹324.5")).toBeVisible();
+    expect(legacy.queryByText("Total refunded: ₹162.25")).not.toBeInTheDocument();
+    expect(legacy.queryByText("Total refunded: ₹486.75")).not.toBeInTheDocument();
+    expect(state.get.mock.calls.filter(([url]) => url === "/auth/me" || url === "/v1/usage-events?limit=20" || url === "/v1/employer-jobs/credits?limit=10")).toHaveLength(balanceReads);
+    expect(state.post).toHaveBeenCalledExactlyOnceWith(reconcilePath, undefined);
+    noCheckout();
+  });
   it("retains older premium purchase status without inventing credit conversion", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder({ sku: "premium_30d", status: "paid", fulfilled: true, accepted_quote: null, checkout_available: false })) : read(url));
     render(<BillingPage />); await screen.findByRole("heading", { name: "Payment confirmed" }); await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled()); noCheckout();

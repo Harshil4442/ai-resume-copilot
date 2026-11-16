@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from backend.app.domains.common import utcnow
-from backend.app.domains.notifications import wake
+from backend.app.domains.notifications import password_reset, privacy_erasure, service, wake
 from backend.app.models import NotificationOutbox
 from google.api_core.exceptions import AlreadyExists, DeadlineExceeded
 from google.cloud import tasks_v2
@@ -79,7 +79,7 @@ def test_committed_link_confirms_only_exact_bodyless_task_with_no_database_trans
     assert outbox.get(NotificationOutbox, IDENTIFIER).status == status
 
 
-@pytest.mark.parametrize("outcome", [AlreadyExists, DeadlineExceeded, None])
+@pytest.mark.parametrize("outcome", [AlreadyExists, DeadlineExceeded, RuntimeError, None])
 def test_unconfirmed_task_uses_same_immediate_delivery_with_no_alternate_publication(
     task_client, outbox, monkeypatch, outcome,
 ):
@@ -94,6 +94,79 @@ def test_unconfirmed_task_uses_same_immediate_delivery_with_no_alternate_publica
     deliver.assert_called_once_with(outbox, IDENTIFIER)
     assert client.create_task.call_count == 1
     client.get_task.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("category", "status", "lifetime", "retry_delay"),
+    [("password_reset", "pending", 15, 2), ("privacy_erasure", "erasure_pending", 10, 1)],
+)
+def test_missed_wake_republishes_same_name_at_committed_retry_time(
+    task_client, outbox, monkeypatch, category, status, lifetime, retry_delay,
+):
+    now = utcnow()
+    expires = now + timedelta(minutes=lifetime)
+    available = now + timedelta(minutes=retry_delay)
+    monkeypatch.setattr(wake, "utcnow", lambda: now)
+    add_link(outbox, now, category=category, status=status, expiry=int(expires.timestamp() * 1000))
+    _, client = task_client
+    tasks = []
+
+    def publish(*, request, retry, timeout):
+        assert not outbox.in_transaction()
+        assert retry is None and timeout == 2
+        tasks.append(request.task)
+        if len(tasks) == 1:
+            raise DeadlineExceeded("Synthetic lost queue acknowledgement")
+        return tasks_v2.Task(name=request.task.name)
+
+    def retry_delivery(db, notification_id):
+        assert notification_id == IDENTIFIER and not db.in_transaction()
+        db.get(NotificationOutbox, notification_id).available_at = available
+        db.commit()
+        return wake.SecurityEmailRetry("retry", available)
+
+    client.create_task.side_effect = publish
+    monkeypatch.setattr(wake, "retry_security_email", retry_delivery)
+    assert wake.deliver_link_with_wake(outbox, IDENTIFIER) == wake.SecurityEmailRetry("retry", available)
+    assert len(tasks) == 2 and tasks[0].name == tasks[1].name
+    assert tasks[0].http_request == tasks[1].http_request
+    assert tasks[0].schedule_time == now + timedelta(seconds=30)
+    assert tasks[1].schedule_time == available < expires
+
+
+def test_unknown_send_state_does_not_republish_a_missed_wake(task_client, outbox, monkeypatch):
+    add_link(outbox, utcnow())
+    _, client = task_client
+    client.create_task.side_effect = DeadlineExceeded("Synthetic lost queue acknowledgement")
+
+    def record_unknown(db, notification_id):
+        db.get(NotificationOutbox, notification_id).status = "mail_unknown"
+        db.commit()
+        return wake.SecurityEmailRetry("finished")
+
+    monkeypatch.setattr(wake, "retry_security_email", record_unknown)
+    assert wake.deliver_link_with_wake(outbox, IDENTIFIER) == wake.SecurityEmailRetry("finished")
+    assert client.create_task.call_count == 1
+    assert outbox.get(NotificationOutbox, IDENTIFIER).status == "mail_unknown"
+
+
+@pytest.mark.parametrize(
+    ("category", "pending", "cancelled"),
+    [("password_reset", "pending", "cancelled"), ("privacy_erasure", "erasure_pending", "erasure_cancelled")],
+)
+def test_expired_pending_link_is_cancelled_even_when_delivery_is_delayed_or_unavailable(
+    outbox, monkeypatch, category, pending, cancelled,
+):
+    now = utcnow()
+    monkeypatch.setattr(service, "utcnow", lambda: now)
+    add_link(outbox, now + timedelta(minutes=1), category=category, status=pending,
+             expiry=int((now - timedelta(seconds=1)).timestamp() * 1000))
+    monkeypatch.setattr(password_reset, "configured", lambda: False)
+    monkeypatch.setattr(privacy_erasure, "configured", lambda: False)
+    monkeypatch.setattr(service, "_send", lambda *_: pytest.fail("Expired link cannot reach a mail provider"))
+    assert service.retry_security_email(outbox, IDENTIFIER, link_only=True) == wake.SecurityEmailRetry("finished")
+    item = outbox.get(NotificationOutbox, IDENTIFIER)
+    assert item.status == cancelled and item.payload == {} and item.attempt_count == 0
 
 
 @pytest.mark.parametrize(("category", "status", "expiry", "channel"), [

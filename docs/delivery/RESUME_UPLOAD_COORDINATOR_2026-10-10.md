@@ -133,6 +133,31 @@ existing cleanup job and cleanup caller active. To revert, restore the scan job
 before disabling new task publication and allow existing tasks to settle.
 The two five-minute maintenance jobs still affect database idle time.
 
+### Reducing the remaining scheduled database wakeups
+
+The search acceptance routes can publish the outbox event for the exact accepted
+search after its reservation and dispatch intent commit. The publisher uses the
+same task name and due-time checks as scheduled recovery. Reads do not publish
+work. A failed or interrupted publication leaves the committed work eligible for
+the existing sweep. Verify native Cloud Tasks publication after the API response,
+including a warm request, a cold start, and an unavailable queue, before relying
+on this path to shorten normal search waits.
+
+An aligned 15-minute résumé cleanup and general maintenance trial would leave
+idle gaps after the minute scan has been retired. At 0.25 compute units, a
+five-minute idle tail per slot yields 62 compute-unit hours in a 31-day month
+before request time, retries, user activity, and out-of-slot work. A 100-hour
+allowance then has up to 38 hours of headroom. Measure the actual CU-hours and
+oldest pending items before adopting that cadence.
+
+Keep both five-minute schedules during search and résumé wake verification.
+The general sweep also delivers and recovers security email. Erasure and reset
+links can expire after 10 and 15 minutes, so verify timely recovery from a
+missed task before slowing that sweep. Confirm employer refreshes can still
+meet their six-hour objective, old browser-review payloads are cleared, and
+the one-item cleanup path can drain expected upload and erasure work. Preserve
+the existing schedules as the rollback setting.
+
 Provision a dedicated ordinary SQL login only after the global authority fence and
 schema14 migration gates pass. Review SELECT/UPDATE on upload rows; SELECT/INSERT/
 UPDATE on cleanup rows; Resume INSERT and sequence usage; and the User row-lock

@@ -6,14 +6,14 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import UTC, datetime
+from datetime import datetime
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.orm import Session
 
 from ...models import NotificationOutbox, PasswordResetToken, User
 from ...security import JWT_SECRET
-from ..common import public_id, utcnow
+from ..common import as_utc, public_id, utcnow
 
 PURPOSE = b"hirewiz:password-reset-email:v1"
 
@@ -34,7 +34,7 @@ def enqueue(db: Session, *, user_id: int, recipient: str, reset_id: str, token: 
     from .mail_budget import reserve_messages
     reserve_messages(db, ["password-reset:" + reset_id, "password-changed:" + reset_id],
         category="password_reset", expires_at=expires_at)
-    expiry = int(expires_at.replace(tzinfo=UTC).timestamp() * 1000)
+    expiry = int(as_utc(expires_at).timestamp() * 1000)
     nonce = os.urandom(12)
     encrypted = AESGCM(_key()).encrypt(nonce, token.encode(), _aad(reset_id, recipient, expiry))
     now = utcnow()
@@ -102,7 +102,7 @@ def deliver(db: Session, notification_id: str) -> bool:
         db.rollback()
         return False
     now = utcnow()
-    available = item.available_at.replace(tzinfo=UTC)
+    available = as_utc(item.available_at)
     if now < available:
         db.rollback()
         return False
@@ -110,7 +110,7 @@ def deliver(db: Session, notification_id: str) -> bool:
     row = db.get(PasswordResetToken, payload.get("reset_id"))
     owner = db.get(User, item.user_id)
     if (row is None or row.purpose != "password_reset" or owner is None or row.user_id != owner.id or row.status != ("COMPLETED" if item.notification_type == "password_changed" else "PENDING")
-            or (item.notification_type == "password_reset" and row.expires_at.replace(tzinfo=UTC) <= now) or owner.email != item.recipient
+            or (item.notification_type == "password_reset" and as_utc(row.expires_at) <= now) or owner.email != item.recipient
             or hashlib.sha256(item.recipient.encode()).hexdigest() != row.email_sha256):
         item.status, item.payload, item.updated_at = "cancelled", {}, now
         db.commit()

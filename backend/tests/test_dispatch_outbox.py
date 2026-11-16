@@ -51,6 +51,49 @@ def test_intent_rollback_does_not_dispatch_uncommitted_work(factory):
         assert db.query(DispatchOutbox).count() == 0
 
 
+def test_immediate_search_publish_is_exact_and_recovers_same_task_after_lost_ack(factory, monkeypatch):
+    with factory() as db:
+        events = [
+            service.enqueue(db, topic=topic, aggregate_id=aggregate_id, payload={}, key=key)
+            for topic, aggregate_id, key in (
+                ("employer.search", "other_search", "other-search"),
+                ("analysis.run", "wanted_search", "same-aggregate-other-topic"),
+                ("employer.search", "wanted_search", "wanted-search"),
+            )
+        ]
+        db.commit()
+        other_ids = [event.id for event in events[:-1]]
+        wanted_id = events[-1].id
+
+    requests = []
+
+    def publish(event, *, rpc_timeout=None):
+        assert rpc_timeout == (3.0 if not requests else None)
+        requests.append((event.id, event.task_name))
+        if len(requests) == 1:
+            raise RuntimeError("Synthetic publication response lost")
+        return event.task_name
+
+    monkeypatch.setattr(service, "_cloud_task", publish)
+    service.kick_employer_search("wanted_search")
+    service.kick_employer_search("wanted_search")  # A repeated request cannot bypass backoff.
+    assert len(requests) == 1 and requests[0][0] == wanted_id
+    with factory() as db:
+        assert all(db.get(DispatchOutbox, identity).dispatch_attempts == 0 for identity in other_ids)
+        event = db.get(DispatchOutbox, wanted_id)
+        assert event.status == "pending"
+        event.available_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+
+    assert service.dispatch_pending(topics={"employer.search"}) == {"dispatched": 2, "failed": 0}
+    assert [entry for entry in requests if entry[0] == wanted_id] == [requests[0], requests[0]]
+    service.kick_employer_search("wanted_search")
+    assert len(requests) == 3
+    with factory() as db:
+        assert db.get(DispatchOutbox, wanted_id).status == "dispatched"
+        assert db.get(DispatchOutbox, wanted_id).execution_attempts == 0
+
+
 def test_durable_publish_failure_is_recovered_without_recreating_work(factory, monkeypatch):
     event_id = _intent(factory)
     def fail(event):

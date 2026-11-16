@@ -141,7 +141,7 @@ def enqueue(
     return event
 
 
-def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
+def _cloud_task(event: DispatchOutbox | DispatchSnapshot, *, rpc_timeout: float | None = None) -> str:
     project = _setting("GOOGLE_CLOUD_PROJECT")
     location = _setting("ANALYSIS_TASKS_LOCATION")
     service_account = _setting("ANALYSIS_TASKS_SERVICE_ACCOUNT")
@@ -173,13 +173,16 @@ def _cloud_task(event: DispatchOutbox | DispatchSnapshot) -> str:
     if event.topic == "employer.search" and event.available_at is not None:
         stamp = event.available_at.timestamp()
         task["schedule_time"] = {"seconds": int(stamp), "nanos": int((stamp - int(stamp)) * 1_000_000_000)}
+    rpc_options = {} if rpc_timeout is None else {"retry": None, "timeout": rpc_timeout}
     try:
-        return str(client.create_task(parent=parent, task=tasks_v2.Task(task)).name)
+        return str(client.create_task(parent=parent, task=tasks_v2.Task(task), **rpc_options).name)
     except AlreadyExists:
         return name
 
 
-def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dict[str, int]:
+def dispatch_pending(
+    *, limit: int = 100, topics: set[str] | None = None, aggregate_id: str | None = None,
+) -> dict[str, int]:
     """Publish with short DB claims, leaving failed dispatches durable for a sweep."""
     mode = _dispatch_mode()
     if mode == "manual":
@@ -193,18 +196,20 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
     sent = failed = 0
     try:
         now = utcnow()
-        query = db.query(DispatchOutbox.id, DispatchOutbox.topic).filter(
+        due = and_(
             DispatchOutbox.available_at <= now,
             or_(
-                DispatchOutbox.status == "pending",
+                DispatchOutbox.status.in_(("pending", "retry")),
                 and_(DispatchOutbox.status == "publishing", DispatchOutbox.lease_until < now),
-                and_(DispatchOutbox.status == "retry", DispatchOutbox.available_at <= now),
                 and_(DispatchOutbox.status == "running", DispatchOutbox.lease_until < now),
                 and_(DispatchOutbox.status == "dispatched", DispatchOutbox.updated_at < now - timedelta(hours=1)),
             ),
         )
+        query = db.query(DispatchOutbox.id, DispatchOutbox.topic).filter(due)
         if topics:
             query = query.filter(DispatchOutbox.topic.in_(topics))
+        if aggregate_id is not None:
+            query = query.filter(DispatchOutbox.aggregate_id == aggregate_id)
         events = query.order_by(DispatchOutbox.created_at).limit(limit).all()
         # Validate every selected route before claiming even the first event.
         if mode == "cloud_tasks":
@@ -225,14 +230,7 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                     else_=f"{parent}/tasks/{event_id}-dispatch-" + cast(DispatchOutbox.dispatch_attempts + 1, String),
                 )
             claimed = db.query(DispatchOutbox).filter(
-                DispatchOutbox.id == event_id,
-                or_(
-                    DispatchOutbox.status == "pending",
-                    and_(DispatchOutbox.status == "publishing", DispatchOutbox.lease_until < now),
-                    and_(DispatchOutbox.status == "retry", DispatchOutbox.available_at <= now),
-                    and_(DispatchOutbox.status == "running", DispatchOutbox.lease_until < now),
-                    and_(DispatchOutbox.status == "dispatched", DispatchOutbox.updated_at < now - timedelta(hours=1)),
-                ),
+                DispatchOutbox.id == event_id, due,
             ).update({
                 "status": "publishing", "lease_token": token,
                 "lease_until": now + timedelta(minutes=2), "updated_at": now,
@@ -255,7 +253,10 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
                     # so the publisher can record and retry that failure safely.
                     process_event(event_id)
                 else:
-                    task_name = _cloud_task(snapshot)
+                    if aggregate_id is None:
+                        task_name = _cloud_task(snapshot)
+                    else:
+                        task_name = _cloud_task(snapshot, rpc_timeout=3.0)
                     db.query(DispatchOutbox).filter_by(id=event_id, lease_token=token, status="publishing").update(
                         {"status": "dispatched", "task_name": task_name, "lease_token": None,
                          "lease_until": None, "last_error": case((and_(DispatchOutbox.topic == "employer.search",
@@ -282,6 +283,16 @@ def dispatch_pending(*, limit: int = 100, topics: set[str] | None = None) -> dic
         return {"dispatched": sent, "failed": failed}
     finally:
         db.close()
+
+
+def kick_employer_search(search_id: str) -> None:
+    """Try the committed search immediately while leaving durable recovery to the sweep."""
+    if (os.getenv("ANALYSIS_TASKS_MODE") or "").strip().lower() != "cloud_tasks":
+        return
+    try:
+        dispatch_pending(limit=1, topics={"employer.search"}, aggregate_id=search_id)
+    except Exception as exc:
+        log.warning("Immediate employer search dispatch deferred: %s", type(exc).__name__)
 
 
 def _execute(topic: str, aggregate_id: str) -> str | EmployerSearchContinuation:

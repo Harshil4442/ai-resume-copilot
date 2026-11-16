@@ -45,6 +45,7 @@ class BufferedTransaction:
         self.before_read = before_read
         self.original: dict[str, RpcSnapshot] = {}
         self.overlay: dict[str, bytes] = {}
+        self._prefetched = False
 
     def path(self, namespace: str, key: str) -> str:
         if not namespace or not key or len(namespace) > 80 or len(key) > 200:
@@ -54,14 +55,29 @@ class BufferedTransaction:
 
     def _original(self, path: str) -> RpcSnapshot:
         if path not in self.original:
-            if len(self.original) >= 64:
-                raise GuardDenied("Transaction read budget exceeded")
-            self.before_read()
-            result = self.rpc.read(self.transaction_id, (path,))
-            if set(result) != {path} or result[path].path != path:
-                raise GuardUnavailable("Incomplete transactional snapshot")
-            self.original[path] = result[path]
+            self._read_originals((path,))
         return self.original[path]
+
+    def _read_originals(self, paths: tuple[str, ...]) -> None:
+        if len(self.original) + len(paths) > 64:
+            raise GuardDenied("Transaction read budget exceeded")
+        self.before_read()
+        result = self.rpc.read(self.transaction_id, paths)
+        if set(result) != set(paths) or any(path != snapshot.path for path, snapshot in result.items()):
+            raise GuardUnavailable("Incomplete transactional snapshot")
+        self.original.update(result)
+
+    def prefetch_read_only(self, keys: tuple[tuple[str, str], ...]) -> None:
+        # A group is evidence only after every requested record is found or explicitly missing.
+        if self.overlay:
+            raise GuardDenied("Prefetched authority transactions must be read-only")
+        paths = tuple(self.path(namespace, key) for namespace, key in keys)
+        if not paths or len(set(paths)) != len(paths):
+            raise GuardDenied("Prefetched record set must be unique and nonempty")
+        self._prefetched = True
+        missing = tuple(path for path in paths if path not in self.original)
+        if missing:
+            self._read_originals(missing)
 
     def get(self, namespace: str, key: str) -> dict | None:
         path = self.path(namespace, key)
@@ -81,6 +97,8 @@ class BufferedTransaction:
             raise GuardUnavailable("Corrupt authority record") from exc
 
     def _stage(self, namespace: str, key: str, value: dict, *, immutable: bool) -> None:
+        if self._prefetched:
+            raise GuardDenied("Prefetched authority transactions must be read-only")
         path = self.path(namespace, key)
         old = self.get(namespace, key)  # Original read/absence before any write.
         value = _copy(value)

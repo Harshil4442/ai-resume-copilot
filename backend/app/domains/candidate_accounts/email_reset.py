@@ -7,13 +7,13 @@ import hmac
 import json
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from ...models import CandidatePasswordAccount, PasswordResetToken, User
 from ...security import JWT_SECRET, hash_password
-from ..common import public_id, utcnow
+from ..common import as_utc, public_id, utcnow
 from ..notifications import password_reset as delivery
 from ..recovery.store import GuardDenied
 from .service import production_candidate_accounts, revision_from_row
@@ -39,7 +39,7 @@ def _token_mac(row: PasswordResetToken, nonce: bytes) -> bytes:
     binding = {"id": row.id, "user_id": row.user_id, "email_sha256": row.email_sha256,
         "credential_sha256": row.credential_sha256, "native_revision_sha256": row.native_revision_sha256,
         "legacy_epoch": row.legacy_epoch,
-        "expires_at": row.expires_at.replace(tzinfo=UTC).isoformat(timespec="microseconds")}
+        "expires_at": as_utc(row.expires_at).isoformat(timespec="microseconds")}
     raw = json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()
     return hmac.new(key, raw + b"\0" + nonce, hashlib.sha256).digest()[:16]
 
@@ -78,7 +78,7 @@ def request_reset(db: Session, email: str, *, now: datetime | None = None) -> st
         db.rollback()
         return None
     last = db.query(PasswordResetToken).filter_by(user_id=owner.id, purpose="password_reset").order_by(PasswordResetToken.created_at.desc()).first()
-    if last is not None and now < last.created_at.replace(tzinfo=UTC) + COOLDOWN:
+    if last is not None and now < as_utc(last.created_at) + COOLDOWN:
         db.rollback()
         return None
     try:
@@ -112,7 +112,7 @@ def confirm_reset(db: Session, token: str, new_password: str, *, now: datetime |
     owner = db.query(User).filter_by(id=owner_id).with_for_update().one_or_none()
     row = db.query(PasswordResetToken).filter_by(token_sha256=digest(token), purpose="password_reset").with_for_update().one_or_none()
     if (owner is None or row is None or row.status != "PENDING" or row.consumed_at is not None
-            or now >= row.expires_at.replace(tzinfo=UTC) or row.email_sha256 != digest(owner.email)
+            or now >= as_utc(row.expires_at) or row.email_sha256 != digest(owner.email)
             or row.credential_sha256 != digest(owner.password_hash) or row.legacy_epoch != int(owner.credential_epoch or 0)
             or not _valid_token(row, token)):
         db.rollback()

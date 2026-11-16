@@ -43,6 +43,10 @@ function errorText(error: unknown, fallback: string) { return error instanceof E
 function canReconcile(order: LegacyOrder) {
   return order.status === "pending" || (order.status === "failed" && Boolean(order.provider_order_id && order.payment_reference));
 }
+function canCheckRefund(order: LegacyOrder) {
+  return order.status === "paid" && order.fulfilled && refundAmount(order) !== null
+    && Boolean(order.provider_order_id && order.payment_reference && order.accepted_quote);
+}
 function blocksNewPurchase(order: LegacyOrder) {
   return canReconcile(order) || (order.status === "paid" && !order.fulfilled);
 }
@@ -187,6 +191,40 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     finally { actionPending.current = false; if (mounted.current) setBusy(false); }
   }
 
+  async function checkRefund() {
+    const original = order;
+    const accepted = original?.accepted_quote;
+    const before = original ? refundAmount(original) : null;
+    if (!original || !accepted || before === null || !canCheckRefund(original)
+      || recentRead !== "ready" || busy || actionPending.current || statusWork.current) return;
+    actionPending.current = true;
+    setBusy(true); setError(null); setMessage(null);
+    try {
+      const result = await apiPostJson<{ resolution: string; order: LegacyOrder }>(`/billing/orders/${encodeURIComponent(original.order_id)}/reconcile`, undefined);
+      if (!mounted.current || acceptedOrder.current !== original) return;
+      const fresh = result?.order;
+      const refunded = fresh ? refundAmount(fresh) : null;
+      if (result?.resolution !== "settled" || !fresh || refunded === null || refunded < before
+        || fresh.order_id !== original.order_id || fresh.sku !== original.sku
+        || fresh.provider_order_id !== original.provider_order_id || fresh.payment_reference !== original.payment_reference
+        || fresh.currency !== original.currency || fresh.amount_minor !== original.amount_minor
+        || !sameQuote(fresh.accepted_quote, accepted)
+        || (refunded === original.amount_minor ? fresh.status !== "refunded" : fresh.status !== "paid" || !fresh.fulfilled)) {
+        throw new Error("Refund status could not be verified.");
+      }
+      if (refunded === before) {
+        setMessage("No additional refund is recorded for this order yet.");
+        return;
+      }
+      await acceptStatus(fresh);
+    } catch (failure) {
+      if (mounted.current) setError(errorText(failure, "Could not check the original refund."));
+    } finally {
+      actionPending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
   async function resume() {
     if (!order || !isFiniteBundleSku(order.sku) || order.status !== "pending" || !order.accepted_quote || !order.provider_order_id || order.checkout_available !== true
       || !indiaConfirmed || busy || reconciliationHeld || checkoutStatusRequired === order.order_id || actionPending.current || statusWork.current) return;
@@ -270,6 +308,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       </> : null}
       <div className="flex flex-wrap gap-3">
         <Button variant="secondary" disabled={busy} onClick={() => void checkStatus(order)}>Check payment status</Button>
+        {canCheckRefund(order) ? <Button variant="secondary" disabled={busy || recentRead !== "ready"} onClick={() => void checkRefund()}>Check refund status</Button> : null}
         {canReconcile(order) ? <Button variant="secondary" disabled={busy} onClick={() => void reconcile()}>Reconcile original payment</Button> : null}
         {order.status === "pending" ? <Button disabled={busy || reconciliationHeld || checkoutStatusRequired === order.order_id || !indiaConfirmed || !isFiniteBundleSku(order.sku) || !order.accepted_quote || !order.provider_order_id || order.checkout_available !== true} onClick={() => void resume()}>Resume original checkout</Button> : null}
         <Link href="/contact" className="inline-flex min-h-11 items-center text-sm underline">Billing support</Link>

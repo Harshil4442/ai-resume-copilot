@@ -13,14 +13,14 @@ import hmac
 import json
 import re
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from ...models import AdminAuditEvent, CandidatePasswordAccount, PasswordResetToken, User
 from ...security import JWT_SECRET
 from ..career.evidence_write_fence import require_installed
-from ..common import public_id, utcnow
+from ..common import as_utc, public_id, utcnow
 from ..notification_consent.schema_compat import projection_available
 from ..notifications import privacy_erasure as mail
 from . import deletion_provenance as native
@@ -52,7 +52,7 @@ def _mac(row, nonce):
     binding = {"version": VERSION, "purpose": row.purpose, "id": row.id, "user_id": row.user_id,
         "email_sha256": row.email_sha256, "credential_sha256": row.credential_sha256,
         "native_revision_sha256": row.native_revision_sha256, "legacy_epoch": row.legacy_epoch,
-        "expires_at": row.expires_at.replace(tzinfo=UTC).isoformat(timespec="microseconds")}
+        "expires_at": as_utc(row.expires_at).isoformat(timespec="microseconds")}
     return hmac.new(key, json.dumps(binding, sort_keys=True, separators=(",", ":")).encode() + b"\0" + nonce,
         hashlib.sha256).digest()[:16]
 
@@ -158,11 +158,11 @@ def request_erasure(db: Session, email: str, *, now: datetime | None = None, rea
         db.rollback()
         return None
     current = clock()  # Refresh after owner lock waits; never extend the issued TTL.
-    if current >= row.expires_at.replace(tzinfo=UTC):
+    if current >= as_utc(row.expires_at):
         db.rollback()
         return None
     last = db.query(PasswordResetToken).filter_by(user_id=owner.id).order_by(PasswordResetToken.created_at.desc()).first()
-    if last is not None and current < last.created_at.replace(tzinfo=UTC) + COOLDOWN:
+    if last is not None and current < as_utc(last.created_at) + COOLDOWN:
         db.rollback()
         return None
     from ..notifications.mail_budget import reserve_messages
@@ -170,14 +170,14 @@ def request_erasure(db: Session, email: str, *, now: datetime | None = None, rea
     # allowance lock. Keep that order and fund before accepting token/outbox.
     reserve_messages(db, ["privacy-erasure:" + row.id], category=PURPOSE, expires_at=row.expires_at)
     current = clock()
-    if current >= row.expires_at.replace(tzinfo=UTC):
+    if current >= as_utc(row.expires_at):
         db.rollback()
         return None
     for old in db.query(PasswordResetToken).filter_by(user_id=owner.id, purpose=PURPOSE, status="PENDING"):
         old.status, old.consumed_at = "INVALIDATED", current
     db.add(row)
     item = mail.enqueue(db, user_id=owner.id, recipient=recipient, proof_id=row.id, token=token, expires_at=row.expires_at)
-    if clock() >= row.expires_at.replace(tzinfo=UTC):
+    if clock() >= as_utc(row.expires_at):
         db.rollback()
         return None
     identifier = item.id
@@ -214,7 +214,7 @@ def confirm_erasure(db: Session, token: str, confirm_erasure: bool, *, now=None,
         db.rollback()
         raise ErasureLinkInvalid() from None
     expected = (row.email_sha256, row.credential_sha256, row.legacy_epoch, row.native_revision_sha256)
-    if before[1:4] != expected[:3] or clock() >= row.expires_at.replace(tzinfo=UTC):
+    if before[1:4] != expected[:3] or clock() >= as_utc(row.expires_at):
         db.rollback()
         raise ErasureLinkInvalid()
     db.rollback()
@@ -240,14 +240,14 @@ def confirm_erasure(db: Session, token: str, confirm_erasure: bool, *, now=None,
         db.rollback()
         raise ErasureLinkInvalid() from None
     if (current != before or row is None or row.status != "PENDING" or row.consumed_at is not None
-            or not valid_token(row, token) or checked_at >= row.expires_at.replace(tzinfo=UTC)
+            or not valid_token(row, token) or checked_at >= as_utc(row.expires_at)
             or (row.email_sha256, row.credential_sha256, row.legacy_epoch, row.native_revision_sha256) != expected):
         db.rollback()
         raise ErasureLinkInvalid()
     completion = {"version": VERSION, "purpose": PURPOSE, "token_sha256": token_hash,
         "native_revision_sha256": proof, "owner_id": uid, "credential_sha256": expected[1],
         "email_sha256": expected[0], "legacy_epoch": expected[2], "confirmed": True}
-    expiry = row.expires_at.replace(tzinfo=UTC)
+    expiry = as_utc(row.expires_at)
     row.status, row.consumed_at = "COMPLETED", checked_at
     try:
         db.flush([row])

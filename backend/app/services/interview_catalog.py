@@ -1,31 +1,33 @@
 """Curated practice questions with candidate evidence references, no model call."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .market.skill_extractor import extract_skills_from_text
 
-CATALOG_VERSION = "role-practice-v1"
+LEGACY_FINGERPRINT_VERSION = "role-practice-v1"
+CATALOG_VERSION = "role-practice-v2"
 _ROLE_TOPICS = (
-    ({"software", "engineer", "developer", "backend", "frontend", "platform"}, (
-        ("How would you investigate a production incident and decide what to fix first?", "Discuss signals, hypotheses, a safe fix, and how you would verify recovery."),
-        ("How would you design a service for this role to stay reliable as usage grows?", "Explain requirements, failure cases, trade-offs, and measurable reliability."),
-        ("How would you test and release a change without disrupting users?", "Discuss representative tests, gradual rollout, observability, and rollback."),
+    (re.compile(r"\b(?:sales|account (?:manager|executive)|customer (?:success|support|service)|marketing|business development)\b"), (
+        ("How would you understand a customer need before recommending a solution?", "Discuss listening, qualifying the need, and making an accurate recommendation."),
+        ("How would you measure the success of work in this role?", "Connect useful metrics to business goals and explain what could distort those metrics."),
+        ("How would you handle a difficult stakeholder or customer conversation?", "Explain preparation, clear communication, boundaries, and follow-through."),
     )),
-    ({"data", "analyst", "analytics", "scientist", "machine learning"}, (
+    (re.compile(r"\b(?:data (?:engineer|engineering|scientist|science|analyst|analytics)|analyst|analytics|machine learning|ml engineer|database engineer)\b"), (
         ("How would you check whether a dataset is suitable for a business decision?", "Discuss quality, missing data, sampling, and limitations before choosing an approach."),
         ("How would you explain an uncertain analysis result to a nontechnical stakeholder?", "Separate observations, assumptions, confidence, and the decision that the evidence supports."),
         ("How would you evaluate whether a data or model change improves results?", "Choose useful baselines, independent validation, and measures tied to the task."),
     )),
-    ({"design", "designer", "ux", "product"}, (
+    (re.compile(r"\b(?:software|sde|backend|back end|frontend|front end|full stack|fullstack|devops|sre|site reliability|platform engineer(?:ing)?|web developer|mobile engineer)\b"), (
+        ("How would you investigate a production incident and decide what to fix first?", "Discuss signals, hypotheses, a safe fix, and how you would verify recovery."),
+        ("How would you design a service for this role to stay reliable as usage grows?", "Explain requirements, failure cases, trade-offs, and measurable reliability."),
+        ("How would you test and release a change without disrupting users?", "Discuss representative tests, gradual rollout, observability, and rollback."),
+    )),
+    (re.compile(r"\b(?:ux|ui design(?:er)?|user experience|(?:product|interaction|visual) designer|product (?:manager|owner))\b"), (
         ("How would you identify the user problem before proposing a solution?", "Explain research questions, evidence gathering, and how you would prioritize needs."),
         ("How would you evaluate whether a product change improves the user experience?", "Describe accessibility, usability checks, success measures, and unintended effects."),
         ("How would you balance user needs against delivery constraints?", "Discuss options, trade-offs, stakeholder alignment, and a testable next step."),
-    )),
-    ({"sales", "account", "customer", "marketing", "business"}, (
-        ("How would you understand a customer need before recommending a solution?", "Discuss listening, qualifying the need, and making an accurate recommendation."),
-        ("How would you measure the success of work in this role?", "Connect useful metrics to business goals and explain what could distort those metrics."),
-        ("How would you handle a difficult stakeholder or customer conversation?", "Explain preparation, clear communication, boundaries, and follow-through."),
     )),
 )
 
@@ -37,8 +39,8 @@ def curated_interview_questions(
     approved_evidence: list[dict] | None = None,
 ) -> list[dict[str, Any]]:
     evidence = approved_evidence or []
-    title_words = job_title.casefold()
-    topics = next((items for words, items in _ROLE_TOPICS if any(word in title_words for word in words)), ())
+    title_words = " ".join(re.findall(r"[^\W_]+", job_title.casefold()))
+    topics = next((items for pattern, items in _ROLE_TOPICS if pattern.search(title_words)), ())
     skills, _ = extract_skills_from_text(jd_text)
     entries = list(topics)
     for skill in sorted(skills, key=str.casefold)[:3]:

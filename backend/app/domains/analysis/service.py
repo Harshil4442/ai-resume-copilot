@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from ... import models
@@ -26,13 +27,13 @@ def _dependency_snapshot(
 ) -> dict:
     """Private semantic reuse includes mutable facts and versioned behavior."""
     from ...services.basic_matching import SCORING_VERSION
-    from ...services.interview_catalog import CATALOG_VERSION
+    from ...services.interview_catalog import LEGACY_FINGERPRINT_VERSION
     from ...services.interview_contract import contract_versions
     from ...services.market.skill_extractor import SKILL_EXTRACTOR_VERSION
 
     dependencies: dict[str, Any] = {
         "contract": "analysis-input-v2", "skills": SKILL_EXTRACTOR_VERSION,
-        "scoring": SCORING_VERSION, "interview": CATALOG_VERSION,
+        "scoring": SCORING_VERSION, "interview": LEGACY_FINGERPRINT_VERSION,
     }
     opportunity = get_opportunity(db, user_id, opportunity_id) if opportunity_id else None
     if opportunity:
@@ -484,20 +485,24 @@ def create_run(
     if not input_payload.get("force_new") and payload.operation in {
         "job_match", "interview_questions", "resume_tailor",
     }:
-        reusable = (
-            db.query(models.AnalysisRun)
-            .filter(
-                models.AnalysisRun.user_id == user_id,
-                models.AnalysisRun.operation == payload.operation,
-                models.AnalysisRun.input_fingerprint == fingerprint,
-                models.AnalysisRun.status.in_(["queued", "running", "succeeded"]),
-                models.AnalysisRun.cancel_requested.is_(False),
-                models.AnalysisRun.input_purged_at.is_(None),
-                models.AnalysisRun.result_purged_at.is_(None),
-            )
-            .order_by(models.AnalysisRun.created_at.desc())
-            .first()
+        reusable_runs = db.query(models.AnalysisRun).filter(
+            models.AnalysisRun.user_id == user_id,
+            models.AnalysisRun.operation == payload.operation,
+            models.AnalysisRun.input_fingerprint == fingerprint,
+            models.AnalysisRun.status.in_(["queued", "running", "succeeded"]),
+            models.AnalysisRun.cancel_requested.is_(False),
+            models.AnalysisRun.input_purged_at.is_(None),
+            models.AnalysisRun.result_purged_at.is_(None),
         )
+        if payload.operation == "interview_questions" and input_payload.get("mode") == "curated":
+            from ...services.interview_catalog import CATALOG_VERSION
+
+            # Keep accepted runs and same-key replays valid across catalog edits.
+            reusable_runs = reusable_runs.filter(or_(
+                models.AnalysisRun.status != "succeeded",
+                models.AnalysisRun.result_payload["catalog_version"].as_string() == CATALOG_VERSION,
+            ))
+        reusable = reusable_runs.order_by(models.AnalysisRun.created_at.desc()).first()
         if reusable:
             db.add(AnalysisRequestKey(user_id=user_id, idempotency_key=idempotency_key,
                                       analysis_run_id=reusable.id, input_fingerprint=fingerprint))

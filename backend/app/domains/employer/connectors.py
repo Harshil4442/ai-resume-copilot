@@ -990,6 +990,11 @@ def fetch_source_scan(source: SourceContract, client: httpx.Client | httpx.Async
         postings = _normalized_postings(source, rows)
         reader._wait()
         return CompleteScan(postings, metadata)
+    except ConnectorError as exc:
+        if source.platform == "ashby" and exc.code == "job_destination_tenant_mismatch":
+            # Repeating the scan cannot approve a different destination tenant.
+            raise ConnectorError(exc.code, safe_to_retry=False) from exc
+        raise
     except (KeyError, TypeError, AttributeError) as exc:
         raise ConnectorError("invalid_source_payload") from exc
     finally:
