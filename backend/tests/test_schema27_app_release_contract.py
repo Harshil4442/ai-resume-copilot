@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import socket
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -121,6 +122,46 @@ def test_owned_complete_family_fingerprint_is_stable_and_never_invokes_a_native_
     p = owned
     assert c.source_fingerprint(p.root, p.prior) == c.source_fingerprint(p.root, p.prior)
     assert p.visits == [("migration", p.root), ("preserved", p.root)] * 2
+
+
+@pytest.mark.parametrize(("changed", "denial"), [
+    (None, None),
+    (c.CURRENT_FRONTEND_LOCK_PATH, "current_frontend_lock_changed"),
+    ("backend/uv.lock", "historical_contract_or_lock_changed"),
+])
+def test_exact_current_frontend_lock_preserves_all_other_historical_pins(tmp_path, monkeypatch, changed, denial):
+    lock_path = c.CURRENT_FRONTEND_LOCK_PATH
+    current_lock = b"owned current frontend lock"
+    old_bytes = b"owned historical bytes"
+    current_sha = hashlib.sha256(current_lock).hexdigest()
+    predecessor_reads = []
+
+    def read(root, name):
+        assert root == tmp_path
+        if name == changed:
+            return old_bytes if name == lock_path else b"changed historical bytes"
+        return current_lock if name == lock_path else old_bytes
+
+    def read_predecessor(root, name):
+        assert root == tmp_path and name != lock_path
+        predecessor_reads.append(name)
+        return old_bytes
+
+    monkeypatch.setattr(c, "read", read)
+    monkeypatch.setattr(c, "git_bytes", read_predecessor)
+    monkeypatch.setattr(c, "CURRENT_FRONTEND_LOCK_SHA256", current_sha)
+    monkeypatch.setattr(c.v3, "current_document_helpers", lambda _: {})
+    monkeypatch.setattr(c.v3, "HISTORICAL_COMPANION_PACKAGES", ())
+    monkeypatch.setitem(sys.modules, "document_source_candidate", SimpleNamespace(
+        POLICY_PATH="owned-document-policy", POLICY_SHA256=hashlib.sha256(old_bytes).hexdigest(),
+        CONTRACT_PATHS=(), validate_policy=lambda *_: {},
+    ))
+    if denial:
+        with pytest.raises(c.Source27Denied, match=denial):
+            c.preserved_sources(tmp_path)
+    else:
+        assert c.preserved_sources(tmp_path)[lock_path] == current_sha
+        assert predecessor_reads == [name for name in c.v3.HISTORICAL_PATHS if name != lock_path]
 
 
 @pytest.mark.parametrize("drift", ["candidate", "prior", "extra", "symlink"])

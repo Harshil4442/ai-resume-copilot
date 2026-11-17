@@ -31,6 +31,8 @@ PROTOCOL_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema27.py --phase p
 RETAINED_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase compatibility"
 RETAINED_PROTOCOL_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase protocol"
 DOCKERFILE_SHA256 = "e02fce326f540cb09b6e5e9390923605371da4f84b40ccbd21b999251a4b060f"
+CURRENT_FRONTEND_LOCK_PATH = "frontend/package-lock.json"
+CURRENT_FRONTEND_LOCK_SHA256 = "01bc5767f85835750be8342ca8d237063e88f95394981a82db305271863c3f24"
 F07_FLAGS = ("NOTIFICATION_DIGESTS_ENABLED", "LIFECYCLE_EMAILS_ENABLED")
 PG_URL = "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test"
 NATIVE_ENV = {"HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
@@ -301,11 +303,12 @@ def verify_native_ci(observer, ci_run_id):
 
 
 def preserved_sources(root):
-    """Retain old financial/document/lock/companion source closure as-is."""
+    """Bind the current frontend lock and preserve the other historical sources."""
     import document_source_candidate as document
 
     for name in v3.HISTORICAL_PATHS:
-        need(read(root, name) == git_bytes(root, name), "historical_contract_or_lock_changed")
+        if name != CURRENT_FRONTEND_LOCK_PATH:
+            need(read(root, name) == git_bytes(root, name), "historical_contract_or_lock_changed")
     policy = read(root, document.POLICY_PATH)
     need(hashlib.sha256(policy).hexdigest() == document.POLICY_SHA256, "document_policy_changed")
     worker = document.validate_policy(policy, root)
@@ -321,6 +324,7 @@ def preserved_sources(root):
              *("backend/" + name for name in v3.PROOF_ROOTS), *worker, *document.CONTRACT_PATHS, document.POLICY_PATH,
              *F07_PATHS}
     entries = {name: hashlib.sha256(read(root, name)).hexdigest() for name in sorted(names)}
+    need(entries[CURRENT_FRONTEND_LOCK_PATH] == CURRENT_FRONTEND_LOCK_SHA256, "current_frontend_lock_changed")
     need(all(entries[name] == stamp for name, stamp in helpers.items()), "document_helper_changed_during_fingerprint")
     return entries
 
