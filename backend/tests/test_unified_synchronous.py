@@ -2,7 +2,7 @@
 import asyncio
 import json
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from backend.app import models, schemas
@@ -24,7 +24,7 @@ from backend.app.routers import llm, rag, recommendations, resume
 from backend.app.services import llm_client
 from backend.app.services.generation_budget import current_budget
 from backend.tests.fixtures.transcription_source import source_for_text
-from backend.tests.test_unified_credits import NOW, factory, grant
+from backend.tests.test_unified_credits import factory, grant
 from backend.tests.test_unified_execution import budgets, financial_policy, response, route
 from fastapi import HTTPException
 
@@ -42,9 +42,10 @@ def setup(factory, monkeypatch):
     monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "true")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("FREE_CORE_ENABLED", "false")
+    review_setup_time = datetime.now(UTC)
     monkeypatch.setenv("LEARNING_RESOURCE_REVIEW_JSON", json.dumps({
-        "checked_at": (NOW - timedelta(days=1)).isoformat(),
-        "expires_at": (NOW + timedelta(days=20)).isoformat(),
+        "checked_at": (review_setup_time - timedelta(days=1)).isoformat(),
+        "expires_at": (review_setup_time + timedelta(days=20)).isoformat(),
         "urls": {"https://docs.docker.com/get-started/": "a" * 64}}))
     with factory() as db:
         grant(db)
@@ -400,7 +401,6 @@ def test_reused_new_key_is_durably_bound_to_original_result(setup):
 
 
 def test_expired_resource_review_blocks_new_paid_learning_but_not_saved_reuse(setup):
-    from datetime import UTC, datetime
     factory, monkeypatch = setup
     configure(monkeypatch, "learning_strategy")
     calls = provider(monkeypatch, "learning_strategy")
