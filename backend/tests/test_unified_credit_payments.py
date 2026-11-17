@@ -495,6 +495,64 @@ def test_partial_then_full_cash_refund_revokes_pass_and_preserves_legacy(unified
         assert db.get(User, 1).ai_credits == 20
 
 
+def test_signed_refunds_leave_the_other_paid_lot_unchanged(unified, session_factory):
+    client, calls = unified
+    orders = []
+    for payment_id in ("pay_refund_target", "pay_unrelated_pass"):
+        _, _, response = start(client, key=payment_id)
+        assert response.status_code == 200, response.text
+        order_id = response.json()["order_id"]
+        with session_factory() as db:
+            order = db.query(PaymentOrder).filter_by(public_id=order_id).one()
+            capture = _capture_payload(order)
+        capture["payload"]["payment"]["entity"]["id"] = payment_id
+        captured = _post_event(client, f"evt_{payment_id}", capture)
+        assert captured.status_code == 200 and captured.json()["status"] == "processed"
+        orders.append(order_id)
+
+    target_order, unrelated_order = orders
+
+    def paid_lots():
+        with session_factory() as db:
+            return {
+                lot.source_id: {
+                    "id": lot.id, "remaining_credits": lot.remaining_credits,
+                    "expires_at": lot.expires_at, "terms": lot.terms_snapshot,
+                }
+                for lot in db.query(CreditGrant).filter_by(user_id=1, source_type="payment_order").all()
+            }
+
+    before = paid_lots()
+    assert set(before) == {target_order, unrelated_order}
+    assert all(lot["remaining_credits"] == 40 and lot["expires_at"] is not None
+               and lot["terms"]["credits"] == 40 for lot in before.values())
+    assert client.get("/api/v1/credits/wallet").json()["available_credits"] == 80
+
+    with session_factory() as db:
+        target = db.query(PaymentOrder).filter_by(public_id=target_order).one()
+        refunds = [(_refund_payload(target, refund_id, 2950), remaining) for refund_id, remaining in (
+            ("rfnd_target_partial", 20), ("rfnd_target_rest", 0),
+        )]
+
+    for payload, remaining in refunds:
+        payload["payload"]["payment"]["entity"]["id"] = "pay_refund_target"
+        refund = payload["payload"]["refund"]["entity"]
+        refund["payment_id"] = "pay_refund_target"
+        for status in ("processed", "duplicate"):
+            settled = _post_event(client, f"evt_{refund['id']}", payload)
+            assert settled.status_code == 200 and settled.json()["status"] == status
+            assert paid_lots() == {
+                target_order: before[target_order] | {"remaining_credits": remaining},
+                unrelated_order: before[unrelated_order],
+            }
+            wallet = client.get("/api/v1/credits/wallet").json()
+            assert wallet["available_credits"] == remaining + 40 and wallet["debt_credits"] == 0
+
+    retained = client.get(f"/api/v1/credits/orders/{unrelated_order}").json()
+    assert retained["status"] == "paid" and retained["fulfilled"] and retained["refunded_amount_minor"] == 0
+    assert len(calls) == 2
+
+
 def test_verified_refunds_after_spend_create_exact_debt_and_preserve_quote(unified, session_factory):
     client, calls = unified
     _, _, result = start(client)
