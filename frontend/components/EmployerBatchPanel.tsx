@@ -7,11 +7,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiDownload, apiGet, apiPostJson } from "../lib/api";
+import { pageVisible } from "../lib/boundedStatusPolling";
 import { applicationStatusLabels, batchEligibility, batchItemMatches, employerJobsBase, safeEmployerUrl, type EmployerApplication, type EmployerApplicationBatch, type EmployerBatchItem, type JobServiceCatalog } from "../lib/employerJobs";
 import { ArtifactPreview } from "./EmployerApplicationPanel";
 import { Button } from "./ui/Button";
 import { LoadingBlock } from "./ui/LoadingBlock";
-import { useProgressQuery } from "../lib/useProgressQuery";
+import { statusCheckAllowed, useProgressQuery } from "../lib/useProgressQuery";
 
 type Props = { id?: string; selected?: Pick<EmployerApplication, "id" | "credit_cost">[]; onClose: () => void; onChange: () => void; entryAvailable?: boolean };
 const actions = ["fill", "upload", "submit"] as const;
@@ -33,9 +34,10 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
     active: (current) => Object.values(current?.application_statuses ?? {}).some((status) => ["queued", "submitting"].includes(status)),
   });
   const ids = batch.data?.items.map((item) => item.application_id) ?? selected.map((app) => app.id);
-  const applications = useQueries({ queries: ids.map((applicationId) => ({
-    queryKey: ["employer-jobs", "application", applicationId],
-    queryFn: ({ signal }: { signal: AbortSignal }) => apiGet<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(applicationId)}`, signal),
+  const applicationKeys = ids.map((applicationId) => ["employer-jobs", "application", applicationId] as const);
+  const applications = useQueries({ queries: applicationKeys.map((queryKey) => ({
+    queryKey,
+    queryFn: ({ signal }: { signal: AbortSignal }) => apiGet<EmployerApplication>(`${employerJobsBase}/applications/${encodeURIComponent(queryKey[2])}`, signal),
     staleTime: 0,
   })) });
   const loaded = applications.every((query) => query.isSuccess);
@@ -93,13 +95,23 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
   const busy = quote.isPending || approve.isPending || execute.isPending || cancel.isPending;
   const error = quote.error || approve.error || execute.error || cancel.error;
 
+  function checkBatchStatus() {
+    if (!pageVisible() || (batchId && !batch.checkStatus())) return;
+    const checkedAt = Date.now();
+    applications.forEach((query, index) => {
+      if (statusCheckAllowed(client.getQueryState(applicationKeys[index]), checkedAt)) {
+        void query.refetch({ cancelRefetch: false });
+      }
+    });
+  }
+
   return <Dialog.Root open onOpenChange={(open) => { if (!open && !busy) onClose(); }}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm" />
     <Dialog.Content className="fixed inset-x-2 top-[3vh] z-[70] mx-auto flex max-h-[94dvh] max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-xl sm:inset-x-6">
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-5 sm:p-6"><div className="min-w-0"><Dialog.Title className="break-words font-display text-2xl sm:text-3xl">{batch.data?.status === "queued" || batch.data?.status === "cancelled" ? "Batch status" : "Review applications"}</Dialog.Title><Dialog.Description className="mt-2 text-sm leading-6 text-muted-foreground">Only the jobs listed here are included. Approval permits the displayed actions; queueing is a separate step.</Dialog.Description></div><Dialog.Close asChild><Button variant="ghost" size="icon" className="min-h-11 min-w-11 shrink-0" disabled={busy} aria-label="Close batch review"><X size={20} /></Button></Dialog.Close></header>
       <div className="min-h-0 space-y-6 overflow-y-auto overscroll-contain p-5 sm:p-6">
-        {batch.pollingPaused ? <p role="status" className="text-sm leading-6">Automatic batch status checks are paused. Use Refresh batch status to read progress without queueing or sending again.</p> : null}
-        {batch.isError || applications.some((query) => query.isError) ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">Could not load the exact batch or one of its applications. Approval and queueing are disabled.</p><Button variant="secondary" onClick={() => { void batch.refetch(); applications.forEach((query) => void query.refetch()); }}>Retry loading</Button></div> : !loaded || (batchId && !batch.data) ? <LoadingBlock rows={4} /> : null}
+        {batch.statusCheckMessage || batch.pollingPaused ? <p role="status" className="text-sm leading-6">{batch.statusCheckMessage ?? "Automatic batch status checks are paused. Use Refresh batch status to read progress without queueing or sending again."}</p> : null}
+        {batch.isError || applications.some((query) => query.isError) ? <div role="alert" className="space-y-3"><p className="text-sm text-coral">Could not load the exact batch or one of its applications. Approval and queueing are disabled.</p><Button variant="secondary" disabled={Boolean(batchId) && batch.statusCheckDisabled} onClick={checkBatchStatus}>Retry loading</Button></div> : !loaded || (batchId && !batch.data) ? <LoadingBlock rows={4} /> : null}
         {!batchId ? <section className="space-y-3 rounded-xl border border-border bg-surface p-4"><h2 className="font-semibold">Create a fixed batch quote</h2><p className="text-sm leading-6">{current.length} selected jobs · {total} service credits at their saved per-job prices. Creating the quote does not approve or submit anything.</p><label className="grid gap-2 text-sm font-semibold">Maximum service credit budget<input className="field-control" type="number" min={Math.max(1, total)} max={limits?.batch_credit_limit} step={1} value={budget} onChange={(event) => setBudget(event.target.value)} disabled={busy} /></label><p className="text-xs leading-5 text-muted-foreground">Up to {limits?.batch_limit ?? "—"} jobs and {limits?.batch_credit_limit ?? "—"} credits per batch. Unused budget is not charged. Service credits are separate from AI analysis units; optional tailoring has its own quote in Workspace.</p>{duplicate ? <p role="alert" className="text-sm text-coral">Select only one representation of each employer opening.</p> : null}{current.map((app) => { const reason = batchEligibility(app, catalog.data, now); return reason ? <p key={app.id} role="alert" className="text-sm text-coral">{app.posting.title}: {reason}</p> : null; })}<Button className="min-h-11 w-full sm:w-auto" disabled={!quoteReady || busy} onClick={() => quote.mutate()}>{quote.isPending ? <LoaderCircle size={16} className="animate-spin" /> : null}Create exact batch quote</Button></section> : null}
         {batch.data ? <section className="space-y-3 rounded-xl border border-border bg-surface p-4" aria-label="Fixed batch quote"><h2 className="font-semibold">{batch.data.items.length} exact jobs · {batch.data.quoted_credits} quoted service credits</h2><p className="text-sm">Maximum authorized budget: {batch.data.max_total_credits} service credits. Each confirmed complete application uses its displayed fixed price.</p><p className="text-xs leading-5">Batch quote expires {timestamp(batch.data.expires_at)}. Individual package quotes may expire earlier.</p><details className="text-xs"><summary className="min-h-11 cursor-pointer py-3 font-semibold">Application limits</summary><p className="leading-5 text-muted-foreground">Candidate limits: {batch.data.admission_snapshot.daily_limit} admissions per UTC day; {batch.data.admission_snapshot.rolling_limit} in {batch.data.admission_snapshot.rolling_days} days; {batch.data.admission_snapshot.pending_limit} pending or unknown. Limits and available credits are checked again when queueing and before disclosure. These are ceilings, not remaining capacity.</p></details><details className="text-xs"><summary className="min-h-11 cursor-pointer py-3 font-semibold">Batch digest and review link</summary><p className="break-all font-mono">{batch.data.package_digest}</p><Link className="mt-3 inline-block break-all text-primary underline" href={`/employer-jobs/batches/${encodeURIComponent(batch.data.id)}`}>Return to this exact batch</Link></details></section> : null}
         {batch.data && !unexpired && ["quoted", "approved"].includes(batch.data.status) ? <p role="alert" className="rounded-lg bg-amber-50 p-4 text-sm leading-6 text-amber-900">A quote expired. This batch cannot be approved or queued. Cancel it and save fresh individual packages before a new review.</p> : null}
@@ -115,7 +127,7 @@ export default function EmployerBatchPanel({ id, selected = [], onClose, onChang
         {batch.data?.status === "queued" ? <p role="status" className="text-sm leading-6">Batch accepted into the queue. Each job below has its own outcome; queue acceptance is not employer confirmation.</p> : null}
         {batch.data?.status === "cancelled" ? <p role="status" className="text-sm leading-6">Cancellation requested for remaining work. Check each job's outcome below; cancellation does not recall data already disclosed or prove an in-flight send did not happen.</p> : null}
         {batch.data && batch.data.status !== "cancelled" ? <div className="space-y-3 border-t border-border pt-5"><Button variant="danger" className="min-h-11" disabled={busy} onClick={() => cancel.mutate()}>Cancel remaining batch work</Button><p className="text-xs leading-5 text-muted-foreground">Confirmed applications remain confirmed. Unknown or in-flight sends may remain with the employer and retain their admission and credit holds until independently resolved.</p></div> : null}
-        {batchId ? <Button variant="ghost" className="min-h-11" disabled={busy} onClick={() => { void batch.refetch(); applications.forEach((query) => void query.refetch()); }}><RefreshCw size={16} />Refresh batch status</Button> : null}
+        {batchId ? <Button variant="ghost" className="min-h-11" disabled={busy || batch.statusCheckDisabled} onClick={checkBatchStatus}><RefreshCw size={16} />Refresh batch status</Button> : null}
         {!enabled ? <p className="text-sm leading-6 text-muted-foreground">Reviewed API submission is disabled for this service. The current manual sources continue through individual employer portals.</p> : null}
         {enabled && loaded && !routesAvailable ? <p role="alert" className="text-sm leading-6 text-coral">A listed employer no longer offers a current permissioned API route. Approval and queueing are disabled.</p> : null}
       </div>

@@ -158,7 +158,7 @@ export default function MarketPage() {
           <div className="min-w-0">
             {unifiedServices ? <div className="mb-5"><QuotedAnalysisReview action={quotedAction} /></div> : null}
             <AnalysisRunFeedback run={run.data} />
-            {run.pollingPaused ? <div role="status" className="my-4 space-y-2 text-sm"><p>Automatic progress checks are paused. Checking status does not start another report.</p><Button variant="secondary" onClick={() => void run.refetch()} disabled={run.isFetching}>Check report status</Button></div> : null}
+            {run.pollingPaused ? <div role="status" className="my-4 space-y-2 text-sm"><p>{run.statusCheckMessage ?? "Automatic progress checks are paused. Checking status does not start another report."}</p><Button variant="secondary" onClick={run.checkStatus} disabled={run.statusCheckDisabled}>Check report status</Button></div> : null}
             {result.isError ? <div role="alert" className="my-4 space-y-2 text-sm"><p>The saved report could not be loaded.</p><Button variant="secondary" onClick={() => void result.refetch()}>Retry loading report</Button></div> : null}
             {error ? <div className="flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-coral" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
             {running ? <div className="flex min-h-80 items-center justify-center border-y border-border text-sm text-muted-foreground"><LoaderCircle size={20} className="mr-3 animate-spin text-primary" /> Sampling recent listings and normalizing skills</div> : null}

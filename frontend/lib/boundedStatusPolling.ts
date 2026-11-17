@@ -31,6 +31,13 @@ export function retryAfterMilliseconds(value: string | null, status: number, now
   return delay !== null && !Number.isNaN(delay) && delay > 0 ? delay : fallback;
 }
 
+export function capacityRetryMilliseconds(error: unknown): number | null {
+  if (!isReadCapacityError(error)) return null;
+  const { status, retryAfterMs } = error as { status: number; retryAfterMs?: number | null };
+  return typeof retryAfterMs === "number" && !Number.isNaN(retryAfterMs) && retryAfterMs > 0
+    ? retryAfterMs : retryAfterMilliseconds(null, status);
+}
+
 export function abortableStatusDelay(signal: AbortSignal, milliseconds: number): Promise<boolean> {
   signal.throwIfAborted();
   if (!pageVisible()) return Promise.resolve(false);
@@ -58,12 +65,8 @@ export async function boundedStatusChecks<T>({ budget, signal, automatic, read, 
     let value: T;
     try { value = await read(signal); }
     catch (error) {
-      if (isReadCapacityError(error)) {
-        const item = error as { status: number; retryAfterMs?: number | null };
-        const delay = typeof item.retryAfterMs === "number" && !Number.isNaN(item.retryAfterMs) && item.retryAfterMs > 0
-          ? item.retryAfterMs : retryAfterMilliseconds(null, item.status);
-        budget.notBefore = Math.max(budget.notBefore, Date.now() + delay);
-      }
+      const delay = capacityRetryMilliseconds(error);
+      if (delay !== null) budget.notBefore = Math.max(budget.notBefore, Date.now() + delay);
       throw error;
     }
     signal.throwIfAborted();

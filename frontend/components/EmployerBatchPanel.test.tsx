@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { apiGet, apiPostJson } from "../lib/api";
@@ -9,9 +9,11 @@ import EmployerBatchPanel from "./EmployerBatchPanel";
 vi.mock("../lib/api", () => ({ apiGet: vi.fn(), apiPostJson: vi.fn(), apiDownload: vi.fn() }));
 vi.mock("./EmployerApplicationPanel", () => ({ ArtifactPreview: () => <p>Exact fixture file</p> }));
 const clients: QueryClient[] = [];
-afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.resetAllMocks(); });
+afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.length = 0; vi.resetAllMocks(); vi.useRealTimers(); });
 
-it.each([429, 503])("blocks queueing from cached approval after HTTP%s status refusal until a successful read", async (status) => {
+it.each([429, 503])("blocks queueing and early batch or application reads after HTTP%s", async (status) => {
+  vi.useFakeTimers();
+  const tick = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
   const limits: AdmissionLimits = { version: "fixture", daily_limit: 10, rolling_limit: 20, rolling_days: 7,
     pending_limit: 5, daily_credit_limit: 100, rolling_credit_limit: 200, batch_limit: 10,
     batch_credit_limit: 100, quote_hours: 24, day_boundary: "UTC", counting_policy: "fixture" };
@@ -38,24 +40,41 @@ it.each([429, 503])("blocks queueing from cached approval after HTTP%s status re
     search_credits_per_job: 1, apply_credits_per_job: 20, pricing_version: "fixture", max_search_jobs: 10,
     admission_limits: limits, sources: [{ id: "source_one", employer: "Fixture", platform: "fixture", careers_url: "https://employer.example",
       last_success_at: null, status: "active", application_mode: "api" }] };
-  let batchReads = 0;
+  let batchReads = 0, applicationReads = 0;
   vi.mocked(apiGet).mockImplementation(async (path) => {
     if (path.endsWith("/catalog")) return catalog;
     if (path.includes("/application-batches/")) {
-      if (++batchReads === 2) throw Object.assign(new Error("Status unavailable"), { status });
+      if (++batchReads === 2) throw Object.assign(new Error("Status unavailable"), { status, retryAfterMs: 60_000 });
       return batch;
     }
+    if (++applicationReads === 2) throw Object.assign(new Error("Application unavailable"), { status: 503, retryAfterMs: 120_000 });
     return application;
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }); clients.push(client);
   render(<QueryClientProvider client={client}><EmployerBatchPanel id="batch_one" onClose={vi.fn()} onChange={vi.fn()} /></QueryClientProvider>);
-  const queue = await screen.findByRole("button", { name: "Queue these approved applications" });
-  await waitFor(() => expect(queue).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "Refresh batch status" }));
-  await screen.findByText(/Could not load the exact batch/);
-  expect(queue).toBeDisabled(); expect(batchReads).toBe(2); expect(apiPostJson).not.toHaveBeenCalled();
+  await tick(2);
+  const queue = screen.getByRole("button", { name: "Queue these approved applications" });
+  const refresh = screen.getByRole("button", { name: "Refresh batch status" });
+  expect(queue).toBeEnabled();
+  fireEvent.click(refresh);
+  await tick(2);
+  expect(screen.getByText(/Could not load the exact batch/)).toBeInTheDocument();
+  expect(queue).toBeDisabled(); expect(batchReads).toBe(2); expect(applicationReads).toBe(2);
   fireEvent.click(queue); expect(apiPostJson).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh batch status" }));
-  await waitFor(() => expect(queue).toBeEnabled());
-  expect(batchReads).toBe(3); expect(apiPostJson).not.toHaveBeenCalled();
+  expect(refresh).toBeDisabled();
+  fireEvent.click(refresh);
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading" }));
+  await tick(60_000);
+  expect(batchReads).toBe(2); expect(applicationReads).toBe(2);
+  expect(refresh).toBeEnabled();
+  fireEvent.click(refresh);
+  await tick(2);
+  expect(batchReads).toBe(3); expect(applicationReads).toBe(2);
+  expect(queue).toBeDisabled();
+  await tick(60_000);
+  expect(batchReads).toBe(3); expect(applicationReads).toBe(2);
+  fireEvent.click(refresh);
+  await tick(2);
+  expect(queue).toBeEnabled();
+  expect(batchReads).toBe(4); expect(applicationReads).toBe(3); expect(apiPostJson).not.toHaveBeenCalled();
 });
