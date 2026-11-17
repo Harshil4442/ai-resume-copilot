@@ -76,12 +76,16 @@ attestation. Its schema and hashes alone cannot establish that a worker stopped.
 The CLI parses and hashes the same private bytes, then pins the reviewed record
 and exact operation correlation in the plan and audit.
 
-Paid work must have the corresponding delivered/failed outcome. Free work must
-have a completed request, or an erased account with its private request removed
-and independently reviewed terminal evidence. A live free request still marked
-admitted is refused, even if a separate timeout suggests failure. Its expense
-remains held pending stronger durable terminal evidence; this tool does not
-rewrite processing status or erase outstanding work to make it settleable.
+Paid work must have the corresponding delivered or failed outcome. Free work
+can use a completed request or the retained expense after account erasure.
+A live admitted request with no result can qualify for measured expense
+settlement if its matching funded async analysis was claimed and ended in
+failure or cancellation. This check binds the owner, run, input fingerprint,
+operation and timeline to the reservation and reviewed receipt. Failure requires
+reviewed failed native work. Cancellation can follow either a failed or a
+completed native attempt. Queued or running work and cancellation before a
+claim remain held. The operator must still review the original execution
+evidence. Settlement leaves the run and result binding as recorded.
 
 ## Capture, review and apply
 

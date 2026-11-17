@@ -14,13 +14,13 @@ from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from sqlalchemy import text
+from sqlalchemy import String, cast, func, or_, text
 from sqlalchemy.orm import Session
 
-from ...models import AdminAuditEvent
+from ...models import AdminAuditEvent, AnalysisRun
 from ..employer.testing_promotion import Operator
 from ..free_core.models import FreeCoreRequest, FreeCoreReservation
-from ..free_core.service import settle_measured_expense
+from ..free_core.service import analysis_operation, settle_measured_expense
 from . import admission, execution, finance, service
 from .models import CreditExecutionHold
 
@@ -211,6 +211,50 @@ def _preimage(row, receipt: NativeExpenseReceipt) -> str:
     return digest(base)
 
 
+def _claim_ended_without_free_analysis_result(
+    db: Session, row: FreeCoreReservation, request: FreeCoreRequest, receipt: NativeExpenseReceipt,
+) -> bool:
+    if (row.user_id is None or request.user_id != row.user_id or request.source_type != "analysis_run"
+            or request.state != "admitted" or request.result_id is not None):
+        return False
+    currency = AnalysisRun.model_cost_quote["billing_currency"].as_string()
+    mode = AnalysisRun.input_payload["mode"]
+    mode_type = (func.json_type(AnalysisRun.input_payload, "$.mode")
+                 if db.get_bind().dialect.name == "sqlite" else func.json_typeof(mode))
+    run = db.query(
+        AnalysisRun.operation, mode.as_string().label("mode"), mode_type.label("mode_type"),
+        AnalysisRun.input_purged_at, AnalysisRun.status, AnalysisRun.cancel_requested,
+        AnalysisRun.started_at, AnalysisRun.completed_at, AnalysisRun.cancelled_at,
+    ).filter(
+        AnalysisRun.id == request.source_id, AnalysisRun.user_id == row.user_id,
+        AnalysisRun.input_fingerprint == request.input_fingerprint,
+        AnalysisRun.estimated_units == 0, AnalysisRun.committed_units == 0,
+        AnalysisRun.generation_attempt_limit == 0, AnalysisRun.generation_attempt_count == 0,
+        AnalysisRun.attempt_count > 0, AnalysisRun.started_at.is_not(None),
+        or_(currency.is_(None), currency != "credits"),
+        or_(AnalysisRun.result_payload.is_(None), cast(AnalysisRun.result_payload, String) == "null"),
+        AnalysisRun.result_artifact_ref.is_(None),
+    ).one_or_none()
+    if run is None:
+        return False
+    # The retained funded route and matching fingerprint survive input purging.
+    # A missing older mode uses the same default as the original admission.
+    payload = {"mode": run.mode} if run.input_purged_at is None and run.mode_type is not None else {}
+    if analysis_operation(run.operation, payload) != row.operation:
+        return False
+    if run.status == "failed" and not run.cancel_requested and receipt.work_state == "failed":
+        ended_at = run.completed_at
+    elif run.status == "cancelled" and run.cancel_requested:
+        # Physical work can finish before cancellation wins the result commit.
+        ended_at = run.cancelled_at
+    else:
+        return False
+    started = service._stamp(run.started_at)
+    return bool(ended_at is not None
+        and receipt.window_start <= started <= receipt.terminal_at
+        and service._stamp(row.created_at) <= started <= service._stamp(ended_at) <= receipt.reviewed_at)
+
+
 def _terminal(db: Session, row, receipt: NativeExpenseReceipt, terminal: TerminalWorkEvidence) -> None:
     created = service._stamp(row.created_at)
     _need(receipt.window_start <= created <= receipt.terminal_at, "expense_window_mismatch")
@@ -225,12 +269,14 @@ def _terminal(db: Session, row, receipt: NativeExpenseReceipt, terminal: Termina
     else:
         _need(terminal.financial_group_id is None and terminal.reservation_id == row.id,
               "native_execution_correlation_mismatch")
-        request = db.query(FreeCoreRequest).filter_by(reservation_id=row.id).one_or_none()
+        request = db.query(FreeCoreRequest).filter_by(reservation_id=row.id).populate_existing().one_or_none()
         # For an erased account, terminal provider/worker evidence is the
         # explicitly reviewed authority: the owner-bound request is gone.
         _need((row.user_id is None and request is None)
-              or (request is not None and request.state == "completed"
-                  and receipt.work_state == "completed"), "native_work_not_terminal")
+              or (request is not None and (
+                  (request.state == "completed" and receipt.work_state == "completed")
+                  or _claim_ended_without_free_analysis_result(db, row, request, receipt)
+              )), "native_work_not_terminal")
 
 
 def _audit_id(receipt: NativeExpenseReceipt) -> str:
