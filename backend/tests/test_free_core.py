@@ -76,30 +76,78 @@ def reserve(db, *, key="request-1", owner=1, operation="basic_match", now=None):
         source_id=key, key=key, fingerprint="a" * 64, input_bytes=100, attempts=3, now=now)
 
 
-@pytest.mark.parametrize("operation", ["job_match", "interview_questions", "skill_roi"])
-def test_deterministic_routes_are_zero_credit_and_funded_without_ai_policy(database, funded, monkeypatch, operation):
+@pytest.mark.parametrize(("operation", "funded_operation"), [
+    ("job_match", "basic_match"),
+    ("interview_questions", "curated_interview"),
+    ("skill_roi", "skill_roi"),
+])
+def test_deterministic_routes_are_zero_credit_and_funded_without_ai_policy(
+    database, funded, monkeypatch, operation, funded_operation,
+):
     monkeypatch.delenv("LLM_MODEL_COST_POLICY_JSON", raising=False)
     monkeypatch.setattr(llm_client, "_chat", lambda _: pytest.fail("Deterministic route cannot generate"))
     run_id, created = create(database, operation=operation)
-    assert created and tasks.process_analysis_run(run_id) == "succeeded"
+    assert created
+    monkeypatch.setenv("FREE_CORE_ENABLED", "false")
+    monkeypatch.delenv("FREE_CORE_POLICY_JSON")
+    assert tasks.process_analysis_run(run_id) == tasks.process_analysis_run(run_id) == "succeeded"
     with database() as db:
         run = db.get(AnalysisRun, run_id)
-        assert run.estimated_units == run.committed_units == run.generation_attempt_count == 0
+        assert run.estimated_units == run.committed_units == run.generation_attempt_count == 0 and run.attempt_count == 1
         assert run.usage_state == "waived" and db.get(User, 1).ai_credits == 100
         assert db.query(ModelCallEvent).count() == 0
         assert db.query(UsageEvent).one().event_type == "waive"
         expense = db.query(FreeCoreReservation).one()
+        assert expense.operation == funded_operation
         assert expense.reserved_minor == 20 and expense.state == "reserved" and expense.settled_minor is None
+        request = db.query(FreeCoreRequest).one()
+        assert (request.user_id, request.source_type, request.source_id) == (1, "analysis_run", run_id)
+        assert (request.reservation_id, request.state, request.result_id) == (expense.id, "completed", run_id)
 
 
-def test_rollout_disabled_preserves_existing_tariff(database, monkeypatch):
-    monkeypatch.delenv("FREE_CORE_ENABLED", raising=False)
-    monkeypatch.delenv("FREE_CORE_POLICY_JSON", raising=False)
+def test_conflicting_free_completion_rolls_back_result_and_retains_expense(database, funded):
     run_id, _ = create(database)
     with database() as db:
-        assert db.get(AnalysisRun, run_id).estimated_units == 1
-        assert db.get(User, 1).ai_credits == 99
+        service.complete(db, user_id=1, source_type="analysis_run", source_id=run_id, result_id="different_result")
+        db.commit()
+
+    assert tasks.process_analysis_run(run_id) == "failed"
+    with database() as db:
+        run = db.get(AnalysisRun, run_id)
+        assert run.status == "failed" and run.result_payload is None
+        request = db.query(FreeCoreRequest).one()
+        assert (request.state, request.result_id) == ("completed", "different_result")
+        assert db.get(FreeCoreReservation, request.reservation_id).state == "reserved"
+        assert db.get(User, 1).ai_credits == 100
+
+
+def test_cancelled_free_analysis_leaves_result_unbound_and_expense_reserved(database, funded):
+    run_id, _ = create(database)
+    with database() as db:
+        assert analysis.cancel_run(db, user_id=1, run_id=run_id).status == "cancelled"
+    assert tasks.process_analysis_run(run_id) == "cancelled"
+    with database() as db:
+        run = db.get(AnalysisRun, run_id)
+        assert run.result_payload is None and run.attempt_count == 0
+        request = db.query(FreeCoreRequest).one()
+        assert request.state == "admitted" and request.result_id is None
+        expense = db.get(FreeCoreReservation, request.reservation_id)
+        assert expense.state == "reserved" and expense.settled_minor is None
+
+
+@pytest.mark.parametrize(("operation", "units"), [("job_match", 1), ("skill_roi", 0)])
+def test_rollout_disabled_preserves_existing_tariff(database, monkeypatch, operation, units):
+    monkeypatch.delenv("FREE_CORE_ENABLED", raising=False)
+    monkeypatch.delenv("FREE_CORE_POLICY_JSON", raising=False)
+    run_id, _ = create(database, operation=operation)
+    monkeypatch.setenv("FREE_CORE_ENABLED", "true")
+    assert tasks.process_analysis_run(run_id) == "succeeded"
+    with database() as db:
+        run = db.get(AnalysisRun, run_id)
+        assert run.estimated_units == run.committed_units == units
+        assert db.get(User, 1).ai_credits == 100 - units
         assert db.query(FreeCoreReservation).count() == 0
+        assert db.query(FreeCoreRequest).count() == 0
 
 
 def test_missing_funding_policy_refuses_new_processing_without_charge(database, funded, monkeypatch):
