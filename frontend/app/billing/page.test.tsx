@@ -600,6 +600,23 @@ describe("legacy payment recovery", () => {
     expect(screen.getByRole("checkbox", { name: /I confirm my billing country/ })).not.toBeChecked(); expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled(); noCheckout();
     await confirmIndia(); fireEvent.click(screen.getByRole("button", { name: "Resume original checkout" })); await waitFor(() => expect(openCheckout).toHaveBeenCalledOnce());
   });
+  it("keeps Resume disabled when the original legacy payment is recovered during a checkout pause", async () => {
+    const recovered = legacyOrder({ checkout_available: false });
+    state.get.mockImplementation((url: string) => url === "/billing/recent-order"
+      ? Promise.resolve(legacyOrder({ provider_order_id: null, checkout_available: false })) : read(url));
+    state.post.mockResolvedValueOnce({
+      resolution: "checkout_ready", message: "Original order was recovered. Checkout is currently unavailable.", order: recovered,
+    });
+    render(<BillingPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reconcile original payment" }));
+    await screen.findByText("Original order was recovered. Checkout is currently unavailable.");
+    await confirmIndia();
+    expect(screen.getByRole("button", { name: "Resume original checkout" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check payment status" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(state.post).toHaveBeenCalledExactlyOnceWith("/billing/orders/order_legacy/reconcile", undefined);
+    noCheckout();
+  });
   it("keeps unresolved legacy reconciliation blocked through status reads", async () => {
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? Promise.resolve(legacyOrder()) : read(url));
     state.post.mockResolvedValue({ resolution: "unresolved", message: "Legacy payment unresolved", order: legacyOrder() });

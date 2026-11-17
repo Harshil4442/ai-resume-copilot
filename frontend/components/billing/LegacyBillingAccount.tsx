@@ -180,7 +180,8 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       if (!["unresolved", "checkout_ready", "settled"].includes(result.resolution)
         || result.order.order_id !== order.order_id || result.order.sku !== order.sku
         || (order.accepted_quote && !sameQuote(result.order.accepted_quote, order.accepted_quote))
-        || (result.resolution === "checkout_ready" && (result.order.status !== "pending" || !result.order.provider_order_id || !result.order.accepted_quote || result.order.checkout_available !== true))
+        || (result.resolution === "checkout_ready" && (result.order.status !== "pending" || !result.order.provider_order_id
+          || !result.order.accepted_quote || typeof result.order.checkout_available !== "boolean"))
         || (result.resolution === "settled" && !["paid", "refunded"].includes(result.order.status))) throw new Error("The original payment could not be verified. Checkout remains paused.");
       await acceptRecoveryStatus(order, result.order);
       if (result.resolution !== "unresolved") {
@@ -301,7 +302,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       <h3 id="legacy-payment-heading" className="font-display text-xl">{order.status === "refunded" ? "Payment refunded" : refunded ? "Payment partially refunded" : order.status === "paid" && order.fulfilled ? "Payment confirmed" : "Previous payment"}</h3>
       <p className="break-all text-xs">Order reference: {order.order_id}</p>
       {refunded ? <p className="text-sm">Total refunded: {formatCreditPrice(refunded)}</p> : null}
-      {order.accepted_quote ? <div aria-label="Original checkout terms" className="text-sm leading-6"><p>Original order: {order.accepted_quote.job_service_credits} service credits + {order.accepted_quote.analysis_units} analysis units for {formatCreditPrice(order.accepted_quote.amount_minor)}.</p><p>Resuming accepts these original terms and checks this same order.</p></div> : <p className="text-sm">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}
+      {order.accepted_quote ? <div aria-label="Original checkout terms" className="text-sm leading-6"><p>Original order: {order.accepted_quote.job_service_credits} service credits + {order.accepted_quote.analysis_units} analysis units for {formatCreditPrice(order.accepted_quote.amount_minor)}.</p>{order.checkout_available ? <p>Resuming accepts these original terms and checks this same order.</p> : null}</div> : <p className="text-sm">Original pack terms need review. Checking status is free; contact billing support before resuming payment.</p>}
       {order.status === "pending" ? <>
         {!order.provider_order_id ? <p className="text-sm">Checkout creation has an unknown outcome. Payment remains paused; check status or contact billing support to reconcile the original attempt.</p> : null}
         <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" checked={indiaConfirmed} disabled={busy} onChange={(event) => setIndiaConfirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-primary" /><span>I confirm my billing country is India and this original INR purchase is for domestic use.</span></label>
