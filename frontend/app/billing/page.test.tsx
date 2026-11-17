@@ -56,6 +56,99 @@ function post(url: string): Promise<unknown> {
 beforeEach(() => { state.get.mockReset().mockImplementation(read); state.post.mockReset().mockImplementation(post); hostedCheckout.mockClear(); openCheckout.mockClear(); window.Razorpay = hostedCheckout; });
 afterEach(() => { cleanup(); clients.forEach((client) => client.clear()); clients.clear(); delete window.Razorpay; vi.useRealTimers(); });
 function noCheckout() { expect(hostedCheckout).not.toHaveBeenCalled(); expect(openCheckout).not.toHaveBeenCalled(); expect(document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')).toBeNull(); }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => { resolve = finish; });
+  return { promise, resolve };
+}
+
+it.each(["legacy", "unified"] as const)("loads one ordered cold billing snapshot for an existing settled %s order", async (kind) => {
+  const legacy = kind === "legacy";
+  const recentPath = legacy ? "/billing/recent-order" : "/v1/credits/recent-order";
+  const measured = legacy ? ["/auth/me", "/v1/usage-events?limit=20"] : ["/v1/credits/history?limit=20"];
+  const recent = deferred<unknown>();
+  const readAfterOrder: boolean[] = [];
+  let resolved = false;
+  state.get.mockImplementation((url: string) => {
+    if (url === recentPath) return recent.promise;
+    if (measured.includes(url)) readAfterOrder.push(resolved);
+    return read(url);
+  });
+  render(<BillingPage />);
+  await waitFor(() => expect(state.get).toHaveBeenCalledWith(recentPath));
+  expect(await screen.findByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  resolved = true;
+  await act(async () => recent.resolve(legacy ? legacyOrder({ status: "paid", fulfilled: true, refunded_amount_minor: 0 })
+    : order({ status: "refunded", payment_status: "refunded", checkout_available: false, refunded_amount_minor: 5900 })));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  const counts = measured.map((path) => state.get.mock.calls.filter(([url]) => url === path).length);
+  expect(counts).toEqual(measured.map(() => 1));
+  expect(readAfterOrder).toEqual(measured.map(() => true));
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("does not use a bootstrap requested before a recent terminal order", async () => {
+  const recent = deferred<unknown>();
+  const oldBootstrap = deferred<unknown>();
+  let bootstrapReads = 0;
+  const refreshed = { ...wallet, available_credits: 4 };
+  state.get.mockImplementation((url: string) => {
+    if (url === "/v1/credits/recent-order") return recent.promise;
+    if (url === "/auth/bootstrap") return ++bootstrapReads === 1 ? oldBootstrap.promise
+      : Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet: refreshed }));
+    return read(url);
+  });
+  render(<BillingPage />);
+  await waitFor(() => expect(bootstrapReads).toBe(1));
+  await act(async () => recent.resolve(order({ status: "refunded", payment_status: "refunded", checkout_available: false, refunded_amount_minor: 5900 })));
+  expect(bootstrapReads).toBe(1);
+  expect(screen.queryByText("This payment was refunded. Review the refund and balance in your history.")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  await act(async () => oldBootstrap.resolve(ownedBootstrapFixture({ profile: { ai_credits: 13 }, wallet })));
+  const balance = (await screen.findByText("Available credits")).parentElement!;
+  expect(await within(balance).findByText("4", { exact: true })).toBeVisible();
+  expect(bootstrapReads).toBe(2);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("keeps saved billing reads usable after both recent order lookups fail", async () => {
+  state.get.mockImplementation((url: string) => url.endsWith("/recent-order")
+    ? Promise.reject(new ApiError("Recent orders unavailable", 503, {})) : read(url));
+  render(<BillingPage />);
+  expect(await screen.findByText("Could not verify your recent credit purchase. No new payment can start.")).toBeVisible();
+  expect(await screen.findByRole("button", { name: "Check previous purchases" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeDisabled();
+  const balance = (await screen.findByText("Available credits")).parentElement!;
+  expect(within(balance).getByText("7", { exact: true })).toBeVisible();
+  expect(await within(screen.getByRole("region", { name: "Current entitlement" })).findByText("13", { exact: true })).toBeVisible();
+  expect(screen.getByText("No credit activity yet.")).toBeVisible();
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("does not start a prior owner's cold billing snapshot after an owner remount", async () => {
+  const recent = deferred<null>();
+  const measured = ["/auth/me", "/v1/usage-events?limit=20", "/v1/credits/history?limit=20"];
+  const reads = () => state.get.mock.calls.filter(([url]) => measured.includes(url));
+  let previousOwner = true;
+  state.get.mockImplementation((url: string) => {
+    if (previousOwner && url.endsWith("/recent-order")) return recent.promise;
+    if (url === "/auth/bootstrap") return Promise.resolve(ownedBootstrapFixture({ profile: { ai_credits: 18 }, wallet: { ...wallet, available_credits: 6 } }));
+    return read(url);
+  });
+  const { unmount } = render(<BillingPage />);
+  await waitFor(() => expect(state.get.mock.calls.filter(([url]) => url.endsWith("/recent-order"))).toHaveLength(2));
+  expect(reads()).toHaveLength(0);
+  unmount();
+  previousOwner = false;
+  render(<BillingPage />);
+  const balance = (await screen.findByText("Available credits")).parentElement!;
+  expect(within(balance).getByText("6", { exact: true })).toBeVisible();
+  await waitFor(() => expect(reads()).toHaveLength(3));
+  await act(async () => recent.resolve(null));
+  expect(reads()).toHaveLength(3);
+  expect(within(balance).getByText("6", { exact: true })).toBeVisible();
+});
+
 async function review() {
   render(<BillingPage />);
   const button = await screen.findByRole("button", { name: "Review Starter pass" });

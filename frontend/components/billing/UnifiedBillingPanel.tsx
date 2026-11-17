@@ -15,7 +15,7 @@ import { Button } from "../ui/Button";
 import { LoadingBlock } from "../ui/LoadingBlock";
 import { EligibleCreditServices, UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
 import { HostedCheckoutLoadError, loadHostedCheckout } from "./hostedCheckout";
-import { fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
+import { bootstrapComponent, fetchOwnedBootstrapAfterPending, fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 const failedButPayable = (order: UnifiedCreditOrder | null) => order?.status === "failed"
@@ -53,44 +53,65 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
   }).catch(() => { if (mounted.current && read === catalogRead.current) setCatalog(null); })
     .finally(() => { if (mounted.current && read === catalogRead.current) setCatalogLoading(false); });
   }, []);
-  const refreshWallet = useCallback((force = false) => fetchOwnedWallet(client, force).then((value) => {
-    if (mounted.current) setWallet(value);
-  }).catch(() => { if (mounted.current) setWallet(null); })
-    .finally(() => { if (mounted.current) setWalletLoading(false); }), [client]);
-  const refreshHistory = useCallback((cursor?: string) => apiGet<unknown>(`/v1/credits/history?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`).then((raw) => {
-    const value = parseUnifiedCreditHistory(raw);
-    if (!value) throw new Error("Credit history could not be verified.");
-    if (mounted.current) setHistory((old) => cursor && old ? { ...value, items: [...old.items, ...value.items.filter((item) => !old.items.some((previous) => previous.id === item.id))] } : value);
-  }).catch(() => { if (mounted.current) setError("Credit history could not be loaded. Your balance has not been changed."); })
-    .finally(() => { if (mounted.current) setHistoryBusy(false); }), []);
-  const acceptStatus = useCallback(async (value: UnifiedCreditOrder) => {
+  const refreshWallet = useCallback((force = false, opening?: () => boolean) => {
+    const isCurrent = () => mounted.current && (opening?.() ?? true);
+    const walletRead = opening && force
+      ? fetchOwnedBootstrapAfterPending(client, isCurrent).then((value) => value && bootstrapComponent(value, "credit_wallet"))
+      : fetchOwnedWallet(client, force);
+    return walletRead.then((value) => { if (value && isCurrent()) setWallet(value); })
+      .catch(() => { if (isCurrent()) setWallet(null); })
+      .finally(() => { if (isCurrent()) setWalletLoading(false); });
+  }, [client]);
+  const refreshHistory = useCallback((cursor?: string, opening?: () => boolean) => {
+    const isCurrent = () => mounted.current && (opening?.() ?? true);
+    return apiGet<unknown>(`/v1/credits/history?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`).then((raw) => {
+      const value = parseUnifiedCreditHistory(raw);
+      if (!value) throw new Error("Credit history could not be verified.");
+      if (isCurrent()) setHistory((old) => cursor && old ? { ...value, items: [...old.items, ...value.items.filter((item) => !old.items.some((previous) => previous.id === item.id))] } : value);
+    }).catch(() => { if (isCurrent()) setError("Credit history could not be loaded. Your balance has not been changed."); })
+      .finally(() => { if (isCurrent()) setHistoryBusy(false); });
+  }, []);
+  const acceptStatus = useCallback(async (value: UnifiedCreditOrder, refresh = true) => {
     if (!mounted.current) return;
     currentOrder.current = value;
     setOrder(value); setKnownOrderId(value.order_id); setUnknownAttempt(false);
     if (value.status === "paid" && value.fulfilled) {
       setError(null); setMessage("Payment confirmed. Your purchased credits have been delivered."); setReconciliationHeld(false);
       setQuote(null); quoteIntent.current = null; orderIntent.current = null;
-      window.dispatchEvent(new Event("refresh_unified_credits"));
-      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+      if (refresh) {
+        window.dispatchEvent(new Event("refresh_unified_credits"));
+        await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+      }
     } else if (value.status === "refunded") {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was refunded. Review the refund and balance in your history."); setReconciliationHeld(false);
-      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+      if (refresh) await Promise.allSettled([refreshWallet(true), refreshHistory()]);
     } else if (value.status === "failed" && !failedButPayable(value)) {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was not completed. Review a fresh quote before a new purchase."); setReconciliationHeld(false);
     }
   }, [refreshHistory, refreshWallet]);
-  const readRecent = useCallback((afterResolution = false) => {
+  const readRecent = useCallback((mode: "opening" | "after-resolution" | "check" = "check") => {
     const read = ++recentReadId.current;
-    return apiGet<unknown>("/v1/credits/recent-order").then(async (result) => {
+    const isCurrent = () => mounted.current && recentReadId.current === read;
+    async function publish(value: UnifiedCreditOrder | null, status: "ready" | "failed") {
+      if (!isCurrent()) return;
+      if (mode === "opening") {
+        const settled = value?.status === "refunded" || (value?.status === "paid" && value.fulfilled);
+        await Promise.allSettled([refreshWallet(settled, isCurrent), refreshHistory(undefined, isCurrent)]);
+      }
+      if (!isCurrent()) return;
+      try {
+        if (value && (mode !== "after-resolution" || unsettled(value))) await acceptStatus(value, mode !== "opening");
+      } catch { status = "failed"; }
+      if (isCurrent()) setRecentRead(status);
+    }
+    return apiGet<unknown>("/v1/credits/recent-order").then((result) => {
       const value = result === null ? null : parseUnifiedCreditOrder(result);
       if (result !== null && !value) throw new Error("Payment status could not be verified.");
-      if (!mounted.current || recentReadId.current !== read) return;
-      if (value && (!afterResolution || unsettled(value))) await acceptStatus(value);
-      if (mounted.current && recentReadId.current === read) setRecentRead("ready");
-    }).catch(() => { if (mounted.current && recentReadId.current === read) setRecentRead("failed"); });
-  }, [acceptStatus]);
+      return value;
+    }).then((value) => publish(value, "ready"), () => publish(null, "failed"));
+  }, [acceptStatus, refreshHistory, refreshWallet]);
   const readVerifiedOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
     const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`, signal));
     signal?.throwIfAborted();
@@ -112,15 +133,15 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       setIndiaConfirmed(false);
     }
     await acceptStatus(value);
-    if (refresh && mounted.current && !signal?.aborted) await readRecent(true);
+    if (refresh && mounted.current && !signal?.aborted) await readRecent("after-resolution");
     return value;
   }, [acceptStatus, readRecent, readVerifiedOrder]);
 
   useEffect(() => {
     mounted.current = true;
-    void Promise.allSettled([refreshWallet(), refreshHistory(), readRecent()]);
+    void readRecent("opening");
     return () => { mounted.current = false; pollId.current += 1; recentReadId.current += 1; statusWork.current?.abort(); statusWork.current = null; };
-  }, [readRecent, refreshHistory, refreshWallet]);
+  }, [readRecent]);
   useEffect(() => { void refreshCatalog(); }, [refreshCatalog, participationRevision]);
   useEffect(() => { if (quote) quoteSection.current?.focus(); }, [quote]);
 
