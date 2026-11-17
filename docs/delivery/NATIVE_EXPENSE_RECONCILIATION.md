@@ -90,23 +90,28 @@ evidence. Settlement leaves the run and result binding as recorded.
 ## Capture, review and apply
 
 Use an owned canonical private directory (`0700`) and regular non-symlink files
-(`0600`). The database must be the explicitly selected PostgreSQL database at
-schema `20261028_0025`. Production connections require certificate-verified TLS
-(`sslmode=verify-full`) and an observed TLS 1.2/1.3 channel. Unverified transport
-configuration is refused before opening a database connection. The captured
-identity includes the server-observed cluster identifier, database and namespace
-OIDs, actual PostgreSQL version and operator role, not just URL/database names.
-A same-named recreated database/schema or retargeted endpoint invalidates the
-plan. Only the existing dedicated loopback synthetic test databases may omit TLS.
-Supply its existing operator credential through the
-normal private environment; never paste it into a plan, terminal output or chat.
+(`0600`). Select the operator for the exact installed PostgreSQL schema.
+
+| Schema | Operator script |
+| --- | --- |
+| `20261028_0025` | `scripts/reconcile_native_expenses.py` |
+| `20261031_0026` | `scripts/reconcile_native_expenses_schema26.py` |
+| `20261105_0027` | `scripts/reconcile_native_expenses_schema27.py` |
+
+The commands below use schema27. It requires certificate-verified TLS
+(`sslmode=verify-full`), an observed TLS 1.2 or 1.3 connection, and the exact
+schema27 public catalog and evidence fence. The captured identity includes
+the observed cluster, database and namespace OIDs, PostgreSQL version and
+operator role. A database restored under the same name or a retargeted
+endpoint invalidates the plan. Supply the existing operator credential through
+the private environment. Keep it out of the plan and operator output.
 
 ```sh
-python scripts/reconcile_native_expenses.py capture \
+python scripts/reconcile_native_expenses_schema27.py capture \
   --receipt-review /private/review/native-expense-review.json \
   --plan /private/review/native-expense-plan.json
 
-python scripts/reconcile_native_expenses.py dry-run \
+python scripts/reconcile_native_expenses_schema27.py dry-run \
   --plan /private/review/native-expense-plan.json \
   --plan-sha256 <SHA-256 printed by capture>
 ```
@@ -121,7 +126,7 @@ Plans permit at most 24 hours for new writes.
 Only an approved operator performs the explicit write:
 
 ```sh
-python scripts/reconcile_native_expenses.py apply \
+python scripts/reconcile_native_expenses_schema27.py apply \
   --plan /private/review/native-expense-plan.json \
   --plan-sha256 <reviewed SHA-256> \
   --accepted-reviewed-native-expense
@@ -135,11 +140,13 @@ requalified under a new route identity. Existing free-core overrun protection
 also remains in force. Global headroom counts the retained actual/reserved
 expense, and unresolved provider obligations remain protected.
 
-If commit acknowledgement is uncertain, use **dry-run of the same plan** to
-observe whether its exact receipt was recorded. Do not create another receipt
-or automatically repeat an uncertain write. A late readback may confirm an
-already committed settlement after plan expiry; an unapplied expired plan
-cannot authorize a new write. Conflicts stop for accounting review.
+If commit acknowledgement is uncertain, use **dry-run of the same plan on its
+original schema** to observe whether its exact receipt was recorded. Resolve
+that outcome before migrating. After migration, use a newly reviewed plan only
+for an unsettled target whose previous outcome is known. A settlement from an
+older schema retains its original audit record and prevents a second settlement.
+A late readback may confirm an already committed settlement after plan expiry.
+An unapplied expired plan cannot authorize a new write.
 
 ## Verification and limits
 
