@@ -400,6 +400,79 @@ def test_recent_order_retains_the_terminal_display_window(client, session_factor
     assert client.get(f"/api/billing/orders/{older['order_id']}").json()["status"] == "refunded"
 
 
+@pytest.mark.parametrize(("setting", "value", "resume_status"), [
+    ("RAZORPAY_CHECKOUT_ENABLED", "false", 503),
+    ("RAZORPAY_KEY_ID", "rzp_test_hirewiz_rotated", 409),
+    ("RAZORPAY_MODE", "live", 503),
+])
+def test_legacy_order_read_reports_when_existing_checkout_cannot_resume(
+    client, enabled_checkout, monkeypatch, setting, value, resume_status,
+):
+    original = _create_order(client)
+    order_id = original["order_id"]
+    for path in ("/api/billing/recent-order", f"/api/billing/orders/{order_id}"):
+        assert client.get(path).json()["checkout_available"] is True
+
+    monkeypatch.setenv(setting, value)
+    for path in ("/api/billing/recent-order", f"/api/billing/orders/{order_id}"):
+        result = client.get(path)
+        assert result.status_code == 200
+        order = result.json()
+        assert order["order_id"] == order_id and order["status"] == "pending"
+        assert order["provider_order_id"] == original["provider_order_id"]
+        assert order["accepted_quote"] == original["accepted_quote"]
+        assert order["checkout_available"] is False
+
+    assert client.post("/api/billing/orders", json=_purchase_payload(order_id)).status_code == resume_status
+    assert enabled_checkout == [order_id]
+
+
+def test_paused_checkout_recovers_unpaid_legacy_order_without_enabling_resume(
+    client, enabled_checkout, monkeypatch, session_factory,
+):
+    original = _create_order(client)
+    order_id = original["order_id"]
+    provider_id = "order_originalunpaid"
+    with session_factory() as db:
+        row = db.query(PaymentOrder).one()
+        remote = _capture_payload(row, event="order.paid")["payload"]["order"]["entity"] | {
+            "id": provider_id, "status": "created", "attempts": 0,
+            "amount_paid": 0, "amount_due": row.gross_amount_minor,
+        }
+        row.provider_order_id = None
+        row.status = "creation_unknown"
+        db.commit()
+
+    replies = {
+        "orders": {"entity": "collection", "count": 1, "items": [remote]},
+        f"orders/{provider_id}": remote,
+        f"orders/{provider_id}/payments": {"entity": "collection", "count": 0, "items": []},
+    }
+    reads = []
+
+    def read(settings, path, params, timeout):
+        assert not settings.checkout_enabled
+        reads.append(path)
+        return replies[path]
+
+    monkeypatch.setattr("backend.app.billing.reconciliation._provider_json", read)
+    monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "false")
+    result = client.post(f"/api/billing/orders/{order_id}/reconcile")
+    assert result.status_code == 200
+    recovered = result.json()
+    assert recovered["resolution"] == "checkout_ready"
+    assert "currently unavailable" in recovered["message"]
+    assert recovered["order"]["provider_order_id"] == provider_id
+    assert recovered["order"]["accepted_quote"] == original["accepted_quote"]
+    assert recovered["order"]["status"] == "pending" and not recovered["order"]["fulfilled"]
+    assert recovered["order"]["checkout_available"] is False
+    assert client.get(f"/api/billing/orders/{order_id}").json()["checkout_available"] is False
+    assert reads == list(replies) and enabled_checkout == [order_id]
+
+    monkeypatch.setenv("RAZORPAY_CHECKOUT_ENABLED", "true")
+    assert client.get(f"/api/billing/orders/{order_id}").json()["checkout_available"] is True
+
+
 @pytest.mark.parametrize("rollout_enabled", ["false", "true"])
 def test_paused_checkout_reconciles_old_legacy_order_without_another_order(
     client, enabled_checkout, monkeypatch, session_factory, rollout_enabled,

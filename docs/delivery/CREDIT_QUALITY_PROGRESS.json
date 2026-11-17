@@ -3,7 +3,7 @@
   "requirement_version": "1.1",
   "source_sha256": "ac56be4838c8309fa9b1da3a717d53fab2bad85cfe0482d6aeedc4374a38fb4f",
   "baseline_commit": "f0f973c9c6d989553b8f58b275fc06fd5685497a",
-  "updated_at": "2026-11-15T12:15:12+00:00",
+  "updated_at": "2026-11-17T06:51:59+00:00",
   "authorization": "Owner authorized implementation, testing, deployment and payment activation subject to requirements gates on 2026-10-27.",
   "stages": [
     {
@@ -174,8 +174,8 @@
         "docs/delivery/evidence/2026-11-03-active-operating-status.json",
         "docs/delivery/AUTO_APPLY_PROGRESS.md"
       ],
-      "local_result": "DB8 serves the API and workers. The DB8-compatible session, Jobs and legacy refund fixes serve the public frontend. Saved Jobs, Dashboard and Billing were verified signed in. Partial and full refund readback passed five simulated browser widths. The live frontend also reports a confirmed inspection failure before users retry an unsaved upload. Merged Workspace source 4dc9aea passed all five CI jobs and its Cloud Build image passed exact stock source verification. Its frontend is staged. The bridge needs fresh scanner verification. The independently reviewed replacement expense and model policy pair is ready locally and unpublished. Razorpay Test verified a ₹59 capture, two signed capture event types, and same-event retry with one 40-credit lot. A separate Test wallet verified one signed partial refund and read-only reconciliation to ₹59 refunded, zero purchased credits remaining and zero debt. Written merchant-scope confirmation, production checkout, commercial acceptance, the paid canary and wallet activation remain pending.",
-      "status_observed_at": "2026-11-15T12:15:12+00:00"
+      "local_result": "DB8 serves the API and workers. The DB8-compatible session, Jobs and legacy refund fixes serve the public frontend. Saved Jobs, Dashboard and Billing were verified signed in. Partial and full refund readback passed five simulated browser widths. The live frontend also reports a confirmed inspection failure before users retry an unsaved upload. A frontend candidate from the merged Workspace release is staged. The backend bridge requires fresh scanner verification and current reviewed policies. The independently reviewed replacement expense and model policy pair is ready locally and unpublished. Razorpay Test verified a ₹59 capture, two signed capture event types, and same-event retry with one 40-credit lot. A separate Test wallet verified a signed partial refund and read-only reconciliation to ₹59 refunded, zero purchased credits remaining and zero debt. Written merchant-scope confirmation covers the India software pilot and the three proposed one-time packs. A dedicated keyless API account is provisioned for the managed payment-credential transition. The request preparation passed against the current serving revision and must be repeated against the rollout target. API attachment, production credential and webhook verification, commercial acceptance, the paid canary and wallet activation remain pending. Checkout is closed.",
+      "status_observed_at": "2026-11-17T06:51:59+00:00"
     },
     {
       "number": 8,

@@ -6,7 +6,8 @@ The launch product is the unified credit pass in the [current requirements](requ
 
 - [ ] Use the existing merchant account and choose the true KYC form. Verify that the legal operator, PAN identity, settlement account holder and website operator wording agree. Confirm a legitimate correspondence address, working contact channels and support hours.
 - [ ] Confirm Indian tax and invoicing treatment with a qualified adviser. Verify the monitored support inbox and its domain authentication. Review the signed-out home, pricing, contact, legal, privacy, digital-delivery and refund pages against the approved terms.
-- [ ] Obtain written Razorpay approval for the actual self-service software and credit-pass model. Verify the merchant category, enabled domestic INR payment methods, statement descriptor, settlement account and website branding. Resolve any existing activation restriction in the original account.
+- [x] Verify written Razorpay confirmation for the proposed India pilot in the existing IT and software merchant category. The reviewed scope covers résumé and career software, job discovery from employer sources, and application preparation reviewed by the candidate. The candidate submits the application on the employer portal. Retain the provider correspondence in the private release evidence.
+- [ ] Verify domestic INR payment methods, statement descriptor, settlement account, website branding and any remaining activation restrictions on the original merchant account.
 - [ ] Present these proposed introductory packs for review. Each purchase is a one-time 30-day pass for a finite number of HireWiz service credits, without automatic renewal. Credits cannot be transferred, resold or withdrawn as cash. Show the exact payable amount, validity, supported services and refund terms before accepting payment.
 
 | Pass | Introductory price | Credits |

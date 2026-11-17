@@ -506,10 +506,19 @@ def _order_status_payload(db: Session, order: PaymentOrder) -> dict:
         accepted_quote = order_quote(order).model_dump()
     except HTTPException:
         accepted_quote = None  # Status remains readable when original terms need support review.
+    settings = _settings()
+    checkout_available = bool(
+        accepted_quote is not None
+        and order.provider_order_id
+        and order.status == "created"
+        and settings.checkout_enabled
+        and order.provider_mode == settings.mode
+        and order.provider_key_id == settings.key_id
+    )
     return {
         "order_id": order.public_id,
         "provider_order_id": order.provider_order_id,
-        "checkout_available": bool(order.entitlement_kind != "credit_pass" and order.provider_order_id and order.status == "created"),
+        "checkout_available": checkout_available,
         "payment_reference": transaction.provider_payment_id if transaction else None,
         "sku": order.sku,
         "entitlement_kind": order.entitlement_kind,
@@ -575,9 +584,12 @@ def _reconciliation_reply(db, order, resolution=None, message=None):
         resolution = "settled" if order.status in SETTLED_ORDER_STATUSES else "unresolved"
     if resolution == "settled" and message is None:
         message = "The original payment outcome is recorded. Review its status."
+    status = _order_status_payload(db, order)
+    if resolution == "checkout_ready" and order.entitlement_kind != "credit_pass" and not status["checkout_available"]:
+        message = "Original order was recovered. Checkout is currently unavailable."
     return {"resolution": resolution,
             "message": message or "The original attempt remains unresolved. Payment stays paused; contact billing support. No new order was created.",
-            "order": _order_status_payload(db, order)}
+            "order": status}
 
 
 def _new_settled_refunds(db: Session, order: PaymentOrder, proof: ReconciliationProof) -> tuple[dict, ...]:

@@ -20,7 +20,7 @@ CONTRACT = "hirewiz_schema27_app_v1"
 PRIOR_RELEASE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 PRIOR_APP_FILES = 290
-CANDIDATE_APP_SHA256 = 'edaa06bdb3783cae446021b962a5e511e9043862d905fb2ef4be8bb19e6e0a8f'
+CANDIDATE_APP_SHA256 = '942bbe8f140b97aa14b000a5a824e7c72d5da6d405370f67c1a77a389891a8ec'
 CANDIDATE_APP_FILES = 316
 COMPATIBILITY_STEP = "Qualify schema27 app compatibility"
 PROTOCOL_STEP = "Qualify schema27 app native protocol"
@@ -31,6 +31,8 @@ PROTOCOL_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema27.py --phase p
 RETAINED_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase compatibility"
 RETAINED_PROTOCOL_COMMAND = ".venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase protocol"
 DOCKERFILE_SHA256 = "e02fce326f540cb09b6e5e9390923605371da4f84b40ccbd21b999251a4b060f"
+CURRENT_FRONTEND_LOCK_PATH = "frontend/package-lock.json"
+CURRENT_FRONTEND_LOCK_SHA256 = "01bc5767f85835750be8342ca8d237063e88f95394981a82db305271863c3f24"
 F07_FLAGS = ("NOTIFICATION_DIGESTS_ENABLED", "LIFECYCLE_EMAILS_ENABLED")
 PG_URL = "postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test"
 NATIVE_ENV = {"HIREWIZ_APP_COMPATIBILITY_REQUIRED": "true", "HIREWIZ_AUTHORITY_EMULATOR_REQUIRED": "true",
@@ -116,7 +118,10 @@ F07_PATHS = (
     "backend/tests/test_unified_analysis_cancellation.py", "backend/tests/test_learning_resource_delivery.py",
     "backend/tests/test_native_expense_reconciliation.py",
     "backend/app/domains/credits/finance.py", "backend/app/domains/credits/runtime.py",
-    "backend/app/routers/credits.py", "backend/tests/test_curated_learning_reuse.py",
+    "backend/app/routers/credits.py", "backend/app/routers/billing.py",
+    "backend/tests/test_unified_credit_payments.py", "backend/tests/test_razorpay_billing.py",
+    "backend/tests/test_billing_reconciliation_isolated.py", "frontend/components/billing/LegacyBillingAccount.tsx",
+    "frontend/app/billing/page.test.tsx", "backend/tests/test_curated_learning_reuse.py",
     "backend/tests/test_credit_input_unsupported.py", "frontend/components/career/LearningStrategyPanel.tsx",
     "frontend/components/career/ReviewedServices.test.tsx",
     "frontend/lib/opportunityPageClient.ts", "frontend/lib/opportunityPageClient.test.ts",
@@ -301,11 +306,12 @@ def verify_native_ci(observer, ci_run_id):
 
 
 def preserved_sources(root):
-    """Retain old financial/document/lock/companion source closure as-is."""
+    """Bind the current frontend lock and preserve the other historical sources."""
     import document_source_candidate as document
 
     for name in v3.HISTORICAL_PATHS:
-        need(read(root, name) == git_bytes(root, name), "historical_contract_or_lock_changed")
+        if name != CURRENT_FRONTEND_LOCK_PATH:
+            need(read(root, name) == git_bytes(root, name), "historical_contract_or_lock_changed")
     policy = read(root, document.POLICY_PATH)
     need(hashlib.sha256(policy).hexdigest() == document.POLICY_SHA256, "document_policy_changed")
     worker = document.validate_policy(policy, root)
@@ -321,6 +327,7 @@ def preserved_sources(root):
              *("backend/" + name for name in v3.PROOF_ROOTS), *worker, *document.CONTRACT_PATHS, document.POLICY_PATH,
              *F07_PATHS}
     entries = {name: hashlib.sha256(read(root, name)).hexdigest() for name in sorted(names)}
+    need(entries[CURRENT_FRONTEND_LOCK_PATH] == CURRENT_FRONTEND_LOCK_SHA256, "current_frontend_lock_changed")
     need(all(entries[name] == stamp for name, stamp in helpers.items()), "document_helper_changed_during_fingerprint")
     return entries
 

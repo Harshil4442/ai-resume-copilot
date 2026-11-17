@@ -178,7 +178,7 @@ def collection(*items):
     return {"entity": "collection", "count": len(items), "items": list(items)}
 
 
-SETTINGS = SimpleNamespace(mode="test", key_id="synthetic-key", credentials_complete=True,
+SETTINGS = SimpleNamespace(mode="test", key_id="synthetic-key", credentials_complete=True, checkout_enabled=True,
                            mode_allowed_for_environment=True)
 
 
