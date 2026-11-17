@@ -97,7 +97,7 @@ def test_retained_original_pytest_needs_nonempty_passing_each_selected_suite(mon
 
 
 @pytest.mark.parametrize("phase,outcome", [("compatibility", "success"), ("protocol", "success"),
-    ("compatibility", "failed"), ("protocol", "unknown")])
+    ("compatibility", "failed"), ("compatibility", "unknown"), ("protocol", "unknown")])
 def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatch, tmp_path, phase, outcome):
     root = tmp_path / "synthetic-root"
     root.mkdir()
@@ -107,24 +107,55 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
         path.parent.mkdir(exist_ok=True)
         path.write_text("owned synthetic lock")
         pins[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    plugin = root / "backend/scripts" / gate.LEARNING_FIXTURE
+    plugin.parent.mkdir()
+    plugin.write_text("# owned test-only clock overlay\n")
+    tracked = Path("backend/tests/test_unified_synchronous.py")
+    original = b"# frozen synthetic fixture bytes\n"
+    overlay_name = "_" + gate.LEARNING_FIXTURE
+    baseline_env = {"RUNNER_TEMP": str(tmp_path)}
     monkeypatch.setattr(gate, "PINS", pins)
-    monkeypatch.setattr(gate, "_environment", lambda *_a, **_k: {"RUNNER_TEMP": str(tmp_path)})
+    monkeypatch.setattr(gate, "_environment", lambda *_a, **_k: baseline_env)
     monkeypatch.setattr(gate, "_identity", lambda *_a, **_k: (b"ownedlink", 1, 2, 3))
-    monkeypatch.setattr(gate, "_verify", lambda *_: None)
-    git_calls, child_calls = [], []
+    git_calls, child_calls, verifications = [], [], []
+
+    def check_tracked(checkout):
+        source = checkout / tracked
+        assert source.read_bytes() == original
+        return source.with_name(overlay_name)
+
+    def verify(checkout, env):
+        assert env == baseline_env and "PYTEST_PLUGINS" not in env
+        assert not check_tracked(checkout).exists()
+        verifications.append(checkout)
 
     def git(where, env, *args):
         git_calls.append(args)
         if args == ("rev-parse", "--show-toplevel"):
             return str(root).encode()
         if args[:2] == ("worktree", "add"):
-            Path(args[3]).mkdir()
+            source = Path(args[3]) / tracked
+            source.parent.mkdir(parents=True)
+            source.write_bytes(original)
         elif args[:2] == ("worktree", "remove"):
-            Path(args[-1]).rmdir()
+            checkout = Path(args[-1])
+            assert not check_tracked(checkout).exists()
+            source = checkout / tracked
+            source.unlink()
+            source.parent.rmdir()
+            source.parent.parent.rmdir()
+            checkout.rmdir()
         return b""
 
-    def child(command, **kwargs):
+    def child(command, *, cwd, env, **kwargs):
         child_calls.append(command)
+        overlay = check_tracked(cwd.parent)
+        if tuple(command[1:]) == gate.COMPATIBILITY_COMMAND:
+            assert overlay.read_bytes() == plugin.read_bytes()
+            assert env == baseline_env | {"PYTEST_PLUGINS": "tests." + overlay.stem}
+            assert kwargs["timeout"] == 900
+        else:
+            assert not overlay.exists() and env == baseline_env
         if outcome == "failed":
             raise gate.RetainedV3Denied("owned_child_failed")
         if outcome == "unknown":
@@ -132,9 +163,10 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
         return b""
 
     def original_pytest(checkout, env, suites, report):
-        return child(["pytest", *suites])
+        return child(["pytest", *suites], cwd=checkout / "backend", env=env)
 
     monkeypatch.setattr(gate, "_git", git)
+    monkeypatch.setattr(gate, "_verify", verify)
     monkeypatch.setattr(gate, "_call", child)
     monkeypatch.setattr(gate, "_pytest", original_pytest)
     if outcome == "success":
@@ -148,7 +180,64 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
     assert len(child_calls) == (2 if phase == "compatibility" and outcome == "success" else 1)
     assert sum(args[:2] == ("worktree", "add") for args in git_calls) == 1
     assert sum(args[:2] == ("worktree", "remove") for args in git_calls) == int(outcome == "success")
-    assert bool(list(tmp_path.glob("hirewiz-schema26-retained-v3-*/source"))) is (outcome != "success")
+    assert len(verifications) == (2 if outcome == "success" else 1)
+    retained = list(tmp_path.glob("hirewiz-schema26-retained-v3-*/source"))
+    assert bool(retained) is (outcome != "success")
+    if retained:
+        overlay = check_tracked(retained[0])
+        assert overlay.exists() is (phase == "compatibility")
+        if overlay.exists():
+            assert overlay.read_bytes() == plugin.read_bytes()
+    assert baseline_env == {"RUNNER_TEMP": str(tmp_path)}
+
+
+@pytest.mark.parametrize("select_exact", [True, False])
+def test_original_isolated_pytest_loads_only_the_exact_learning_variant(tmp_path, select_exact):
+    checkout = tmp_path / "retained"
+    backend = checkout / "backend"
+    (backend / "tests").mkdir(parents=True)
+    (backend / "scripts").mkdir()
+    (backend / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath = ["..", "."]\n')
+    frozen_fixture = '''\
+from datetime import UTC, datetime
+NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+'''
+    (backend / "tests/test_unified_synchronous.py").write_text(frozen_fixture)
+    suite = backend / "tests/test_unified_synchronous_postgres.py"
+    suite.write_text('''\
+from datetime import UTC, datetime, timedelta
+import pytest
+from backend.tests import test_unified_synchronous as synchronous_checks
+
+FIXED = synchronous_checks.NOW
+
+@pytest.mark.parametrize("operation", ["enhanced_qa", "learning_strategy", "bullet_rewrite"])
+def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(monkeypatch, operation):
+    if operation == "learning_strategy":
+        assert abs(synchronous_checks.NOW - datetime.now(UTC)) < timedelta(minutes=1)
+    else:
+        assert synchronous_checks.NOW == FIXED
+
+def test_other_case_has_frozen_clock(monkeypatch):
+    assert synchronous_checks.NOW == FIXED
+''')
+    selection = ["-k", "frozen_clock"] if not select_exact else []
+    (backend / gate.COMPATIBILITY_COMMAND[-1]).write_text(
+        "import subprocess, sys\n"
+        "raise SystemExit(subprocess.call([sys.executable, '-I', '-B', '-m', 'pytest', '--noconftest', '-q',"
+        " 'tests/test_unified_synchronous_postgres.py'] + " + repr(selection) + "))\n")
+    root = Path(gate.__file__).resolve().parents[2]
+    env = {"PATH": os.defpath, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+
+    if select_exact:
+        gate._compatibility(root, checkout, env)
+    else:
+        with pytest.raises(gate.RetainedV3Denied, match="^retained_v3_child_failed$"):
+            gate._compatibility(root, checkout, env)
+
+    assert suite.with_name("_" + gate.LEARNING_FIXTURE).exists() is not select_exact
+    assert suite.with_name("test_unified_synchronous.py").read_text() == frozen_fixture
+    assert "PYTEST_PLUGINS" not in env
 
 
 @pytest.fixture

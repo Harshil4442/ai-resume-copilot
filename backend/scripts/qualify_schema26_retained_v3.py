@@ -26,6 +26,7 @@ PINS = {'backend/uv.lock': '427f77314ac25b72b0079ca4becb95f4eab5b9877b3d541997fb
 COMPATIBILITY_COMMAND = ("-I", "-B", "scripts/qualify_schema26_compatibility.py")
 COMPATIBILITY_REPORT = "schema26-ci-failure-v1"
 FAILURE_STATES = ("failure", "error", "skipped")
+LEARNING_FIXTURE = "retained_schema26_learning_fixture.py"
 ROLLING = ("tests/test_schema25_app_rolling_v3.py",)
 PROTOCOL = ("tests/test_schema25_app_protocol_v3.py",)
 _STANDARD_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "TMPDIR", "TMP", "TEMP",
@@ -241,6 +242,24 @@ def _pytest(checkout: Path, env: dict[str, str], suites: tuple[str, ...], report
     report.unlink()
 
 
+def _compatibility(root: Path, checkout: Path, env: dict[str, str]) -> None:
+    # Only the original pytest child imports this test-only fixture. The owned
+    # checkout retains every tracked byte from the verified historical commit.
+    source = (root / "backend" / "scripts" / LEARNING_FIXTURE).read_bytes()
+    overlay = checkout / "backend" / "tests" / ("_" + LEARNING_FIXTURE)
+    _need(overlay.parent.resolve() == overlay.parent, "fixture_location_changed")
+    with overlay.open("xb") as handle:
+        handle.write(source)
+        created = os.fstat(handle.fileno())
+    child_env = env | {"PYTEST_PLUGINS": "tests." + overlay.stem}
+    _call([sys.executable, *COMPATIBILITY_COMMAND], cwd=checkout / "backend", env=child_env, timeout=900)
+    current = overlay.lstat()
+    _need(stat.S_ISREG(current.st_mode) and current.st_nlink == 1
+          and (current.st_dev, current.st_ino, current.st_uid) == (created.st_dev, created.st_ino, created.st_uid)
+          and overlay.read_bytes() == source, "fixture_ownership_changed")
+    overlay.unlink()
+
+
 def run(root: Path, phase: str) -> None:
     _need(phase in {"compatibility", "protocol"}, "phase_required")
     _need(root.is_absolute() and root.resolve() == root, "source_root_invalid")
@@ -263,7 +282,7 @@ def run(root: Path, phase: str) -> None:
         try:
             if phase == "compatibility":
                 child_phase = "original_native_compatibility"
-                _call([sys.executable, *COMPATIBILITY_COMMAND], cwd=checkout / "backend", env=env, timeout=900)
+                _compatibility(root, checkout, env)
                 child_phase = "original_rolling_probe"
                 _pytest(checkout, env, ROLLING, base / "rolling.xml")
             else:
@@ -302,4 +321,7 @@ if __name__ == "__main__":
         run(Path(__file__).resolve().parents[2], arguments.phase)
     except Exception:
         raise SystemExit("retained_v3_unavailable_or_child_outcome_unknown") from None
-    print("Retained actual-source45b3 schema26 V3 passed; not current27 or rollout authority.")
+    if arguments.phase == "compatibility":
+        print("Retained actual-source45b3 schema26 V3 passed with one refreshed synthetic learning review fixture.")
+    else:
+        print("Retained actual-source45b3 schema26 V3 protocol passed.")
