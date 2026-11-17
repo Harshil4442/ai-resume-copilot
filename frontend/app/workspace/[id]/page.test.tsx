@@ -309,7 +309,7 @@ it.each(["resume", "opportunity"])("starts a fresh reviewed intent when the %s c
   expect(requests()[1][1].opportunity_id).toBe(state.id);
 });
 
-it.each([429, 503])("reads an existing run explicitly after HTTP%s without restarting generation", async (status) => {
+it.each([[429, 60_000], [503, 30_000]])("reads an existing run after the HTTP%s cooldown without restarting generation", async (status, wait) => {
   let statusReads = 0;
   state.get.mockImplementation((url: string) => url.startsWith("/v1/analysis-runs/")
     ? ++statusReads === 1 ? Promise.reject(new ApiError("Status unavailable", status, {}))
@@ -317,12 +317,23 @@ it.each([429, 503])("reads an existing run explicitly after HTTP%s without resta
     : read(url));
   state.post.mockResolvedValue({ id: "run-one", opportunity_id: state.id, operation: "resume_tailor", status: "queued", estimated_units: 7 });
   await page(); await waitFor(() => expect(generate()).toBeEnabled());
-  fireEvent.click(generate());
-  const statusCheck = await screen.findByRole("button", { name: "Check tailoring status" });
-  expect(generate()).toBeDisabled(); expect(statusReads).toBe(1); expect(requests()).toHaveLength(1);
-  fireEvent.click(statusCheck);
-  await waitFor(() => expect(generate()).toBeEnabled());
-  expect(statusReads).toBe(2); expect(requests()).toHaveLength(1);
+  vi.useFakeTimers();
+  const tick = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+  try {
+    fireEvent.click(generate());
+    await tick(2);
+    const statusCheck = screen.getByRole("button", { name: "Check tailoring status" });
+    expect(generate()).toBeDisabled(); expect(statusReads).toBe(1); expect(requests()).toHaveLength(1);
+    expect(statusCheck).toBeDisabled();
+    fireEvent.click(statusCheck);
+    await tick(wait);
+    expect(statusReads).toBe(1);
+    expect(statusCheck).toBeEnabled();
+    fireEvent.click(statusCheck);
+    await tick(2);
+    expect(generate()).toBeEnabled();
+    expect(statusReads).toBe(2); expect(requests()).toHaveLength(1);
+  } finally { vi.useRealTimers(); }
 });
 
 const serviceQuote = { schema_version: "unified-service-quote-v1", quote_id: "csq_reviewed", operation: "resume_tailor", input_fingerprint: "b".repeat(64),

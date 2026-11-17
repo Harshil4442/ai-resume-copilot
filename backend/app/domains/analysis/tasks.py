@@ -145,7 +145,7 @@ def process_analysis_run(run_id: str) -> str:
             return run.status
 
         try:
-            from ..credits.analysis import analysis_budget
+            from ..credits.analysis import analysis_budget, is_unified
 
             with analysis_budget(SessionLocal, run.id):
                 result = execute_operation(db, run)
@@ -169,6 +169,16 @@ def process_analysis_run(run_id: str) -> str:
                 run.error_code = None
                 run.error_message = None
                 commit_run_usage(db, run)
+                if run.estimated_units == 0 and not is_unified(run):
+                    from ..free_core import service as free_service
+
+                    # The owned admission is durable. Runtime policy changes do
+                    # not revoke it, and legacy zero-unit runs have no request.
+                    if free_service.analysis_operation(run.operation, run.input_payload) is not None:
+                        free_service.complete(
+                            db, user_id=run.user_id, source_type="analysis_run",
+                            source_id=run.id, result_id=run.id,
+                        )
                 user = db.query(models.User).filter(models.User.id == run.user_id).one()
                 enqueue_notification(
                     db,

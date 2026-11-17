@@ -129,7 +129,7 @@ function useRun(runId: string | null) {
 
 function RunStatusCheck({ query, label }: { query: ReturnType<typeof useRun>; label: string }) {
   if (!query.pollingPaused) return null;
-  return <div role="status" className="mt-4 space-y-3 text-sm"><p>Automatic progress checks are paused. The existing request may still be running; checking status does not start it again.</p><Button variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>Check {label} status</Button></div>;
+  return <div role="status" className="mt-4 space-y-3 text-sm"><p>{query.statusCheckMessage ?? "Automatic progress checks are paused. Checking status does not restart the request."}</p><Button variant="secondary" disabled={query.statusCheckDisabled} onClick={query.checkStatus}>Check {label} status</Button></div>;
 }
 
 function useRunResult(run: AnalysisRun | undefined, enabled = true) {

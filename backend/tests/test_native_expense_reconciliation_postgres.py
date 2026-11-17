@@ -27,13 +27,14 @@ from backend.tests.test_employer_admissions_postgres import pg_engine as ci_pg_e
 from backend.tests.test_native_expense_reconciliation import (
     STAMP,
     free,
+    free_analysis,
     paid,
     plan,
     receipt,
     terminal,
 )
 from backend.tests.test_unified_credits_postgres import parallel
-from sqlalchemy import create_engine, text
+from sqlalchemy import JSON, create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 
@@ -100,6 +101,30 @@ def test_parallel_identical_receipts_settle_once(factory):
     with factory() as db:
         assert db.query(AdminAuditEvent).count() == 1
         assert db.query(CreditExecutionHold).one().native_settled_minor == 9
+
+
+def test_claimed_free_analysis_failure_settles_once_without_result_binding(factory):
+    with factory() as db:
+        expense, request, run = free_analysis(db, mode=None)
+        request_id, run_id, expense_id = request.id, run.id, expense.id
+        reviewed = plan(db, receipt(expense_id, kind="free_core", work_state="failed"))
+        run.result_payload = {"historical": "result"}
+        db.commit()
+        with pytest.raises(reconciliation.ReconciliationDenied, match="native_work_not_terminal"):
+            reconciliation.dry_run(db, plan=reviewed, now=STAMP)
+        run.result_payload = JSON.NULL
+        db.commit()
+
+    assert _run(factory, reviewed) == "native_expense_reconciled"
+    assert _run(factory, reviewed) == "already_reconciled"
+    with factory() as db:
+        expense = db.get(FreeCoreReservation, expense_id)
+        request = db.get(FreeCoreRequest, request_id)
+        run = db.get(AnalysisRun, run_id)
+        assert (expense.state, expense.settled_minor) == ("settled", 9)
+        assert request.state == "admitted" and request.result_id is None
+        assert run.status == "failed" and run.result_payload is None
+        assert db.query(AdminAuditEvent).count() == 1
 
 
 @pytest.mark.parametrize("amount", [9, 11])

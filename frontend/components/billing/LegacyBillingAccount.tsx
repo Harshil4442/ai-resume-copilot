@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ApiError, apiGet, apiPostJson } from "../../lib/api";
 import { boundedStatusChecks, newStatusReadBudget, type StatusReadBudget } from "../../lib/boundedStatusPolling";
-import { fetchOwnedProfile } from "../../lib/ownedBootstrapClient";
+import { bootstrapComponent, fetchOwnedBootstrapAfterPending, fetchOwnedProfile } from "../../lib/ownedBootstrapClient";
 import { isFiniteBundleSku } from "../../lib/billingProducts";
 import { formatCreditPrice, isUnifiedPassSku } from "../../lib/unifiedCredits";
 import { Button } from "../ui/Button";
@@ -50,6 +50,9 @@ function canCheckRefund(order: LegacyOrder) {
 function blocksNewPurchase(order: LegacyOrder) {
   return canReconcile(order) || (order.status === "paid" && !order.fulfilled);
 }
+function needsBalanceRefresh(order: LegacyOrder, refunded = refundAmount(order)) {
+  return (order.status === "paid" && order.fulfilled) || order.status === "refunded" || (refunded !== null && refunded > 0);
+}
 
 /** Existing purchases remain usable on their original terms; this component never sells a new legacy pack. */
 export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pending: boolean) => void }) {
@@ -73,12 +76,15 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const pending = recentRead !== "ready" || (order !== null && blocksNewPurchase(order));
   useEffect(() => { onPendingChange(pending); }, [pending, onPendingChange]);
 
-  const refreshBalances = useCallback(async (force = false) => {
+  const refreshBalances = useCallback(async (force = false, opening?: () => boolean) => {
     const read = ++balanceRead.current;
-    const isCurrent = () => mounted.current && balanceRead.current === read;
+    const isCurrent = () => mounted.current && balanceRead.current === read && (opening?.() ?? true);
+    const profileRead = opening && force
+      ? fetchOwnedBootstrapAfterPending(client, isCurrent).then((value) => value && bootstrapComponent(value, "profile"))
+      : fetchOwnedProfile(client, force);
     await Promise.allSettled([
-      fetchOwnedProfile(client, force).then((value) => {
-        if (isCurrent()) setProfile(value);
+      profileRead.then((value) => {
+        if (value && isCurrent()) setProfile(value);
       }),
       apiGet<{ job_service_credits?: unknown }>("/auth/me").then((value) => {
         if (isCurrent()) setServiceCredits(signedBalance(value.job_service_credits));
@@ -86,7 +92,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       apiGet<UsageHistory>("/v1/usage-events?limit=20").then((value) => { if (isCurrent()) setUsage(value); }),
     ]);
   }, [client]);
-  const acceptStatus = useCallback(async (value: LegacyOrder) => {
+  const acceptStatus = useCallback(async (value: LegacyOrder, refresh = true) => {
     if (!mounted.current) return;
     const before = acceptedOrder.current;
     const refunded = refundAmount(value);
@@ -99,29 +105,37 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
     }
     acceptedOrder.current = value;
     setOrder(value);
-    if ((value.status === "paid" && value.fulfilled) || value.status === "refunded" || (refunded !== null && refunded > 0)) {
+    if (needsBalanceRefresh(value, refunded)) {
       setError(null);
       setMessage(value.status === "refunded" ? "The original payment was refunded."
         : refunded ? "The original payment was partially refunded."
           : "Payment confirmed. Your original purchased entitlements were delivered.");
       setReconciliationHeld(false);
-      window.dispatchEvent(new Event("refresh_analysis_units"));
-      await refreshBalances(true);
+      if (refresh) {
+        window.dispatchEvent(new Event("refresh_analysis_units"));
+        await refreshBalances(true);
+      }
     }
   }, [refreshBalances]);
-  const readRecent = useCallback((afterResolution = false) => {
+  const readRecent = useCallback((mode: "opening" | "after-resolution" | "check" = "check") => {
     const read = ++recentReadId.current;
-    return apiGet<LegacyOrder | null>("/billing/recent-order").then(async (value) => {
-      if (!mounted.current || recentReadId.current !== read) return;
+    const isCurrent = () => mounted.current && recentReadId.current === read;
+    async function publish(value: LegacyOrder | null, status: "ready" | "failed") {
+      if (!isCurrent()) return;
+      if (mode === "opening") await refreshBalances(Boolean(value && needsBalanceRefresh(value)), isCurrent);
+      if (!isCurrent()) return;
+      try {
+        if (value && (mode !== "after-resolution" || blocksNewPurchase(value))) await acceptStatus(value, mode !== "opening");
+      } catch { status = "failed"; }
+      if (!isCurrent()) return;
+      if (status === "failed") setError("Could not verify previous purchases. Check again before starting another payment.");
+      setRecentRead(status);
+    }
+    return apiGet<LegacyOrder | null>("/billing/recent-order").then((value) => {
       if (value && (typeof value.sku !== "string" || isUnifiedPassSku(value.sku))) throw new Error("The original order needs billing support review.");
-      if (value && (!afterResolution || blocksNewPurchase(value))) await acceptStatus(value);
-      if (mounted.current && recentReadId.current === read) setRecentRead("ready");
-    }).catch(() => {
-      if (mounted.current && recentReadId.current === read) {
-        setRecentRead("failed"); setError("Could not verify previous purchases. Check again before starting another payment.");
-      }
-    });
-  }, [acceptStatus]);
+      return value;
+    }).then((value) => publish(value, "ready"), () => publish(null, "failed"));
+  }, [acceptStatus, refreshBalances]);
 
   const acceptRecoveryStatus = useCallback(async (previous: LegacyOrder, value: LegacyOrder) => {
     if (!mounted.current) return;
@@ -132,14 +146,14 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       setIndiaConfirmed(false);
     }
     await acceptStatus(value);
-    if (refresh && mounted.current) await readRecent(true);
+    if (refresh && mounted.current) await readRecent("after-resolution");
   }, [acceptStatus, readRecent]);
 
   useEffect(() => {
     mounted.current = true;
-    void Promise.allSettled([refreshBalances(), readRecent()]);
+    void readRecent("opening");
     return () => { mounted.current = false; pollId.current += 1; recentReadId.current += 1; balanceRead.current += 1; statusWork.current?.abort(); statusWork.current = null; };
-  }, [readRecent, refreshBalances]);
+  }, [readRecent]);
 
   const checkStatus = useCallback(async (original: LegacyOrder, automatic = false) => {
     if (!mounted.current || statusWork.current || (!automatic && actionPending.current)) return;
