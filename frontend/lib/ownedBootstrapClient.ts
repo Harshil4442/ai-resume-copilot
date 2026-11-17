@@ -29,6 +29,14 @@ export async function fetchOwnedProfile(client: QueryClient, force = false) {
 export async function fetchOwnedWallet(client: QueryClient, force = false) {
   return bootstrapComponent(await client.fetchQuery({ ...ownedBootstrapOptions(), ...(force ? { staleTime: 0 } : {}) }), "credit_wallet");
 }
+export async function fetchOwnedBootstrapAfterPending(client: QueryClient, isCurrent: () => boolean) {
+  const options = ownedBootstrapOptions();
+  const existing = client.getQueryCache().find({ queryKey: options.queryKey, exact: true });
+  // A forced fetch joins a request already underway. Let it finish before
+  // refreshing so Billing cannot use a snapshot taken before the order read.
+  if (existing && existing.state.fetchStatus !== "idle") await existing.promise?.catch(() => undefined);
+  if (isCurrent()) return client.fetchQuery({ ...options, staleTime: 0 });
+}
 export function updateOwnedProfile(client: QueryClient, profile: UserProfile) {
   client.setQueryData<OwnedBootstrap>(ownedBootstrapKey, (old) => old ? { ...old, profile,
     unavailable: old.unavailable.filter((name) => name !== "profile") } : undefined);
