@@ -151,14 +151,109 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
     assert bool(list(tmp_path.glob("hirewiz-schema26-retained-v3-*/source"))) is (outcome != "success")
 
 
-def test_original_child_timeout_is_fixed_unknown_without_retry_or_raw_body(monkeypatch, tmp_path):
+@pytest.fixture
+def compatibility_failure(monkeypatch, tmp_path):
+    source = tmp_path / gate.COMPATIBILITY_COMMAND[-1]
+    source.parent.mkdir()
+    source.write_bytes(b'PUBLIC_CASES = {"test_owned": ("test_public_failure", "test_public_setup")}\n')
+    monkeypatch.setitem(gate.PINS, "backend/" + gate.COMPATIBILITY_COMMAND[-1],
+                        hashlib.sha256(source.read_bytes()).hexdigest())
+    report = {
+        "schema_version": "schema26-ci-failure-v1", "qualified": False,
+        "report_state": "observed_unqualified", "child_returncode": 1,
+        "counts": {"passed": 2, "failure": 1, "error": 1, "skipped": 0},
+        "cases": [
+            {"case_id": "test_owned::test_public_failure", "status": "failure", "ordinal": 2,
+             "source_line_hints": [12, 27], "diagnostic": "SYNTHETIC_PRIVATE_VALUE"},
+            {"case_id": "test_owned::test_public_setup", "status": "error", "ordinal": 4,
+             "source_line_hints": [], "diagnostic_type": "SYNTHETIC_PRIVATE_TYPE"},
+        ],
+        "private": "SYNTHETIC_PRIVATE_TOP_LEVEL",
+    }
+    return source, report
+
+
+def _failed_child(monkeypatch, args, raw, *, code=1):
     calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert command == args and kwargs["capture_output"] is True and kwargs["check"] is False
+        return subprocess.CompletedProcess(command, code, raw, b"SYNTHETIC_PRIVATE_STDERR")
+
+    monkeypatch.setattr(gate.subprocess, "run", run)
+    return calls
+
+
+@pytest.mark.parametrize("pytest_code", [1, 2])
+def test_original_failed_compatibility_exports_only_validated_observation(
+        monkeypatch, tmp_path, capsys, compatibility_failure, pytest_code):
+    _, report = compatibility_failure
+    report["child_returncode"] = pytest_code
+    args = [sys.executable, *gate.COMPATIBILITY_COMMAND]
+    calls = _failed_child(monkeypatch, args, json.dumps(report).encode() + b"\n")
+
+    with pytest.raises(gate.RetainedV3Denied, match="^retained_v3_child_failed$"):
+        gate._call(args, cwd=tmp_path, env={}, timeout=900)
+
+    captured = capsys.readouterr()
+    assert calls == [args] and captured.err == ""
+    assert "SYNTHETIC_PRIVATE" not in captured.out and str(tmp_path) not in captured.out
+    observation = json.loads(captured.out)["retained_v3_compatibility_report"]
+    assert observation["qualified"] is False and observation["counts"] == report["counts"]
+    fields = ("case_id", "status", "ordinal", "source_line_hints")
+    assert [{key: case[key] for key in fields} for case in observation["cases"]] == [
+        {key: case[key] for key in fields} for case in report["cases"]]
+
+
+@pytest.mark.parametrize("fault", ["bad-json", "extra-stream", "oversized", "foreign-case", "changed-source",
+                                   "bad-count", "bad-hint", "success-claim"])
+def test_failed_compatibility_withholds_unverified_report(monkeypatch, tmp_path, capsys, compatibility_failure, fault):
+    source, report = compatibility_failure
+    if fault == "foreign-case":
+        report["cases"][0]["case_id"] = "test_owned::test_foreign"
+    if fault == "changed-source":
+        source.write_bytes(source.read_bytes() + b"# different retained bytes\n")
+    if fault == "bad-count":
+        report["counts"]["failure"] = 2
+    if fault == "bad-hint":
+        report["cases"][0]["source_line_hints"] = [True]
+    if fault == "success-claim":
+        report["qualified"] = True
+    raw = json.dumps(report).encode()
+    raw += {"bad-json": b"{", "extra-stream": b"\nSYNTHETIC_PRIVATE_EXTRA",
+            "oversized": b" " * 65538}.get(fault, b"")
+    args = [sys.executable, *gate.COMPATIBILITY_COMMAND]
+    calls = _failed_child(monkeypatch, args, raw)
+
+    with pytest.raises(gate.RetainedV3Denied, match="^retained_v3_child_failed$"):
+        gate._call(args, cwd=tmp_path, env={})
+
+    assert calls == [args] and capsys.readouterr() == ("", "")
+
+
+def test_other_failed_command_cannot_publish_compatibility_report(monkeypatch, tmp_path, capsys,
+                                                            compatibility_failure):
+    _, report = compatibility_failure
+    args = [sys.executable, "-I", "-B", "-m", "pytest", *gate.ROLLING]
+    calls = _failed_child(monkeypatch, args, json.dumps(report).encode())
+
+    with pytest.raises(gate.RetainedV3Denied, match="^retained_v3_child_failed$"):
+        gate._call(args, cwd=tmp_path, env={})
+
+    assert calls == [args] and capsys.readouterr() == ("", "")
+
+
+def test_original_child_timeout_is_fixed_unknown_without_retry_or_raw_body(monkeypatch, tmp_path, capsys):
+    calls = []
+    args = [sys.executable, *gate.COMPATIBILITY_COMMAND]
 
     def unknown(command, **kwargs):
         calls.append(command)
-        raise subprocess.TimeoutExpired(command, 30, output=b"private synthetic content")
+        raise subprocess.TimeoutExpired(command, 30, output=b"private synthetic content", stderr=b"also private")
 
     monkeypatch.setattr(gate.subprocess, "run", unknown)
     with pytest.raises(gate._UnknownOutcome, match="^retained_v3_child_outcome_unknown$") as error:
-        gate._call(["owned"], cwd=tmp_path, env={})
-    assert len(calls) == 1 and "private" not in str(error.value)
+        gate._call(args, cwd=tmp_path, env={})
+    assert calls == [args] and "private" not in str(error.value)
+    assert capsys.readouterr() == ("", "")
