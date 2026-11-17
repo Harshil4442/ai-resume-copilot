@@ -524,16 +524,29 @@ def _offers_remain_available(view: PurchaseQuoteView, user_id: int, email: str, 
         offer.model_dump(mode="json") in current for offer in view.eligible_services)
 
 
+def _provider_checkout_matches(order: PaymentOrder, settings: RazorpaySettings) -> bool:
+    return bool(
+        order.provider_order_id
+        and order.provider_key_id == settings.key_id
+        and order.provider_mode == settings.mode
+    )
+
+
 def _status(db: Session, order: PaymentOrder, email: str) -> dict:
     view = payments.order_quote(order)
     grant = db.query(CreditGrant).filter_by(user_id=order.user_id, source_type="payment_order",
                                           source_id=order.public_id).one_or_none()
     entitlement = db.query(EntitlementLedger).filter_by(source_order_id=order.id, status="active").first()
+    checkout_available = (
+        order.status == "created"
+        and _provider_checkout_matches(order, RazorpaySettings.from_env())
+        and _purchase_enabled(order.user_id, email, db=db, check_payment_funding=False)
+        and _offers_remain_available(view, order.user_id, email, db=db)
+    )
     return {"schema_version": "unified-credits-v1", "order_id": order.public_id,
             "provider_order_id": order.provider_order_id, "status": _normalized_order_status(order),
             "payment_status": order.status, "fulfilled": bool(grant and entitlement),
-            "checkout_available": bool(_purchase_enabled(order.user_id, email, db=db, check_payment_funding=False) and order.status == "created"
-                and order.provider_order_id and _offers_remain_available(view, order.user_id, email, db=db)),
+            "checkout_available": checkout_available,
             "amount_minor": order.gross_amount_minor, "refunded_amount_minor": order.refunded_amount_minor,
             "currency": order.currency, "sku": order.sku, "created_at": pricing.aware(order.created_at),
             "paid_at": pricing.aware(order.paid_at) if order.paid_at else None,
@@ -558,7 +571,7 @@ def order_status(reference: str, response: Response, db: Session = Depends(get_d
 
 
 def _checkout(order: PaymentOrder, user: User, settings: RazorpaySettings) -> dict:
-    if not order.provider_order_id or order.provider_key_id != settings.key_id or order.provider_mode != settings.mode:
+    if not _provider_checkout_matches(order, settings):
         raise _order_status_required(order)
     view = payments.order_quote(order)
     return {"schema_version": "unified-credits-v1", "order_id": order.public_id,

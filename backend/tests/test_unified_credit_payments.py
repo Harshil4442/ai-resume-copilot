@@ -309,6 +309,33 @@ def test_payment_recovery_remains_readable_but_not_payable_while_service_paused(
     assert len(calls) == 1
 
 
+def test_original_checkout_status_reflects_razorpay_key_rotation(unified, monkeypatch):
+    client, calls = unified
+    quote, payload, result = start(client)
+    assert result.status_code == 200, result.text
+    original = result.json()
+    order_id = original["order_id"]
+    status_paths = [f"/api/v1/credits/orders/{order_id}", "/api/v1/credits/recent-order"]
+    for path in status_paths:
+        assert client.get(path).json()["checkout_available"] is True
+
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_rotated_checkout")
+    for path in status_paths:
+        response = client.get(path)
+        assert response.status_code == 200, response.text
+        status = response.json()
+        assert status["checkout_available"] is False
+        assert status["order_id"] == order_id
+        assert status["provider_order_id"] == original["provider_order_id"]
+        assert status["accepted_quote"]["quote_id"] == quote["quote_id"]
+        assert status["accepted_quote"]["amount_minor"] == quote["amount_minor"]
+
+    resumed = client.post("/api/v1/credits/orders", json={**payload, "order_reference": order_id})
+    assert resumed.status_code == 409
+    assert resumed.json()["detail"]["order_id"] == order_id
+    assert len(calls) == 1
+
+
 def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified, session_factory):
     client, calls = unified
     quote, payload, result = start(client)
