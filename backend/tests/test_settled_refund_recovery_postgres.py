@@ -100,10 +100,10 @@ def _provider(monkeypatch, capture):
     return calls, payment, refunds
 
 
-def _reconcile(client, local_id):
+def _reconcile(client, local_id, *, resolution="settled"):
     reply = client.post(f"/api/billing/orders/{local_id}/reconcile")
     assert reply.status_code == 200, reply.text
-    assert reply.json()["resolution"] == "settled"
+    assert reply.json()["resolution"] == resolution
     return reply.json()["order"]
 
 
@@ -134,7 +134,7 @@ def test_a_missed_refund_webhook_adjusts_the_existing_lot_once(unified, session_
     refund = half["payload"]["refund"]["entity"]
     payment["amount_refunded"] = 2950
     refunds.append(refund | {"status": "pending"})
-    assert _reconcile(client, local_id)["status"] == "paid"
+    assert _reconcile(client, local_id, resolution="unresolved")["status"] == "paid"
     assert calls[-1] == f"payments/{PAYMENT_ID}/refunds"
     assert _financial_snapshot(session_factory) == before
 
@@ -165,7 +165,7 @@ def test_remainder_requires_proof_of_recorded_refund_and_never_reopens_full_refu
     last = remainder["payload"]["refund"]["entity"]
     refunds[:] = [first | {"id": "rfnd_conflicting"}, last]
     before = _financial_snapshot(session_factory)
-    assert _reconcile(client, local_id)["refunded_amount_minor"] == 2950
+    assert _reconcile(client, local_id, resolution="unresolved")["refunded_amount_minor"] == 2950
     assert _financial_snapshot(session_factory) == before
 
     refunds[:] = [first, last]
@@ -180,3 +180,26 @@ def test_remainder_requires_proof_of_recorded_refund_and_never_reopens_full_refu
     assert _reconcile(client, local_id)["status"] == "refunded"
     assert calls == before_repeat
     assert _financial_snapshot(session_factory) == recovered
+
+
+def test_transport_failure_does_not_confirm_an_unchanged_refund(unified, session_factory, monkeypatch):
+    client, purchases = unified
+    local_id, capture, _, _ = _captured_order(client, session_factory)
+    calls, _, _ = _provider(monkeypatch, capture)
+    before = _financial_snapshot(session_factory)
+
+    def unavailable(method, url, **kwargs):
+        assert method == "GET"
+        raise httpx.ReadTimeout("synthetic provider timeout", request=httpx.Request(method, url))
+
+    with monkeypatch.context() as outage:
+        outage.setattr(reconciliation.httpx, "stream", unavailable)
+        reply = _reconcile(client, local_id, resolution="unresolved")
+        assert reply["status"] == "paid" and reply["fulfilled"]
+        assert reply["refunded_amount_minor"] == 0
+    assert _financial_snapshot(session_factory) == before
+
+    assert _reconcile(client, local_id)["refunded_amount_minor"] == 0
+    assert calls[-1] == f"payments/{PAYMENT_ID}"
+    assert _financial_snapshot(session_factory) == before
+    assert len(purchases) == 1

@@ -592,9 +592,15 @@ def _reconciliation_reply(db, order, resolution=None, message=None):
             "order": status}
 
 
+def _unverified_reconciliation_reply(db: Session, order: PaymentOrder, *, refund_check: bool) -> dict:
+    if refund_check and order.status != "refunded":
+        return _reconciliation_reply(
+            db, order, "unresolved", "Refund status could not be verified. Your last recorded payment details are shown.",
+        )
+    return _reconciliation_reply(db, order)
+
+
 def _new_settled_refunds(db: Session, order: PaymentOrder, proof: ReconciliationProof) -> tuple[dict, ...]:
-    if not proof.refunds or sum(refund["amount"] for refund in proof.refunds) <= order.refunded_amount_minor:
-        return ()
     if proof.payment is None or proof.order["id"] != order.provider_order_id:
         raise ReconciliationUnavailable("settled_order_binding_mismatch")
     transaction = db.query(PaymentTransaction).filter(
@@ -633,33 +639,36 @@ def reconcile_order(
     owner_id = current_user.id
     order = _owned_order(db, order_reference, owner_id)
     order_reference = order.public_id
-    settled = order.status in SETTLED_ORDER_STATUSES
-    if order.status == "refunded" or (settled and not order.provider_order_id):
+    refund_check = order.status in REFUND_RECONCILIATION_STATUSES
+    if order.status == "refunded":
         return _reconciliation_reply(db, order)
+    if refund_check and not order.provider_order_id:
+        return _unverified_reconciliation_reply(db, order, refund_check=refund_check)
     if order.status == "paid_unfulfilled":
         return _reconciliation_reply(db, order, message="The original payment is recorded, but allowance fulfilment needs billing support. No new order was created.")
     try:
         original = OriginalOrder.from_order(order)
     except HTTPException:
-        return _reconciliation_reply(db, order)
+        return _unverified_reconciliation_reply(db, order, refund_check=refund_check)
     settings = _settings()
-    recorded_refund_total = order.refunded_amount_minor
     # End the read transaction before bounded network reads. Reacquire owner and
-    # order locks, with refreshed rows, before any binding or accounting write.
+    # order locks before comparing current accounting or applying new proof.
     db.rollback()
     try:
         proof = fetch_reconciliation(original, settings)
     except ReconciliationUnavailable:
-        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
-    if settled and sum(refund["amount"] for refund in proof.refunds) <= recorded_refund_total:
-        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+        return _unverified_reconciliation_reply(
+            db, _owned_order(db, order_reference, owner_id), refund_check=refund_check,
+        )
 
     try:
         # Match settlement: owner advisory lock before Order and User rows.
         # A busy owner preserves the existing status-only reconciliation response.
         if not lock_application_set(db, owner_id, nowait=True):
             db.rollback()
-            return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+            return _unverified_reconciliation_reply(
+                db, _owned_order(db, order_reference, owner_id), refund_check=refund_check,
+            )
         order = (db.query(PaymentOrder)
                  .filter(PaymentOrder.user_id == owner_id, PaymentOrder.public_id == order_reference)
                  .populate_existing().with_for_update(nowait=True).first())
@@ -670,12 +679,16 @@ def reconcile_order(
             raise HTTPException(404, "Order not found.")
     except OperationalError:
         db.rollback()
-        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+        return _unverified_reconciliation_reply(
+            db, _owned_order(db, order_reference, owner_id), refund_check=refund_check,
+        )
     if order.status == "paid_unfulfilled":
         return _reconciliation_reply(db, order, message="The original payment is recorded, but allowance fulfilment needs billing support. No new order was created.")
     refund_only = order.status in REFUND_RECONCILIATION_STATUSES
-    if order.status == "refunded" or (settled and not refund_only):
+    if order.status == "refunded":
         return _reconciliation_reply(db, order)
+    if refund_check and not refund_only:
+        return _unverified_reconciliation_reply(db, order, refund_check=refund_check)
     try:
         if OriginalOrder.from_order(order) != original:
             raise ReconciliationUnavailable("original_terms_changed")
@@ -727,7 +740,9 @@ def reconcile_order(
         db.commit()
     except (ReconciliationUnavailable, WebhookValidationError, IntegrityError, OperationalError, HTTPException):
         db.rollback()
-        return _reconciliation_reply(db, _owned_order(db, order_reference, owner_id))
+        return _unverified_reconciliation_reply(
+            db, _owned_order(db, order_reference, owner_id), refund_check=refund_check,
+        )
     resolution = "settled" if order.status in SETTLED_ORDER_STATUSES else "checkout_ready" if proof.checkout_ready and order.status == "created" else "unresolved"
     message = ("Original checkout recovered. Review its original allowances and confirm again before resuming."
                if resolution == "checkout_ready" else "The original payment outcome is recorded. Review its status."
