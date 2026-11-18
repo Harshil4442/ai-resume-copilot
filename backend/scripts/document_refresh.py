@@ -1066,9 +1066,11 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
             need(value.get("status") in {"PENDING", "QUEUED", "WORKING"}, "document_refresh_build_failed_reconcile_only")
             need(time.monotonic() < deadline, "document_refresh_build_deadline_reconcile_only")
             time.sleep(min(10, max(0, deadline - time.monotonic())))
-        identity = (build_contract(value, nonce, recipe_sha, full_source=True, source_revision=source_revision, source_commit=source_commit, **v5) if full_source
+        identity = (build_contract(value, nonce, recipe_sha, full_source=True, source_revision=source_revision,
+                         source_commit=source_commit, source_v5=source_v5) if full_source
                     else build_contract(value, nonce, recipe_sha, candidate_v3=candidate_v3,
-                         source_definitions=source_definitions, source_parent=source_parent, source_commit=source_commit, **v5))
+                         source_definitions=source_definitions, source_parent=source_parent,
+                         source_commit=source_commit, source_v5=source_v5))
         stored_source = read_native_source(http, identity)
         native_archive_sha = archive_full_source(stored_source, source_revision=source_revision, source_commit=source_commit, **v5) if full_source else archive_recipe(stored_source, recipe_sha)
         need(native_archive_sha == archive_sha, "document_refresh_native_source_changed")
@@ -1195,10 +1197,12 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
                           infra("document_source_candidate").frozen_v3(ROOT)[1]["source_sha256"][FULL_SOURCE_DOCKERFILE]
                           if frozen_v3 else current.sources[current.dockerfile] if current is not None else hashlib.sha256((ROOT / FULL_SOURCE_DOCKERFILE).read_bytes()).hexdigest())
             actual = build_contract(value, nonce, recipe_sha, full_source=True, historical_profile=historical_profile,
-                source_revision=source_revision, source_commit=source_commit, frozen_v3=frozen_v3, legacy_source=legacy_source, **v5)
+                source_revision=source_revision, source_commit=source_commit, frozen_v3=frozen_v3,
+                legacy_source=legacy_source, source_v5=source_v5)
         else:
             actual = build_contract(value, nonce, recipe_sha, historical_v1=historical_v1, candidate_v3=candidate_v3,
-                source_definitions=source_definitions, source_parent=source_parent, source_commit=source_commit, legacy_source=legacy_source, **v5)
+                source_definitions=source_definitions, source_parent=source_parent, source_commit=source_commit,
+                legacy_source=legacy_source, source_v5=source_v5)
         need(actual["immutable_image"] == image, "document_refresh_native_build_readback_changed")
         stored_source = read_native_source(http, actual)
         if historical_profile:
@@ -1468,7 +1472,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
                 history=history, recover_failed_native_job=recover_failed_native_job,
                 application_context=boundary.applications, consumed_history=disposition,
                 full_source=full_source, source_revision=source_revision,
-                recover_expired_source=recover_expired_source, **({"source_v5": True} if source_v5 else {}))
+                recover_expired_source=recover_expired_source, source_v5=source_v5)
         finally:
             clients.close()
             if delegate is not None:
