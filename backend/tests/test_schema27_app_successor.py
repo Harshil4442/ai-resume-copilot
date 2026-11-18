@@ -136,6 +136,69 @@ def test_partial_stage_ack_reconciliation_does_not_resend(application):
     assert len(c.fixture.writes) == 1
 
 
+def test_pending_first_stage_has_one_full_guard_before_its_only_patch(application):
+    c = application
+    guards = []
+    original = c.boundary.verify_global
+
+    def verify(plan):
+        guards.append(len(c.fixture.writes))
+        original(plan)
+
+    c.boundary.verify_global = verify
+    c.fixture.pause = True
+    assert run(c, "stage")["status"] == "same_native_operation_pending"
+    assert guards == [0] and len(c.fixture.writes) == 1
+
+
+def test_every_new_stage_is_guarded_and_checked_only_stage_keeps_final_guard(application):
+    c = application
+    guards = []
+    original = c.boundary.verify_global
+
+    def verify(plan):
+        guards.append(len(c.fixture.writes))
+        original(plan)
+
+    c.boundary.verify_global = verify
+    run(c, "stage")
+    assert guards == [0, 1, 2, 3]
+    guards.clear()
+    c.observed.retained_acl_sha256 = "f" * 64
+    with pytest.raises(app.rolling.RollingDenied, match="retained_acl"):
+        run(c, "stage")
+    assert guards == [3] and len(c.fixture.writes) == 3
+
+
+def test_later_stage_guard_failure_cannot_issue_the_next_patch(application):
+    c = application
+    original = c.boundary.verify_global
+    guards = []
+
+    def verify(plan):
+        guards.append(len(c.fixture.writes))
+        if len(guards) == 2:
+            c.observed.catalog_sha256 = "f" * 64
+        original(plan)
+
+    c.boundary.verify_global = verify
+    with pytest.raises(app.rolling.RollingDenied, match="database_catalog"):
+        run(c, "stage")
+    assert guards == [0, 1] and len(c.fixture.writes) == 1
+
+
+@pytest.mark.parametrize("mode", ["advance", "observe", "reconcile", "rollback"])
+def test_other_modes_keep_outer_guard_before_dispatch(application, monkeypatch, mode):
+    c = application
+    c.observed.catalog_sha256 = "f" * 64
+    monkeypatch.setattr(app.rolling, "advance", lambda *_: pytest.fail("unguarded dispatch"))
+    monkeypatch.setattr(app.rolling, "reconcile", lambda *_: pytest.fail("unguarded dispatch"))
+    monkeypatch.setattr(app.historical, "rollback_app", lambda *_args, **_kwargs: pytest.fail("unguarded dispatch"))
+    with pytest.raises(app.rolling.RollingDenied, match="database_catalog"):
+        run(c, mode)
+    assert not c.fixture.writes
+
+
 def test_unknown_ack_never_replays_write(application):
     c = application
     c.fixture.lose_ack = True

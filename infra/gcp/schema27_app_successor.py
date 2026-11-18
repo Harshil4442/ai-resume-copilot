@@ -160,7 +160,11 @@ def execute(mode, plan, boundary, journal):
         boundary.journal = journal
         if pending := bridge._pending_acknowledged(plan, boundary, journal):
             return pending
-        boundary.verify_global(plan)
+        # Every new/unresolved stage action performs this full proof itself
+        # immediately before its PATCH. Checked actions are read-only, and the
+        # stage branch still finishes with a fresh joined proof below.
+        if mode != "stage":
+            boundary.verify_global(plan)
         if mode == "rollback" or mode in {"observe", "reconcile"} and journal.read(historical.ROLLBACK_INTENT):
             result = historical.rollback_app(plan, boundary, journal, reconcile=mode != "rollback")
         elif mode == "advance":
