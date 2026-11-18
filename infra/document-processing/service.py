@@ -33,6 +33,8 @@ SANDBOX = "/usr/local/gcp/bin/sandbox"
 CLAMD_MANIFEST = Path("/opt/document/clamd-native-manifest.json")
 CLAMD_BINDING_ENV = "DOCUMENT_CLAMD_MANIFEST_BINDING"
 CLAMD_BINDING_MODE = "gcp-ro-root-v1"
+SANDBOX_TRANSPORT_ENV = "DOCUMENT_WORKER_SANDBOX_TRANSPORT"
+SANDBOX_TRANSPORT = "synchronous-do-v1"
 MAX_REQUEST = 7 * 1024 * 1024
 MAX_OUTPUT = 1024 * 1024
 MAX_LAYOUT_OUTPUT = 32 * 1024
@@ -77,6 +79,7 @@ class _RequestDiagnostic:
         self.failure_phase: str | None = None
         self.validation = "not_started"
         self.processor = "not_validated"
+        self.processor_code: int | None = None
         self.launcher = "not_started"
         self.launcher_code: int | None = None
         self.launcher_elapsed_ms: int | None = None
@@ -111,6 +114,12 @@ class _RequestDiagnostic:
             self.launcher, self.launcher_code = outcome, _diagnostic_code(code)
             self.launcher_elapsed_ms = _elapsed_ms(self.run_started)
 
+    def confirm_provider_teardown(self) -> None:
+        # Successful synchronous do includes provider teardown. No delete was sent.
+        if self.launcher != "returned" or self.launcher_code != 0 or self.cleanup != "not_required":
+            raise InspectionDenied()
+        self.cleanup = "provider_teardown"
+
     def emit(self) -> None:
         if self.failure_phase is None:
             return
@@ -118,7 +127,7 @@ class _RequestDiagnostic:
             for value, allowed in (
                 (self.failure_phase, _DIAGNOSTIC_PHASES), (self.validation, _VALIDATION_PHASES),
                 (self.processor, _PROCESSOR_OUTCOMES), (self.launcher, _RUN_OUTCOMES | {"not_started"}),
-                (self.cleanup, _RUN_OUTCOMES | {"not_required"}),
+                (self.cleanup, _RUN_OUTCOMES | {"not_required", "provider_teardown"}),
             ):
                 if type(value) is not str or value not in allowed:
                     return
@@ -503,7 +512,8 @@ def configuration() -> tuple[str, str]:
     image = os.environ.get("DOCUMENT_WORKER_IMAGE_DIGEST", "")
     policy = os.environ.get("DOCUMENT_WORKER_POLICY_SHA256", "")
     if (not re.fullmatch(r"[A-Za-z0-9._:/-]+@sha256:[a-f0-9]{64}", image)
-            or len(image) > 512 or not re.fullmatch(r"[a-f0-9]{64}", policy)):
+            or len(image) > 512 or not re.fullmatch(r"[a-f0-9]{64}", policy)
+            or os.environ.get(SANDBOX_TRANSPORT_ENV, "") not in {"", SANDBOX_TRANSPORT}):
         raise InspectionDenied()
     return image, policy
 
@@ -627,6 +637,7 @@ def _remove_request_tmp(directory: Path, identity: tuple[int, int]) -> None:
 def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
     diagnostic = _REQUEST_DIAGNOSTIC.get()
     image, policy = configuration()
+    synchronous_transport = os.environ.get(SANDBOX_TRANSPORT_ENV) == SANDBOX_TRANSPORT
     if type(docx_layout) is not bool or not os.path.isfile(SANDBOX) or not os.access(SANDBOX, os.X_OK) or not 0 < len(payload) <= MAX_REQUEST:
         raise InspectionDenied()
     if docx_layout:
@@ -667,17 +678,32 @@ def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
         if remaining <= 0:
             raise InspectionDenied()
         cleanup_required = True
+        processor_mode = "docx-layout-stdin" if docx_layout else "stdin"
+        processor_prefix = "--sandbox-" if synchronous_transport else "--"
         code, output = _run([SANDBOX, "do", "--sandbox-name=" + name,
             "--mount", "type=bind,source=" + str(directory) + ",destination=/tmp",
             "--env", CLAMD_BINDING_ENV + "=" + manifest_binding, "--",
             "/usr/local/bin/python3", "-I", "/opt/document/processor.py",
-            "--docx-layout-stdin" if docx_layout else "--stdin"],
-            timeout=remaining, limit=MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT, allow_outcome=True, input_bytes=payload)
+            processor_prefix + processor_mode], timeout=remaining, limit=MAX_LAYOUT_OUTPUT if docx_layout else MAX_OUTPUT,
+            allow_outcome=not synchronous_transport, input_bytes=payload)
+        if synchronous_transport:
+            if type(code) is not int or code != 0:
+                raise _LauncherRefused(True, code=code, outcome="unexpected_exit")
+            # _run returned after reaping the owned controller. Cloud Run also
+            # completed sandbox teardown before acknowledging successful do.
+            cleanup_required = False
         if diagnostic is not None:
             diagnostic.end_run(code)
+            if synchronous_transport:
+                diagnostic.confirm_provider_teardown()
             diagnostic.phase = "validation"
             diagnostic.validation = "decode"
         result = json.loads(output, object_pairs_hook=_pairs)
+        if synchronous_transport:
+            if (type(result) is not dict or set(result) != {"processor_code", "result"}
+                    or type(result["processor_code"]) is not int or result["processor_code"] not in {0, 1, 2}):
+                raise InspectionDenied()
+            code, result = result["processor_code"], result["result"]
         if diagnostic is not None:
             diagnostic.validation = "binding"
         if (type(result) is not dict or type(result.get("version")) is not int or result["version"] != 1
@@ -706,6 +732,8 @@ def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
         if diagnostic is not None:
             diagnostic.validation = "complete"
             diagnostic.processor = "refused" if code == 1 else "unavailable" if code == 2 else "clean"
+            if synchronous_transport:
+                diagnostic.processor_code = code
             if code != 0:
                 diagnostic.fail("processor")
         return result
@@ -722,7 +750,8 @@ def inspect_in_sandbox(payload: bytes, *, docx_layout: bool = False) -> dict:
                 diagnostic.fail("validation")
         raise InspectionDenied() from None
     finally:
-        # Keep host temporary bytes until native sandbox deletion is confirmed.
+        # Keep host temporary bytes until native sandbox teardown is confirmed.
+        # An unacknowledged launcher still requires its exact forced deletion.
         # Host erase shares the existing delete5 + reap2 envelope; unknown
         # cleanup quarantines subsequent admission and never returns a receipt.
         try:

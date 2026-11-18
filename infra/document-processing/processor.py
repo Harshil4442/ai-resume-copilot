@@ -1188,13 +1188,30 @@ def main():
     # Explicit fixed parser-only package path; -I ignores caller Python settings.
     sys.path.insert(0, "/opt/document")
     binding = {}
-    layout_mode = sys.argv[1:] == ["--docx-layout-stdin"]
+    arguments = sys.argv[1:]
+    layout_mode = arguments in (["--docx-layout-stdin"], ["--sandbox-docx-layout-stdin"])
+    synchronous_transport = arguments in (["--sandbox-stdin"], ["--sandbox-docx-layout-stdin"])
+
+    def emit(result: dict, code: int) -> None:
+        output = json.dumps(result, allow_nan=False)
+        limit = 32768 if layout_mode else MAX_OUTPUT
+        if synchronous_transport:
+            # Processor decisions are content. The launcher exit describes
+            # delivery and teardown only. Keep its complete stdout in budget.
+            output = f'{{"processor_code":{code},"result":{output}}}'
+            limit -= 1  # print's final newline also counts in the host bound.
+        if len(output.encode()) > limit:
+            raise InspectionUnavailable()
+        print(output)
+        if code and not synchronous_transport:
+            raise SystemExit(code) from None
+
     try:
-        if sys.argv[1:] == ["--stdin"] or layout_mode:
+        if arguments == ["--stdin"] or layout_mode or synchronous_transport:
             # The launcher owns the absolute input deadline. Read at most the
             # fixed envelope cap plus one byte; oversize/empty input fails closed.
             payload = sys.stdin.buffer.read(MAX_REQUEST + 1)
-        elif sys.argv[1:] == ["/tmp/request.json"]:
+        elif arguments == ["/tmp/request.json"]:
             with open("/tmp/request.json", "rb") as stream:
                 payload = stream.read(MAX_REQUEST + 1)
         else:
@@ -1207,21 +1224,16 @@ def main():
             kind, content, sha256 = decode_request(payload)
             binding = {"sha256": sha256, "size_bytes": len(content), "source_format": kind}
             result = inspect(payload)
-        if len(json.dumps(result, allow_nan=False).encode()) > (32768 if layout_mode else MAX_OUTPUT):
-            raise InspectionUnavailable()
-        print(json.dumps(result, allow_nan=False))
+        emit(result, 0)
     except DocxLayoutDenied as error:
-        print(json.dumps({**binding, "error": DOCX_ERROR, "reason": error.reason, "unit_id": error.unit_id}))
-        raise SystemExit(1) from None
+        emit({**binding, "error": DOCX_ERROR, "reason": error.reason, "unit_id": error.unit_id}, 1)
     except InspectionDenied:
         result = {"version": 1, **binding, "error": DOCX_ERROR if layout_mode else ERROR}
         if layout_mode:
             result.update(reason="document_safety", unit_id=None)
-        print(json.dumps(result))
-        raise SystemExit(1) from None
+        emit(result, 1)
     except Exception:
-        print(json.dumps({"version": 1, **binding, "error": DOCX_UNAVAILABLE if layout_mode else UNAVAILABLE}))
-        raise SystemExit(2) from None
+        emit({"version": 1, **binding, "error": DOCX_UNAVAILABLE if layout_mode else UNAVAILABLE}, 2)
 
 
 if __name__ == "__main__":
