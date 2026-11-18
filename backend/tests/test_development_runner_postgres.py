@@ -16,6 +16,7 @@ from app.services import interview_contract, llm_client
 from tests.test_development_runner import (  # noqa: F401
     calibration,
     common_canary_funding,
+    reference_calibration,
     write_json,
 )
 
@@ -32,6 +33,21 @@ def prepared(calibration):  # noqa: F811 -- Imported pytest fixture dependency.
     finally:
         with factory.kw["bind"].begin() as conn:
             conn.execute(text(f'DROP SCHEMA IF EXISTS "{runner._schema(calibration["authorization"])}" CASCADE'))
+        factory.kw["bind"].dispose()
+
+
+@pytest.fixture
+def reference_prepared(reference_calibration):  # noqa: F811 -- Imported fixture dependency.
+    url = os.getenv("HIREWIZ_TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("Set the dedicated disposable local PostgreSQL URL")
+    factory = runner.local_factory(url, reference_calibration["authorization"])
+    try:
+        runner.prepare(factory, **reference_calibration)
+        yield factory, reference_calibration
+    finally:
+        with factory.kw["bind"].begin() as conn:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{runner._schema(reference_calibration["authorization"])}" CASCADE'))
         factory.kw["bind"].dispose()
 
 
@@ -72,6 +88,72 @@ def test_exact_run_claims_no_double_calls_on_concurrent_resume(prepared, monkeyp
         assert all(row.generation_attempt_limit == 1 and row.committed_units == 0 for row in db.query(models.AnalysisRun))
         assert all(row.settled_cost_micros == 200 and row.cost_state == "settled" for row in db.query(models.ModelCostLiability))
         assert db.query(models.User).one().ai_credits == 0
+
+
+def test_reference_baseline_ten_once_claims_and_original_receipts(reference_prepared, monkeypatch, tmp_path):
+    factory, values = reference_prepared
+    calls = provider(monkeypatch)
+    with pytest.raises(ValueError, match="does not permit candidate"):
+        runner.execute(factory, **values, side="candidate", maximum_operations=10)
+    assert calls == []
+    runner.prepare(factory, **values)
+    with factory() as db:
+        assert db.query(models.AnalysisRun).count() == 10
+        assert {row.input_payload["side"] for row in db.query(models.AnalysisRun)} == {"reference"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(runner.execute, factory, **values, side="reference", maximum_operations=10) for _ in range(2)]
+        results = [job.result(timeout=60) for job in jobs]
+    assert sum(len(result["executed_run_ids"]) for result in results) == len(calls) == 10
+    assert runner.execute(factory, **values, side="reference", maximum_operations=10)["executed_run_ids"] == []
+    with factory() as db:
+        assert db.query(models.AnalysisRun).filter_by(status="succeeded").count() == 10
+        assert db.query(models.ModelCallEvent).count() == db.query(models.ModelCostLiability).count() == 10
+        assert all(row.generation_attempt_limit == 1 and row.committed_units == 0 for row in db.query(models.AnalysisRun))
+    monkeypatch.setenv("OPTIONAL_AI_GENERATION_ENABLED", "false")
+    destination = tmp_path / "reference-export"
+    exported = runner.export_results(factory, values["authorization"], destination, values["authorization_root"])
+    assert exported["schema_version"] == runner.REFERENCE_VERSION
+    assert exported["scope"] == "ten_frozen_pdf_reference_baseline_only"
+    assert len(exported["records"]) == 10 and exported["approved_reference_count"] == 0
+    assert exported["complete_packet"] is exported["authorizes_release"] is False
+    for row in exported["records"]:
+        errors = []
+        packet._runner_receipt(destination, row["runner_receipt"], input_sha=row["input_sha256"],
+            output_sha=row["output"]["sha256"], errors=errors, label="reference", allow_calibration=True)
+        assert errors == []
+    assert json.loads((destination / "funding-authorization.json").read_bytes())["schema_version"] == runner.REFERENCE_VERSION
+
+
+def test_reference_unknown_cost_is_held_and_not_redispatched(reference_prepared, monkeypatch):
+    factory, values = reference_prepared
+    calls = provider(monkeypatch, unknown=True)
+    result = runner.execute(factory, **values, side="reference", maximum_operations=10)
+    assert set(result["outcomes"].values()) == {"failed"} and len(calls) == 10
+    assert runner.execute(factory, **values, side="reference", maximum_operations=10)["executed_run_ids"] == []
+    assert len(calls) == 10
+    with factory() as db:
+        assert db.query(models.AnalysisRun).count() == 10
+        assert db.query(models.ModelCostLiability).count() == 10
+        assert all(row.cost_state == "usage_unavailable" and row.reserved_cost_micros > 0
+                   for row in db.query(models.ModelCostLiability))
+
+
+def test_reference_experiment_cannot_be_upgraded_into_paired_work(reference_prepared, monkeypatch):
+    factory, values = reference_prepared
+    calls = provider(monkeypatch)
+    original = values["authorization"]
+    data = original.model_dump(mode="json")
+    data.update(schema_version=runner.VERSION, maximum_provider_cost_micros=2_000_000)
+    data["routes"]["candidate"] = data["routes"]["reference"]
+    paired = runner.Authorization.model_validate(data)
+    with pytest.raises(ValueError, match="already has different inputs or authorization"):
+        runner.prepare(factory, **{**values, "authorization": paired})
+    assert calls == []
+    with factory() as db:
+        assert db.query(models.AnalysisRun).count() == 10
+        assert all(row.input_payload["authorization"] == original.model_dump(mode="json")
+                   for row in db.query(models.AnalysisRun))
+        assert db.query(models.ModelCostLiability).count() == 0
 
 
 @pytest.mark.parametrize("unknown,invalid", [(True, False), (False, True)])

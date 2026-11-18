@@ -27,6 +27,7 @@ from ..common import utcnow
 from . import quality_packet as packet
 
 VERSION = "synthetic-interview-development-v1"
+REFERENCE_VERSION = "synthetic-interview-reference-baseline-v1"
 RECEIPT_VERSION = "legacy-model-liability-v1"
 MANIFEST_SHA = "b6c3d15cda3a0b10899712919be4c11a9b05441eafa055d4b7228fc2499cdddd"
 CORPUS_SHA = "d8294cb7421a4a157b40f0bb6beee69c5ff598143bf12cbd9fe82625790bd538"
@@ -59,7 +60,7 @@ class Route(Closed):
 
 
 class Authorization(Closed):
-    schema_version: Literal["synthetic-interview-development-v1"]
+    schema_version: Literal["synthetic-interview-development-v1", "synthetic-interview-reference-baseline-v1"]
     experiment_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{7,79}$")
     purpose: Literal["internal_calibration_not_sales_qualification"]
     state: Literal["draft", "authorized"]
@@ -78,7 +79,15 @@ class Authorization(Closed):
 
     @model_validator(mode="after")
     def finite(self):
-        if set(self.routes) != set(SIDES):
+        if self.schema_version == REFERENCE_VERSION:
+            if set(self.routes) != {"reference"}:
+                raise ValueError("A reference-baseline authorization permits only the reference side")
+            route = self.routes["reference"]
+            if (route.prompt_version != "interview-evidence-v9"
+                    or route.price.model != "gemini-3.6-flash"
+                    or (route.price.max_input_tokens, route.price.max_output_tokens) != (65536, 8192)):
+                raise ValueError("Reference baseline requires the frozen v9 Gemini 3.6 Flash envelope")
+        elif set(self.routes) != set(SIDES):
             raise ValueError("Pin both reference and candidate contracts")
         if any(t.tzinfo is None for t in (self.valid_from, self.expires_at, self.provider_balance_checked_at)):
             raise ValueError("Use timezone-aware authorization times")
@@ -105,6 +114,9 @@ def contract_digest() -> str:
 
 def _current_contract(authorization: Authorization) -> None:
     """Historical provenance may be exported, but never authorizes new work."""
+    # Frozen models still contain a mutable routes dict. Revalidate the exact
+    # versioned scope before work so adding a candidate cannot widen a tranche.
+    Authorization.model_validate(authorization.model_dump(mode="json"))
     if any(route.prompt_version != interview_contract.PROMPT_VERSION for route in authorization.routes.values()):
         raise ValueError("The authorization must pin the current interview prompt")
     current = contract_digest()
@@ -223,7 +235,8 @@ def require_provider_authority(db, run) -> None:
     side = payload.get("side")
     case = payload.get("case", {})
     owner = _owner(db, authorization)
-    if (side not in SIDES or owner.id != run.user_id or payload.get("schema_version") != VERSION
+    if (side not in SIDES or side not in authorization.routes
+            or owner.id != run.user_id or payload.get("schema_version") != VERSION
             or payload.get("authorization") != authorization.model_dump(mode="json")
             or run.input_fingerprint != digest(payload)
             or run.id != _run_id(authorization, side, case.get("case_id"))
@@ -304,11 +317,13 @@ def preflight(packet_root: Path, native_root: Path, authorization: Authorization
                          "maximum_provider_cost_micros": model_cost_policy.quoted_cost(route.price.model_dump(), route.price.max_input_tokens, route.price.max_output_tokens)})
     required = sum(row["maximum_provider_cost_micros"] for row in rows)
     if required > authorization.maximum_provider_cost_micros:
-        raise ValueError("The complete twenty-attempt provider envelope is not funded")
+        raise ValueError("The complete ten-reference-attempt provider envelope is not funded"
+                         if authorization.schema_version == REFERENCE_VERSION else
+                         "The complete twenty-attempt provider envelope is not funded")
     if active and issues:
         raise ValueError("Genuine input validation is incomplete; no model work can start")
-    return {"schema_version": VERSION, "state": "ready_for_internal_calibration" if not issues else "blocked",
-            "operation": "interview_questions", "case_count": 10, "maximum_attempts": 20,
+    return {"schema_version": authorization.schema_version, "state": "ready_for_internal_calibration" if not issues else "blocked",
+            "operation": "interview_questions", "case_count": 10, "maximum_attempts": len(rows),
             "authorization_sha256": digest(authorization.model_dump(mode="json")),
             "native_receipts_sha256": packet.file_digest(native_receipts) if native_receipts else None,
             "maximum_provider_cost_micros": required, "runs": rows, "issues": issues,
@@ -380,6 +395,8 @@ def execute(factory, packet_root: Path, native_root: Path, authorization: Author
     if side not in SIDES or type(maximum_operations) is not int or not 1 <= maximum_operations <= 10:
         raise ValueError("Select one side and one to ten bounded operations")
     _current_contract(authorization)
+    if side not in authorization.routes:
+        raise ValueError("This authorization does not permit candidate execution")
     _check_local(factory, authorization)
     report = preflight(packet_root, native_root, authorization, authorization_root, native_receipts, active=True)
     from ... import models
@@ -437,7 +454,7 @@ def execute(factory, packet_root: Path, native_root: Path, authorization: Author
         executed.append(identity)
         with factory() as db:
             outcomes[identity] = db.get(models.AnalysisRun, identity).status
-    return {"schema_version": VERSION, "executed_run_ids": executed, "authorizes_sales": False,
+    return {"schema_version": authorization.schema_version, "executed_run_ids": executed, "authorizes_sales": False,
             "outcomes": outcomes,
             "resume_policy": "Only never-started queued work is eligible; running/unknown/failed work is not redispatched"}
 
@@ -500,7 +517,9 @@ def export_results(factory, authorization: Authorization, destination: Path, aut
                 record.update(output={"path": str((folder / "output.json").relative_to(destination)), "sha256": output_sha},
                               runner_receipt={"path": str((folder / "runner-receipt.json").relative_to(destination)), "sha256": packet.file_digest(folder / "runner-receipt.json")})
             records.append(record)
-    summary = {"schema_version": VERSION, "scope": "ten_frozen_pdf_development_pairs_only",
+    summary = {"schema_version": authorization.schema_version,
+               "scope": "ten_frozen_pdf_reference_baseline_only" if authorization.schema_version == REFERENCE_VERSION
+                        else "ten_frozen_pdf_development_pairs_only",
                "records": records, "quality_status": "not_evaluated", "approved_reference_count": 0,
                "authorizes_release": False, "complete_packet": False}
     (destination / "development-results.json").write_bytes(packet.canonical(summary))
