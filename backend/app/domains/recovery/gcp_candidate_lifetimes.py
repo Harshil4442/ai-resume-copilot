@@ -32,6 +32,12 @@ class GcpProtectedCandidateLifetimes:
         self.scoped.activate(issuer, ack)
         return True
 
+    def activate_password_for_finalization(self, ack: PasswordLifetimeOwnedAck,
+                                          issuer: GcpPasswordLifetimeCoordinator) -> bool:
+        """Keep activation private until this same port's fresh login finalizer."""
+        self.scoped.activate_password_for_finalization(issuer, ack)
+        return True
+
     def _mailbox(self, revision: CandidateCredentialRevision, email_sha256: str):
         expected = _revision(revision)
         if type(email_sha256) is not str or re.fullmatch(r"[a-f0-9]{64}", email_sha256) is None:

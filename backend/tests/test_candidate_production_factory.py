@@ -275,7 +275,7 @@ def remove_owned_mailbox(c, pending):
     return path
 
 
-def test_password_finalization_same_outputs_save_four_synthetic_metadata_calls(configured):
+def test_password_finalization_same_outputs_save_six_synthetic_metadata_calls(configured):
     """SDK-intercepted synthetic account path only; ingress/provider load is not measured."""
     c = configured
     uid = register(c)
@@ -289,7 +289,7 @@ def test_password_finalization_same_outputs_save_four_synthetic_metadata_calls(c
     before = c.native.sdk.admin.transport.get_database.call_count
     result = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
     final_calls = c.native.sdk.admin.transport.get_database.call_count - before
-    assert (legacy_calls, final_calls) == (29, 25)
+    assert (legacy_calls, final_calls) == (29, 23)
     assert result.context.candidate_id == legacy.context.candidate_id == uid
     assert result.context.account_binding_id == legacy.context.account_binding_id
     assert result.context.authentication_method == legacy.context.authentication_method == "password"
@@ -299,6 +299,39 @@ def test_password_finalization_same_outputs_save_four_synthetic_metadata_calls(c
     c.accounts.validate(result.context, auth_generation=1)
     c.accounts.validate(legacy.context, auth_generation=1)
     assert not c.sql_active and not c.native.views
+
+
+def test_password_finalization_activation_still_requires_exact_canonical_ack_readback(configured, monkeypatch):
+    c = configured
+    register(c)
+    retention = c.accounts._composition().service.retention
+    scoped = retention.protected.scoped
+    original = scoped._run
+    prior = {key for namespace, key in c.native.values() if namespace == "v3_activations"}
+
+    def changed_after_commit(stage):
+        original(stage)
+        if stage.__name__ == "activate":
+            current = {key for namespace, key in c.native.values() if namespace == "v3_activations"}
+            added = current - prior
+            assert len(added) == 1
+            c.native.seed(c.protected_registry, "v3_activations", added.pop(), {"synthetic_changed_ack": True})
+
+    monkeypatch.setattr(scoped, "_run", changed_after_commit)
+    with pytest.raises(GuardUnavailable, match="own exact full evidence"):
+        c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    assert not retention._pending_logins
+
+
+def test_password_only_activation_cannot_adopt_an_owned_enrollment_ack(configured, monkeypatch):
+    c = configured
+    retention = c.accounts._composition().service.retention
+    protected = retention.protected
+    monkeypatch.setattr(protected, "activate", protected.activate_password_for_finalization)
+    with pytest.raises(GuardDenied, match="Only an owned password session"):
+        register(c)
+    assert not any(namespace in {"v3_subjects", "v3_sessions", "v3_activations"}
+                   for namespace, _ in c.native.values())
 
 
 @pytest.mark.parametrize("gate", ["session", "mailbox"])

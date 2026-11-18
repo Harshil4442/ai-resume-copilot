@@ -114,8 +114,19 @@ class NativeCandidateLifetimeRetention:
             return None
         return context
 
-    def _issue_password(self, revision: CandidateCredentialRevision, *, expires_at_ms: int) -> CandidateWebSession | None:
-        if self.protected.check_account(revision) is not True:
+    def _issue_password(self, revision: CandidateCredentialRevision, *, expires_at_ms: int,
+                        _login_finalizer: ProtectedPasswordLoginFinalizer | None = None) -> CandidateWebSession | None:
+        from ..recovery.gcp_candidate_lifetimes import GcpProtectedCandidateLifetimes
+
+        protected = self.protected
+        if _login_finalizer is None:
+            activate = protected.activate
+        else:
+            if (type(protected) is not GcpProtectedCandidateLifetimes or protected is not _login_finalizer
+                    or self._login_finalizer is not _login_finalizer):
+                raise GuardUnavailable("Exact password activation/finalization port required")
+            activate = protected.activate_password_for_finalization
+        if protected.check_account(revision) is not True:
             raise GuardUnavailable("Candidate account lifetime is unavailable")
         execution = self.issuer.execute(self.issuer.allocate(CreateVerifiedPasswordWebSession(
             account_binding_id=revision.account_binding_id, session_id=uuid4(),
@@ -123,7 +134,9 @@ class NativeCandidateLifetimeRetention:
             expires_at_ms=expires_at_ms)))
         if (execution.status.status != "COMMITTED" or execution.owned_ack is None
                 or execution.context is None
-                or self.protected.activate(execution.owned_ack, self.issuer) is not True):
+                or self.protected is not protected
+                or (_login_finalizer is not None and self._login_finalizer is not _login_finalizer)
+                or activate(execution.owned_ack, self.issuer) is not True):
             return None
         return execution.context
 
@@ -134,7 +147,14 @@ class NativeCandidateLifetimeRetention:
         if (finalizer is None or type(revision) is not CandidateCredentialRevision
                 or type(email_sha256) is not str or re.fullmatch(r"[a-f0-9]{64}", email_sha256) is None):
             raise GuardUnavailable("Exact protected login finalization is unavailable")
-        context = self._issue_password(revision, expires_at_ms=expires_at_ms)
+        from ..recovery.gcp_candidate_lifetimes import GcpProtectedCandidateLifetimes
+
+        # Only the actual same protected activation/finalization instance can
+        # defer the redundant read. Legacy and other trusted ports keep resolve.
+        activation_finalizer = (finalizer if finalizer is self.protected
+            and type(self.protected) is GcpProtectedCandidateLifetimes else None)
+        context = self._issue_password(revision, expires_at_ms=expires_at_ms,
+                                       _login_finalizer=activation_finalizer)
         if context is None:
             return None
         if self._login_finalizer is not finalizer:
