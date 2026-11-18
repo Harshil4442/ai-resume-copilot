@@ -290,21 +290,25 @@ describe("unified billing account", () => {
     expect(state.post).toHaveBeenCalledTimes(1);
     noCheckout();
   });
-  it("retains the verified partial refund when a status check returns an older amount", async () => {
+  it.each([
+    { scenario: "reports an older amount", resolution: "settled", orderReads: 1 },
+    { scenario: "cannot be verified", resolution: "unresolved", orderReads: 0 },
+  ])("retains the verified partial refund when a status check $scenario", async ({ resolution, orderReads }) => {
     const partial = order({ status: "paid", payment_status: "partially_refunded", fulfilled: true,
       checkout_available: false, refunded_amount_minor: 2950, paid_at: stamp, pass_expires_at: quote.pass_expires_at });
     const orderPath = "/v1/credits/orders/order_unified";
     state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? Promise.resolve(partial)
       : url === orderPath ? Promise.resolve({ ...partial, payment_status: "paid", refunded_amount_minor: 0 }) : read(url));
-    state.post.mockResolvedValue({ resolution: "settled" });
+    state.post.mockResolvedValue({ resolution });
     render(<BillingPage />);
     expect(await screen.findByText("Refunded: ₹29.5")).toBeVisible();
     const check = screen.getByRole("button", { name: "Check refund status" });
     fireEvent.click(check);
     expect(await screen.findByRole("alert")).toHaveTextContent("Refund status could not be verified.");
     expect(screen.getByText("Refunded: ₹29.5")).toBeVisible();
+    expect(screen.queryByText("No additional refund is recorded for this order yet.")).not.toBeInTheDocument();
     expect(state.post).toHaveBeenCalledExactlyOnceWith("/billing/orders/order_unified/reconcile", undefined);
-    expect(state.get.mock.calls.filter(([url]) => url === orderPath)).toHaveLength(1);
+    expect(state.get.mock.calls.filter(([url]) => url === orderPath)).toHaveLength(orderReads);
     expect(check).toBeEnabled();
     noCheckout();
   });
@@ -907,13 +911,14 @@ describe("legacy payment recovery", () => {
     { label: "a smaller cumulative amount", change: { refunded_amount_minor: 16_225 } },
     { label: "another order", change: { order_id: "order_foreign" } },
     { label: "another provider order", change: { provider_order_id: "order_OtherFixture" } },
-  ])("refuses a legacy refund reconciliation with $label", async ({ change }) => {
+    { label: "an unresolved result", change: { refunded_amount_minor: 32_450 }, resolution: "unresolved" },
+  ])("refuses a legacy refund reconciliation with $label", async ({ change, resolution = "settled" }) => {
     const original = legacyOrder({ status: "paid", fulfilled: true, checkout_available: false,
       provider_order_id: "order_LegacyFixture", payment_reference: "pay_LegacyFixture", refunded_amount_minor: 32_450 });
     const reconcilePath = "/billing/orders/order_legacy/reconcile";
     state.get.mockImplementation((url: string) => url === "/billing/recent-order" || url === "/billing/orders/order_legacy"
       ? Promise.resolve(original) : read(url));
-    state.post.mockResolvedValue({ resolution: "settled", order: { ...original, refunded_amount_minor: 48_675, ...change } });
+    state.post.mockResolvedValue({ resolution, order: { ...original, refunded_amount_minor: 48_675, ...change } });
     render(<BillingPage />);
     const legacy = within(await screen.findByRole("region", { name: "Legacy entitlements" }));
     const payment = within(await legacy.findByRole("region", { name: "Payment partially refunded" }));
@@ -922,8 +927,9 @@ describe("legacy payment recovery", () => {
     expect(state.post).not.toHaveBeenCalled();
     fireEvent.click(payment.getByRole("button", { name: "Check refund status" }));
 
-    expect(await legacy.findByRole("alert")).toBeVisible();
+    expect(await legacy.findByRole("alert")).toHaveTextContent("Refund status could not be verified.");
     expect(payment.getByText("Total refunded: ₹324.5")).toBeVisible();
+    expect(legacy.queryByText("No additional refund is recorded for this order yet.")).not.toBeInTheDocument();
     expect(legacy.queryByText("Total refunded: ₹162.25")).not.toBeInTheDocument();
     expect(legacy.queryByText("Total refunded: ₹486.75")).not.toBeInTheDocument();
     expect(state.get.mock.calls.filter(([url]) => url === "/auth/me" || url === "/v1/usage-events?limit=20" || url === "/v1/employer-jobs/credits?limit=10")).toHaveLength(balanceReads);

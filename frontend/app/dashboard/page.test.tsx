@@ -15,6 +15,16 @@ import { ownedBootstrapFixture } from "../../lib/fixtures/ownedBootstrap";
 import { ownedDashboardKey } from "../../lib/ownedDashboardClient";
 import { fetchOwnedProfile, ownedBootstrapKey } from "../../lib/ownedBootstrapClient";
 import Dashboard from "./page";
+
+const payableCatalog = {
+  schema_version: "unified-credits-v1", catalog_version: "test-catalog-v1",
+  server_time: "2026-10-30T00:00:00Z", market: "IN", currency: "INR", checkout_enabled: true,
+  products: [{ sku: "starter_pass", name: "Starter", amount_minor: 5900, credits: 40,
+    duration_days: 30, auto_renews: false, purchase_enabled: true, terms_version: "test-terms-v1", campaign: null }],
+  eligible_services: [{ operation: "interview_questions", credits: 4, deliverable: "Interview practice",
+    supported_limits: {}, source_formats: ["pdf"], route_version: "test-review-v1" }],
+};
+
 let client: QueryClient;
 function tree() { return <QueryClientProvider client={client}><Nav /><Dashboard /></QueryClientProvider>; }
 beforeEach(() => {
@@ -239,12 +249,32 @@ it("withholds a previously displayed snapshot after a current authority refusal"
   expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard", "/auth/dashboard"]);
 });
 
-it("keeps the optional offer catalog separate and requests it only from known current credit data", async () => {
-  state.get.mockImplementation(async (path: string) => path === "/auth/dashboard"
-    ? ownedDashboardFixture(ownedBootstrapFixture({ availability: { catalog_enabled: true }, wallet: {
-      schema_version: "unified-credits-v1", server_time: "2026-10-30T00:00:00Z", available_credits: 0, reserved_credits: 0, debt_credits: 0, lots: [],
-    } })) : { checkout_enabled: false, products: [] });
+it.each([
+  ["paused", { catalog_enabled: true, execution_enabled: false }],
+  ["unavailable", null],
+  ["legacy", { catalog_enabled: false, execution_enabled: false }],
+])("skips the optional offer catalog when the low-balance account is %s", async (_label, availability) => {
+  state.get.mockResolvedValue(ownedDashboardFixture(ownedBootstrapFixture({ availability })));
   render(tree()); await screen.findByText("Owned role");
-  await waitFor(() => expect(state.get).toHaveBeenCalledTimes(2));
-  expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard", "/v1/credits/catalog"]);
+  expect(screen.queryByRole("link", { name: "Review credit passes" })).not.toBeInTheDocument();
+  expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard"]);
+});
+
+it("requires the normal catalog for an eligible low balance and hides its saved offer after a pause", async () => {
+  const eligible = ownedDashboardFixture(ownedBootstrapFixture({ availability: {
+    catalog_enabled: true, execution_enabled: true, supported_operations: ["interview_questions"],
+  } }));
+  let returnCatalog!: (value: unknown) => void;
+  state.get.mockImplementation(async (path: string) => path === "/auth/dashboard" ? eligible
+    : new Promise((resolve) => { returnCatalog = resolve; }));
+  render(tree()); await screen.findByText("Owned role");
+  await waitFor(() => expect(returnCatalog).toBeDefined());
+  expect(screen.queryByRole("link", { name: "Review credit passes" })).not.toBeInTheDocument();
+  await act(async () => { returnCatalog(payableCatalog); });
+  expect(await screen.findByRole("link", { name: "Review credit passes" })).toHaveAttribute("href", "/billing");
+
+  state.get.mockResolvedValue(ownedDashboardFixture(ownedBootstrapFixture({ availability: { catalog_enabled: true } })));
+  await act(async () => { window.dispatchEvent(new Event("refresh_unified_credits")); });
+  await waitFor(() => expect(screen.queryByRole("link", { name: "Review credit passes" })).not.toBeInTheDocument());
+  expect(state.get.mock.calls.map(([path]) => path)).toEqual(["/auth/dashboard", "/v1/credits/catalog", "/auth/dashboard"]);
 });

@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event
+from threading import Event, local
 from uuid import uuid4
 
 import pytest
@@ -29,7 +29,7 @@ from backend.tests.test_interview_input_guards import synthetic_response, synthe
 from backend.tests.test_llm_client import _question_set
 from backend.tests.test_unified_credits import grant
 from backend.tests.test_unified_execution import budgets, financial_policy, route
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from test_mail_budget_postgres import owned_pg_url as owned_pg_url  # noqa: F401
 
@@ -222,11 +222,26 @@ def test_retained_mismatched_resume_refuses_before_supplier_and_refunds(pipeline
 
 @pytest.mark.parametrize("older_order", ["review_evidence_first", "import_resume_first"])
 def test_preexisting_writer_order_declines_without_deadlock_provider_replay_or_charge(pipeline, monkeypatch, older_order):
-    factory, _ = pipeline
+    factory, engine = pipeline
     run_id = create_paid_interview(factory)
     counts, generations = [], []
     synthetic_transport(monkeypatch, counts=counts, generations=generations)
-    held, finish = Event(), Event()
+    held, finish, nowait_refused = Event(), Event(), Event()
+    worker_context = local()
+    harness_timeout = 20
+
+    def record_nowait_refusal(context):
+        if (getattr(worker_context, "running", False)
+                and getattr(context.original_exception, "sqlstate", None) == "55P03"
+                and "FOR UPDATE NOWAIT" in (context.statement or "").upper()):
+            nowait_refused.set()
+
+    def run_worker():
+        worker_context.running = True
+        try:
+            return tasks.process_analysis_run(run_id)
+        finally:
+            worker_context.running = False
 
     def older_writer():
         with factory() as db:
@@ -238,7 +253,7 @@ def test_preexisting_writer_order_declines_without_deadlock_provider_replay_or_c
             else:
                 db.query(models.Resume).filter_by(id=1).with_for_update().one()
             held.set()
-            assert finish.wait(timeout=10)
+            assert finish.wait(timeout=2 * harness_timeout)
             if older_order == "review_evidence_first":
                 db.query(models.Resume).filter_by(id=1).with_for_update().one()
                 db.rollback()
@@ -246,18 +261,23 @@ def test_preexisting_writer_order_declines_without_deadlock_provider_replay_or_c
                 career.create_evidence(db, 1, career_schemas.EvidenceCreate(resume_id=1, category="experience",
                     title="Imported after pause", evidence_text="Maintained Python services.", approval_state="pending"))
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        writer = pool.submit(older_writer)
-        try:
-            assert held.wait(timeout=5)
-            worker = pool.submit(tasks.process_analysis_run, run_id)
-            assert worker.result(timeout=5) == "failed"
-            # Worker finishes while the old writer still owns its first row:
-            # this is a NOWAIT refusal, not a deadlock timeout or broad retry.
-            assert not finish.is_set()
-        finally:
-            finish.set()
-        writer.result(timeout=5)
+    event.listen(engine, "handle_error", record_nowait_refusal)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writer = pool.submit(older_writer)
+            try:
+                assert held.wait(timeout=harness_timeout)
+                worker = pool.submit(run_worker)
+                assert worker.result(timeout=harness_timeout) == "failed"
+                # PostgreSQL uses 55P03 for lock timeouts too. Require an actual
+                # NOWAIT refusal while the old writer still owns its first row.
+                assert nowait_refused.is_set(), "Expected the worker's PostgreSQL NOWAIT refusal"
+                assert not writer.done() and not finish.is_set()
+            finally:
+                finish.set()
+            writer.result(timeout=harness_timeout)
+    finally:
+        event.remove(engine, "handle_error", record_nowait_refusal)
     assert counts == ["owned-count"] and generations == ["owned-generation"]
     assert tasks.process_analysis_run(run_id) == "failed"
     assert generations == ["owned-generation"]

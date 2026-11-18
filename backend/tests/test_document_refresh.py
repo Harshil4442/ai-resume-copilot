@@ -719,6 +719,7 @@ def test_workflow_initializes_runner_paths_after_job_expression_validation(tmp_p
         f"HISTORY_DIRECTORY={runner_temp}/document-refresh-history",
         f"CONSUMED_BUNDLE={runner_temp}/document-refresh-consumed-audit",
         f"COMPLETED_SOURCE_ORIGINAL={runner_temp}/completed-source-original-42-2",
+        f"V5_INVENTORY_ORIGINAL={runner_temp}/document-v5-inventory-original-42-2",
         f"OUTPUT_DIRECTORY={runner_temp}/document-refresh-42-2",
     ]
     assert not list(runner_temp.iterdir())  # Controller owns fresh directory creation.
@@ -772,7 +773,8 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
-        "monitor", "refresh", "full-source-refresh", "recover-source-v5", "resume-full-source-refresh",
+        "monitor", "refresh", "full-source-refresh", "recover-source-v5", "resume-v5-inventory",
+        "resume-full-source-refresh",
         "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition",
         "reconcile-final-v2-transition", "audit-consumed-v2-history"]
     job = workflow["jobs"]["maintenance"]

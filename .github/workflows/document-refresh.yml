@@ -9,7 +9,7 @@ on:
       mode:
         description: Audit expiry or execute reviewed definition/full-source maintenance
         type: choice
-        options: [monitor, refresh, full-source-refresh, recover-source-v5, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition, audit-consumed-v2-history]
+        options: [monitor, refresh, full-source-refresh, recover-source-v5, resume-v5-inventory, resume-full-source-refresh, resume-expired-v2-transition, resume-partial-v2-transition, resume-final-v2-transition, reconcile-final-v2-transition, audit-consumed-v2-history]
         default: monitor
       source_revision:
         description: Build current committed source and require new V4 native reading-order acceptance
@@ -81,6 +81,7 @@ jobs:
           printf '%s\n' "HISTORY_DIRECTORY=$RUNNER_TEMP/document-refresh-history" >> "$GITHUB_ENV"
           printf '%s\n' "CONSUMED_BUNDLE=$RUNNER_TEMP/document-refresh-consumed-audit" >> "$GITHUB_ENV"
           printf '%s\n' "COMPLETED_SOURCE_ORIGINAL=$RUNNER_TEMP/completed-source-original-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          printf '%s\n' "V5_INVENTORY_ORIGINAL=$RUNNER_TEMP/document-v5-inventory-original-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           printf '%s\n' "OUTPUT_DIRECTORY=$RUNNER_TEMP/document-refresh-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -111,7 +112,7 @@ jobs:
           test "$RETIRE_EXPIRED_V2" != true || test "$RESCUE_EXPIRED_V2" != true
           test "$UPGRADE_CURRENT_V2_TO_V3" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true; }
           test "$RECOVER_EXPIRED_SOURCE" != true || { test "$REFRESH_MODE" = refresh && test -z "$RECOVER_FAILED_NATIVE_JOB" && test "$RETIRE_EXPIRED_V2" != true && test "$RESCUE_EXPIRED_V2" != true && test "$UPGRADE_CURRENT_V2_TO_V3" != true && test "$SOURCE_REVISION" != true && test "$RESUME_COMPLETED_SOURCE_READBACK" != true; }
-          if [[ "$REFRESH_MODE" == recover-source-v5 ]]; then
+          if [[ "$REFRESH_MODE" == recover-source-v5 || "$REFRESH_MODE" == resume-v5-inventory ]]; then
             test "$GITHUB_EVENT_NAME" = workflow_dispatch
             test -z "$RECOVER_FAILED_NATIVE_JOB"
             test "$SOURCE_REVISION" = false && test "$RECOVER_EXPIRED_SOURCE" = false
@@ -173,8 +174,25 @@ jobs:
           12590585230 40169964119 document-refresh-refresh-40169964119-1
           RESCUE_ARTIFACTS
           else
-            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-") or startswith("document-refresh-resume-full-source-refresh-") or startswith("document-refresh-recover-source-v5-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
-            python -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"document-refresh-artifacts.tsv"; rows=[r for r in p.read_text().splitlines() if r.split("\t")[-1]==os.environ["GITHUB_REF_NAME"]]; v5=os.environ["REFRESH_MODE"]=="recover-source-v5"; rows=[r for r in rows if not v5 or r.split("\t")[1]!="14410380686"]; p.write_text("\n".join(rows[:2 if v5 else 3]) + "\n")'
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[] | select(.expired == false and (.name | (startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-") or startswith("document-refresh-resume-full-source-refresh-") or startswith("document-refresh-recover-source-v5-") or startswith("document-refresh-resume-v5-inventory-")))) | [.workflow_run.id, .id, .name, .workflow_run.head_branch] | @tsv' > "$RUNNER_TEMP/document-refresh-artifacts.tsv"
+            python - <<'PY'
+          import os
+          from pathlib import Path
+
+          selection = Path(os.environ["RUNNER_TEMP"]) / "document-refresh-artifacts.tsv"
+          rows = [line.split("\t") for line in selection.read_text().splitlines()]
+          rows = [row for row in rows if row[3] == os.environ["GITHUB_REF_NAME"]]
+          if os.environ["REFRESH_MODE"] == "recover-source-v5":
+              selected = [row for row in rows if row[1] != "14410380686"][:2]
+          else:
+              selected = rows[:3]
+              has_original = any(row[1] == "14446629631" for row in selected)
+              has_continuation = any(row[2].startswith("document-refresh-resume-v5-inventory-")
+                                     for row in selected)
+              if has_original and has_continuation:
+                  selected = rows[:4]
+          selection.write_text("".join("\t".join(row) + "\n" for row in selected))
+          PY
             while IFS=$'\t' read -r run artifact_id artifact branch; do
               test -n "$run" || continue
               gh run download "$run" --repo "$GITHUB_REPOSITORY" --name "$artifact" --dir "$HISTORY_DIRECTORY/$artifact_id"
@@ -182,6 +200,21 @@ jobs:
           fi
           find "$HISTORY_DIRECTORY" -type d -exec chmod 700 {} +
           find "$HISTORY_DIRECTORY" -type f -exec chmod 600 {} +
+      - name: Reconcile the retained V5 inventory history
+        if: env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh' || env.REFRESH_MODE == 'recover-source-v5'
+        run: |
+          rows="$RUNNER_TEMP/document-refresh-artifacts.tsv"
+          if [[ -f "$rows" ]]; then
+            PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/backend:$GITHUB_WORKSPACE/infra/gcp" \
+              backend/.venv/bin/python - "$HISTORY_DIRECTORY" "$rows" <<'PY'
+          import sys
+          from pathlib import Path
+
+          from infra.gcp.document_v5_inventory_history import normalize
+
+          normalize(Path(sys.argv[1]), Path(sys.argv[2]))
+          PY
+          fi
       - name: Normalize only the exact completed source-readback history
         if: env.RESUME_COMPLETED_SOURCE_READBACK != 'true' && (env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh' || env.REFRESH_MODE == 'recover-source-v5')
         run: |
@@ -470,6 +503,50 @@ jobs:
             --mode recover-source-v5 --publish-candidate --reviewed-application-context \
             --prior-history-directory "$HISTORY_DIRECTORY" \
             --consumed-history-bundle "$CONSUMED_BUNDLE" --output-directory "$OUTPUT_DIRECTORY"
+      - name: Continue only the retained V5 scanner inventory
+        if: env.REFRESH_MODE == 'resume-v5-inventory'
+        run: |
+          run_id="$(gh run list --workflow ci.yml --branch main --commit "$GITHUB_SHA" --event push \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          [[ "$run_id" =~ ^[1-9][0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
+            | jq -e --arg source "$GITHUB_SHA" '.head_sha == $source and .event == "push"
+              and .path == ".github/workflows/ci.yml" and .status == "completed"
+              and .conclusion == "success"' >/dev/null
+          umask 077
+          PYTHONPATH="$GITHUB_WORKSPACE:$GITHUB_WORKSPACE/backend:$GITHUB_WORKSPACE/infra/gcp" \
+            backend/.venv/bin/python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          from backend.scripts.document_refresh import _failure_diagnostics, write_new
+          from infra.gcp import document_v5_inventory_resume
+
+          original = Path(os.environ["V5_INVENTORY_ORIGINAL"])
+          output = Path(os.environ["OUTPUT_DIRECTORY"])
+          try:
+              document_v5_inventory_resume.retrieve(original)
+              result = document_v5_inventory_resume.resume(original, output, root=Path.cwd())
+          except Exception as error:
+              code = "document_v5_inventory_resume_unavailable"
+              if type(error) is document_v5_inventory_resume.ResumeDenied and re.fullmatch(
+                  r"document_v5_inventory_resume_[a-z_]{1,90}", str(error)
+              ):
+                  code = str(error)
+              failure = {"status": "maintenance_attention_required", "fixed_code": code,
+                         "state_requires_read_only_reconciliation": True, "automatic_replay": False}
+              if output.is_dir():
+                  try:
+                      write_new(output / "failure-diagnostic.json",
+                                {**failure, "diagnostics": _failure_diagnostics(error)})
+                  except Exception:
+                      pass
+              print(json.dumps(failure))
+              raise SystemExit(2) from None
+          print(json.dumps(result))
+          PY
       - name: Retain bounded maintenance evidence
         if: always() && env.OUTPUT_DIRECTORY != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -506,6 +583,10 @@ jobs:
             echo 'Exact-candidate continuation rechecks the original artifact, actual Build/archive/source and 25 local cases, then requires a single create-only resume claim and native V2 ten-case acceptance before the unchanged pin transition/retirement. It does not upload source or create another Build. Any unknown claim/Job/transition outcome is read-only reconciliation, never replay.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = full-source-refresh ]]; then
             echo 'Full-source refresh publishes 13 source inputs plus the policy file and requires verification of 12 copied runtime files, 25 synthetic local cases and native V2 ten-case acceptance before the bounded worker/three-caller pin transition. Inspect the retained result and native journals for the actual outcome; this summary alone proves no completion. No new IAM, sales or employer submission is enabled. Unknown outcomes require read-only reconciliation, never another send.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = recover-source-v5 ]]; then
+            echo 'The V5 recovery proves the candidate on 17 native cases before switching the worker and three callers. Inspect the retained result and live revision readback to establish completion.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$REFRESH_MODE" = resume-v5-inventory ]]; then
+            echo 'The V5 continuation revalidates the retained Build and inventory. Only the missing 17-case corpus can start. Any unknown operation requires read-only reconciliation. Inspect the retained result and live serving pins.' >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$REFRESH_MODE" = refresh ]]; then
             echo 'Ordinary daily refresh uses the reviewed application context for V2 definitions maintenance and requires ten native cases; mixed caller templates and unknown application sources are refused before Build. This context does not authorize ordinary V3 refresh. Explicit manual expired-V2 rescue, V3 retirement and fresh-V2-to-V3 upgrade retain their separate original guards. Daily refresh never upgrades profiles. Unknown native Job or PATCH outcomes require exact read-only reconciliation, never replay. Inspect retained journals for the actual outcome.' >> "$GITHUB_STEP_SUMMARY"
           else

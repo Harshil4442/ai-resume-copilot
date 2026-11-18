@@ -49,7 +49,8 @@ export default function DashboardPage() {
   const creditAvailability = data?.bootstrap.credit_availability;
   const wallet = data?.bootstrap.credit_wallet;
   const unifiedWalletEnabled = creditAvailability?.catalog_enabled === true;
-  const shouldOfferUpgrade = unifiedWalletEnabled && wallet !== null && wallet !== undefined && wallet.available_credits <= 10;
+  const shouldOfferUpgrade = unifiedWalletEnabled && creditAvailability?.execution_enabled === true
+    && wallet !== null && wallet !== undefined && wallet.available_credits <= 10;
   const billingCatalog = useQuery({ ...unifiedCatalogOptions(), enabled: shouldOfferUpgrade });
   const upgradeTracked = useRef(false);
   const loading = snapshot.isLoading;
