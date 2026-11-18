@@ -206,11 +206,17 @@ class GcpCandidateCookieLogout:
                 raise GuardUnavailable("Logout lacks its exact retained pending denial")
             observed[:] = [True]
 
-        self.scoped._run(retained)
+        owned = []
+
+        def first_lookup(tx: BufferedTransaction) -> None:
+            retained(tx)
+            if not observed[0]:
+                # The later arm transaction freshly rechecks these captured owners.
+                owned.append(self._owned_session(tx, fixed_context, expected))
+
+        self.scoped._run(first_lookup)
         if observed[0]:
             return True  # Denial fact only; no original-owner ACK reconstruction.
-        owned = []
-        self.scoped._run(lambda tx: owned.append(self._owned_session(tx, fixed_context, expected)))
         subject, session = owned[0]
         now = self.scoped._now()
         intent = ScopedJournalIntent(operation_id=operation_id,

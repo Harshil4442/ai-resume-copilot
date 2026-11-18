@@ -624,6 +624,122 @@ def test_actual_reset_cookie_logout_and_delete_ports_are_composed(configured):
     validate_scoped_rows(c.native.values())
 
 
+def test_cookie_logout_coalesces_first_lookup_but_keeps_exact_pending_replay(configured):
+    c = configured
+    register(c)
+    current = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    operation = uuid4()
+    metadata_before = c.native.sdk.admin.transport.get_database.call_count
+    c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+    # The same SDK-intercepted path uses eleven Admin Gets on source 380560c.
+    assert c.native.sdk.admin.transport.get_database.call_count - metadata_before == 9
+    pending = c.native.values()["v3_pending_session_denials", str(current.context.session_id)]
+    assert pending["operation_id"] == str(operation)
+    with pytest.raises(GuardDenied):
+        c.accounts.validate(current.context, auth_generation=1)
+    commits_before = c.native.sdk.client.commit.call_count
+    metadata_before = c.native.sdk.admin.transport.get_database.call_count
+    c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+    assert c.native.sdk.admin.transport.get_database.call_count - metadata_before == 4
+    assert c.native.sdk.client.commit.call_count == commits_before
+    validate_scoped_rows(c.native.values())
+
+
+@pytest.mark.parametrize("persisted", [False, True])
+def test_cookie_logout_unknown_commit_exports_no_success(configured, persisted):
+    c = configured
+    register(c)
+    current = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    operation = uuid4()
+    c.native.fault = lambda names: (
+        ("persist_loss" if persisted else "no_persist_loss")
+        if "v3_pending_session_denials" in names else None
+    )
+    metadata_before = c.native.sdk.admin.transport.get_database.call_count
+    with pytest.raises(GuardUnavailable):
+        c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+    # Source 380560c makes six Gets before the same uncertain Commit.
+    assert c.native.sdk.admin.transport.get_database.call_count - metadata_before == 4
+    records = c.native.values()
+    pending_key = "v3_pending_session_denials", str(current.context.session_id)
+    assert (pending_key in records) is persisted
+    assert (("v3_records", str(operation)) in records) is persisted
+    c.native.fault = None
+    if persisted:
+        with pytest.raises(GuardDenied):
+            c.accounts.validate(current.context, auth_generation=1)
+        commits_before = c.native.sdk.client.commit.call_count
+        c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+        assert c.native.sdk.client.commit.call_count == commits_before
+    validate_scoped_rows(c.native.values())
+
+
+def test_cookie_logout_pending_operation_cannot_be_adopted_by_another_owner(configured):
+    c = configured
+    register(c)
+    first = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    c.accounts.register(email="other@example.test", password=PASSWORD, policy_version="2026-10-08")
+    second = c.accounts.login(email="other@example.test", password=PASSWORD)
+    operation = uuid4()
+    c.accounts.logout_cookie(first.context, auth_generation=1, operation_id=operation)
+    original = copy.deepcopy(c.native.data)
+    commits_before = c.native.sdk.client.commit.call_count
+    with pytest.raises(GuardDenied):
+        c.accounts.logout_cookie(second.context, auth_generation=1, operation_id=operation)
+    assert c.native.sdk.client.commit.call_count == commits_before
+    assert c.native.data == original
+    c.accounts.validate(second.context, auth_generation=1)
+
+
+def test_cookie_logout_rechecks_ownership_after_initial_read(configured, monkeypatch):
+    c = configured
+    register(c)
+    current = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    logout = c.accounts._composition().service.cookie_logout
+    original = logout._owned_session
+    changed = False
+
+    def change_after_capture(tx, context, expected):
+        nonlocal changed
+        result = original(tx, context, expected)
+        if not changed:
+            changed = True
+            session = result[1]
+            c.native.seed(c.protected_registry, "v3_sessions", str(session.session_id),
+                {**session.model_dump(mode="json"), "expires_at_ms": session.expires_at_ms + 1})
+        return result
+
+    monkeypatch.setattr(logout, "_owned_session", change_after_capture)
+    operation = uuid4()
+    commits_before = c.native.sdk.client.commit.call_count
+    with pytest.raises(GuardDenied):
+        c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+    assert changed
+    assert c.native.sdk.client.commit.call_count == commits_before
+    assert ("v3_records", str(operation)) not in c.native.values()
+
+
+def test_cookie_logout_requires_final_retained_pending_denial(configured, monkeypatch):
+    c = configured
+    register(c)
+    current = c.accounts.login(email="synthetic@example.test", password=PASSWORD)
+    scoped = c.accounts._composition().service.cookie_logout.scoped
+    original = scoped._execute
+
+    def lose_pending_after_commit(intent, stage):
+        result = original(intent, stage)
+        path = BufferedTransaction(c.protected_registry.rpc, b"owned-fixture").path(
+            "v3_pending_session_denials", str(current.context.session_id))
+        c.native.data.pop(path)
+        return result
+
+    monkeypatch.setattr(scoped, "_execute", lose_pending_after_commit)
+    operation = uuid4()
+    with pytest.raises(GuardUnavailable):
+        c.accounts.logout_cookie(current.context, auth_generation=1, operation_id=operation)
+    assert ("v3_records", str(operation)) in c.native.values()
+
+
 @pytest.mark.parametrize("stage", ["projection", "completion"])
 @pytest.mark.parametrize("persisted", [False, True])
 def test_unknown_reset_cannot_update_sql_credentials_or_reactivate_old_scope(
