@@ -12,7 +12,7 @@ import os
 import tempfile
 from functools import lru_cache
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import httpx
 from backend.scripts import document_test_image as engine
@@ -58,8 +58,9 @@ def _report_policy(report: dict) -> str:
     """
     from infra.gcp import document_candidate as legacy
 
+    profiles: tuple[ModuleType, ...] = (legacy,)
     if "pdf_reading_order_corpus" in report:
-        from infra.gcp import document_source_candidate as profile
+        from infra.gcp import document_source_candidate, document_source_candidate_v5
         from infra.gcp.document_source_payload import EXTRA_CASES
 
         rows = report["pdf_reading_order_corpus"]
@@ -68,21 +69,20 @@ def _report_policy(report: dict) -> str:
                        or row.get("passed") is not True for row in rows)
                 or tuple(row["case"] for row in rows) != EXTRA_CASES):
             raise AssertionError("The complete known source-profile corpus is required.")
+        profiles = (document_source_candidate, document_source_candidate_v5)
+
+    for profile in profiles:
         path, expected = engine.ROOT / profile.POLICY_PATH, profile.POLICY_SHA256
-    else:
-        path, expected = engine.ROOT / legacy.POLICY_PATH, legacy.POLICY_SHA256
-    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 256 * 1024:
-        raise AssertionError("The known native test policy is unavailable.")
-    raw = path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected:
-        raise AssertionError("The known native test policy changed.")
-    if "pdf_reading_order_corpus" in report:
-        sources = profile.validate_policy(raw, root=engine.ROOT)
-    else:
-        sources = json.loads(raw).get("source_sha256")
-    if type(sources) is not dict or sources != report.get("source_sha256"):
-        raise AssertionError("The native report source map does not match its known policy profile.")
-    return expected
+        if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 256 * 1024:
+            raise AssertionError("The known native test policy is unavailable.")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise AssertionError("The known native test policy changed.")
+        sources = (json.loads(raw).get("source_sha256") if profile is legacy
+                   else profile.validate_policy(raw, root=engine.ROOT))
+        if type(sources) is dict and sources == report.get("source_sha256"):
+            return expected
+    raise AssertionError("The native report source map does not match its known policy profile.")
 
 
 @lru_cache(maxsize=1)
