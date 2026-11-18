@@ -567,11 +567,16 @@ def test_successor_monitor_uses_fresh_native_immutable_receipt_without_hourly_la
     assert result["definitions"]["source"] == "fresh_native_immutable_image_receipt"
 
 
-def test_current_source_expiry_emits_precise_status_without_opening_other_paths(monkeypatch, tmp_path):
+@pytest.mark.parametrize("source_version", [4, 5])
+def test_current_source_expiry_emits_precise_status_without_opening_other_paths(monkeypatch, tmp_path, source_version):
     import json
     import sys
 
-    from infra.gcp import document_source_candidate, document_source_release
+    from infra.gcp import (
+        document_source_candidate,
+        document_source_candidate_v5,
+        document_source_release,
+    )
 
     value = service()
     image = refresh.REPOSITORY + "@sha256:" + "f" * 64
@@ -587,8 +592,9 @@ def test_current_source_expiry_emits_precise_status_without_opening_other_paths(
     def require_fresh(*_):
         raise refresh.RefreshDenied("fresh_proof_required")
 
+    profile = document_source_candidate if source_version == 4 else document_source_candidate_v5
     monkeypatch.setitem(sys.modules, "document_refresh_probe", SimpleNamespace(
-        policy_for_serving=lambda *_: document_source_candidate.POLICY_SHA256,
+        policy_for_serving=lambda *_: profile.POLICY_SHA256,
         verify_current_successor=require_fresh))
     monkeypatch.setattr(document_source_release, "observe_current_source_definitions", observe)
     monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
@@ -621,6 +627,26 @@ def test_current_source_expiry_emits_precise_status_without_opening_other_paths(
     assert result["definitions"]["source"] == "expired_native_immutable_image_receipt"
     assert calls == ["verified", {"event": "hirewiz_document_definition_maintenance_v1", "status": "expired",
         "controller": "hirewiz-document-refresh", "version": 1, "seconds_remaining": -30}]
+
+
+def test_unknown_profile_monitor_cannot_select_expiry_observer(monkeypatch):
+    import sys
+
+    from infra.gcp import document_refresh_probe, document_source_release
+
+    value = service()
+    container = value["template"]["containers"][0]
+    container["image"] = refresh.REPOSITORY + "@sha256:" + "f" * 64
+    container["env"] = [{"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": "f" * 64}]
+    monkeypatch.setitem(sys.modules, "document_refresh_probe", document_refresh_probe)
+    monkeypatch.setattr(document_source_release, "observe_current_source_definitions", lambda *_:
+        pytest.fail("Unknown profiles cannot select the expired receipt observer"))
+    monkeypatch.setattr(refresh, "native_http", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(refresh, "native_json", lambda *_: value)
+    monkeypatch.setattr(refresh, "command", lambda *_args, **_kwargs: pytest.fail("No image pull or build"))
+
+    with pytest.raises(document_refresh_probe.NativeProofDenied, match="serving_policy_unverified"):
+        refresh.monitor(now=NOW)
 
 
 def test_monitor_retains_verified_result_without_repeating_unknown_heartbeat(monkeypatch, tmp_path, capsys):

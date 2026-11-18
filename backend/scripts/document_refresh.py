@@ -444,7 +444,7 @@ def header(docker: list[str], image: str) -> bytes:
 
 
 def _serving_pin(service: Any, contract: Any, *, monitor: bool = False) -> tuple[str, Any]:
-    """Bind serving identity. Only monitoring may observe expired V4 proof."""
+    """Bind serving identity. Only monitoring may observe expired source proof."""
     need(type(service) is dict and service.get("name") == f"projects/{PROJECT}/locations/{REGION}/services/{SERVICE}"
          and service.get("uid") == "7014a5ba-faee-4fbf-8272-a437b1de49ad"
          and re.fullmatch(r"[1-9][0-9]{0,18}", str(service.get("generation", "")))
@@ -473,7 +473,8 @@ def _serving_pin(service: Any, contract: Any, *, monitor: bool = False) -> tuple
         if monitor:
             from document_refresh_probe import policy_for_serving
             from infra.gcp import document_source_candidate as profile
-            if policy_for_serving(service, image) == profile.POLICY_SHA256:
+            from infra.gcp import document_source_candidate_v5 as profile_v5
+            if policy_for_serving(service, image) in {profile.POLICY_SHA256, profile_v5.POLICY_SHA256}:
                 from infra.gcp.document_source_release import observe_current_source_definitions
                 verified = observe_current_source_definitions(image, service)
         if verified is None:
