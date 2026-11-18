@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
+from typing import Literal
 from uuid import UUID, uuid4
 
 from .contracts import Binding, canonical, fingerprint
@@ -193,10 +194,28 @@ class ScopedCandidateAuthority:
         self.publication._fresh_open()
 
     def activate(self, issuer: GcpPasswordLifetimeCoordinator, ack: PasswordLifetimeOwnedAck) -> CandidateWebSession | None:
+        return self._activate(issuer, ack, purpose="ordinary")
+
+    def activate_password_for_finalization(self, issuer: GcpPasswordLifetimeCoordinator,
+                                          ack: PasswordLifetimeOwnedAck) -> None:
+        """Retain own activation; its caller must finalize before exporting context.
+
+        No session is returned by this password-only port. The finalizer's one
+        current-session/mailbox transaction replaces the immediate extra resolve.
+        All Commit, canonical ACK readback and UID/witness barriers stay intact.
+        """
+        self._activate(issuer, ack, purpose="password_finalization")
+
+    def _activate(self, issuer: GcpPasswordLifetimeCoordinator, ack: PasswordLifetimeOwnedAck, *,
+                  purpose: Literal["ordinary", "password_finalization"]) -> CandidateWebSession | None:
+        if purpose not in {"ordinary", "password_finalization"}:
+            raise GuardDenied("Exact activation purpose required")
         if type(issuer) is not GcpPasswordLifetimeCoordinator or issuer.pin != self.publication.resource.pin.authority.target:
             raise GuardDenied("Exact original lifetime issuer and execution pin required")
         # Actual own-ACK/status/GCS IO is outside the protected transaction.
         evidence = issuer.consume_owned_ack(ack)
+        if purpose == "password_finalization" and not isinstance(evidence.intent.command, CreateVerifiedPasswordWebSession):
+            raise GuardDenied("Only an owned password session can await password finalization")
         fixed = canonical(_json(evidence)).encode()
         intent = evidence.intent
         now = self._now()
@@ -273,7 +292,7 @@ class ScopedCandidateAuthority:
         retained = self.publication.registry.read("v3_activations", str(intent.operation_id))
         if retained is None or canonical(retained).encode() != fixed:
             raise GuardUnavailable("Protected activation lacks its own exact full evidence")
-        if output[0] is not None:
+        if output[0] is not None and purpose == "ordinary":
             self.resolve(output[0])
         return output[0]
 
