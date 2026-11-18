@@ -1,4 +1,4 @@
-"""Typed QA clone checks; intercepted metadata plus one opt-in owned PG17 cluster.
+"""Typed QA clone checks; intercepted metadata plus owned local/CI PostgreSQL17.
 
 The local marker removal simulates a checkpoint rollback; it is not Neon restore
 evidence. No provider operation, normal manager, production URI or app.main runs.
@@ -18,6 +18,7 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from alembic.config import Config
@@ -25,6 +26,7 @@ from infra.gcp import schema27_restore_clone as c
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.pool import NullPool
+from test_mail_budget_postgres import owned_pg_url as owned_pg_url
 
 from alembic import command
 
@@ -201,8 +203,84 @@ def _pg(pg_bin, tool, *args, env=None):
     return output.decode()
 
 
+def _seed_clone(engine, reader):
+    cfg = Config(str(ROOT / "backend/alembic.ini"))
+    cfg.set_main_option("script_location", str(ROOT / "backend/alembic"))
+    with engine.begin() as db:
+        cfg.attributes["connection"] = db
+        command.upgrade(cfg, c.schema27.SCHEMA)
+        db.exec_driver_sql("CREATE SCHEMA neon_auth")
+        db.exec_driver_sql("CREATE TABLE neon_auth.synthetic_restored (id bigint PRIMARY KEY,payload bytea NOT NULL)")
+        db.execute(text("INSERT INTO neon_auth.synthetic_restored VALUES (1,:payload)"),
+                   {"payload": b"private synthetic bytes"})
+        db.exec_driver_sql(f'GRANT USAGE ON SCHEMA neon_auth TO "{reader}"')
+        db.exec_driver_sql(f'GRANT SELECT ON neon_auth.synthetic_restored TO "{reader}"')
+
+
+@contextmanager
+def _ci_clone(url, monkeypatch):
+    """Use the verified CI service, with only fresh UUID-owned database/roles."""
+    suffix = uuid4().hex
+    database, owner, reader = (prefix + suffix for prefix in (
+        "schema27_clone_", "c27_clone_owner_", "c27_clone_reader_"))
+    password = secrets.token_hex(24)
+    admin = create_engine(url, isolation_level="AUTOCOMMIT", poolclass=NullPool, hide_parameters=True)
+    engine = None
+    created_roles, database_oid = [], None
+    try:
+        with admin.connect() as db:
+            assert db.scalar(text("SHOW server_version_num")).startswith("17")
+            db.exec_driver_sql(f'CREATE ROLE "{owner}" LOGIN NOINHERIT NOSUPERUSER NOCREATEDB '
+                f'NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD \'{password}\'')
+            created_roles.append(owner)
+            db.exec_driver_sql(f'CREATE ROLE "{reader}" NOLOGIN')
+            created_roles.append(reader)
+            db.exec_driver_sql(f'CREATE DATABASE "{database}" OWNER "{owner}"')
+            database_oid = db.scalar(text("SELECT oid FROM pg_catalog.pg_database WHERE datname=:name"),
+                                     {"name": database})
+        # This grant is confined to the new disposable database. No shared
+        # function, existing database, service role or provider is changed.
+        prepared = create_engine(admin.url.set(database=database), poolclass=NullPool, hide_parameters=True)
+        try:
+            with prepared.begin() as db:
+                db.exec_driver_sql(f'GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO "{owner}"')
+        finally:
+            prepared.dispose()
+        engine = create_engine(admin.url.set(username=owner, password=password, database=database),
+            poolclass=NullPool, isolation_level="REPEATABLE READ", hide_parameters=True,
+            connect_args={"connect_timeout": 5, "sslmode": "disable", "options":
+                          "-c statement_timeout=2000 -c lock_timeout=1000"})
+        # Only the expected synthetic physical identity changes; the ordinary
+        # identity/catalogue/transaction validation below still executes.
+        monkeypatch.setattr(c.production, "DATABASE", database)
+        monkeypatch.setattr(c.production, "DATABASE_OWNER", owner)
+        pin = replace(PIN, database=database)
+        _seed_clone(engine, reader)
+        yield engine, pin, reader
+    finally:
+        if engine is not None:
+            engine.dispose()
+        with admin.connect() as db:
+            if database_oid is not None:
+                actual = db.execute(text("SELECT d.oid,r.rolname FROM pg_catalog.pg_database d "
+                    "JOIN pg_catalog.pg_roles r ON r.oid=d.datdba WHERE d.datname=:name"),
+                    {"name": database}).one()
+                assert tuple(actual) == (database_oid, owner)
+                db.exec_driver_sql(f'DROP DATABASE "{database}" WITH (FORCE)')
+            for role in reversed(created_roles):
+                db.exec_driver_sql(f'DROP ROLE "{role}"')
+        admin.dispose()
+
+
 @pytest.fixture
-def owned_pg(tmp_path):
+def owned_pg(tmp_path, request, monkeypatch):
+    if os.getenv("CI") == "true" or os.getenv("GITHUB_ACTIONS") == "true":
+        assert not os.getenv("HIREWIZ_SCHEMA27_CLONE_PG_BIN"), "CI cannot substitute a local clone cluster"
+        # Established fixture verifies exact prepared loopback URL, role, DB
+        # and PG17, refusing missing prerequisites instead of skipping.
+        with _ci_clone(request.getfixturevalue("owned_pg_url"), monkeypatch) as result:
+            yield result
+        return
     configured = os.getenv("HIREWIZ_SCHEMA27_CLONE_PG_BIN")
     if not configured:
         pytest.skip("Requires an explicitly selected owned local PG17 binary directory")
@@ -234,19 +312,10 @@ def owned_pg(tmp_path):
         temporary.dispose()
         engine = create_engine(url.set(database="neondb"), poolclass=NullPool, isolation_level="REPEATABLE READ",
             connect_args={"connect_timeout": 5, "sslmode": "disable", "options": "-c statement_timeout=2000 -c lock_timeout=1000"})
-        cfg = Config(str(ROOT / "backend/alembic.ini"))
-        cfg.set_main_option("script_location", str(ROOT / "backend/alembic"))
         with engine.begin() as db:
-            cfg.attributes["connection"] = db
-            command.upgrade(cfg, c.schema27.SCHEMA)
-            db.exec_driver_sql("CREATE SCHEMA neon_auth")
-            db.exec_driver_sql("CREATE TABLE neon_auth.synthetic_restored (id bigint PRIMARY KEY,payload bytea NOT NULL)")
-            db.execute(text("INSERT INTO neon_auth.synthetic_restored VALUES (1,:payload)"),
-                       {"payload": b"private synthetic bytes"})
             db.exec_driver_sql("CREATE ROLE owned_reader NOLOGIN")
-            db.exec_driver_sql("GRANT USAGE ON SCHEMA neon_auth TO owned_reader")
-            db.exec_driver_sql("GRANT SELECT ON neon_auth.synthetic_restored TO owned_reader")
-        yield engine
+        _seed_clone(engine, "owned_reader")
+        yield engine, PIN, "owned_reader"
     finally:
         if engine is not None:
             engine.dispose()
@@ -259,6 +328,7 @@ def owned_pg(tmp_path):
 
 
 def test_owned_pg17_catalogue_data_sequence_acl_and_marker_are_independent(owned_pg, monkeypatch):
+    owned_pg, pin, reader = owned_pg
     # Only this test port substitutes local synthetic SQL for authenticated Neon.
     # creator/read-only settings are transport responsibilities; use fresh local engines
     # with explicit modes, while the real _connection transaction checks remain active.
@@ -268,37 +338,37 @@ def test_owned_pg17_catalogue_data_sequence_acl_and_marker_are_independent(owned
                 "-c statement_timeout=2000 -c lock_timeout=1000 -c default_transaction_read_only=" +
                 ("off" if write else "on")})
     monkeypatch.setattr(c, "_engine", engine)
-    before = c.capture(PIN)
+    before = c.capture(pin)
     assert before.schema == c.schema27.SCHEMA
     assert any(t.schema == "neon_auth" and t.rows == 1 for t in before.tables)
     assert b"private synthetic bytes" not in c.canonical(asdict(before))
-    marker = c.install_marker(PIN, before)
-    assert c.verify_marker(PIN, marker)
+    marker = c.install_marker(pin, before)
+    assert c.verify_marker(pin, marker)
     with pytest.raises(c.RestoreCloneDenied, match="qa_marker_still_present"):
-        c.capture(PIN)
+        c.capture(pin)
     with pytest.raises(c.RestoreCloneDenied, match="qa_marker_still_present"):
         # The fresh capture refuses before DDL, so the existing marker never replays.
-        c.install_marker(PIN, before)
+        c.install_marker(pin, before)
     with owned_pg.connect() as extra:
         extra.exec_driver_sql("SELECT 1")
         with pytest.raises(c.RestoreCloneDenied, match="other_qa_sessions_present"):
-            c.verify_marker(PIN, marker)
+            c.verify_marker(pin, marker)
     with owned_pg.begin() as db:
         db.exec_driver_sql('DROP SCHEMA "' + marker.schema + '" CASCADE')
-    assert not c.verify_marker(PIN, marker)
-    restored = c.capture(PIN)
+    assert not c.verify_marker(pin, marker)
+    restored = c.capture(pin)
     assert c.compare_restore(before, restored, marker)["matched"]
     with owned_pg.begin() as db:
-        db.exec_driver_sql("REVOKE SELECT ON neon_auth.synthetic_restored FROM owned_reader")
-    changed = c.capture(PIN)
+        db.exec_driver_sql(f'REVOKE SELECT ON neon_auth.synthetic_restored FROM "{reader}"')
+    changed = c.capture(pin)
     assert changed.catalogue_sha256 != before.catalogue_sha256
     with pytest.raises(c.RestoreCloneDenied, match="restored_state_changed"):
         c.compare_restore(before, changed, marker)
     with owned_pg.begin() as db:
-        db.exec_driver_sql("GRANT SELECT ON neon_auth.synthetic_restored TO owned_reader")
+        db.exec_driver_sql(f'GRANT SELECT ON neon_auth.synthetic_restored TO "{reader}"')
         db.exec_driver_sql("UPDATE neon_auth.synthetic_restored SET payload='new bytes'::bytea")
         db.exec_driver_sql("SELECT setval('public.users_id_seq',29,true)")
-    changed = c.capture(PIN)
+    changed = c.capture(pin)
     assert changed.tables != before.tables and changed.sequences != before.sequences
     with pytest.raises(c.RestoreCloneDenied, match="restored_state_changed"):
         c.compare_restore(before, changed, marker)
