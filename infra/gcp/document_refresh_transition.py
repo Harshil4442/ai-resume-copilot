@@ -158,13 +158,23 @@ def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: st
     need(template.get("serviceAccount") == ACCOUNTS[service], "document_transition_caller_identity_changed")
     env = environment(template)
     if service == WORKER:
+        from infra.gcp import document_source_candidate_v5 as source_v5
+
         need(type(worker_policy_sha256) is str and re.fullmatch(r"[a-f0-9]{64}", worker_policy_sha256),
              "document_transition_worker_policy_unverified")
-        need(set(env) == {"DOCUMENT_WORKER_IMAGE_DIGEST", "DOCUMENT_WORKER_POLICY_SHA256"},
+        transport = {"name": source_v5.TRANSPORT_ENV, "value": source_v5.TRANSPORT_MODE}
+        expected = {"DOCUMENT_WORKER_IMAGE_DIGEST", "DOCUMENT_WORKER_POLICY_SHA256"}
+        if env.get("DOCUMENT_WORKER_POLICY_SHA256", {}).get("value") == source_v5.POLICY_SHA256:
+            expected.add(source_v5.TRANSPORT_ENV)
+            need(env.get(source_v5.TRANSPORT_ENV) == transport, "document_transition_worker_environment_changed")
+            need(worker_policy_sha256 == source_v5.POLICY_SHA256, "document_transition_worker_profile_changed")
+        need(set(env) == expected,
              "document_transition_worker_environment_changed")
         template["containers"][0]["image"] = image
         env["DOCUMENT_WORKER_IMAGE_DIGEST"] = {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image}
         env["DOCUMENT_WORKER_POLICY_SHA256"] = {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": worker_policy_sha256}
+        if worker_policy_sha256 == source_v5.POLICY_SHA256:
+            env[source_v5.TRANSPORT_ENV] = transport
     else:
         need(worker_policy_sha256 is None, "document_transition_action_refused")
         for key in PAUSE[service]:
@@ -274,11 +284,16 @@ def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -
         "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f": (3, 11),
     }
     expected = contracts.get(policy) if type(policy) is str else None
-    from infra.gcp.document_source_release import ExpiredSourcePredecessor, SourceProbe
+    from infra.gcp.document_source_release import ExpiredSourcePredecessor, SourceProbe, v5_policy
     need(not isinstance(acceptance, ExpiredSourcePredecessor),
          "document_transition_current_acceptance_required")
     if isinstance(probe, SourceProbe) and policy == probe.POLICY:
         expected = (probe.CONTRACT_VERSION, probe.REQUIRED_CASE_COUNT)
+        if policy == v5_policy():
+            from infra.gcp.document_refresh_probe import NativeAcceptance
+
+            need(type(acceptance) is NativeAcceptance and expected == (5, 17),
+                 "document_transition_current_acceptance_required")
     courier = ("us-central1-docker.pkg.dev/ai-resume-parser-482412/cloud-run-source-deploy/"
                "hirewiz-document-inspector@sha256:bbfad0c7faa2acf0ef93d13df300a9ac34cb16a792fee04d873aa994ec3afb94")
     need(type(image) is str and getattr(acceptance, "image", None) == image
@@ -599,12 +614,22 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
     need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
          and not (retire_expired_v2 and rescue_expired_v2),
          "document_transition_recovery_mode_invalid")
+    from infra.gcp import document_source_candidate as source_v4
+    from infra.gcp import document_source_candidate_v5 as source_v5
+
+    selected_v5 = type(build) is dict and build.get("kind") == source_v5.KIND
+    definitions_v5 = type(build) is dict and build.get("kind") == source_v5.DEFINITIONS_KIND
+    upgrade_expired_source = (selected_v5 and recover_expired_source is True
+        and build.get("policy_sha256") == source_v5.POLICY_SHA256 and probe.CONTRACT_VERSION == 5)
     need(type(recover_expired_source) is bool and (not recover_expired_source
          or not (retire_expired_v2 or rescue_expired_v2) and application_context is not None
-         and probe.CONTRACT_VERSION == 4), "document_transition_expired_source_mode_refused")
+         and (probe.CONTRACT_VERSION == 4 or upgrade_expired_source)), "document_transition_expired_source_mode_refused")
+    need(not selected_v5 or upgrade_expired_source, "document_transition_expired_source_mode_refused")
+    need(not definitions_v5 or (not (recover_expired_source or retire_expired_v2 or rescue_expired_v2)
+         and application_context is not None and build.get("policy_sha256") == source_v5.POLICY_SHA256
+         and probe.CONTRACT_VERSION == 5), "document_transition_v5_definitions_mode_refused")
     if recover_expired_source:
-        from infra.gcp.document_source_candidate import DEFINITIONS_KIND
-        need(type(build) is dict and build.get("kind") == DEFINITIONS_KIND,
+        need(upgrade_expired_source or (type(build) is dict and build.get("kind") == source_v4.DEFINITIONS_KIND),
              "document_transition_expired_source_mode_refused")
     owner = Journal(journal)
     try:
@@ -634,10 +659,27 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 if prior_image != probe.BASE_IMAGE and rescue_expired_v2:
                     probe.verify_expired_current_v2_for_retirement(prior_image, value)
                 prior_policy = probe.policy_for_serving(value, prior_image)
-                if recover_expired_source:
-                    need(build.get("kind") == DEFINITIONS_KIND and build.get("fixed_renderer_base") == prior_image,
+                need(prior_policy != source_v5.POLICY_SHA256 or probe.POLICY == source_v5.POLICY_SHA256,
+                     "document_transition_worker_profile_changed")
+                if definitions_v5:
+                    need(prior_policy == source_v5.POLICY_SHA256 and build.get("fixed_renderer_base") == prior_image,
+                         "document_transition_v5_definitions_parent_changed")
+                    parent = probe.verify_current_successor(prior_image, value)
+                    require_current_acceptance(parent, prior_image, probe)
+                    need(parent.source_sha256 == build.get("source_sha256"),
+                         "document_transition_v5_definitions_parent_changed")
+                elif recover_expired_source:
+                    need((upgrade_expired_source and prior_policy == source_v4.POLICY_SHA256)
+                         or (build.get("kind") == source_v4.DEFINITIONS_KIND
+                             and build.get("fixed_renderer_base") == prior_image),
                          "document_transition_expired_source_parent_changed")
                     expired_source = probe.verify_expired_current_source_predecessor(prior_image, value)
+                    if upgrade_expired_source:
+                        from infra.gcp.document_source_release import ExpiredSourcePredecessor
+
+                        need(type(expired_source) is ExpiredSourcePredecessor
+                             and expired_source.contract_version == 4 and expired_source.policy_sha256 == prior_policy,
+                             "document_transition_expired_source_parent_changed")
                     owner.write("expired-source-predecessor.json", expired_source.report())
                 elif prior_image != probe.BASE_IMAGE and not rescue_expired_v2:
                     try:

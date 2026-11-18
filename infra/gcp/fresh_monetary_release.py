@@ -989,6 +989,7 @@ class FreshNativeBoundary(release.NativeBoundary):
             source_options = {}
             if qualified_source_revision:
                 from document_source_candidate import LEGACY_POLICY_SHA256, READ_POLICIES
+                from document_source_candidate_v5 import POLICY_SHA256 as V5_POLICY_SHA256
 
                 if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") in READ_POLICIES
                        for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
@@ -996,6 +997,10 @@ class FreshNativeBoundary(release.NativeBoundary):
                     if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256" and row.get("value") == LEGACY_POLICY_SHA256
                            for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
                         source_options["legacy_source_revision"] = True
+                if any(row.get("name") == "DOCUMENT_WORKER_POLICY_SHA256"
+                       and row.get("value") == V5_POLICY_SHA256
+                       for row in service.get("template", {}).get("containers", [{}])[0].get("env", [])):
+                    source_options["source_v5"] = True
             if source_options and image == documents.ACCEPTED_IMAGE:
                 # The fixed historical image cannot acquire the new source
                 # identity merely by changing its policy environment literal.

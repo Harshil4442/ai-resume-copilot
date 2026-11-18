@@ -12,11 +12,15 @@ from infra.gcp import document_refresh_probe as probe
 from infra.gcp import document_renderer_profiles as profile
 from infra.gcp import document_source_candidate as source_profile
 from infra.gcp import document_worker as worker
+from test_document_source_revision import source as _retained_source_fixture
 
 from scripts import document_refresh as refresh
 from scripts import document_test_image as engines
 
+retained_source = _retained_source_fixture
 
+
+@pytest.mark.usefixtures("retained_source")
 def test_candidate_exact_inventory_includes_installed_fonts_and_notices():
     contents, hashes, policy = refresh.full_source_snapshot(source_revision=True)
     assert len(candidate.SOURCES) == 21 and len(candidate.RUNTIME) == 20

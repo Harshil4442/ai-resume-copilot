@@ -251,10 +251,11 @@ def test_retained_successful_build_can_only_be_abandoned_after_two_proven_absenc
     assert all(method == "GET" for method, _ in calls)
 
 
-def test_legacy_worker_snapshot_is_read_only_and_retains_all_original_configuration_fences():
+def test_legacy_worker_snapshot_is_read_only_and_retains_all_original_configuration_fences(source, monkeypatch):
     from infra.gcp import document_worker as worker
     from test_document_worker_deployment import IMAGE, RELEASE, snapshots
 
+    monkeypatch.setattr(worker, "ROOT", source[0])
     value = snapshots(worker)
     for row in (value["service"]["template"]["containers"][0], value["revision"]["containers"][0]):
         next(item for item in row["env"] if item["name"] == "DOCUMENT_WORKER_POLICY_SHA256")["value"] = profile.LEGACY_POLICY_SHA256

@@ -1323,15 +1323,24 @@ def validate_reading_order_result(name, content, code, result):
             raise DocumentImageError()
 
 
-def check(platform: str, *, image: str | None = None, source_revision: bool = False) -> dict:
+def check(platform: str, *, image: str | None = None, source_revision: bool = False,
+          source_v5: bool = False) -> dict:
+    if (type(source_revision) is not bool or type(source_v5) is not bool
+            or source_v5 and not source_revision):
+        raise DocumentImageError()
     _progress("daemon", completed_cases=0)
     docker = docker_command()
     _progress("source_hashes")
-    if type(source_revision) is not bool:
-        raise DocumentImageError()
     # Bind both recipes as context; build() executes only the public Dockerfile.
     # A production image additionally requires independent native Build proof.
     hashes = source_hashes()
+    if source_v5:
+        sys.path.insert(0, str(ROOT))
+        from infra.gcp import document_source_candidate_v5
+
+        _, approved_hashes, _ = document_source_candidate_v5.working_snapshot(ROOT)
+        if hashes != approved_hashes:
+            raise DocumentImageError()
     _progress("build")
     image = image or build(docker, platform, hashes)
     _progress("image_metadata")
@@ -1340,8 +1349,6 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
     code, raw = container(docker, image, platform, ["-c", HASH_PROGRAM], [])
     _progress("runtime_sources", exit_code=code)
     if code or json.loads(raw) != {path: hashes[path] for path in RUNTIME}:
-        raise DocumentImageError()
-    if type(source_revision) is not bool:
         raise DocumentImageError()
     observations = []
     reading_observations = []
@@ -1408,6 +1415,8 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
         if source_revision:
             sys.path.insert(0, str(ROOT))
             from infra.gcp.document_source_candidate import POLICY_SHA256 as source_policy
+            if source_v5:
+                from infra.gcp.document_source_candidate_v5 import POLICY_SHA256 as source_policy
             layout_cases = candidate_docx_layout_corpus(image, policy=source_policy)
         else:
             layout_cases = candidate_docx_layout_corpus(image)
@@ -1475,12 +1484,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux/amd64", "linux/arm64"), required=True)
     parser.add_argument("--source-revision", action="store_true", help="Require the source-profile PDF reading-order corpus.")
+    parser.add_argument("--source-v5", action="store_true", help="Use the pinned V5 source policy with --source-revision.")
     parser.add_argument("--image-id", help="Reuse only an immutable ID with exact current source labels/bytes.")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.source_v5 and not args.source_revision:
+        parser.error("--source-v5 requires --source-revision")
     token = _FAILURE.set({"stage": "setup", "completed_cases": 0})
     try:
-        report = json.dumps(check(args.platform, image=args.image_id, source_revision=args.source_revision), sort_keys=True, indent=2) + "\n"
+        report = json.dumps(check(args.platform, image=args.image_id, source_revision=args.source_revision,
+                                  source_v5=args.source_v5), sort_keys=True, indent=2) + "\n"
         _progress("report_write")
         if args.output:
             with args.output.open("x", encoding="utf-8") as stream:

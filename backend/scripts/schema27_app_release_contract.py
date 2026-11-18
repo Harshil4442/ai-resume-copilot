@@ -273,6 +273,12 @@ def verify_ci(root):
         need(len(checkouts) == 1 and checkouts[0].get("with", {}).get("ref")
              == "${{ github.event.pull_request.head.sha || github.sha }}", "checkout_identity")
     steps = jobs["backend"]["steps"]
+    from infra.gcp import document_source_candidate_v5
+
+    if (root / document_source_candidate_v5.POLICY_PATH).is_file():
+        checks = [step for step in steps if step.get("name") == "Build and verify genuine native document engines"]
+        need(len(checks) == 1 and '--source-revision --source-v5 --output "$document_test_report_path"'
+             in checks[0].get("run", ""), "forward_document_ci_required")
     for name, command in ((COMPATIBILITY_STEP, COMPATIBILITY_COMMAND), (PROTOCOL_STEP, PROTOCOL_COMMAND),
                           (RETAINED_STEP, RETAINED_COMMAND), (RETAINED_PROTOCOL_STEP, RETAINED_PROTOCOL_COMMAND)):
         need([s for s in steps if s.get("name") == name] == [{"name": name, "working-directory": "backend",
@@ -312,14 +318,28 @@ def preserved_sources(root):
     for name in v3.HISTORICAL_PATHS:
         if name != CURRENT_FRONTEND_LOCK_PATH:
             need(read(root, name) == git_bytes(root, name), "historical_contract_or_lock_changed")
-    policy = read(root, document.POLICY_PATH)
-    need(hashlib.sha256(policy).hexdigest() == document.POLICY_SHA256, "document_policy_changed")
-    worker = document.validate_policy(policy, root)
+    from infra.gcp import document_source_candidate_v5
+
+    forward_policy = root / document_source_candidate_v5.POLICY_PATH
+    if forward_policy.exists() or forward_policy.is_symlink():
+        document = document_source_candidate_v5
+        source = document.committed(root=root, clean=True)
+        worker = source.sources
+        helpers = v3.current_document_helpers(root)
+        # The forward policy must bind its exact committed helpers, while the
+        # original V4 profile, fixture payload and receipt stay historical.
+        for name in ("infra/gcp/document_source_candidate.py", "infra/gcp/document_source_payload.py",
+                     "infra/gcp/document_source_receipt.py"):
+            need(read(root, name) == git_bytes(root, name), "direct_document_qualification_changed")
+    else:
+        policy = read(root, document.POLICY_PATH)
+        need(hashlib.sha256(policy).hexdigest() == document.POLICY_SHA256, "document_policy_changed")
+        worker = document.validate_policy(policy, root)
+        helpers = v3.current_document_helpers(root)
+        need(all(read(root, name) == git_bytes(root, name) for name in document.CONTRACT_PATHS if name not in helpers),
+             "direct_document_qualification_changed")
     need(all(hashlib.sha256(read(root, name)).hexdigest() == expected for name, expected in worker.items()), "worker_source_changed")
-    helpers = v3.current_document_helpers(root)
     need(set(helpers) <= set(document.CONTRACT_PATHS), "document_helper_scope")
-    need(all(read(root, name) == git_bytes(root, name) for name in document.CONTRACT_PATHS if name not in helpers),
-         "direct_document_qualification_changed")
     need(all(hashlib.sha256(read(root, name)).hexdigest() == expected for name, expected in v3.HISTORICAL_COMPANION_PACKAGES),
          "historical_companion_package_changed")
     names = {*v3.v2.QUALIFICATION_PATHS, *v3.v2.TRANSPORT_PATHS, *v3.v2.BOOTSTRAP_PATHS,

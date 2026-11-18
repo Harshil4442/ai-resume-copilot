@@ -21,6 +21,28 @@ from infra.gcp import document_source_payload as payload
 from infra.gcp import document_source_receipt as receipt
 
 
+def v5_policy():
+    from infra.gcp import document_source_candidate_v5
+
+    return document_source_candidate_v5.POLICY_SHA256
+
+
+def source_policies():
+    return profile.READ_POLICIES | {v5_policy()}
+
+
+def v5_build_kind():
+    from infra.gcp import document_source_candidate_v5
+
+    return document_source_candidate_v5.KIND
+
+
+def v5_definitions_kind():
+    from infra.gcp import document_source_candidate_v5
+
+    return document_source_candidate_v5.DEFINITIONS_KIND
+
+
 @dataclass(frozen=True)
 class ExpiredSourcePredecessor:
     """Freshly read structural custody only; never authorizes processing."""
@@ -57,22 +79,42 @@ class SourceProbe:
             "source_bucket", "source_object", "source_generation", "source_archive_sha256",
             "refresh_dockerfile_sha256", "fixed_renderer_base", "immutable_image", "policy_sha256",
             "source_sha256", "source_commit", "qualification_sha256"}
+        kind = build.get("kind") if type(build) is dict and type(build.get("kind")) is str else None
+        full_v5, definitions_v5 = v5_build_kind(), v5_definitions_kind()
+        self._v5 = kind in {full_v5, definitions_v5}
         prior.need(type(read_only_release) is bool and type(serving_read) is bool
                    and type(build) is dict and set(build) == keys | ({"local_native_proof_sha256"}
                        if "local_native_proof_sha256" in build else set())
                    and type(build.get("version")) is int and build["version"] == 1
-                   and build.get("kind") in profile.READ_KINDS
+                   and (self._v5 or kind in profile.READ_KINDS)
                    and (build.get("kind") not in {profile.LEGACY_KIND, profile.LEGACY_DEFINITIONS_KIND} or serving_read)
-                   and (build.get("kind") == profile.KIND and build.get("fixed_renderer_base") == courier.IMAGE
+                   and (kind in {profile.KIND, full_v5} and build.get("fixed_renderer_base") == courier.IMAGE
                         or build.get("kind") == profile.LEGACY_KIND and build.get("fixed_renderer_base") is None
-                        or build.get("kind") in {profile.DEFINITIONS_KIND, profile.LEGACY_DEFINITIONS_KIND}
+                        or kind in {profile.DEFINITIONS_KIND, profile.LEGACY_DEFINITIONS_KIND, definitions_v5}
                         and type(build.get("fixed_renderer_base")) is str
                         and prior.IMAGE.fullmatch(build["fixed_renderer_base"])
                         and build["fixed_renderer_base"] not in {courier.IMAGE, build.get("immutable_image")}),
                    "document_source_revision_wrong_build_kind")
         self.root = root
-        self.source = profile.committed(build.get("source_commit"), root=root,
-            legacy=build.get("kind") in {profile.LEGACY_KIND, profile.LEGACY_DEFINITIONS_KIND})
+        if self._v5:
+            from infra.gcp import (
+                document_source_candidate_v5,
+                document_source_payload_v5,
+                document_source_receipt_v5,
+            )
+
+            self._source_profile = document_source_candidate_v5
+            self._payload = document_source_payload_v5
+            self._receipt = document_source_receipt_v5
+            self.CONTRACT_VERSION = document_source_candidate_v5.CONTRACT_VERSION
+            self.REQUIRED_CASE_COUNT = len(document_source_receipt_v5.NAMES)
+            self.source = self._source_profile.committed(build.get("source_commit"), root=root)
+            prior.need(self.CONTRACT_VERSION == 5 and self.source.policy == v5_policy(),
+                       "document_source_revision_build_sources_changed")
+        else:
+            self._source_profile, self._payload, self._receipt = profile, payload, receipt
+            self.source = profile.committed(build.get("source_commit"), root=root,
+                legacy=kind in {profile.LEGACY_KIND, profile.LEGACY_DEFINITIONS_KIND})
         self.POLICY = self.source.policy
         prior.need(build.get("source_sha256") == self.source.sources
                    and build.get("policy_sha256") == self.source.policy
@@ -87,13 +129,22 @@ class SourceProbe:
         self.profile, self.candidate = courier, self
 
     def source_contract(self):
-        current = profile.committed(self.source.commit, root=self.root, legacy=self.source.legacy)
+        current = (self._source_profile.committed(self.source.commit, root=self.root) if self._v5
+                   else profile.committed(self.source.commit, root=self.root, legacy=self.source.legacy))
         prior.need(current.identity == self.source.identity, "document_source_revision_sources_changed")
         if not self.serving_read:
-            profile.require_working_contract(current, self.root)
+            self._source_profile.require_working_contract(current, self.root)
         return current.runtime
 
     def _rendered(self, image):
+        if self._v5:
+            path = "infra/gcp/document_source_payload_v5.py"
+            if self.serving_read:
+                retained = profile.git(self.root, "show", self.source.commit + ":" + path)
+                local = self.root / path
+                prior.need(not local.is_symlink() and retained == local.read_bytes(),
+                           "document_source_revision_retained_payload_changed")
+            return self._payload.rendered(image, self.source, root=self.root)
         retained = (profile.git(self.root, "show", self.source.commit + ":infra/gcp/document_source_payload.py")
                     if self.serving_read else None)
         return payload.rendered(image, self.source, root=self.root, retained_template=retained)
@@ -123,6 +174,9 @@ class SourceProbe:
         container = body["template"]["template"]["containers"][0]
         container["args"][2] = self._rendered(image)
         container["env"][1]["value"] = self.POLICY
+        if self._v5:
+            container["env"].append({"name": self._source_profile.TRANSPORT_ENV,
+                                     "value": self._source_profile.TRANSPORT_MODE})
         return body
 
     def validate_job(self, job, plan):
@@ -132,7 +186,13 @@ class SourceProbe:
         corpus.validate_execution_template(execution, job, self.desired(plan["image"], plan["job_nonce"], plan["mode"]))
 
     def validate_inventory(self, value, image, runtime):
-        observed = corpus.validate_inventory(value, image, runtime, policy=self.POLICY, event=payload.INVENTORY_EVENT)
+        if self._v5:
+            try:
+                observed = self._receipt.validate_inventory(value, image, runtime, policy=self.POLICY)
+            except (ValueError, KeyError, TypeError, OverflowError):
+                raise prior.NativeProofDenied("document_source_revision_inventory_invalid") from None
+        else:
+            observed = corpus.validate_inventory(value, image, runtime, policy=self.POLICY, event=payload.INVENTORY_EVENT)
         prior.need(observed == {"renderer_version": courier.RENDERER, "font_manifest_sha256": courier.FONT},
                    "document_source_revision_renderer_requires_review")
         return observed
@@ -147,8 +207,16 @@ class SourceProbe:
         execution_name = prior.execution_reference(job, job.get("latestCreatedExecution", {}).get("name"))
         execution = clients.execution(execution_name)
         self.validate_execution(execution, job, plan)
-        event = payload.INVENTORY_EVENT if mode == "inventory" else payload.CORPUS_EVENT
-        return job, execution, corpus.native_payload(clients, job, execution, mode, event=event)
+        event = self._payload.INVENTORY_EVENT if mode == "inventory" else self._payload.CORPUS_EVENT
+
+        def log_event():
+            return corpus.native_payload(clients, job, execution, mode, event=event)
+
+        if self._v5:
+            from infra.gcp.document_source_readback_resume import empty_event_retry
+
+            return job, execution, empty_event_retry(log_event)
+        return job, execution, log_event()
 
     def _verified_evidence(self, clients):
         runtime = self.source_contract()
@@ -156,7 +224,7 @@ class SourceProbe:
         identity = self.validate_inventory(inventory, self.build["immutable_image"], runtime)
         job, execution, value = self._observation(clients, "corpus", self.build)
         try:
-            complete = receipt.validate(value, self.build["immutable_image"], self.POLICY, runtime)
+            complete = self._receipt.validate(value, self.build["immutable_image"], self.POLICY, runtime)
         except (ValueError, TypeError, KeyError, OverflowError):
             raise prior.NativeProofDenied("document_source_revision_corpus_invalid") from None
         prior.need(complete is True and all(value["identity_preflight"][key] == observed
@@ -188,8 +256,11 @@ class SourceProbe:
         prior.need(not self.serving_read and build == self.build and image == build["immutable_image"],
                    "document_source_revision_candidate_changed")
         binding = journal / "binding.json"
-        prior.need(binding.is_file() and not binding.is_symlink() and binding.stat().st_size <= 65536
-                   and json.loads(binding.read_bytes()) == {"version": 4, "image": image, "build_identity": build},
+        prior.need(binding.is_file() and not binding.is_symlink() and binding.stat().st_size <= 65536,
+                   "document_source_revision_journal_changed")
+        observed = json.loads(binding.read_bytes())
+        prior.need((not self._v5 or type(observed) is dict and type(observed.get("version")) is int)
+                   and observed == {"version": self.CONTRACT_VERSION, "image": image, "build_identity": build},
                    "document_source_revision_journal_changed")
         self.build_identity(read_only_release=self.read_only_release, build_id=build["build_id"], nonce=build["nonce"], image=image)
         clients = prior.Clients(read_only_release=self.read_only_release)
@@ -211,13 +282,17 @@ class SourceProbe:
 
     def verify_current_successor(self, image, metadata):
         if self.policy_for_serving(metadata, image) != self.POLICY:
+            prior.need(not self.serving_read, "document_source_revision_serving_policy_changed")
             return v3.verify_current_successor(image, metadata) if prior.policy_for_serving(metadata, image) == v3.POLICY else prior.verify_current_successor(image, metadata)
+        if self._v5 and not self.serving_read and image != self.build["immutable_image"]:
+            return verify_current_successor(image, metadata, read_only_release=self.read_only_release)
         return self._verify_current_source(image, metadata)
 
     def _verify_current_source(self, image, metadata, *, expired_predecessor=False, monitor=False):
         prior.need(type(expired_predecessor) is bool and type(monitor) is bool
                    and not (expired_predecessor and monitor)
-                   and (not (expired_predecessor or monitor) or self.POLICY == profile.POLICY_SHA256),
+                   and (not expired_predecessor or self.POLICY == profile.POLICY_SHA256)
+                   and (not monitor or self.POLICY in {profile.POLICY_SHA256, v5_policy()}),
                    "document_source_revision_expired_profile_refused")
         prior.need(self.policy_for_serving(metadata, image) == self.POLICY,
                    "document_source_revision_serving_policy_changed")
@@ -247,7 +322,8 @@ class SourceProbe:
         return ExpiredSourcePredecessor(self.build["immutable_image"], self.build["build_id"], self.source.commit,
             self.source.qualification_sha256, self.POLICY, dict(self.source.sources),
             courier.RENDERER, courier.FONT, (stamp + timedelta(days=3)).isoformat(),
-            corpus.sha(inventory), corpus.sha(value), corpus.sha(metadata))
+            corpus.sha(inventory), corpus.sha(value), corpus.sha(metadata),
+            self.CONTRACT_VERSION, self.REQUIRED_CASE_COUNT)
 
     def verify_expired_current_source_predecessor(self, image, metadata):
         return verify_expired_current_source_predecessor(image, metadata,
@@ -286,7 +362,9 @@ def promote(build, native_journal, transition_journal, *, application_context, r
     prior.need(application_context is not None and not transition_journal.exists(),
                "document_source_revision_fresh_transition_required")
     prior.need(type(recover_expired_source) is bool and (not recover_expired_source
-               or build.get("kind") == profile.DEFINITIONS_KIND),
+               or build.get("kind") in {profile.DEFINITIONS_KIND, v5_build_kind()}),
+               "document_source_revision_expired_recovery_mode_refused")
+    prior.need(build.get("kind") != v5_build_kind() or recover_expired_source,
                "document_source_revision_expired_recovery_mode_refused")
     probe = SourceProbe(build, root=root)
     if native_journal.exists():
@@ -306,8 +384,8 @@ def promote(build, native_journal, transition_journal, *, application_context, r
             **({"recover_expired_source": True} if recover_expired_source else {}))
     finally:
         http.close()
-    return result | {"source_commit": build["source_commit"], "renderer_contract_version": 4,
-        "required_case_count": 17, "definition_expires_at": accepted.definition_expires_at,
+    return result | {"source_commit": build["source_commit"], "renderer_contract_version": probe.CONTRACT_VERSION,
+        "required_case_count": probe.REQUIRED_CASE_COUNT, "definition_expires_at": accepted.definition_expires_at,
         "prior_evidence_retained": True, "prior_jobs_retained": True}
 
 
@@ -316,7 +394,11 @@ def current_probe(image, metadata, *, read_only_release=False):
     builder = prior.build_module()
     verify = builder.verify_current_build_release if read_only_release else builder.verify_current_build
     build = verify(labels.get("hirewiz-refresh-build"), labels.get("hirewiz-refresh-nonce"), image)
-    return SourceProbe(build, read_only_release=read_only_release, serving_read=True)
+    probe = SourceProbe(build, read_only_release=read_only_release, serving_read=True)
+    if build.get("kind") in {v5_build_kind(), v5_definitions_kind()}:
+        prior.need(probe.policy_for_serving(metadata, image) == probe.POLICY,
+                   "document_source_revision_serving_policy_changed")
+    return probe
 
 
 def verify_current_successor(image, metadata, *, read_only_release=False):
@@ -345,6 +427,14 @@ def verify_caller_pins(clients, image, *, caller_serving_validator=None):
 def parent_before_build(image, current_source, *, recover_expired_source=False):
     """An observed current source profile is mandatory before a child Build."""
     prior.need(type(recover_expired_source) is bool, "document_source_revision_expired_recovery_mode_refused")
+    from infra.gcp import document_source_candidate_v5 as source_v5
+
+    if current_source.kind == source_v5.KIND:
+        prior.need(type(current_source) is source_v5.Source and current_source.policy == source_v5.POLICY_SHA256
+                   and recover_expired_source is False, "document_source_revision_parent_profile_changed")
+        version = 5
+    else:
+        version = 4
     clients = prior.Clients()
     try:
         metadata = clients.preflight()["service"]
@@ -355,7 +445,7 @@ def parent_before_build(image, current_source, *, recover_expired_source=False):
                     if recover_expired_source else probe.verify_current_successor(image, metadata))
         prior.need(accepted.image == image and accepted.policy_sha256 == current_source.policy
                    and accepted.source_sha256 == current_source.sources
-                   and accepted.contract_version == 4 and accepted.required_case_count == 17
+                   and accepted.contract_version == version and accepted.required_case_count == 17
                    and accepted.renderer_version == courier.RENDERER and accepted.font_manifest_sha256 == courier.FONT,
                    "document_source_revision_parent_profile_changed")
     finally:

@@ -340,7 +340,7 @@ def isolation_snapshot(plan):
             "metageneration": "1", "iamConfiguration": {"uniformBucketLevelAccess": {"enabled": True}, "publicAccessPrevention": "enforced"}},
         "object_role": {"name": i.ROLE, "stage": "GA", "includedPermissions": ["storage.objects.get", "storage.objects.create"]},
         "bucket_iam": {"version": 3, "bindings": [{"role": i.ROLE, "members": ["serviceAccount:" + i.EVALUATOR], "condition": plan.condition}]},
-        "inspector": worker_metadata(documents, documents.render(plan.inspector_image, plan.inspector_release, source_revision=True)),
+        "inspector": worker_metadata(documents, documents.render_retained_source(plan.inspector_image, plan.inspector_release)),
         "compiler": worker_metadata(tex, tex.render(plan.compiler_image, plan.compiler_release, coordinator_phase=True))}
 
 

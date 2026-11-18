@@ -254,6 +254,8 @@ def run_successor(build: dict[str, Any], journal: Path, *, adapter: Any = None) 
     if adapter is not None:
         from infra.gcp.document_source_release import SourceProbe
         need(isinstance(adapter, SourceProbe) and adapter.build == build, "source_adapter_changed")
+        version = adapter.CONTRACT_VERSION
+        need(type(version) is int and version in {4, 5}, "source_adapter_changed")
     image = build["immutable_image"]
     need(image != target.profile.IMAGE and journal.is_absolute() and not journal.exists(), "fresh_journal_required")
     runtime = target.source_contract()

@@ -13,6 +13,7 @@ import os
 import re
 import stat
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,32 @@ EXPIRED_SOURCE_NATIVE = {
     },
 }
 EXPIRED_SOURCE_DEFINITIONS_ISSUED = datetime(2026, 11, 3, 6, 27, 52, tzinfo=UTC)
+
+# Workflow 44263912800, attempt 1. This exact source V4 inventory failed
+# before corpus creation. Its journal can only account for a new V5 attempt.
+FAILED_V4_ARTIFACT = "14410380686"
+FAILED_V4_MANIFEST = "3c3a0826961dd0d94d18febd2cf0047cdb1847a67eac340c99c9376e7d791b2a"
+FAILED_V4_FILES = (
+    *FILES[:7],
+    *(f"native-proof/inventory.{phase}.{state}.json" for phase in ("create", "run")
+      for state in ("started", "acknowledged")),
+)
+FAILED_V4_BUILD = "26339580-5a9d-4377-8ce3-08339a819738"
+FAILED_V4_SOURCE = "ade1d75633df5e5bb52ac222ed7252dce7d84d57"
+FAILED_V4_IMAGE = "sha256:c817ee28254bd2d0e02a3bf75d8f657d35370f3cd489ea3261899c0854965402"
+FAILED_V4_NONCE = "1836f3de1d394efabfff9c453735842c"
+FAILED_V4_JOB = "hirewiz-doc-six-47def6d5b9f1"
+FAILED_V4_JOB_UID = "49ff9e60-4694-4e84-bb5a-5a6ca54c6f98"
+FAILED_V4_EXECUTION = "hirewiz-doc-six-47def6d5b9f1-685mg"
+FAILED_V4_EXECUTION_UID = "551b52ec-7659-49a4-b72c-5c151b638986"
+FAILED_V4_COMPLETED = "2026-11-18T08:15:25.286940Z"
+FAILED_V4_RECEIPT = "6ad24eba9a6dcd299d77e61526d3e1a9b6e60c40ff8312e57c3eb0b765ef512a"
+FAILED_V4_SERVING = {
+    "hirewiz-document-inspector": ("18", "hirewiz-document-inspector-d-32d98b931d16-worker"),
+    "ai-resume-parser": ("379", "ai-resume-parser-neonfree-20261115"),
+    "hirewiz-analysis-worker": ("90", "hirewiz-analysis-worker-neonfree-20261115"),
+    "hirewiz-resume-coordinator": ("50", "hirewiz-resume-coordinator-neonfree-20261115"),
+}
 
 
 def canonical(value: Any) -> bytes:
@@ -120,6 +147,122 @@ def expired_source_snapshot(path: Path, build: Any) -> dict[str, bytes]:
     files = {name: read(path / name, build) for name in EXPIRED_SOURCE_FILES}
     build.need(manifest(files) == EXPIRED_SOURCE_MANIFEST, "document_refresh_expired_source_history_changed")
     return files
+
+
+def failed_v4_snapshot(path: Path, build: Any) -> dict[str, bytes]:
+    private(path, build)
+    native = path / "native-proof"
+    private(native, build)
+    build.need({entry.name for entry in path.iterdir()} == {name.split("/")[0] for name in FAILED_V4_FILES}
+               and {entry.name for entry in native.iterdir()} == {name.split("/")[1]
+                   for name in FAILED_V4_FILES if name.startswith("native-proof/")},
+               "document_refresh_failed_v4_journal_changed")
+    files = {name: read(path / name, build) for name in FAILED_V4_FILES}
+    build.need(manifest(files) == FAILED_V4_MANIFEST, "document_refresh_failed_v4_manifest_changed")
+    return files
+
+
+def verify_failed_v4(files: dict[str, bytes], clients: Any, probe: Any, build: Any) -> dict[str, Any]:
+    """Read the failed V4 Job and its receipt without conferring acceptance."""
+    build.need(set(files) == set(FAILED_V4_FILES) and manifest(files) == FAILED_V4_MANIFEST,
+               "document_refresh_failed_v4_manifest_changed")
+    identity = build.decode(files["native-proof/binding.json"])["build_identity"]
+    image = build.REPOSITORY + "@" + FAILED_V4_IMAGE
+    build.need(build.decode(files["native-proof/binding.json"]) == {
+        "version": 4, "image": image, "build_identity": identity}
+        and identity == {**build.decode(files["native-build-identity.json"]),
+                         "local_native_proof_sha256": sha(files["local-native-proof.json"])}
+        and identity["immutable_image"] == image and identity["build_id"] == FAILED_V4_BUILD
+        and identity["source_commit"] == FAILED_V4_SOURCE and identity["nonce"] == FAILED_V4_NONCE,
+        "document_refresh_failed_v4_binding_changed")
+    module = build.infra("document_source_release")
+    read_only_release = getattr(clients, "read_only_release", False)
+    source = module.SourceProbe(identity, root=build.ROOT, serving_read=True, read_only_release=read_only_release)
+    build.need(source.build_identity(read_only_release=read_only_release, build_id=FAILED_V4_BUILD,
+                                    nonce=FAILED_V4_NONCE, image=image) == identity,
+               "document_refresh_failed_v4_build_changed")
+    handles = source.handles(identity)
+    inventory_nonce = handles["inventory"]["nonce"]
+    wanted = source.desired(image, inventory_nonce, "inventory")
+    job_name = probe.PARENT + "/jobs/" + FAILED_V4_JOB
+    prefix = "native-proof/inventory"
+    build.need(wanted["name"] == job_name and build.decode(files[prefix + ".create.started.json"]) == {
+        "body_sha256": sha(canonical(wanted)), "automatic_replay": False},
+        "document_refresh_failed_v4_job_intent_changed")
+    created = probe.operation_result(clients, build.decode(files[prefix + ".create.acknowledged.json"]), "Job")
+    job = clients.job(job_name)
+    source.validate_job(job, {"mode": "inventory", "job_nonce": inventory_nonce, "image": image})
+    run_mark = build.decode(files[prefix + ".run.started.json"])
+    build.need(created is not None and created.get("name") == job_name and created.get("uid") == FAILED_V4_JOB_UID
+               and job.get("uid") == FAILED_V4_JOB_UID and run_mark.get("name") == job_name
+               and run_mark.get("uid") == FAILED_V4_JOB_UID
+               and type(run_mark.get("etag")) is str and bool(run_mark["etag"])
+               and run_mark.get("automatic_replay") is False,
+               "document_refresh_failed_v4_job_changed")
+    run_name = build.decode(files[prefix + ".run.acknowledged.json"])["name"]
+    operation = clients.operation(run_name)
+    metadata = operation.get("metadata", {})
+    execution_name = job_name + "/executions/" + FAILED_V4_EXECUTION
+    latest = job.get("latestCreatedExecution", {})
+    build.need(operation.get("name") == run_name and operation.get("done") is True
+        and not operation.get("response") and type(operation.get("error", {}).get("code")) is int
+        and operation["error"]["code"] == 10
+        and metadata.get("@type") == "type.googleapis.com/google.cloud.run.v2.Execution"
+        and probe.integer(job.get("executionCount"), 1)
+        and latest.get("name") in (execution_name, FAILED_V4_EXECUTION)
+        and latest.get("completionStatus") == "EXECUTION_FAILED", "document_refresh_failed_v4_run_unverified")
+    execution = clients.execution(execution_name)
+    for row in (metadata, execution):
+        completed = [condition for condition in row.get("conditions", []) if condition.get("type") == "Completed"]
+        build.need(row.get("name") == execution_name and row.get("uid") == FAILED_V4_EXECUTION_UID
+            and row.get("completionTime") == FAILED_V4_COMPLETED and row.get("reconciling", False) is False
+            and probe.integer(row.get("taskCount"), 1) and probe.integer(row.get("failedCount"), 1)
+            and all(probe.integer(row.get(key, 0), 0) for key in (
+                "succeededCount", "runningCount", "cancelledCount", "retriedCount"))
+            and len(completed) == 1 and completed[0].get("state") == "CONDITION_FAILED"
+            and completed[0].get("executionReason") == "NON_ZERO_EXIT_CODE"
+            and probe.task_matches(row.get("template"), wanted["template"]["template"]),
+            "document_refresh_failed_v4_execution_changed")
+    receipt = module.corpus.native_payload(clients, job, execution, "inventory", event=module.payload.INVENTORY_EVENT)
+    diagnostic = receipt.get("identity_preflight", {}).get("diagnostic", {})
+    build.need(sha(canonical(receipt)) == FAILED_V4_RECEIPT
+        and receipt.get("failure_stage") == "identity_preflight" and receipt.get("all_required_passed") is False
+        and receipt.get("identity_preflight", {}).get("passed") is False
+        and receipt.get("identity_preflight", {}).get("cleanup_passed") is False
+        and diagnostic.get("launcher") == "returned" and diagnostic.get("launcher_code") == 0
+        and diagnostic.get("cleanup") == "unexpected_exit" and diagnostic.get("cleanup_code") == 1
+        and diagnostic.get("failure_phase") == "cleanup"
+        and all(item.get("attempted") is False and item.get("passed") is False for item in receipt.get("cases", [])),
+        "document_refresh_failed_v4_receipt_changed")
+    corpus_name = probe.PARENT + "/jobs/hirewiz-doc-six-" + handles["corpus"]["nonce"][:12]
+    try:
+        clients.job(corpus_name)
+    except clients.errors.HttpError as error:
+        build.need(error.status_code == 404, "document_refresh_failed_v4_corpus_absence_unverified")
+    else:
+        raise build.RefreshDenied("document_refresh_failed_v4_corpus_exists")
+    build.need(clients.job(job_name) == job, "document_refresh_failed_v4_job_changed")
+    return {"workflow_run": "44263912800", "workflow_attempt": 1, "artifact": FAILED_V4_ARTIFACT,
+        "manifest_sha256": FAILED_V4_MANIFEST, "source": FAILED_V4_SOURCE, "build_id": FAILED_V4_BUILD,
+        "image": image, "failed_job": job_name, "job_uid": FAILED_V4_JOB_UID,
+        "failed_execution": execution_name, "execution_uid": FAILED_V4_EXECUTION_UID,
+        "failure_payload_sha256": FAILED_V4_RECEIPT, "corpus_absent": True, "transition_intent_present": False,
+        "native_acceptance": False, "failed_job_replayed": False, "promotion_performed": False}
+
+
+def verify_failed_v4_serving(clients: Any, probe: Any, build: Any) -> None:
+    for name, (generation, revision) in FAILED_V4_SERVING.items():
+        resource = probe.PARENT + "/services/" + name
+        service = clients.service(resource)
+        traffic = service.get("trafficStatuses", [])
+        serving = [item for item in traffic if not probe.integer(item.get("percent", 0), 0)]
+        build.need(service.get("name") == resource and str(service.get("generation")) == generation
+            and str(service.get("observedGeneration")) == generation
+            and service.get("latestCreatedRevision") in (revision, resource + "/revisions/" + revision)
+            and service.get("latestReadyRevision") in (revision, resource + "/revisions/" + revision)
+            and len(serving) == 1 and probe.integer(serving[0].get("percent"), 100)
+            and serving[0].get("revision") in (revision, resource + "/revisions/" + revision),
+            "document_refresh_failed_v4_serving_predecessor_changed")
 
 
 def verify_expired_source_history(files: dict[str, bytes] | None, clients: Any, probe: Any,
@@ -354,14 +497,16 @@ def completed_serving_v3(binding: Any, accepted: Any, transition_accepted: Any,
                "document_refresh_prior_completed_v3_receipt_changed")
 
 
-def completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build):
+def completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build, *, version=4):
     """Source-profile history is identity only; current authority is reread later."""
     source_release = build.infra("document_source_release")
     identity: Any = binding.get("build_identity") if type(binding) is dict else None
     build.need(type(binding) is dict and set(binding) == {"version", "image", "build_identity"}
-               and type(binding["version"]) is int and binding["version"] == 4,
+               and type(binding["version"]) is int and binding["version"] == version,
                "document_refresh_prior_completed_source_receipt_changed")
     probe = source_release.SourceProbe(identity, root=build.ROOT, serving_read=True)
+    build.need(version == 4 or version == 5 and probe.CONTRACT_VERSION == version,
+               "document_refresh_prior_completed_source_receipt_changed")
     actual = build.verify_native_build(identity)
     build.need(all(identity[key] == value for key, value in actual.items())
                and sha(read(run / "local-native-proof.json", build)) == identity["local_native_proof_sha256"],
@@ -380,7 +525,7 @@ def completed_serving_source(run, binding, accepted, transition_accepted, comple
         and accepted["refresh_dockerfile_sha256"] == identity["refresh_dockerfile_sha256"]
         and accepted["source_sha256"] == probe.source.sources and accepted["policy_sha256"] == probe.POLICY
         and accepted["renderer_version"] == probe.profile.RENDERER and accepted["font_manifest_sha256"] == probe.profile.FONT
-        and type(accepted["contract_version"]) is int and accepted["contract_version"] == 4
+        and type(accepted["contract_version"]) is int and accepted["contract_version"] == version
         and type(accepted["required_case_count"]) is int and accepted["required_case_count"] == 17
         and accepted["job_name"] == source_release.prior.PARENT + "/jobs/hirewiz-doc-six-" + identity["nonce"][:12]
         and accepted["probe_sha256"] == sha(probe._rendered(image).encode())
@@ -390,7 +535,7 @@ def completed_serving_source(run, binding, accepted, transition_accepted, comple
         and complete["current_native_proof_retained"] is True and complete["automatic_replay"] is False
         and all(result[key] == value for key, value in complete.items())
         and result["source_commit"] == identity["source_commit"]
-        and result["renderer_contract_version"] == 4 and type(result["renderer_contract_version"]) is int
+        and result["renderer_contract_version"] == version and type(result["renderer_contract_version"]) is int
         and result["required_case_count"] == 17 and type(result["required_case_count"]) is int
         and result["definition_expires_at"] == accepted["definition_expires_at"]
         and result["prior_evidence_retained"] is True and result["prior_jobs_retained"] is True,
@@ -422,6 +567,11 @@ def completed_serving(run: Path, result: dict[str, Any], expected_journal: Path,
         build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
                    "document_refresh_prior_completed_source_receipt_changed")
         completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build)
+        return
+    if type(binding) is dict and binding.get("version") == 5:
+        build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
+                   "document_refresh_prior_completed_source_receipt_changed")
+        completed_serving_source(run, binding, accepted, transition_accepted, complete, result, build, version=5)
         return
     if type(binding) is dict and binding.get("version") == 3:
         build.need(allow_v3 and not os.path.lexists(run / "prior-native-retirement"),
@@ -748,7 +898,8 @@ def verify_failed(path: Path, files: dict[str, bytes], clients: Any, probe: Any,
 def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
            unaccepted_images: set[str] | None = None, *, retire_expired_v2: bool = False,
            rescue_expired_v2: bool = False, application_context: Any = None,
-           recover_expired_source: bool = False, expired_source_files: dict[str, bytes] | None = None) -> None:
+           recover_expired_source: bool = False, expired_source_files: dict[str, bytes] | None = None,
+           expected_image: str | None = None) -> None:
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
                and not (retire_expired_v2 and rescue_expired_v2),
                "document_refresh_recovery_mode_invalid")
@@ -758,6 +909,7 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     snapshot = clients.preflight()
     service = snapshot["service"]
     image = service["template"]["containers"][0]["image"]
+    build.need(expected_image is None or image == expected_image, "document_refresh_failed_v4_completed_lineage_changed")
     if expired_source_files is not None or (recover_expired_source and image.endswith("@" + EXPIRED_SOURCE_PARENT)):
         historical_image, jobs = verify_expired_source_history(expired_source_files, clients, probe, build)
         build.need(image != historical_image and service.get("labels", {}).get("hirewiz-refresh-job") not in jobs,
@@ -809,16 +961,92 @@ def verify_claim(body: dict[str, Any], acknowledgment: dict[str, Any], build: An
         http.close()
 
 
+def failed_v4_claim_body(fact: dict[str, Any], nonce: str) -> dict[str, Any]:
+    return {**fact, "version": 1, "status": "terminal_v4_inventory_failure_reconciled_not_acceptance",
+        "successor_nonce": nonce, "target_contract": {"kind": "expired-source-v4-to-v5",
+            "renderer_contract_version": 5, "required_case_count": 17}}
+
+
+def verify_completed_v5_consumer(run: Path, failed_v4: dict[str, Any], files: dict[str, bytes],
+                                 clients: Any, probe: Any, build: Any) -> str:
+    """Consume only this failed original after its claimed V5 successor actually served."""
+    private(run, build)
+    native, transition, claim = (run / name for name in ("native-proof", "transition", "failed-v4-inventory"))
+    for directory in (native, transition, claim):
+        private(directory, build)
+    build.need({entry.name for entry in claim.iterdir()} == {
+        "original", "claim.started.json", "claim.acknowledged.json", "disposition.json"}
+        and failed_v4_snapshot(claim / "original", build) == files,
+        "document_refresh_failed_v4_completed_custody_changed")
+    binding = build.decode(read(native / "binding.json", build))
+    acceptance = build.decode(read(native / "acceptance.json", build))
+    result = build.decode(read(run / "result.json", build))
+    complete = build.decode(read(transition / "complete.json", build))
+    completed_serving_source(run, binding, acceptance, build.decode(read(transition / "native-acceptance.json", build)),
+                             complete, result, build, version=5)
+    identity = binding["build_identity"]
+    nonce = identity["nonce"]
+    body = failed_v4_claim_body(failed_v4, nonce)
+    build.need(type(nonce) is str and re.fullmatch(r"[a-f0-9]{32}", nonce) and nonce != FAILED_V4_NONCE
+        and complete["prior_image"] == build.REPOSITORY + "@" + EXPIRED_SOURCE_PARENT
+        and build.decode(read(claim / "disposition.json", build)) == body
+        and build.decode(read(claim / "claim.started.json", build)) == {
+            "body_sha256": sha(canonical(body)), "automatic_replay": False},
+        "document_refresh_failed_v4_completed_claim_changed")
+    verify_claim(body, build.decode(read(claim / "claim.acknowledged.json", build)), build)
+
+    source_release = build.infra("document_source_release")
+    read_only_release = getattr(clients, "read_only_release", False)
+    successor = source_release.SourceProbe(identity, root=build.ROOT, serving_read=True, read_only_release=read_only_release)
+    build.need(identity["kind"] == source_release.v5_build_kind()
+        and asdict(successor._acceptance(clients, fresh=False)) == acceptance,
+        "document_refresh_failed_v4_completed_acceptance_changed")
+    service = clients.service(probe.PARENT + "/services/hirewiz-document-inspector")
+    current_image = service["template"]["containers"][0]["image"]
+    current = source_release.current_probe(current_image, service, read_only_release=read_only_release)
+    successor_image = identity["immutable_image"]
+    build.need(current.CONTRACT_VERSION == 5 and (current_image == successor_image
+        or current.build["kind"] == source_release.v5_definitions_kind()
+        and current.build["fixed_renderer_base"] == successor_image),
+        "document_refresh_failed_v4_completed_lineage_changed")
+    return current_image
+
+
+def claim_successor(body: dict[str, Any], target: Path, build: Any) -> None:
+    build.write_new(target / "claim.started.json", {"body_sha256": sha(canonical(body)), "automatic_replay": False})
+    http = build.native_http()
+    try:
+        name = object_name(body["job_uid"])
+        response, _ = http.request("https://storage.googleapis.com/storage/v1/b/" + build.PROJECT + "_cloudbuild/o/"
+            + quote(name, safe=""), method="GET", redirections=0)
+        build.need(response.status == 404, "document_refresh_recovery_claim_unknown_or_consumed")
+        # Only one successor can claim this original failed Job UID. Neither a
+        # duplicate nor an unknown delivery authorizes a second attempt.
+        response, raw = http.request("https://storage.googleapis.com/upload/storage/v1/b/" + build.PROJECT + "_cloudbuild/o?"
+            + urlencode({"uploadType": "media", "name": name, "ifGenerationMatch": "0"}),
+            method="POST", body=canonical(body), headers={"Content-Type": "application/json"}, redirections=0)
+        build.need(response.status in (200, 201), "document_refresh_recovery_claim_unknown_or_consumed")
+        value = build.decode(raw)
+        acknowledgment = {key: value.get(key) for key in ("name", "bucket", "generation")}
+        build.write_new(target / "claim.acknowledged.json", acknowledgment)
+    finally:
+        http.close()
+    verify_claim(body, acknowledgment, build)
+    build.write_new(target / "disposition.json", body)
+
+
 def prepare(directory: Path, history: Path | None, selected: str | None, *, refresh_module: Any,
             resuming_original: Path | None = None, retire_expired_v2: bool = False,
             rescue_expired_v2: bool = False,
             rescue_prior_journal: Path | None = None, consumed_history: Any = None,
             application_context: Any = None, source_revision: bool = False,
-            recover_expired_source: bool = False) -> str | None:
+            recover_expired_source: bool = False, source_v5: bool = False) -> str | None:
     build = refresh_module
     build.need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
+    build.need(type(source_v5) is bool and (not source_v5 or recover_expired_source is True),
+               "document_refresh_failed_v4_mode_refused")
     build.need(type(recover_expired_source) is bool and (not recover_expired_source
-        or not (source_revision or retire_expired_v2 or rescue_expired_v2 or resuming_original)
+        or not (source_revision and not source_v5 or retire_expired_v2 or rescue_expired_v2 or resuming_original)
         and selected is None and application_context is not None),
         "document_refresh_expired_source_mode_refused")
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
@@ -861,6 +1089,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     known_partials = 0
     completed_count = 0
     expired_source_files = None
+    failed_v4_files = None
+    completed_v5_consumers = []
     rescue_probe = build.infra("document_refresh_probe") if rescue_expired_v2 else None
     for run in runs:
         build.need(run.is_dir() and not run.is_symlink(), "document_refresh_prior_unknown_reconcile_only")
@@ -869,6 +1099,9 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             record_roots.append(root)
         if run.name == EXPIRED_SOURCE_ARTIFACT:
             expired_source_files = expired_source_snapshot(run, build)
+            continue
+        if run.name == FAILED_V4_ARTIFACT:
+            failed_v4_files = failed_v4_snapshot(run, build)
             continue
         result = run / "result.json"
         if consumed_history is not None and consumed_history.matches(run):
@@ -884,6 +1117,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             build.need(type(previous) is dict and previous.get("status") == "document_refresh_serving"
                        and previous.get("admission_restored") is True,
                        "document_refresh_prior_unknown_reconcile_only")
+            if os.path.lexists(run / "failed-v4-inventory"):
+                completed_v5_consumers.append(run)
             if rescue_expired_v2:
                 assert rescue_prior_journal is not None and rescue_probe is not None
                 completed_serving(run, previous, rescue_prior_journal, build, rescue_probe)
@@ -940,6 +1175,13 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             pending.append((job, files, run))
     build.need(not rescue_expired_v2 or completed_count == 1,
                "document_rescue_prior_completed_journal_required")
+    build.need(not source_v5 or failed_v4_files is not None, "document_refresh_failed_v4_artifact_required")
+    if failed_v4_files is not None and not source_v5:
+        build.need(not (source_revision or retire_expired_v2 or rescue_expired_v2
+            or resuming_original or recover_expired_source or selected is not None),
+            "document_refresh_failed_v4_mode_refused")
+        build.need(len(completed_v5_consumers) == 1 and application_context is not None,
+                   "document_refresh_failed_v4_completed_consumer_required")
     # Only failures still present in the bounded retrieved history need a
     # disposition. Completed newer runs must not depend forever on old logs,
     # LROs or source objects reaching the end of their provider retention.
@@ -964,11 +1206,20 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     for job, files, _ in pending:
         build.need(job == selected or job in records and records[job][0] == files,
                    "document_refresh_prior_unknown_reconcile_only")
-    if not (recover_expired_source or expired_source_files or records or selected or pre_native or pre_native_receipts):
+    if not (recover_expired_source or expired_source_files or records or selected or pre_native or pre_native_receipts
+            or failed_v4_files is not None):
         return None
     probe = build.infra("document_refresh_probe")
     clients = probe.Clients()
     try:
+        failed_v4 = verify_failed_v4(failed_v4_files, clients, probe, build) if failed_v4_files is not None else None
+        expected_image = None
+        if source_v5:
+            verify_failed_v4_serving(clients, probe, build)
+        elif failed_v4 is not None:
+            assert failed_v4_files is not None
+            expected_image = verify_completed_v5_consumer(completed_v5_consumers[0], failed_v4,
+                failed_v4_files, clients, probe, build)
         facts = {}
         for job, (files, raw, original_path) in records.items():
             fact = verify_failed(original_path, files, clients, probe, build)
@@ -1001,14 +1252,19 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             mode["recover_expired_source"] = True
         if expired_source_files is not None:
             mode["expired_source_files"] = expired_source_files
-        if verified_pre_native:
+        if expected_image is not None:
+            mode["expected_image"] = expected_image
+        if verified_pre_native or failed_v4 is not None:
             failed_jobs.update(job.rsplit("/", 1)[-1] for fact in verified_pre_native
                 for job in fact.get("absent_native_jobs", [fact["absent_native_job"]] if "absent_native_job" in fact else []))
-            joined(clients, probe, build, failed_jobs, {fact["image"] for fact in verified_pre_native if "image" in fact},
-                   **mode)
+            unaccepted_images = {fact["image"] for fact in verified_pre_native if "image" in fact}
+            if failed_v4 is not None:
+                failed_jobs.add(FAILED_V4_JOB)
+                unaccepted_images.add(failed_v4["image"])
+            joined(clients, probe, build, failed_jobs, unaccepted_images, **mode)
         else:
             joined(clients, probe, build, failed_jobs, **mode)
-        nonce = uuid.uuid4().hex if chosen is not None or open_rows else None
+        nonce = uuid.uuid4().hex if chosen is not None or open_rows or source_v5 else None
         build.need(nonce is None or nonce not in used_nonces,
                    "document_refresh_pre_native_successor_nonce_reused")
         if open_rows:
@@ -1037,6 +1293,16 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                 fd = os.open(target / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(content)
+        if source_v5:
+            assert failed_v4 is not None and failed_v4_files is not None and nonce is not None
+            build.need(nonce != FAILED_V4_NONCE, "document_refresh_recovery_successor_nonce_reused")
+            build.need(failed_v4_snapshot(history / FAILED_V4_ARTIFACT, build) == failed_v4_files,
+                       "document_refresh_failed_v4_manifest_changed")
+            verify_failed_v4_serving(clients, probe, build)
+            target = directory / "failed-v4-inventory"
+            target.mkdir(mode=0o700)
+            retain(failed_v4_files, target / "original")
+            claim_successor(failed_v4_claim_body(failed_v4, nonce), target, build)
         if chosen is None:
             return nonce
         assert selected is not None
@@ -1048,26 +1314,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
         retain(targets[0][1], target / "original")
         body = {**chosen, "version": 1, "status": "terminal_failure_reconciled_not_acceptance",
                 "successor_nonce": nonce, "failed_job_replayed": False}
-        build.write_new(target / "claim.started.json", {"body_sha256": sha(canonical(body)), "automatic_replay": False})
-        http = build.native_http()
-        try:
-            name = object_name(chosen["job_uid"])
-            response, _ = http.request("https://storage.googleapis.com/storage/v1/b/" + build.PROJECT + "_cloudbuild/o/"
-                + quote(name, safe=""), method="GET", redirections=0)
-            build.need(response.status == 404, "document_refresh_recovery_claim_unknown_or_consumed")
-            # Retain the exact intent before the only create-only write. An
-            # existing/unknown claim never authorizes another candidate.
-            response, raw = http.request("https://storage.googleapis.com/upload/storage/v1/b/" + build.PROJECT + "_cloudbuild/o?"
-                + urlencode({"uploadType": "media", "name": name, "ifGenerationMatch": "0"}),
-                method="POST", body=canonical(body), headers={"Content-Type": "application/json"}, redirections=0)
-            build.need(response.status in (200, 201), "document_refresh_recovery_claim_unknown_or_consumed")
-            value = build.decode(raw)
-            acknowledgment = {key: value.get(key) for key in ("name", "bucket", "generation")}
-            build.write_new(target / "claim.acknowledged.json", acknowledgment)
-        finally:
-            http.close()
-        verify_claim(body, acknowledgment, build)
-        build.write_new(target / "disposition.json", body)
+        claim_successor(body, target, build)
         return nonce
     finally:
         clients.close()

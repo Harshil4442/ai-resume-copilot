@@ -546,7 +546,7 @@ def test_actual_seven_mib_stdin_and_stdout_backpressure_preserves_count_and_hash
     _assert_child_reaped_and_pipes_closed(children[0])
 
 
-@pytest.mark.parametrize("profile", ["retained_v3", "source_revision"])
+@pytest.mark.parametrize("profile", ["retained_v3", "retained_v4", "source_v5"])
 def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(profile: str) -> None:
     from infra.gcp import document_candidate as legacy
     from infra.gcp import document_source_candidate as source
@@ -557,13 +557,19 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(p
         contents = source.historical_v3_contents(ROOT)
         policy_path, policy_digest = legacy.POLICY_PATH, legacy.POLICY_SHA256
         expected_sources = legacy.SOURCES
-    else:
-        # The prospective source policy must bind the actual working files;
-        # historical content cannot substitute for this current-source check.
-        contents, _, policy_digest = source.working_snapshot(ROOT)
-        policy_path = source.POLICY_PATH
+    elif profile == "retained_v4":
+        from test_document_source_revision import retained_v4_contents
+
+        contents = retained_v4_contents()
+        policy_path, policy_digest = source.POLICY_PATH, source.POLICY_SHA256
         expected_sources = source.SOURCES
-        assert policy_digest == source.POLICY_SHA256
+    else:
+        from infra.gcp import document_source_candidate_v5 as current
+
+        contents, _, policy_digest = current.working_snapshot(ROOT)
+        policy_path = current.POLICY_PATH
+        expected_sources = current.SOURCES
+        assert policy_digest == current.POLICY_SHA256
     raw = contents[policy_path]
     assert hashlib.sha256(raw).hexdigest() == policy_digest
     value = json.loads(raw)
@@ -582,11 +588,20 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(p
     assert value["transport"]["http_deadline_seconds"] == 75
     assert value["deployment_proven"] is False
     assert value["scope"]["host_parser_fallback"] is False
-    assert value["required_native_deployment_controls"]["forced_owned_sandbox_delete_before_release"] is True
+    if profile == "source_v5":
+        teardown = controls["owned_synchronous_sandbox_teardown"]
+        assert teardown["positive_owned_reaped_launcher_exit"] == 0
+        assert teardown["explicit_force_delete_after_unacknowledged_authorized_launch"] is True
+        assert teardown["strict_force_delete_exit_for_unknown_launch"] == 0
+        assert teardown["unknown_cleanup_quarantines_admission"] is True
+        assert controls["request_only_private_tmp_bind"]["erase_after_confirmed_native_teardown"] is True
+    else:
+        assert controls["forced_owned_sandbox_delete_before_release"] is True
     assert source.SOURCES == legacy.SOURCES | {source.DOCKERFILE}
     assert set(value["source_sha256"]) == expected_sources
     assert "backend/app/services/native_project.py" in value["source_sha256"]
-    assert value["docx_layout"]["processor_mode"] == "--docx-layout-stdin"
+    mode = "--sandbox-docx-layout-stdin" if profile == "source_v5" else "--docx-layout-stdin"
+    assert value["docx_layout"]["processor_mode"] == mode
     assert value["docx_layout"]["max_success_response_bytes"] == 32768
     assert value["docx_layout"]["release"]["download_rerender"] is False
     for name, expected in value["source_sha256"].items():

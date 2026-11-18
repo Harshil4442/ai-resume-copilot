@@ -392,10 +392,10 @@ def _native_history_prefixes(steps):
         r' \| \[\.workflow_run\.id, \.id, \.name, \.workflow_run\.head_branch\] \| @tsv', selectors[0][1])
     assert match is not None
     predicates = [re.fullmatch(r'startswith\("([^"\n]+)"\)', part) for part in match[1].split(" or ")]
-    assert len(predicates) == 3 and all(predicate is not None for predicate in predicates)
+    assert len(predicates) == 4 and all(predicate is not None for predicate in predicates)
     prefixes = {predicate[1] for predicate in predicates if predicate is not None}
     assert prefixes == {"document-refresh-refresh-", "document-refresh-full-source-refresh-",
-                        "document-refresh-resume-full-source-refresh-"}
+                        "document-refresh-resume-full-source-refresh-", "document-refresh-recover-source-v5-"}
     return prefixes
 
 
@@ -416,11 +416,11 @@ def test_workflow_keeps_diagnostics_out_of_every_native_history_prefix():
         "document-refresh-diagnostics-${{ env.REFRESH_MODE }}-${{ github.run_id }}-${{ github.run_attempt }}")
     prefixes = _native_history_prefixes(steps)
     for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh", "monitor",
-                 "audit-consumed-v2-history", "reconcile-final-v2-transition"):
+                 "audit-consumed-v2-history", "reconcile-final-v2-transition", "recover-source-v5"):
         name = f"document-refresh-diagnostics-{mode}-123456-1"
         assert all(not name.startswith(prefix) for prefix in prefixes)
     # Native evidence is still retained under its exact original prefixes.
-    for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh"):
+    for mode in ("refresh", "full-source-refresh", "resume-full-source-refresh", "recover-source-v5"):
         assert sum(f"document-refresh-{mode}-123456-1".startswith(prefix) for prefix in prefixes) == 1
 
 
