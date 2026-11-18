@@ -21,6 +21,7 @@ DOCKERFILE = v4.DOCKERFILE
 CONTRACT_PATHS = (
     *v4.CONTRACT_PATHS,
     "infra/gcp/document_source_candidate_v5.py",
+    "infra/gcp/document_source_readback_resume.py",
     "infra/gcp/document_source_payload_v5.py",
     "infra/gcp/document_source_receipt_v5.py",
 )

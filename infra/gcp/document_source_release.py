@@ -208,7 +208,15 @@ class SourceProbe:
         execution = clients.execution(execution_name)
         self.validate_execution(execution, job, plan)
         event = self._payload.INVENTORY_EVENT if mode == "inventory" else self._payload.CORPUS_EVENT
-        return job, execution, corpus.native_payload(clients, job, execution, mode, event=event)
+
+        def log_event():
+            return corpus.native_payload(clients, job, execution, mode, event=event)
+
+        if self._v5:
+            from infra.gcp.document_source_readback_resume import empty_event_retry
+
+            return job, execution, empty_event_retry(log_event)
+        return job, execution, log_event()
 
     def _verified_evidence(self, clients):
         runtime = self.source_contract()

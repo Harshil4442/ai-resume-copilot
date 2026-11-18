@@ -7,11 +7,14 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+import test_document_refresh_probe as native
 import test_document_refresh_transition as lifecycle
 from infra.gcp import document_candidate as courier
 from infra.gcp import document_refresh_transition as transition
 from infra.gcp import document_source_candidate as v4
 from infra.gcp import document_source_candidate_v5 as v5
+from infra.gcp import document_source_readback_resume as retained
+from infra.gcp import document_source_receipt_v5 as receipt
 from infra.gcp import document_source_release as release
 from infra.gcp import document_worker as worker
 from test_document_source_revision import accepted
@@ -70,6 +73,56 @@ def test_v5_cannot_reuse_v4_journal_or_raw_acceptance(probe, tmp_path, monkeypat
     path.write_text(json.dumps(record | {"version": 5}))
     assert probe.verify_successor(IMAGE, probe.build, tmp_path) == fresh
     assert seen == ["build"]
+
+
+@pytest.mark.parametrize(("mode", "observations", "error", "delays"), [
+    ("inventory", ("empty", "empty", "present"), None, [2, 2]),
+    ("corpus", ("empty", "empty", "empty"), "event_missing", [2, 2]),
+    ("corpus", ("foreign",), "log_scope_or_uniqueness", []),
+])
+def test_v5_log_retry_reads_only_same_successful_execution(
+    probe, monkeypatch, mode, observations, error, delays,
+):
+    nonce = probe.handles(probe.build)[mode]["nonce"]
+    job, execution = native.completed(native.job(IMAGE, nonce) | probe.desired(IMAGE, nonce, mode))
+    execution["startTime"] = job["createTime"]
+    name = execution["name"].rsplit("/", 1)[-1]
+    event = receipt.INVENTORY_EVENT if mode == "inventory" else receipt.CORPUS_EVENT
+    value = {"event": event, "execution_name": name}
+    entry = native.event(job, execution, value)
+    queries, calls, sleeps = [], [], []
+    original = retained.empty_event_retry
+    monkeypatch.setattr(retained, "empty_event_retry", lambda action: original(action, sleep=sleeps.append))
+
+    def read_job(resource):
+        calls.append(("job", resource))
+        assert resource == job["name"]
+        return job
+
+    def read_execution(resource):
+        calls.append(("execution", resource))
+        assert resource == execution["name"]
+        return execution
+
+    def entries(query, cursor):
+        response = observations[len(queries)]
+        queries.append(query)
+        assert cursor is None
+        if response == "empty":
+            return {"entries": []}
+        if response == "foreign":
+            return {"entries": [entry | {"labels": {"run.googleapis.com/execution_name": "other-execution"}}]}
+        return {"entries": [entry]}
+
+    client = SimpleNamespace(job=read_job, execution=read_execution, entries=entries)
+    if error is None:
+        assert probe._observation(client, mode) == (job, execution, value)
+    else:
+        with pytest.raises(probe.NativeProofDenied, match=error):
+            probe._observation(client, mode)
+    assert calls == [("job", job["name"]), ("execution", execution["name"])]
+    assert len(queries) == len(observations) and len(set(queries)) == 1 and sleeps == delays
+    assert f'labels."run.googleapis.com/execution_name"="{name}"' in queries[0] and event in queries[0]
 
 
 @pytest.mark.parametrize(("mode", "prior_policy"), [
