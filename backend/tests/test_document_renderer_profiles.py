@@ -12,8 +12,11 @@ from infra.gcp import document_refresh_auth as auth
 from infra.gcp import document_refresh_probe as probe
 from infra.gcp import document_renderer_profiles as profile
 from infra.gcp import document_worker as worker
+from test_document_source_revision import source as _retained_source_fixture
 
 from scripts import document_refresh as refresh
+
+retained_source = _retained_source_fixture
 
 
 def identity():
@@ -30,6 +33,7 @@ def proof():
     return value
 
 
+@pytest.mark.usefixtures("retained_source")
 def test_reviewed_profile_preserves_all_legacy_default_and_runtime_source_pins():
     assert worker.ACCEPTED_FONT_MANIFEST == probe.FONT == probe.LEGACY_FONT == "abaf429caeeeb5fbcc000c878a315c89e23ecd3dc912bb74df10761c144f7d60"
     assert probe.renderer_identity(profile.IMAGE) == (profile.RENDERER, profile.FONT)

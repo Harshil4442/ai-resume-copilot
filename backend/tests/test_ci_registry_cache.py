@@ -277,9 +277,14 @@ def test_failed_policy_write_removes_only_its_owned_new_file(tmp_path, monkeypat
     assert list(tmp_path.iterdir()) == [retained] and retained.read_text() == "preserve"
 
 
-def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_native_checks():
+@pytest.mark.parametrize("source_v5", [False, True])
+def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_native_checks(source_v5):
+    from test_document_source_revision import RETAINED_V4_SOURCE
+
     root = Path(__file__).resolve().parents[2]
-    workflow = (root / ".github/workflows/ci.yml").read_text()
+    path = ".github/workflows/ci.yml"
+    workflow = (root / path).read_text() if source_v5 else subprocess.check_output(
+        ["git", "show", RETAINED_V4_SOURCE + ":" + path], cwd=root, timeout=10, text=True)
     step = workflow.split("      - name: Build and verify genuine native document engines\n", 1)[1].split(
         "      - name:", 1)[0]
     assert 'EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""' in step.split("        run: |", 1)[0]
@@ -288,6 +293,7 @@ def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_
     check = "backend/.venv/bin/python backend/scripts/document_test_image.py"
     assert step.index(create) < step.index(export) < step.index(check)
     assert 'trap \'rm -f -- "$document_source_policy_path"\' EXIT' in step
-    assert '--platform linux/amd64 --source-revision --output "$document_test_report_path"' in step
+    mode = "--source-revision --source-v5" if source_v5 else "--source-revision"
+    assert f'--platform linux/amd64 {mode} --output "$document_test_report_path"' in step
     assert "--image-id" not in step and "|| true" not in step and "continue-on-error" not in step
     assert workflow.count("EXPERIMENTAL_BUILDKIT_SOURCE_POLICY:") == 1

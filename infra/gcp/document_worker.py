@@ -131,11 +131,14 @@ def api_environment(origin: str) -> dict[str, str]:
     }
 
 
-def render(image: str, release: str, *, candidate_v3: bool = False, source_revision: bool = False) -> dict[str, Any]:
+def render(image: str, release: str, *, candidate_v3: bool = False, source_revision: bool = False,
+           source_v5: bool = False) -> dict[str, Any]:
     _proposal()
-    if type(candidate_v3) is not bool or type(source_revision) is not bool or candidate_v3 and source_revision:
+    selectors = (candidate_v3, source_revision, source_v5)
+    if any(type(value) is not bool for value in selectors) or sum(selectors) > 1:
         _deny()
     policy = POLICY_SHA256
+    transport = []
     if candidate_v3:
         import importlib.util
         spec = importlib.util.spec_from_file_location("document_candidate_configuration", ROOT / "infra/gcp/document_candidate.py")
@@ -155,6 +158,16 @@ def render(image: str, release: str, *, candidate_v3: bool = False, source_revis
         except source_profile.SourceDenied:
             _deny()
         policy = source_profile.POLICY_SHA256
+    if source_v5:
+        from infra.gcp import document_source_candidate as v4
+        from infra.gcp import document_source_candidate_v5 as v5
+
+        try:
+            v5.working_snapshot(ROOT)
+        except v4.SourceDenied:
+            _deny()
+        policy = v5.POLICY_SHA256
+        transport = [{"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE}]
     if not isinstance(image, str) or not _IMAGE.fullmatch(image):
         _deny()
     if not isinstance(release, str) or not _RELEASE.fullmatch(release):
@@ -179,7 +192,7 @@ def render(image: str, release: str, *, candidate_v3: bool = False, source_revis
                 "startupProbe": {"tcpSocket": {"port": 8080}, "periodSeconds": 10,
                                  "timeoutSeconds": 1, "failureThreshold": 24},
                 "env": [{"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image},
-                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": policy}],
+                        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": policy}, *transport],
             }],
         },
     }
@@ -341,22 +354,31 @@ def validate_maintenance_identity(snapshot: dict[str, Any], *, expected_uid: str
 
 def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
                    coordinator_phase: bool = False, historical_v1: bool = False,
-                   candidate_v3: bool = False, source_revision: bool = False, legacy_source_revision: bool = False) -> dict[str, Any]:
+                   candidate_v3: bool = False, source_revision: bool = False, legacy_source_revision: bool = False,
+                   source_v5: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
     try:
         if (type(api_phase) is not bool or type(coordinator_phase) is not bool or type(historical_v1) is not bool
                 or type(candidate_v3) is not bool or type(source_revision) is not bool or type(legacy_source_revision) is not bool
+                or type(source_v5) is not bool
                 or legacy_source_revision and not source_revision
-                or historical_v1 and (candidate_v3 or source_revision) or candidate_v3 and source_revision
+                or sum((historical_v1, candidate_v3, source_revision, source_v5)) > 1
                 or coordinator_phase and not api_phase):
             _deny()
-        expected = render(image, release, candidate_v3=candidate_v3, source_revision=source_revision)
-        if legacy_source_revision:
-            # Compare retained serving configuration only. render() and writes
-            # remain current-only; native Build/archive proof is still mandatory.
+        expected = render(image, release, candidate_v3=candidate_v3, source_v5=source_v5)
+        if source_revision:
+            # A retained worker configuration belongs to its exact policy.
+            # Native Build/archive checks bind its runtime independently.
             from infra.gcp import document_source_candidate as source_profile
-            source_profile.validate_policy((ROOT / source_profile.LEGACY_POLICY_PATH).read_bytes(), ROOT, legacy=True)
-            expected["service"]["template"]["containers"][0]["env"][1]["value"] = source_profile.LEGACY_POLICY_SHA256
+            path = ROOT / (source_profile.LEGACY_POLICY_PATH if legacy_source_revision else source_profile.POLICY_PATH)
+            if path.is_symlink():
+                _deny()
+            try:
+                source_profile.validate_policy(path.read_bytes(), ROOT, legacy=legacy_source_revision)
+            except source_profile.SourceDenied:
+                _deny()
+            expected["service"]["template"]["containers"][0]["env"][1]["value"] = (
+                source_profile.LEGACY_POLICY_SHA256 if legacy_source_revision else source_profile.POLICY_SHA256)
         if historical_v1:
             # Only the fixed pre-native policy may describe an existing V1
             # service. Rendering new proposals and API pins stays current-only;

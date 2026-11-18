@@ -772,7 +772,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     workflow = yaml.safe_load((refresh.ROOT / ".github/workflows/document-refresh.yml").read_text())
     trigger = workflow.get("on", workflow.get(True))
     assert trigger["workflow_dispatch"]["inputs"]["mode"]["options"] == [
-        "monitor", "refresh", "full-source-refresh", "resume-full-source-refresh",
+        "monitor", "refresh", "full-source-refresh", "recover-source-v5", "resume-full-source-refresh",
         "resume-expired-v2-transition", "resume-partial-v2-transition", "resume-final-v2-transition",
         "reconcile-final-v2-transition", "audit-consumed-v2-history"]
     job = workflow["jobs"]["maintenance"]
@@ -789,7 +789,7 @@ def test_full_source_workflow_reuses_trusted_scope_and_retained_history_without_
     assert candidate["if"] == "env.REFRESH_MODE == 'full-source-refresh' && env.RESUME_COMPLETED_SOURCE_READBACK != 'true'"
     assert "--prior-history-directory" in candidate["run"] and "--recover-failed-native-job" in candidate["run"]
     history = next(step for step in job["steps"] if step.get("name") == "Retrieve prior owned native proof journals")
-    assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh'"
+    assert history["if"] == "env.REFRESH_MODE == 'refresh' || env.REFRESH_MODE == 'full-source-refresh' || env.REFRESH_MODE == 'resume-full-source-refresh' || env.REFRESH_MODE == 'recover-source-v5'"
     assert 'startswith("document-refresh-refresh-") or startswith("document-refresh-full-source-refresh-")' in history["run"]
     assert 'startswith("document-refresh-full-source-candidate-' not in history["run"]
     retained = next(step for step in job["steps"] if step.get("name") ==

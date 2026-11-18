@@ -143,3 +143,34 @@ original-journal reconciliation and remaining-only restoration. No generic
 automatic continuation is claimed for those cases. Preserve the original flags,
 handles and once markers; never rerun the expired-source command in a fresh
 directory to escape ambiguity.
+
+## Recover the scanner with synchronous sandbox teardown
+
+On 18 November, workflow 44263912800 built fresh definitions, then stopped at
+the first native job. Cloud Run reported a successful synchronous sandbox
+command and exit 1 from a second delete of that sandbox. All document cases
+were still unattempted. The original build, failed job and journal are retained.
+[Cloud Run sandbox CLI reference](https://docs.cloud.google.com/run/docs/reference/sandbox-cli)
+[Failed workflow](https://github.com/Harshil4442/ai-resume-copilot/actions/runs/44263912800)
+
+The V5 worker reads the processor outcome from a bounded response tied to the
+original request. A successful synchronous launcher exit confirms provider
+teardown, and the existing inode checks confirm removal of the request directory
+before the worker returns a result. An uncertain launcher still requires a
+confirmed forced delete before request cleanup. An unverifiable cleanup
+quarantines document admission. The native receipt makes the processor outcome
+and the launcher outcome independently verifiable.
+
+Use the manual `recover-source-v5` mode on the qualified exact `main` commit.
+It rereads the retained V4 failure and its original operations and checks that
+the corpus job is absent. The create-only claim binds the failed inventory
+and its manifest to one new build nonce. That nonce owns the reviewed source
+build, the singleton inventory job and the full 17-case corpus. After passing
+proof, the transition closes and rechecks the callers, updates the serving
+scanner, and restores the captured admission settings. Verify the serving
+digest, all caller pins and the new expiry after promotion.
+
+Use ordinary `refresh` for definitions on a currently verified V5 image.
+The definitions build inherits the exact current worker bytes and must pass
+the same native safety checks before it reaches the callers. Keep any failed
+or interrupted run's original evidence and reconcile its exact operations.

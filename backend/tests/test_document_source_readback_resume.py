@@ -80,6 +80,9 @@ class Http:
 
 def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     profile = importlib.import_module("infra.gcp.document_source_candidate")
+    forward = importlib.import_module("infra.gcp.document_source_candidate_v5")
+    from test_document_source_revision import RETAINED_V4_SOURCE
+
     from scripts import schema25_app_release_contract_v3 as current
 
     assert len(resume.FILES) == 21
@@ -87,11 +90,26 @@ def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     assert len(profile.SOURCES) == 22 and len(profile.CONTRACT_PATHS) == 14
     original = profile.committed(resume.ORIGINAL_SOURCE, root=ROOT)
     assert original.qualification_sha256 == "61b313bcb98d1d9931efd49ac8e9f8a3d307de0785e97e3c1705760a4c10ae50"
+    original_bytes = {name: profile.git(ROOT, "show", resume.ORIGINAL_SOURCE + ":" + name)
+                      for name in set(profile.SOURCES) | {profile.POLICY_PATH, *profile.CONTRACT_PATHS}}
+    retained_bytes = {name: profile.git(ROOT, "show", RETAINED_V4_SOURCE + ":" + name) for name in original_bytes}
     for name in set(profile.SOURCES) | {profile.POLICY_PATH}:
-        assert (ROOT / name).read_bytes() == subprocess.check_output(["git", "show", resume.ORIGINAL_SOURCE + ":" + name], cwd=ROOT)
-    changed = {name for name in profile.CONTRACT_PATHS if (ROOT / name).read_bytes()
-        != subprocess.check_output(["git", "show", resume.ORIGINAL_SOURCE + ":" + name], cwd=ROOT)}
-    assert changed == set(current.CURRENT_DOCUMENT_HELPERS)
+        assert retained_bytes[name] == original_bytes[name]
+    retained_changes = {name for name in profile.CONTRACT_PATHS if retained_bytes[name] != original_bytes[name]}
+    assert retained_changes == set(current.CURRENT_DOCUMENT_HELPERS)
+
+    contents, _, _ = forward.working_snapshot(ROOT)
+    runtime_changes = {name for name in profile.SOURCES if contents[name] != retained_bytes[name]}
+    assert runtime_changes == {"infra/document-processing/service.py", "infra/document-processing/processor.py"}
+    assert (ROOT / profile.POLICY_PATH).read_bytes() == original_bytes[profile.POLICY_PATH]
+    forward_changes = {name for name in profile.CONTRACT_PATHS if (ROOT / name).read_bytes() != retained_bytes[name]}
+    assert forward_changes == {
+        "backend/scripts/document_refresh.py", "backend/scripts/document_test_image.py",
+        "infra/gcp/document_candidate_probe.py", "infra/gcp/document_candidate_release.py",
+        "infra/gcp/document_refresh_probe.py", "infra/gcp/document_refresh_recovery.py",
+        "infra/gcp/document_refresh_transition.py", "infra/gcp/document_source_release.py",
+        "infra/gcp/document_worker.py", "infra/gcp/fresh_monetary_release.py",
+    }
     # Retained readback still reconstructs its original helper qualification.
     # Its historical mutation entry must refuse this different current helper
     # tree rather than adopting the new maintenance code under an old receipt.

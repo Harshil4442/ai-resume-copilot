@@ -16,6 +16,7 @@ from infra.gcp import document_consumed_native as audit
 from infra.gcp import document_refresh_recovery as recovery
 from infra.gcp import document_refresh_transition as transition
 from infra.gcp import document_source_candidate as profile
+from infra.gcp import document_source_candidate_v5 as forward_profile
 from infra.gcp import document_source_release as release
 from test_document_source_revision import (
     IMAGE,
@@ -302,6 +303,7 @@ def test_explicit_mode_reaches_exact_child_and_transition_without_daily_full_reb
             {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
             policy_for_serving=lambda *_: profile.POLICY_SHA256),
         "document_source_release": SimpleNamespace(promote=promote)}
+    modules["document_source_candidate_v5"] = forward_profile
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
     monkeypatch.setattr(builder, "source_definitions_candidate", selected)
     monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("Synthetic dispatch only"))
@@ -483,6 +485,7 @@ def test_nonserving_history_uses_archive_if_present_and_native_proof_if_missing(
         verify_caller_pins=lambda *_args, **_kwargs: None)
     modules = {"document_refresh_probe": fake_probe, "document_source_release": release,
         "document_refresh_transition": transition}
+    modules["document_source_candidate_v5"] = forward_profile
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
     monkeypatch.setattr(release, "verify_expired_current_source_predecessor", lambda *args: observed.append(args))
     monkeypatch.setattr(transition, "Controller", lambda *_args, **_kwargs: SimpleNamespace(ready=lambda *_a, **_k: None))

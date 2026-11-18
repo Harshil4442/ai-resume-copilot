@@ -139,10 +139,16 @@ def validate_execution_template(row: Any, job: dict[str, Any], wanted: dict[str,
 
 
 def native_payload(clients: Any, job: dict[str, Any], execution: dict[str, Any], mode: str, *, event: str | None = None) -> dict[str, Any]:
+    from infra.gcp import document_source_receipt_v5
+
     allowed = {"hirewiz_document_candidate_inventory_v1", "hirewiz_document_candidate_required_v3",
-               "hirewiz_document_source_inventory_v1", "hirewiz_document_source_required_v4"}
+               "hirewiz_document_source_inventory_v1", "hirewiz_document_source_required_v4",
+               document_source_receipt_v5.INVENTORY_EVENT, document_source_receipt_v5.CORPUS_EVENT}
     event = event or ("hirewiz_document_candidate_inventory_v1" if mode == "inventory" else "hirewiz_document_candidate_required_v3")
     need(event in allowed, "event_invalid")
+    if event in {document_source_receipt_v5.INVENTORY_EVENT, document_source_receipt_v5.CORPUS_EVENT}:
+        need((mode, event) in {("inventory", document_source_receipt_v5.INVENTORY_EVENT),
+                              ("corpus", document_source_receipt_v5.CORPUS_EVENT)}, "event_invalid")
     job_id, execution_id = job["name"].rsplit("/", 1)[-1], execution["name"].rsplit("/", 1)[-1]
     begin, end = prior.timestamp(job["createTime"]), prior.timestamp(execution["completionTime"])
     query = (f'resource.type="cloud_run_job" AND resource.labels.project_id="{prior.PROJECT}" '

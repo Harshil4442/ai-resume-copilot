@@ -8,6 +8,7 @@ import subprocess
 import sys
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from types import SimpleNamespace
 from unittest.mock import create_autospec
 
@@ -17,6 +18,7 @@ from infra.gcp import document_candidate as courier
 from infra.gcp import document_candidate_release as v3
 from infra.gcp import document_refresh_recovery as recovery
 from infra.gcp import document_source_candidate as profile
+from infra.gcp import document_source_candidate_v5 as forward_profile
 from infra.gcp import document_source_payload as payload
 from infra.gcp import document_source_receipt as receipt
 from infra.gcp import document_source_release as release
@@ -27,15 +29,25 @@ from scripts import document_test_image as engines
 IMAGE = native.IMAGE
 PARENT = builder.REPOSITORY + "@sha256:" + "e" * 64
 NONCE = native.NONCE
+RETAINED_V4_SOURCE = "ade1d75633df5e5bb52ac222ed7252dce7d84d57"
+
+
+@cache
+def retained_v4_contents():
+    """Resolve the V4 worker and policy from one verified retained Git tree."""
+    retained = profile.committed(RETAINED_V4_SOURCE)
+    return {name: profile.git(profile.ROOT, "show", retained.commit + ":" + name)
+            for name in (*retained.sources, retained.policy_path)}
 
 
 @pytest.fixture
 def source(tmp_path, monkeypatch):
     root = tmp_path / "owned-source"
     root.mkdir(mode=0o700)
-    contents, _, _ = profile.working_snapshot()
+    contents = dict(retained_v4_contents())
     names = (*profile.CONTRACT_PATHS, courier.POLICY_PATH, courier.REFRESH_DOCKERFILE,
-             "infra/gcp/document_candidate_payload.py")
+             profile.LEGACY_POLICY_PATH, "infra/gcp/document_candidate_payload.py",
+             "infra/gcp/document-worker.disabled.json", "infra/gcp/document_accepted_v2/policy.json")
     contents.update({name: (profile.ROOT / name).read_bytes() for name in names})
     for folder, pattern in (("infra/gcp", "*.py"), ("infra/document-processing", "*.Dockerfile")):
         contents.update({str(path.relative_to(profile.ROOT)): path.read_bytes()
@@ -76,8 +88,9 @@ def build(source, *, definitions=False):
 
 def test_only_reviewed_source_hashes_change_without_weakening_policy():
     _, previous = profile.frozen_v3()
-    contents, hashes, policy = profile.working_snapshot()
-    current = json.loads(contents[profile.POLICY_PATH])
+    raw = retained_v4_contents()[profile.POLICY_PATH]
+    hashes, policy = profile.validate_policy(raw), profile.digest(raw)
+    current = json.loads(raw)
     assert {key: value for key, value in current.items() if key != "source_sha256"} == {
         key: value for key, value in previous.items() if key != "source_sha256"}
     assert {name for name in hashes if hashes[name] != previous["source_sha256"].get(name)} == {
@@ -490,6 +503,7 @@ def test_scheduled_refresh_uses_only_source_definition_child_without_downgrade(m
             preflight=lambda: {"service": {"template": {"containers": [{"image": PARENT}]}}}, close=lambda: None),
             policy_for_serving=lambda *_: profile.POLICY_SHA256),
         "document_source_release": SimpleNamespace(promote=promoted)}
+    modules["document_source_candidate_v5"] = forward_profile
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
     monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("Dispatch regression must not call providers"))
     monkeypatch.setattr(builder, "source_definitions_candidate", selected)
@@ -574,6 +588,7 @@ def test_retained_source_policy_refuses_old_candidate_builds_and_requires_curren
             policy_for_serving=lambda *_: profile.LEGACY_POLICY_SHA256),
         "document_candidate": SimpleNamespace(POLICY_SHA256=courier.POLICY_SHA256),
         "document_source_release": SimpleNamespace(promote=promoted)}
+    modules["document_source_candidate_v5"] = forward_profile
     monkeypatch.setattr(builder, "infra", modules.__getitem__)
     monkeypatch.setattr(builder, "native_http", lambda: pytest.fail("No provider entry in dispatch regression"))
     monkeypatch.setattr(builder, "native_build", lambda *a, **k: pytest.fail("No native Build entry"))

@@ -134,6 +134,14 @@ def policy_for_serving(metadata: Any, image: str) -> str:
          "document_native_serving_policy_unverified")
     policy = matches[0]["value"]
     from infra.gcp import document_source_candidate as source_revision
+    from infra.gcp import document_source_candidate_v5 as source_v5
+
+    if policy == source_v5.POLICY_SHA256:
+        need(type(image) is str and IMAGE.fullmatch(image) and image != candidate.IMAGE
+             and [row for row in env if type(row) is dict and row.get("name") == source_v5.TRANSPORT_ENV]
+             == [{"name": source_v5.TRANSPORT_ENV, "value": source_v5.TRANSPORT_MODE}],
+             "document_native_serving_policy_unverified")
+        return policy
     need((policy in source_revision.READ_POLICIES and image != candidate.IMAGE and type(image) is str and IMAGE.fullmatch(image))
          or (policy == candidate.POLICY_SHA256 and type(image) is str and IMAGE.fullmatch(image))
          or (image != candidate.IMAGE and policy in {POLICY, LEGACY_POLICY}),
@@ -413,13 +421,17 @@ def validate_worker_snapshot(clients: Any, snapshot: dict[str, Any], *, historic
     try:
         candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
         from infra.gcp import document_source_candidate as source_revision
+        from infra.gcp import document_source_candidate_v5 as source_v5
+
         observed_policy = policy_for_serving(service, image)
         candidate_v3 = observed_policy == candidate.POLICY_SHA256
         source_v4 = observed_policy in source_revision.READ_POLICIES
+        v5_options = {"source_v5": True} if observed_policy == source_v5.POLICY_SHA256 else {}
         configuration.check_snapshot(snapshot, image, service.get("template", {}).get("labels", {}).get("hirewiz-source"),
                                      api_phase=True, coordinator_phase=True, historical_v1=historical_v1,
                                      candidate_v3=candidate_v3, source_revision=source_v4,
-                                     legacy_source_revision=observed_policy == source_revision.LEGACY_POLICY_SHA256)
+                                     legacy_source_revision=observed_policy == source_revision.LEGACY_POLICY_SHA256,
+                                     **v5_options)
     except configuration.ConfigurationDenied:
         raise NativeProofDenied("document_native_worker_configuration_changed") from None
     return image
@@ -429,8 +441,8 @@ def verify_caller_pins(clients: Any, image: str, *, policy_sha256: str | None = 
                        api_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None,
                        caller_serving_validator: Callable[[Any, Any, str, str], dict[str, Any]] | None = None) -> None:
     """Old acceptance evidence is retained until both actual serving callers move."""
-    from infra.gcp import document_source_candidate as source_profile
-    if policy_sha256 in source_profile.READ_POLICIES:
+    from infra.gcp.document_source_release import source_policies
+    if policy_sha256 in source_policies():
         from infra.gcp.document_source_release import verify_caller_pins as source_pins
         return source_pins(clients, image, caller_serving_validator=caller_serving_validator)
     candidate = load_source("hirewiz_document_candidate_profile", HERE / "document_candidate.py")
@@ -919,8 +931,8 @@ def _verify_successor_once(image: str, build_identity: dict[str, Any], journal: 
 
 def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Maintenance uses only the dedicated unattended service-account identity."""
-    from infra.gcp import document_source_candidate as source_profile
-    if policy_for_serving(service_metadata, image) in source_profile.READ_POLICIES:
+    from infra.gcp.document_source_release import source_policies
+    if policy_for_serving(service_metadata, image) in source_policies():
         from infra.gcp.document_source_release import (
             verify_current_successor as source_current,
         )
@@ -936,8 +948,8 @@ def verify_current_successor(image: str, service_metadata: dict[str, Any]) -> Na
 
 def verify_current_successor_for_release(image: str, service_metadata: dict[str, Any]) -> NativeAcceptance:
     """Ordinary release uses only the original, read-only retained SDK identity."""
-    from infra.gcp import document_source_candidate as source_profile
-    if policy_for_serving(service_metadata, image) in source_profile.READ_POLICIES:
+    from infra.gcp.document_source_release import source_policies
+    if policy_for_serving(service_metadata, image) in source_policies():
         from infra.gcp.document_source_release import (
             verify_current_successor as source_current,
         )
