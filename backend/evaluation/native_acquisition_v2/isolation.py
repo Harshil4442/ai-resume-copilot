@@ -290,7 +290,8 @@ def check_evaluation_workers(plan: Plan, inspector: dict[str, Any], compiler: di
          and inspector["revision"].get("uid") == plan.inspector_revision_uid
          and compiler["service"].get("uid") == plan.compiler_service_uid
          and compiler["revision"].get("uid") == plan.compiler_revision_uid, "worker_identity")
-    old._service_configuration(inspector, documents.render(plan.inspector_image, plan.inspector_release, source_revision=True), documents)
+    expected = documents.render_retained_source(plan.inspector_image, plan.inspector_release)
+    old._service_configuration(inspector, expected, documents)
     old._service_configuration(compiler, tex.render(plan.compiler_image, plan.compiler_release, coordinator_phase=True), tex)
     wanted = [{"role": "roles/run.invoker", "members": sorted("serviceAccount:" + name
         for name in (documents.API_INVOKER, documents.UPLOAD_COORDINATOR, EVALUATOR))}]

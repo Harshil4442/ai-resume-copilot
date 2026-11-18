@@ -224,7 +224,7 @@ def check_evaluation_workers(plan: Plan, inspector: dict[str, Any], compiler: di
          and inspector["revision"].get("uid") == plan.inspector_revision_uid
          and compiler["service"].get("uid") == plan.compiler_service_uid
          and compiler["revision"].get("uid") == plan.compiler_revision_uid, "worker_plan_identity")
-    expected = documents.render(plan.inspector_image, plan.inspector_release, source_revision=True)
+    expected = documents.render_retained_source(plan.inspector_image, plan.inspector_release)
     _service_configuration(inspector, expected, documents)
     expected_tex = tex.render(plan.compiler_image, plan.compiler_release, coordinator_phase=True)
     _service_configuration(compiler, expected_tex, tex)

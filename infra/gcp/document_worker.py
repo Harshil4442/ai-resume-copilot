@@ -203,6 +203,25 @@ def render(image: str, release: str, *, candidate_v3: bool = False, source_revis
             "api_wiring_enabled": False, "runtime_isolation_proven": False}
 
 
+def render_retained_source(image: str, release: str, *, legacy: bool = False) -> dict[str, Any]:
+    """Compare a retained worker against its frozen policy, without current runtime bytes."""
+    from infra.gcp import document_source_candidate as source_profile
+
+    if type(legacy) is not bool:
+        _deny()
+    expected = render(image, release)
+    path = ROOT / (source_profile.LEGACY_POLICY_PATH if legacy else source_profile.POLICY_PATH)
+    try:
+        if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= MAX_INPUT_BYTES:
+            _deny()
+        source_profile.validate_policy(path.read_bytes(), ROOT, legacy=legacy)
+    except (OSError, source_profile.SourceDenied):
+        _deny()
+    expected["service"]["template"]["containers"][0]["env"][1]["value"] = (
+        source_profile.LEGACY_POLICY_SHA256 if legacy else source_profile.POLICY_SHA256)
+    return expected
+
+
 def _configuration(actual: dict[str, Any], expected: dict[str, Any]) -> None:
     for field in ("serviceAccount", "executionEnvironment", "maxInstanceRequestConcurrency", "timeout"):
         if not _same(actual.get(field), expected[field]):
@@ -365,20 +384,8 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
                 or sum((historical_v1, candidate_v3, source_revision, source_v5)) > 1
                 or coordinator_phase and not api_phase):
             _deny()
-        expected = render(image, release, candidate_v3=candidate_v3, source_v5=source_v5)
-        if source_revision:
-            # A retained worker configuration belongs to its exact policy.
-            # Native Build/archive checks bind its runtime independently.
-            from infra.gcp import document_source_candidate as source_profile
-            path = ROOT / (source_profile.LEGACY_POLICY_PATH if legacy_source_revision else source_profile.POLICY_PATH)
-            if path.is_symlink():
-                _deny()
-            try:
-                source_profile.validate_policy(path.read_bytes(), ROOT, legacy=legacy_source_revision)
-            except source_profile.SourceDenied:
-                _deny()
-            expected["service"]["template"]["containers"][0]["env"][1]["value"] = (
-                source_profile.LEGACY_POLICY_SHA256 if legacy_source_revision else source_profile.POLICY_SHA256)
+        expected = (render_retained_source(image, release, legacy=legacy_source_revision) if source_revision
+                    else render(image, release, candidate_v3=candidate_v3, source_v5=source_v5))
         if historical_v1:
             # Only the fixed pre-native policy may describe an existing V1
             # service. Rendering new proposals and API pins stays current-only;

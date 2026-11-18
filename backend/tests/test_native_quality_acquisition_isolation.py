@@ -76,8 +76,31 @@ def snapshot(p):
                         "includedPermissions": ["storage.objects.get", "storage.objects.create"]},
         "bucket_iam": {"version": 3, "bindings": [{"role": isolation.ROLE,
             "members": ["serviceAccount:" + isolation.EVALUATOR], "condition": p.condition}]},
-        "inspector": worker(D, D.render(IMAGE, RELEASE, source_revision=True)),
+        "inspector": worker(D, D.render_retained_source(IMAGE, RELEASE)),
         "compiler": worker(T, T.render(TEX_IMAGE, RELEASE, coordinator_phase=True))}
+
+
+def test_retained_v4_uses_its_frozen_policy_with_the_v5_checkout():
+    from infra.gcp import document_source_candidate as v4
+    from infra.gcp import document_source_candidate_v5 as v5
+
+    retained = D.render_retained_source(IMAGE, RELEASE)
+    environment = retained["service"]["template"]["containers"][0]["env"]
+    assert environment == [
+        {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": IMAGE},
+        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": v4.POLICY_SHA256},
+    ]
+    current = D.render(IMAGE, RELEASE, source_v5=True)
+    assert current["service"]["template"]["containers"][0]["env"] == [
+        {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": IMAGE},
+        {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": v5.POLICY_SHA256},
+        {"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE},
+    ]
+    assert retained["api_wiring_enabled"] is False and retained["runtime_isolation_proven"] is False
+    with pytest.raises(D.ConfigurationDenied, match="document_worker_configuration_unverified"):
+        D.render(IMAGE, RELEASE, source_revision=True)
+    with pytest.raises(D.ConfigurationDenied, match="document_worker_configuration_unverified"):
+        D.render_retained_source(IMAGE, RELEASE, legacy=1)
 
 
 def test_full_actual_shape_is_checked_without_claiming_native_or_processing_authority():
