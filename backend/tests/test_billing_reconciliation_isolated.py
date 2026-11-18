@@ -216,9 +216,14 @@ def setup(db, replies, *, race=None):
         if existing is None:
             existing = Transaction(order_id=order.id, provider="razorpay", provider_payment_id=payment_id,
                 status=status, captured_at=None, provider_fee_amount_minor=fee, provider_fee_tax_minor=tax,
+                gross_amount_minor=order.gross_amount_minor, currency=order.currency,
                 estimated_net_amount_minor=order.gross_amount_minor - (fee or 0), refunded_amount_minor=0)
             db.add(existing)
         return existing
+
+    def grant_entitlement(db, order, now):
+        db.grants.append((order.entitlement_quantity, order.cost_policy_snapshot["entitlements"]["analysis_units"]))
+        db.add(Ledger(source_order_id=order.id, user_id=order.user_id, status="active"))
 
     class ValidationError(ValueError):
         def __init__(self, code):
@@ -239,8 +244,7 @@ def setup(db, replies, *, race=None):
         "PROVIDER": "razorpay", "Any": object, "_payment_transaction": transaction,
         "or_": lambda *conditions: ("or", conditions),
         "_entity": lambda payload, key: payload.get("payload", {}).get(key, {}).get("entity"),
-        "_grant_entitlement": lambda db, order, now: db.grants.append((order.entitlement_quantity,
-            order.cost_policy_snapshot["entitlements"]["analysis_units"])),
+        "_grant_entitlement": grant_entitlement,
         "_adjust_service_credit_refund": lambda db, order, now: db.adjustments.append(order.refunded_amount_minor),
         "_revoke_entitlement": lambda db, order, now: db.revokes.append(order.public_id),
         "log": SimpleNamespace(warning=lambda *args: None),
@@ -251,7 +255,7 @@ def setup(db, replies, *, race=None):
         service_body(name, dependencies)
     dependencies.update({"EntitlementLedger": Ledger, "order_quote": reconciliation.order_quote})
     for name in ("_owned_order", "_normalized_order_status", "_order_status_payload", "_reconciliation_reply",
-                 "_new_settled_refunds"):
+                 "_unverified_reconciliation_reply", "_new_settled_refunds"):
         production_body(name, dependencies)
     return production_body("reconcile_order", dependencies), calls
 
