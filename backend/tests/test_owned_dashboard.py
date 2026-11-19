@@ -81,15 +81,34 @@ def test_dashboard_never_downgrades_authority_malformed_or_unknown_errors(api, m
     assert "bootstrap" not in result.text and "synthetic" not in result.text
 
 
-def test_dashboard_current_subject_change_in_last_reader_refuses_entire_snapshot(api, monkeypatch):
+def test_dashboard_current_subject_change_in_last_reader_refuses_entire_snapshot(api, monkeypatch, caplog):
+    # This case tests the final SQL subject fence. Its native transports are
+    # intercepted; host scheduling time is not simulated authentication latency.
+    # Keep the genuine protocol and five-second limit, with a local elapsed clock.
+    registry = api.c.accounts._composition().scoped.publication.registry
+    original_clock = registry.monotonic
+    assert registry.deadline_seconds == 5.0 and registry.max_attempts == 3
+    ticks = 0
+    def elapsed():
+        nonlocal ticks
+        ticks += 1
+        return ticks / 1000
+    reached = []
     original = dashboard._reminders
     def drift(db, user_id):
+        reached.append(user_id)
         result = original(db, user_id)
         db.execute(update(User).where(User.id == user_id).values(credential_epoch=100))
         return result
     monkeypatch.setattr(dashboard, "_reminders", drift)
-    result = request(api)
-    assert result.status_code == 401 and "bootstrap" not in result.text
+    with monkeypatch.context() as projection_clock:
+        projection_clock.setattr(registry, "monotonic", elapsed)
+        result = request(api)
+    assert registry.monotonic is original_clock and reached == [api.owner]
+    assert api.validation.call_count == 1
+    failures = [record.native_failure.payload() for record in caplog.records
+                if hasattr(record, "native_failure")]
+    assert result.status_code == 401 and "bootstrap" not in result.text, failures
 
 
 def test_dashboard_rejects_dynamic_scope_and_old_bootstrap_remains_compatible(api):
