@@ -32,7 +32,13 @@ def test_real_request_deadline_precedes_projection_and_restoration_keeps_subject
                 if hasattr(record, "native_failure")]
     assert failures == [{"event": "native_boundary_failure_v1", "component": "candidate_account",
         "stage": "service", "exception_type": "GuardUnavailable", "guard_code": "transaction_deadline"}]
-    response = request(api)
+    # Re-enter the independent projection with simulated transport elapsed time,
+    # so this control cannot itself fail on an unrelated host scheduling pause.
+    progress = iter(range(1000))
+    with monkeypatch.context() as projection_clock:
+        projection_clock.setattr(registry, "monotonic", lambda: next(progress) / 1000)
+        response = request(api)
+    assert registry.monotonic is original_clock
     assert response.status_code == 401 and "bootstrap" not in response.text
     assert calls == [api.owner] and api.validation.call_count == 2
     assert api.c.native.calls == writes
