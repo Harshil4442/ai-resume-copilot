@@ -218,13 +218,12 @@ def _validate_callers(plan, before, after):
              "document_caller_diff")
 
 
-def prepare(review, native):
-    """Compute the exact request hash from the reviewed API preimage and fresh observation."""
+def prepare_request(review, native):
+    """Assemble the reviewed request in RAM; callers must never persist its template."""
     need(type(review) is dict and set(review) == {"kind", "plan", "before", "etag"}
          and review["kind"] == PREPARE_KIND and type(native) is dict
          and set(native) == {"service", "revisions", "candidate_lookup"}, "prepare_kind")
     plan = _transition(review["plan"])
-    need(plan.candidate_tag is None, "prepare_requires_untagged")
     service = native["service"]
     etag = review["etag"]
     need(type(etag) is str and re.fullmatch(r"[!-~]{1,256}", etag) and service.get("etag") == etag,
@@ -236,11 +235,19 @@ def prepare(review, native):
     prior = project_service(API, service, native["revisions"])
     need(prior == review["before"], "prepare_preimage_changed")
     _, traffic, _ = _prior_api(plan, prior)
+    if plan.candidate_tag is not None:
+        traffic.append({"type": REVISION_TRAFFIC, "revision": plan.candidate_revision, "tag": plan.candidate_tag})
+    traffic.sort(key=rolling.canonical)
     template = service["template"]
     need(rolling.environment(template).get("AUTO_DB_MIGRATE") == {"name": "AUTO_DB_MIGRATE", "value": "false"},
          "prepare_startup_migration_not_closed")
-    body = {"name": service["name"], "etag": etag, "traffic": traffic,
+    return {"name": service["name"], "etag": etag, "traffic": traffic,
             "template": template | {"revision": plan.candidate_revision, "serviceAccount": plan.new_api.email}}
+
+
+def prepare(review, native):
+    """Compute only the digest, including any explicitly reviewed zero-percent tag."""
+    body = prepare_request(review, native)
     return {"status": "api_identity_request_prepared", "request_sha256": rolling.sha(body),
             "native_approval": False, "native_mutations": 0}
 
@@ -263,7 +270,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--review", type=Path, required=True)
     parser.add_argument("--sha256", required=True)
-    parser.add_argument("--prepare", action="store_true", help="hash an untagged request using bounded private stdin")
+    parser.add_argument("--prepare", action="store_true", help="hash the reviewed request using bounded private stdin")
     args = parser.parse_args()
     try:
         descriptor = os.open(args.review, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
