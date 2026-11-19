@@ -149,13 +149,21 @@ def environment(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: str,
                     image: str, pins: dict[str, str], captured: dict[str, Any], *,
-                    worker_policy_sha256: str | None = None) -> dict[str, Any]:
+                    worker_policy_sha256: str | None = None, identity_profile: Any = None) -> dict[str, Any]:
     """Only documented image/pin/flag/revision fields may change; all else stays exact."""
     need(service in SERVICES and phase in {"close", "worker", "pins", "open"}
          and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_transition_action_refused")
     need((phase == "worker") == (service == WORKER), "document_transition_action_refused")
     template = copy.deepcopy(current["template"])
-    need(template.get("serviceAccount") == ACCOUNTS[service], "document_transition_caller_identity_changed")
+    expected_account = ACCOUNTS[service]
+    if identity_profile is not None:
+        from infra.gcp import schema27_mixed_identity_profile as forward
+
+        need(type(identity_profile) is forward.PublishedProfile and service in CALLERS,
+             "document_transition_forward_identity_refused")
+        identity_profile.verify_custody()
+        expected_account = identity_profile.api.email if service == CALLERS[0] else ACCOUNTS[service]
+    need(template.get("serviceAccount") == expected_account, "document_transition_caller_identity_changed")
     env = environment(template)
     if service == WORKER:
         from infra.gcp import document_source_candidate_v5 as source_v5
@@ -436,8 +444,14 @@ class Controller:
         need({key: revision.get(key) for key in template if key != "revision"}
              == {key: row for key, row in template.items() if key != "revision"},
              "document_transition_serving_template_changed")
+        account = ACCOUNTS[service]
+        if (service in CALLERS and type(self.application_context).__module__ == "infra.gcp.schema27_mixed_maintenance"):
+            from infra.gcp import schema27_mixed_maintenance as forward
+
+            if forward.selected(self.application_context):
+                account = self.application_context.account(service)
         need(type(value.get("etag")) is str and value["etag"]
-             and value["template"].get("serviceAccount") == ACCOUNTS[service],
+             and value["template"].get("serviceAccount") == account,
              "document_transition_service_identity_changed")
 
     def patch(self, service: str, phase: str, template: dict[str, Any], *, acceptance: Any,
@@ -451,6 +465,11 @@ class Controller:
                                 timeout_code="document_transition_prewrite_read_deadline_reconcile_only") == before,
              "document_transition_preimage_changed")
         self.ready(service, before)
+        if type(self.application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+            from infra.gcp import schema27_mixed_maintenance as forward
+
+            if forward.selected(self.application_context):
+                self.application_context.prewrite_identity()
         body = {"name": before["name"], "etag": before["etag"], "template": template,
                 "traffic": [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100}]}
         qualified = self.application_context is not None and service in CALLERS
@@ -636,6 +655,15 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
         owner.write("native-acceptance.json", asdict(acceptance))
+        mixed = False
+        if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+            from infra.gcp import schema27_mixed_maintenance as forward
+
+            mixed = forward.selected(application_context)
+        caller_identity = {"identity_profile": application_context.identity_profile} if mixed else {}
+        if mixed:
+            authorization = application_context.authorization(acceptance)
+            owner.write("forward-caller-authorization.json", authorization)
         run = Controller(http, probe, owner, candidate_image=image, rescue_expired_v2=rescue_expired_v2,
                          application_context=application_context)
         if application_context is not None:
@@ -709,7 +737,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         owner.write("captured-flags.json", captured)
         # No claim of quiescence: old in-flight callers can finish or safely503.
         for name in CALLERS:
-            template = mutate_template(run.observed[name], name, "close", build["nonce"], image, {}, captured[name])
+            template = mutate_template(run.observed[name], name, "close", build["nonce"], image, {}, captured[name], **caller_identity)
             run.patch(name, "close", template, acceptance=acceptance)
         if recover_expired_source:
             need(expired_source is not None and all(run.service(name) == run.observed[name]
@@ -717,6 +745,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                          for key in PAUSE[name]) for name in CALLERS)
                  and run.service(WORKER) == run.observed[WORKER],
                  "document_transition_expired_source_predecessor_changed")
+            assert expired_source is not None
             need(probe.verify_expired_current_source_predecessor(prior_image, run.observed[WORKER]).report()
                  == expired_source.report(), "document_transition_expired_source_predecessor_changed")
         if prior_expired:
@@ -740,7 +769,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         pins = dict(zip(PINS, (image, acceptance.policy_sha256, acceptance.renderer_version,
                                acceptance.font_manifest_sha256), strict=True))
         for name in CALLERS:
-            template = mutate_template(run.observed[name], name, "pins", build["nonce"], image, pins, captured[name])
+            template = mutate_template(run.observed[name], name, "pins", build["nonce"], image, pins, captured[name], **caller_identity)
             run.patch(name, "pins", template, acceptance=acceptance)
         probe.verify_caller_pins(run, image, **caller_mode)
         probe.verify_current_successor(image, run.observed[WORKER])
@@ -755,7 +784,7 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             captured[CALLERS[0]]["RESUME_DIRECT_UPLOAD_ENABLED"] = {
                 "name": "RESUME_DIRECT_UPLOAD_ENABLED", "value": "true"}
         for name in CALLERS:
-            template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name])
+            template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name], **caller_identity)
             run.patch(name, "open", template, acceptance=acceptance)
         probe.verify_caller_pins(run, image, **caller_mode)
         probe.verify_current_successor(image, run.observed[WORKER])
@@ -767,6 +796,8 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                   "current_native_proof_retained": True, "automatic_replay": False}
         if rescue_expired_v2:
             result["expired_v2_rescued"] = True
+        if mixed:
+            owner.write("forward-caller-authorization-final.json", application_context.authorization(acceptance))
         owner.write("complete.json", result)
         return result
     finally:

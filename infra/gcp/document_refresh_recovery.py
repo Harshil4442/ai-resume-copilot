@@ -1210,6 +1210,11 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             or failed_v4_files is not None):
         return None
     probe = build.infra("document_refresh_probe")
+    if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+        from infra.gcp import schema27_mixed_maintenance as forward
+
+        build.need(forward.selected(application_context), "document_refresh_published_identity_mode_required")
+        probe = application_context.probe
     clients = probe.Clients()
     try:
         failed_v4 = verify_failed_v4(failed_v4_files, clients, probe, build) if failed_v4_files is not None else None

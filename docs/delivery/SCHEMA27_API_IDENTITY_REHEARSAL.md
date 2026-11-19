@@ -155,6 +155,11 @@ not forge the old UID or broaden an existing global account allowlist. Effective
 worker denial of payment secret reads and dedicated-API impersonation remains a
 separate native verification requirement before any payment-secret grant.
 
+The separately versioned [mixed-identity successor](SCHEMA27_MIXED_IDENTITY_SUCCESSOR.md)
+adds an explicit forward promotion, later Source27 app rollout and opt-in current
+maintenance profile. It preserves this rehearsal's code pins and original journal;
+it does not change the shared defaults or turn this operator into a promotion tool.
+
 ## Local verification
 
 From `backend`, using the existing frozen backend runtime:

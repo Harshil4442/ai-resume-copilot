@@ -74,6 +74,10 @@ class SourceProbe:
     validate_serving = staticmethod(prior.validate_serving)
     sha = staticmethod(corpus.sha)
 
+    def clients(self):
+        """Historical default; an explicit forward profile may compose new authorization."""
+        return prior.Clients(read_only_release=self.read_only_release)
+
     def __init__(self, build, *, read_only_release=False, serving_read=False, root=profile.ROOT):
         keys = {"version", "kind", "nonce", "build_id", "build_resource", "builder_service_account",
             "source_bucket", "source_object", "source_generation", "source_archive_sha256",
@@ -263,7 +267,7 @@ class SourceProbe:
                    and observed == {"version": self.CONTRACT_VERSION, "image": image, "build_identity": build},
                    "document_source_revision_journal_changed")
         self.build_identity(read_only_release=self.read_only_release, build_id=build["build_id"], nonce=build["nonce"], image=image)
-        clients = prior.Clients(read_only_release=self.read_only_release)
+        clients = self.clients()
         try:
             clients.preflight()
             return self._acceptance(clients)
@@ -301,7 +305,7 @@ class SourceProbe:
             build_id=labels.get("hirewiz-refresh-build"), nonce=labels.get("hirewiz-refresh-nonce"), image=image)
         prior.need(labels.get("hirewiz-refresh-job") == "hirewiz-doc-six-" + self.handles(build)["corpus"]["nonce"][:12],
                    "document_source_revision_serving_labels_changed")
-        clients = prior.Clients(read_only_release=self.read_only_release)
+        clients = self.clients()
         try:
             actual = clients.preflight()["service"]
             fields = ("uid", "generation", "observedGeneration", "etag", "template", "traffic", "trafficStatuses",
@@ -366,11 +370,21 @@ def promote(build, native_journal, transition_journal, *, application_context, r
                "document_source_revision_expired_recovery_mode_refused")
     prior.need(build.get("kind") != v5_build_kind() or recover_expired_source,
                "document_source_revision_expired_recovery_mode_refused")
-    probe = SourceProbe(build, root=root)
+    mixed = False
+    if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+        from infra.gcp import schema27_mixed_maintenance as forward
+
+        mixed = forward.selected(application_context)
+    probe = application_context.source_probe(build, root=root) if mixed else SourceProbe(build, root=root)
     if native_journal.exists():
         accepted = probe.verify_successor(build["immutable_image"], build, native_journal)
     else:
-        accepted = v3.run_successor(build, native_journal, adapter=probe)
+        if mixed:
+            from infra.gcp import schema27_mixed_document_proof
+
+            accepted = schema27_mixed_document_proof.run_candidate(probe, native_journal)
+        else:
+            accepted = v3.run_successor(build, native_journal, adapter=probe)
     transition.require_current_acceptance(accepted, build["immutable_image"], probe)
     # An exclusive new-source intent prevents choosing another transition path
     # after a lost acknowledgement. Original journals are never rewritten.
