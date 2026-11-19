@@ -185,6 +185,7 @@ class SDKGoogleReads:
             need(
                 p.core.account.Get() == self.account
                 and p.core.project.Get() == release.PROJECT
+                and p.billing.quota_project.Get() == release.PROJECT
                 and p.core.universe_domain.Get() == "googleapis.com"
                 and p.core.disable_file_logging.GetBool() and not p.core.log_http.GetBool()
                 and not p.core.custom_ca_certs_file.Get()
@@ -199,7 +200,7 @@ class SDKGoogleReads:
                 "fence_normal_manager_configuration_refused",
             )
             self.thread.http = transports.GetApitoolsTransport(
-                timeout=3, enable_resource_quota=False,
+                timeout=3, enable_resource_quota=True,
                 allow_account_impersonation=False,
                 redact_request_body_reason="native HireWiz retirement metadata",
             )

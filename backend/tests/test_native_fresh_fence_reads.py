@@ -10,7 +10,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import requests.exceptions as errors
@@ -23,6 +23,80 @@ ROOT = Path(os.environ.get("HIREWIZ_FENCE_TEST_ROOT", str(Path(__file__).resolve
 sys.path[:0] = [str(ROOT / "infra/gcp"), str(ROOT / "backend")]
 module = importlib.import_module("native_fresh_fence")
 PATH = "projects/157225724590/locations/global/keys/inert-synthetic-key"
+
+
+@pytest.fixture
+def normal_manager(monkeypatch):
+    """Exercise the manager's configuration boundary without loading credentials."""
+    def prop(value):
+        return SimpleNamespace(Get=lambda: value, GetBool=lambda: value)
+
+    values = SimpleNamespace(
+        core=SimpleNamespace(account=prop("inert@example.com"), project=prop(module.release.PROJECT),
+            universe_domain=prop("googleapis.com"), disable_file_logging=prop(True),
+            log_http=prop(False), custom_ca_certs_file=prop(None)),
+        billing=SimpleNamespace(quota_project=prop(module.release.PROJECT)),
+        auth=SimpleNamespace(disable_ssl_validation=prop(False), disable_credentials=prop(False),
+            credential_file_override=prop(None), access_token_file=prop(None),
+            token_host=prop("https://oauth2.googleapis.com/token"), impersonate_service_account=prop(None)),
+        proxy=SimpleNamespace(address=prop(None), port=prop(None), proxy_type=prop(None)),
+    )
+    calls = []
+    http = SimpleNamespace(session=SimpleNamespace(max_redirects=5, trust_env=True))
+
+    def factory(**kwargs):
+        calls.append(kwargs)
+        return http
+
+    packages = {name: ModuleType(name) for name in (
+        "googlecloudsdk", "googlecloudsdk.core", "googlecloudsdk.core.credentials",
+        "googlecloudsdk.core.properties", "googlecloudsdk.core.credentials.transports",
+    )}
+    for package in packages.values():
+        package.__path__ = []
+    packages["googlecloudsdk.core.properties"].VALUES = values
+    packages["googlecloudsdk.core.credentials.transports"].GetApitoolsTransport = factory
+    for name, package in packages.items():
+        monkeypatch.setitem(sys.modules, name, package)
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    return values, prop, calls, http
+
+
+def test_normal_manager_uses_only_exact_hirewiz_quota_with_original_transport_controls(normal_manager):
+    _, _, calls, http = normal_manager
+    reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
+    assert reads._http() is http
+    assert reads._http() is http
+    assert calls == [{"timeout": 3, "enable_resource_quota": True,
+        "allow_account_impersonation": False,
+        "redact_request_body_reason": "native HireWiz retirement metadata"}]
+    assert http.session.max_redirects == 0 and http.session.trust_env is False
+
+
+@pytest.mark.parametrize("quota", [None, "", "CURRENT_PROJECT", "CURRENT_PROJECT_WITH_FALLBACK", "LEGACY", "foreign-project"])
+def test_nonexact_quota_refuses_before_loading_any_managed_transport(normal_manager, quota):
+    values, prop, calls, _ = normal_manager
+    values.billing.quota_project = prop(quota)
+    reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
+    with pytest.raises(module.release.ReleaseDenied, match="^fence_normal_manager_configuration_refused$"):
+        reads._http()
+    assert calls == []
+
+
+@pytest.mark.parametrize(("section", "name", "value"), [
+    ("core", "account", "foreign@example.com"), ("core", "project", "foreign-project"),
+    ("auth", "disable_ssl_validation", True), ("auth", "disable_credentials", True),
+    ("auth", "credential_file_override", "/inert/foreign-credentials"),
+    ("auth", "impersonate_service_account", "foreign@project.iam.gserviceaccount.com"),
+    ("proxy", "address", "inert-proxy"),
+])
+def test_exact_quota_does_not_relax_existing_normal_manager_authority(normal_manager, section, name, value):
+    values, prop, calls, _ = normal_manager
+    setattr(getattr(values, section), name, prop(value))
+    reads = module.SDKGoogleReads(Path("/inert/public-sdk"), "inert@example.com")
+    with pytest.raises(module.release.ReleaseDenied, match="^fence_normal_manager_configuration_refused$"):
+        reads._http()
+    assert calls == []
 
 
 def reply(status=200, raw=b'{"native":"current"}', headers=None):
