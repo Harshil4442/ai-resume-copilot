@@ -1,8 +1,35 @@
 # Internal interview calibration runner
 
-This is an executable internal development tool, not a paid route and not a qualification claim. It admits exactly the ten frozen PDF **development** cases, with one reference-labelled and one candidate-labelled run per case. These labels identify experimental sides; neither output is an approved reference until independent reviewers approve it. Held-out cases, customer inputs, custom case lists and changed corpus hashes are refused.
+This is an executable internal development tool, not a paid route and not a qualification claim. It admits exactly the ten frozen PDF **development** cases. The historical paired authorization has one reference-labelled and one candidate-labelled run per case; the distinct reference-baseline authorization below admits only ten reference runs. Labels do not approve a reference: independent reviewers must approve its actual useful outputs. Held-out cases, customer inputs, custom case lists and changed corpus hashes are refused.
 
 The frozen corpus is unchanged. This first executable slice covers interview generation only. Other routes, the other thirty development cases, deployed native-document verification, independent reviews and retail unit-economics qualification remain separate work.
+
+## Reference baseline before cheaper-model comparison
+
+New `schema_version: synthetic-interview-reference-baseline-v1` authorizations
+contain **only** `routes.reference`. That route must use `gemini-3.6-flash`,
+`interview-evidence-v9`, 65,536 input tokens and 8,192 output tokens; its exact
+current implementation digest and reviewed price remain mandatory. Preflight
+funds ten one-attempt envelopes and prepare creates exactly ten durable runs.
+Candidate execution is rejected before database access. A changed authorization
+cannot upgrade the same experiment into paired work, and changing the nested
+route dictionary cannot widen this scope. Existing paired v1 authorizations,
+historical outputs and their export format remain readable and unchanged.
+
+Use the existing commands below with a new stable experiment ID and a separately
+reviewed allocation, balance observation and policies. Execute only `--side
+reference`, initially with `--maximum-operations 1`; inspect each original result
+and cost before authorizing the next never-started slot. Never requeue a failed,
+running or unknown run. Export remains available after generation is paused.
+The original run and liability envelope is retained; its nested authorization
+binds the new restricted scope. Export truthfully identifies a ten-reference
+baseline and still reports zero approved references and no release authority.
+
+Independent humans must review the useful outputs and freeze accepted output
+hashes, route, input, rubric and implementation identities before any cheaper
+candidate experiment is separately reviewed and funded. No such approval or
+candidate authorization is created by this runner. The full 200-pair/held-out
+evaluation, V03 analysis and Native80 QA hold remain separate requirements.
 
 ## Authorization and input evidence
 
@@ -18,13 +45,15 @@ The frozen corpus is unchanged. This first executable slice covers interview gen
 - `model_policy_sha256` and `expense_policy_sha256`: canonical JSON hashes of the validated current policies. The runner compares full snapshots before execution.
 - `native_manifest_sha256`: actual materialization manifest file hash.
 - `native_receipts_sha256`: actual native input receipt-map file hash.
-- `routes.reference` and `routes.candidate`: new work uses `prompt_version: interview-evidence-v8`, `contract_sha256` from `development_runner.contract_digest()`, and `price` containing the exact current `ModelPriceQuote`. The current output validator is `interview-complete-v3`. Only the existing native Gemini contract is supported. No fabricated `QualifiedRoute` is needed. Equal pins on both sides are a repeatability calibration, not evidence for a cheaper alternative.
+- `routes.reference` and `routes.candidate` for paired v1, or only `routes.reference` for the distinct baseline shape: current work uses `prompt_version: interview-evidence-v9`, `contract_sha256` from `development_runner.contract_digest()`, and `price` containing the exact current `ModelPriceQuote`. The current output validator is `interview-complete-v4`. Only the existing native Gemini contract is supported. No fabricated `QualifiedRoute` is needed. Equal pins on both sides are a repeatability calibration, not evidence for a cheaper alternative.
 
 Policy hashes use `development_runner.digest(policy.model_dump(mode="json"))`; artifact hashes use SHA-256 of file bytes. Regenerate draft configuration after source or policy changes, then review the change. An already prepared experiment refuses changed authorization.
 
 The schema still loads v5, v6 and v7 authorizations for historical export. Dry-run, prepare and execute require both the exact current prompt version and the current implementation digest before database or provider work. Replacing an old authorization's digest with the current digest does not authorize its old prompt. Keep completed earlier experiments, receipts and exports unchanged; new work requires a separately reviewed current authorization.
 
-V8 changes the prompt only: it explicitly refuses candidate-history assertions embedded in a job description and asks neutral questions about uncorroborated tools. The v7 exploratory batch delivered 18 of 20 outputs and retained two personal-claim validation failures. V8 has no real model outputs or human scores yet and is not a qualified paid route.
+The historical v8 batch and its private review packet remain separate from new
+v9 work. Neither its outputs nor the new baseline label establish an approved
+reference or a qualified paid route.
 
 The native receipt map is `{case_id: {path, sha256}}`. Each referenced JSON binds `source_sha256` and `artifact_sha256` to the immutable PDF, the six genuine structure/render/reading-order/link/format/immutability checks, extracted text, all PNG render artifacts, and a named visual review bound to every PNG hash. Actual local tools and explicit agent input review can support this synthetic-input preflight. They do not prove Cloud Run scanner behavior, human output quality, or retail qualification. Do not copy the synthetic test review flags into real evidence.
 
