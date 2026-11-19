@@ -62,11 +62,14 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const mounted = useRef(true), pollId = useRef(0), actionPending = useRef(false);
   const recentReadId = useRef(0);
   const balanceRead = useRef(0);
+  const usageWork = useRef<AbortController | null>(null);
   const acceptedOrder = useRef<LegacyOrder | null>(null);
   const intent = useRef<{ orderId: string; key: string } | null>(null);
   const [profile, setProfile] = useState<{ tier?: string; ai_credits?: number; premium_until?: string | null } | null>(null);
   const [serviceCredits, setServiceCredits] = useState<number | null | undefined>(undefined);
   const [usage, setUsage] = useState<UsageHistory | null>(null);
+  const [usageOpen, setUsageOpen] = useState(false), [usageLoading, setUsageLoading] = useState(false);
+  const [usageRevision, setUsageRevision] = useState(0);
   const [order, setOrder] = useState<LegacyOrder | null>(null);
   const [recentRead, setRecentRead] = useState<"loading" | "ready" | "failed">("loading");
   const [busy, setBusy] = useState(false), [indiaConfirmed, setIndiaConfirmed] = useState(false);
@@ -79,6 +82,9 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const refreshBalances = useCallback(async (force = false, opening?: () => boolean) => {
     const read = ++balanceRead.current;
     const isCurrent = () => mounted.current && balanceRead.current === read && (opening?.() ?? true);
+    // History is advisory and read only while open, after the opening order lookup.
+    // A balance refresh invalidates it even when its panel is currently closed.
+    usageWork.current?.abort(); setUsage(null); setUsageLoading(true); setUsageRevision((value) => value + 1);
     const profileRead = opening && force
       ? fetchOwnedBootstrapAfterPending(client, isCurrent).then((value) => value && bootstrapComponent(value, "profile"))
       : fetchOwnedProfile(client, force);
@@ -89,9 +95,18 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       apiGet<{ job_service_credits?: unknown }>("/auth/me").then((value) => {
         if (isCurrent()) setServiceCredits(signedBalance(value.job_service_credits));
       }).catch(() => { if (isCurrent()) setServiceCredits(null); }),
-      apiGet<UsageHistory>("/v1/usage-events?limit=20").then((value) => { if (isCurrent()) setUsage(value); }),
     ]);
   }, [client]);
+  useEffect(() => {
+    if (!usageOpen || usageRevision === 0) return;
+    const controller = new AbortController();
+    usageWork.current = controller;
+    void apiGet<UsageHistory>("/v1/usage-events?limit=20", controller.signal).then((value) => {
+      if (!controller.signal.aborted) setUsage(value);
+    }).catch(() => { /* A refused read must not retain earlier history. */ })
+      .finally(() => { if (!controller.signal.aborted) setUsageLoading(false); });
+    return () => { controller.abort(); if (usageWork.current === controller) usageWork.current = null; };
+  }, [usageOpen, usageRevision]);
   const acceptStatus = useCallback(async (value: LegacyOrder, refresh = true) => {
     if (!mounted.current) return;
     const before = acceptedOrder.current;
@@ -330,8 +345,12 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
       </div>
     </section> : null}
     <ServiceCreditHistory refreshKey={order && (order.fulfilled || order.status === "refunded" || refunded) ? `${order.order_id}:${order.status}:${refunded ?? ""}` : ""} />
-    <details className="border-t border-border pt-5"><summary className="cursor-pointer font-semibold">Legacy analysis history</summary>
-      {usage ? usage.items.length ? <ul className="mt-4 divide-y divide-border">{usage.items.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{item.event_type.replaceAll("_", " ")} · {new Date(item.created_at).toLocaleDateString("en-IN")}</span><span>{item.amount > 0 ? "+" : ""}{item.amount} units · balance {item.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm">No legacy analysis-unit activity yet.</p> : <p className="mt-3 text-sm">Analysis history is currently unavailable.</p>}
+    <details className="border-t border-border pt-5" onToggle={(event) => {
+      if (!event.currentTarget.open) { usageWork.current?.abort(); setUsage(null); }
+      else if (!usageOpen) { setUsage(null); setUsageLoading(true); }
+      setUsageOpen(event.currentTarget.open);
+    }}><summary className="cursor-pointer font-semibold">Legacy analysis history</summary>
+      {usage ? usage.items.length ? <ul className="mt-4 divide-y divide-border">{usage.items.map((item) => <li key={item.id} className="flex flex-wrap justify-between gap-3 py-3 text-sm"><span>{item.event_type.replaceAll("_", " ")} · {new Date(item.created_at).toLocaleDateString("en-IN")}</span><span>{item.amount > 0 ? "+" : ""}{item.amount} units · balance {item.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm">No legacy analysis-unit activity yet.</p> : usageLoading || usageRevision === 0 ? <p role="status" className="mt-3 text-sm">Loading legacy analysis history…</p> : <div className="mt-3 space-y-2 text-sm"><p>Analysis history is currently unavailable.</p><Button variant="secondary" size="sm" onClick={() => { setUsageLoading(true); setUsageRevision((value) => value + 1); }}>Retry legacy analysis history</Button></div>}
     </details>
   </section>;
 }

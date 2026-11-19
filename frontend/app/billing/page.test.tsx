@@ -61,11 +61,17 @@ function deferred<T>() {
   const promise = new Promise<T>((finish) => { resolve = finish; });
   return { promise, resolve };
 }
+const usageReads = () => state.get.mock.calls.filter(([url]) => url === "/v1/usage-events?limit=20");
+function toggleLegacyHistory(open: boolean) {
+  const details = screen.getByText("Legacy analysis history").closest("details")!;
+  details.open = open;
+  fireEvent(details, new Event("toggle"));
+}
 
 it.each(["legacy", "unified"] as const)("loads one ordered cold billing snapshot for an existing settled %s order", async (kind) => {
   const legacy = kind === "legacy";
   const recentPath = legacy ? "/billing/recent-order" : "/v1/credits/recent-order";
-  const measured = legacy ? ["/auth/me", "/v1/usage-events?limit=20"] : ["/v1/credits/history?limit=20"];
+  const measured = legacy ? ["/auth/me"] : ["/v1/credits/history?limit=20"];
   const recent = deferred<unknown>();
   const readAfterOrder: boolean[] = [];
   let resolved = false;
@@ -84,7 +90,73 @@ it.each(["legacy", "unified"] as const)("loads one ordered cold billing snapshot
   const counts = measured.map((path) => state.get.mock.calls.filter(([url]) => url === path).length);
   expect(counts).toEqual(measured.map(() => 1));
   expect(readAfterOrder).toEqual(measured.map(() => true));
+  expect(usageReads()).toHaveLength(0);
+  toggleLegacyHistory(true);
+  await waitFor(() => expect(usageReads()).toHaveLength(1));
   expect(state.post).not.toHaveBeenCalled();
+});
+
+it("defers legacy analysis history until first open and after the opening order lookup", async () => {
+  const recent = deferred<unknown>();
+  state.get.mockImplementation((url: string) => url === "/billing/recent-order" ? recent.promise : read(url));
+  render(<BillingPage />);
+  await waitFor(() => expect(state.get).toHaveBeenCalledWith("/billing/recent-order"));
+  expect(usageReads()).toHaveLength(0);
+  toggleLegacyHistory(true);
+  expect(usageReads()).toHaveLength(0);
+  await act(async () => recent.resolve(null));
+  expect(await screen.findByText("No legacy analysis-unit activity yet.")).toBeVisible();
+  expect(usageReads()).toHaveLength(1);
+  expect(usageReads()[0][1]).toBeInstanceOf(AbortSignal);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("clears history on a refused fresh read and retries only on explicit action", async () => {
+  let historyReads = 0;
+  state.get.mockImplementation((url: string) => url !== "/v1/usage-events?limit=20" ? read(url)
+    : ++historyReads === 2 ? Promise.reject(new ApiError("Session ended", 401, {}))
+      : Promise.resolve({ balance: 13, items: [{ id: `usage-${historyReads}`, event_type: historyReads === 1 ? "older_history" : "fresh_history", amount: 1, balance_after: 13, created_at: stamp }] }));
+  render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  toggleLegacyHistory(true);
+  expect(await screen.findByText(`older history · ${new Date(stamp).toLocaleDateString("en-IN")}`)).toBeVisible();
+  toggleLegacyHistory(false);
+  toggleLegacyHistory(true);
+  expect(await screen.findByText("Analysis history is currently unavailable.")).toBeVisible();
+  expect(screen.queryByText(/older history ·/)).not.toBeInTheDocument();
+  expect(usageReads()).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Retry legacy analysis history" }));
+  expect(await screen.findByText(`fresh history · ${new Date(stamp).toLocaleDateString("en-IN")}`)).toBeVisible();
+  expect(usageReads()).toHaveLength(3);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("aborts closed and owner-unmounted history reads and ignores both late responses", async () => {
+  const closed = deferred<unknown>(), previousOwner = deferred<unknown>();
+  const row = (event_type: string) => ({ balance: 13, items: [{ id: event_type, event_type, amount: 1, balance_after: 13, created_at: stamp }] });
+  let count = 0;
+  state.get.mockImplementation((url: string) => url !== "/v1/usage-events?limit=20" ? read(url)
+    : ++count === 1 ? closed.promise : count === 2 ? previousOwner.promise : Promise.resolve(row("current_owner")));
+  const first = render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  toggleLegacyHistory(true);
+  await waitFor(() => expect(usageReads()).toHaveLength(1));
+  const firstSignal = usageReads()[0][1] as AbortSignal;
+  toggleLegacyHistory(false);
+  expect(firstSignal.aborted).toBe(true);
+  toggleLegacyHistory(true);
+  await waitFor(() => expect(usageReads()).toHaveLength(2));
+  const ownerSignal = usageReads()[1][1] as AbortSignal;
+  first.unmount();
+  expect(ownerSignal.aborted).toBe(true);
+  render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  expect(usageReads()).toHaveLength(2);
+  toggleLegacyHistory(true);
+  expect(await screen.findByText(`current owner · ${new Date(stamp).toLocaleDateString("en-IN")}`)).toBeVisible();
+  await act(async () => { closed.resolve(row("closed_history")); previousOwner.resolve(row("previous_owner")); });
+  expect(screen.queryByText(/closed history ·|previous owner ·/)).not.toBeInTheDocument();
+  expect(usageReads()).toHaveLength(3);
 });
 
 it("does not use a bootstrap requested before a recent terminal order", async () => {
@@ -127,7 +199,7 @@ it("keeps saved billing reads usable after both recent order lookups fail", asyn
 
 it("does not start a prior owner's cold billing snapshot after an owner remount", async () => {
   const recent = deferred<null>();
-  const measured = ["/auth/me", "/v1/usage-events?limit=20", "/v1/credits/history?limit=20"];
+  const measured = ["/auth/me", "/v1/credits/history?limit=20"];
   const reads = () => state.get.mock.calls.filter(([url]) => measured.includes(url));
   let previousOwner = true;
   state.get.mockImplementation((url: string) => {
@@ -143,9 +215,10 @@ it("does not start a prior owner's cold billing snapshot after an owner remount"
   render(<BillingPage />);
   const balance = (await screen.findByText("Available credits")).parentElement!;
   expect(within(balance).getByText("6", { exact: true })).toBeVisible();
-  await waitFor(() => expect(reads()).toHaveLength(3));
+  await waitFor(() => expect(reads()).toHaveLength(2));
   await act(async () => recent.resolve(null));
-  expect(reads()).toHaveLength(3);
+  expect(reads()).toHaveLength(2);
+  expect(usageReads()).toHaveLength(0);
   expect(within(balance).getByText("6", { exact: true })).toBeVisible();
 });
 
@@ -885,6 +958,12 @@ describe("legacy payment recovery", () => {
     expect(await serviceCredits.findByText(String(availableBefore))).toBeVisible();
     expect(await analysisUnits.findByText(String(unitsBefore))).toBeVisible();
     await waitFor(() => expect(historyBalance()).toHaveTextContent(`${availableBefore} credits`));
+    expect(usageReads()).toHaveLength(0);
+    if (!complete) {
+      toggleLegacyHistory(true);
+      expect(await legacy.findByText("No legacy analysis-unit activity yet.")).toBeVisible();
+      expect(usageReads()).toHaveLength(1);
+    }
     expect(state.post).not.toHaveBeenCalled();
 
     fireEvent.click(check);
@@ -901,8 +980,9 @@ describe("legacy payment recovery", () => {
     expect(await serviceCredits.findByText(String(credits))).toBeVisible();
     expect(await analysisUnits.findByText(String(units))).toBeVisible();
     await waitFor(() => expect(historyBalance()).toHaveTextContent(`${credits} credits`));
-    fireEvent.click(legacy.getByText("Legacy analysis history"));
+    if (complete) toggleLegacyHistory(true);
     expect(await legacy.findByText(`refund · ${new Date(stamp).toLocaleDateString("en-IN")}`)).toBeVisible();
+    expect(usageReads()).toHaveLength(complete ? 1 : 2);
     if (complete) expect(legacy.queryByRole("button", { name: "Check refund status" })).not.toBeInTheDocument();
     expect(state.post).toHaveBeenCalledExactlyOnceWith(reconcilePath, undefined);
     noCheckout();
