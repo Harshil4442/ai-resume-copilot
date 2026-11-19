@@ -105,6 +105,21 @@ def common_canary_funding(monkeypatch):
     return config
 
 
+@pytest.fixture
+def reference_calibration(calibration, monkeypatch):
+    """Only the stronger-model baseline, funded for ten original slots."""
+    policy = model_cost_policy.current_policy().model_dump(mode="json")
+    policy["pricing_quotes"][0]["max_output_tokens"] = 8192
+    monkeypatch.setenv("LLM_MODEL_COST_POLICY_JSON", json.dumps(policy))
+    data = calibration["authorization"].model_dump(mode="json")
+    route = data["routes"]["reference"]
+    route["price"] = model_cost_policy.current_policy().pricing_quotes[0].model_dump(mode="json")
+    data.update(schema_version=runner.REFERENCE_VERSION, routes={"reference": route},
+        model_policy_sha256=runner.digest(model_cost_policy.current_policy().model_dump(mode="json")),
+        maximum_provider_cost_micros=10 * model_cost_policy.quoted_cost(route["price"], 65536, 8192))
+    return {**calibration, "authorization": runner.Authorization.model_validate(data)}
+
+
 def test_canary_generation_keeps_missing_and_exhausted_common_funding_closed(
     calibration, common_canary_funding, monkeypatch,
 ):
@@ -152,6 +167,57 @@ def test_dry_run_complete_twenty_bounded_attempts_without_db(calibration):
     assert result["maximum_provider_cost_micros"] == 20 * (65536 + 1024)
     assert not result["authorizes_sales"]
     runner.preflight(**calibration, active=True)
+
+
+def test_reference_baseline_funds_only_ten_stronger_model_attempts(reference_calibration):
+    report = runner.preflight(**reference_calibration, active=True)
+    assert report["schema_version"] == runner.REFERENCE_VERSION
+    assert report["maximum_attempts"] == len(report["runs"]) == report["case_count"] == 10
+    assert {row["side"] for row in report["runs"]} == {"reference"}
+    assert {row["model"] for row in report["runs"]} == {"gemini-3.6-flash"}
+    assert report["maximum_provider_cost_micros"] == reference_calibration["authorization"].maximum_provider_cost_micros
+    assert not report["authorizes_sales"] and report["quality_status"] == "not_evaluated"
+    auth = reference_calibration["authorization"].model_copy(update={
+        "maximum_provider_cost_micros": report["maximum_provider_cost_micros"] - 1})
+    with pytest.raises(ValueError, match="ten-reference-attempt"):
+        runner.preflight(**{**reference_calibration, "authorization": auth})
+
+
+def test_reference_candidate_refused_before_database_or_provider(reference_calibration, monkeypatch):
+    monkeypatch.setattr(runner, "_check_local", lambda *args: pytest.fail("No candidate database access"))
+    monkeypatch.setattr(llm_client, "_api_key", lambda: pytest.fail("No candidate provider access"))
+    with pytest.raises(ValueError, match="does not permit candidate"):
+        runner.execute(None, **reference_calibration, side="candidate", maximum_operations=1)
+
+
+@pytest.mark.parametrize("change", ["candidate", "model", "prompt", "input", "output"])
+def test_reference_shape_cannot_be_widened_or_degraded(reference_calibration, change):
+    data = reference_calibration["authorization"].model_dump(mode="json")
+    if change == "candidate":
+        data["routes"]["candidate"] = data["routes"]["reference"]
+    elif change == "model":
+        data["routes"]["reference"]["price"]["model"] = "gemini-3.1-flash-lite"
+    elif change == "prompt":
+        data["routes"]["reference"]["prompt_version"] = "interview-evidence-v8"
+    else:
+        data["routes"]["reference"]["price"]["max_" + change + "_tokens"] //= 2
+    with pytest.raises(ValueError, match="reference side|frozen v9"):
+        runner.Authorization.model_validate(data)
+
+
+@pytest.mark.parametrize("operation", ["preflight", "prepare", "execute"])
+def test_mutated_reference_routes_refuse_before_work(reference_calibration, monkeypatch, operation):
+    auth = reference_calibration["authorization"]
+    auth.routes["candidate"] = auth.routes["reference"]  # A frozen model's nested dict is mutable.
+    monkeypatch.setattr(runner, "_check_local", lambda *args: pytest.fail("No database access"))
+    monkeypatch.setattr(llm_client, "generate_interview_questions", lambda **kwargs: pytest.fail("No provider call"))
+    with pytest.raises(ValueError, match="reference side"):
+        if operation == "preflight":
+            runner.preflight(**reference_calibration)
+        elif operation == "prepare":
+            runner.prepare(None, **reference_calibration)
+        else:
+            runner.execute(None, **reference_calibration, side="reference", maximum_operations=1)
 
 
 def test_missing_or_changed_native_receipts_do_not_admit(calibration):

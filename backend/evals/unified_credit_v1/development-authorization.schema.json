@@ -166,7 +166,10 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "synthetic-interview-development-v1",
+      "enum": [
+        "synthetic-interview-development-v1",
+        "synthetic-interview-reference-baseline-v1"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
