@@ -146,7 +146,7 @@ def test_prepare_explicitly_pins_latest_to_old_revision(preparation):
 @pytest.mark.parametrize(("drift", "reason"), [
     ("etag", "prepare_etag_changed"), ("alias", "prepare_preimage_changed"),
     ("candidate_exists", "prepare_candidate_not_absent"), ("unrelated_404", "prepare_candidate_not_absent"),
-    ("start_migration", "prepare_startup_migration_not_closed"), ("tag", "prepare_requires_untagged"),
+    ("start_migration", "prepare_startup_migration_not_closed"), ("tag", "prior_traffic"),
 ])
 def test_prepare_rejects_changed_precondition(preparation, drift, reason):
     review, native = preparation
@@ -165,9 +165,23 @@ def test_prepare_rejects_changed_precondition(preparation, drift, reason):
         env.remove({"name": "AUTO_DB_MIGRATE", "value": "false"})
         review["before"] = readback.project_service(readback.API, service, native["revisions"])
     elif drift == "tag":
-        review["plan"]["candidate_tag"] = "identity-review"
+        review["plan"]["candidate_tag"] = "restore"
     with pytest.raises(readback.rolling.RollingDenied, match=reason):
         readback.prepare(review, native)
+
+
+def test_prepare_only_adds_explicit_reviewed_zero_percent_tag(preparation):
+    review, native = preparation
+    review["plan"]["candidate_tag"] = "identity-review"
+    body = readback.prepare_request(review, native)
+    assert body["traffic"] == sorted([*review["before"]["traffic"], {
+        "type": readback.REVISION_TRAFFIC, "revision": review["plan"]["candidate_revision"],
+        "tag": "identity-review",
+    }], key=readback.rolling.canonical)
+    assert readback.prepare(review, native)["request_sha256"] == readback.rolling.sha(body)
+    assert body["template"] == native["service"]["template"] | {
+        "revision": review["plan"]["candidate_revision"], "serviceAccount": review["plan"]["new_api"]["email"],
+    }
 
 
 @pytest.mark.parametrize("drift", ["identity", "template", "traffic", "intent", "prior_tag", "worker", "coordinator",
