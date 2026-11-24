@@ -181,17 +181,71 @@ def test_expired_context_selects_definitions_only_and_preserves_original_history
         seen.append("definitions_only")
         return {"build_identity": build}
     def promote(actual, native, transition_journal, **kwargs):
-        assert actual == build and kwargs == {"application_context": context, "recover_expired_source": True}
+        assert actual == build and kwargs == {"application_context": context}
         seen.append("stock_native_and_transition")
         return {"status": "expired_v5_scanner_refreshed_admission_closed"}
     monkeypatch.setattr(refresh, "infra", lambda name: SimpleNamespace(prepare=prepare) if name == "document_refresh_recovery"
                         else SimpleNamespace(promote=promote) if name == "document_source_release" else modules(name))
     monkeypatch.setattr(refresh, "source_definitions_candidate", candidate)
+    monkeypatch.setattr(recovery, "promote", promote)
     now = datetime.now(UTC)
     result = refresh.refresh(tmp_path / "new-attempt", publish=True, now=now, history=history,
         application_context=context, recover_expired_source=True)
     assert result["status"] == "expired_v5_scanner_refreshed_admission_closed"
     assert seen == ["homogeneous_restore_rechecked", "original_history_verified", "definitions_only", "stock_native_and_transition"]
+
+
+@pytest.mark.parametrize("old_proof", [False, True])
+def test_expired_promote_owns_once_intent_without_changing_historical_helper(probe, monkeypatch, tmp_path, old_proof):
+    from test_document_source_revision import accepted
+
+    from scripts import document_refresh as refresh
+
+    build = probe.build | {"kind": v5.DEFINITIONS_KIND, "fixed_renderer_base": "retained-parent"}
+    probe.build = build
+    context = object.__new__(recovery.Applications)
+    calls = []
+    context.restored = SimpleNamespace(verify_custody=lambda: calls.append("custody"))
+    context.source_probe = lambda actual, **_: probe if actual == build else None
+    fresh = replace(accepted(probe.source, build, probe), image=build["immutable_image"], contract_version=5)
+    expired = recovery.ExpiredV5Predecessor(build["immutable_image"], "old-build", "f" * 40, "e" * 64,
+        v5.POLICY_SHA256, build["source_sha256"], source.courier.RENDERER, source.courier.FONT,
+        "2026-11-21T00:00:00+00:00", "a" * 64, "b" * 64, "c" * 64, 5, 17)
+    native, target = tmp_path / "native", tmp_path / "transition"
+    def run(actual, directory):
+        assert actual is probe and directory == native
+        directory.mkdir(mode=0o700)
+        calls.append("both_native_jobs_and_17_cases")
+        return expired if old_proof else fresh
+    monkeypatch.setattr(documents, "run_candidate", run)
+    monkeypatch.setattr(source.prior, "build_module", lambda: SimpleNamespace(write_new=refresh.write_new,
+        native_http=lambda: SimpleNamespace(close=lambda: calls.append("close_transport"))))
+    def transition_run(image, actual_build, actual_native, actual_target, **kwargs):
+        assert (image, actual_build, actual_native, actual_target) == (build["immutable_image"], build, native, target)
+        assert kwargs["recover_expired_source"] is True and kwargs["application_context"] is context
+        target.mkdir(mode=0o700)
+        calls.append("stock_once_lro_controller")
+        return {"admission_restored": False}
+    monkeypatch.setattr(source.transition, "transition", transition_run)
+    # The original immutable helper still refuses the new definitions-recovery
+    # mode; the new explicit controller owns that orchestration instead.
+    with pytest.raises(probe.NativeProofDenied, match="expired_recovery_mode_refused"):
+        source.promote(build, native, target, application_context=context, recover_expired_source=True)
+    assert calls == []
+    if old_proof:
+        with pytest.raises(transition.TransitionDenied, match="current_acceptance_required"):
+            recovery.promote(build, native, target, application_context=context)
+        assert calls == ["custody", "both_native_jobs_and_17_cases"]
+        assert not (native / "transition.started.json").exists() and not target.exists()
+        return
+    result = recovery.promote(build, native, target, application_context=context)
+    assert result["admission_restored"] is False and result["renderer_contract_version"] == 5
+    marker = json.loads((native / "transition.started.json").read_bytes())
+    assert marker["automatic_replay"] is False and marker["build_identity_sha256"] == source.corpus.sha(build)
+    assert calls == ["custody", "both_native_jobs_and_17_cases", "stock_once_lro_controller", "close_transport"]
+    with pytest.raises(identities.rolling.RollingDenied, match="fresh_definitions_transition_required"):
+        recovery.promote(build, native, target, application_context=context)
+    assert calls == ["custody", "both_native_jobs_and_17_cases", "stock_once_lro_controller", "close_transport"]
 
 
 def test_private_context_requires_typed_restore_and_rechecks_current_source(profile, monkeypatch, tmp_path):

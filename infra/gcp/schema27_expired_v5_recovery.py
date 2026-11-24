@@ -76,6 +76,34 @@ def historical_component(probe, clients):
         "contract_version": 5, "required_case_count": 17}
 
 
+def promote(build, native_journal, transition_journal, *, application_context, root=source.profile.ROOT):
+    """New typed orchestration; the promotion owner's frozen helper is unchanged."""
+    need(selected(application_context) and type(build) is dict and build.get("kind") == v5.DEFINITIONS_KIND
+         and build.get("policy_sha256") == v5.POLICY_SHA256 and not transition_journal.exists(),
+         "expired_v5_fresh_definitions_transition_required")
+    application_context.restored.verify_custody()
+    probe = application_context.source_probe(build, root=root)
+    if native_journal.exists():
+        accepted = probe.verify_successor(build["immutable_image"], build, native_journal)
+    else:
+        accepted = documents.run_candidate(probe, native_journal)
+    source.transition.require_current_acceptance(accepted, build["immutable_image"], probe)
+    # Use the same exclusive once marker and LRO controller. This new module is
+    # outside the predecessor identity promotion's immutable helper manifest.
+    source.prior.build_module().write_new(native_journal / "transition.started.json", {
+        "build_identity_sha256": source.corpus.sha(build), "transition_journal": str(transition_journal),
+        "automatic_replay": False, "unknown_outcome": "read_only_reconcile_exact_transition_only"})
+    http = source.prior.build_module().native_http()
+    try:
+        result = source.transition.transition(build["immutable_image"], build, native_journal, transition_journal,
+            http=http, probe=probe, application_context=application_context, recover_expired_source=True)
+    finally:
+        http.close()
+    return result | {"source_commit": build["source_commit"], "renderer_contract_version": probe.CONTRACT_VERSION,
+        "required_case_count": probe.REQUIRED_CASE_COUNT, "definition_expires_at": accepted.definition_expires_at,
+        "prior_evidence_retained": True, "prior_jobs_retained": True}
+
+
 class Probe(maintenance.Probe):
     def __init__(self, profile):
         need(type(profile) is identities.Profile, "expired_v5_private_profile_required")

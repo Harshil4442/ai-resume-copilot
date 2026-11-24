@@ -1591,6 +1591,11 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             options["application_context"] = application_context
         value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce,
             parent=current_image, **mode, **options)
+        if expired_v5:
+            from infra.gcp import schema27_expired_v5_recovery as recovery
+
+            return recovery.promote(value["build_identity"], directory / "native-proof",
+                directory / "transition", application_context=application_context)
         return infra("document_source_release").promote(value["build_identity"], directory / "native-proof",
             directory / "transition", application_context=application_context, **mode)
     if source_revision:

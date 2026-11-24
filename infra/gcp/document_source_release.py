@@ -363,21 +363,18 @@ def run_successor(build, journal, *, root=profile.ROOT):
 def promote(build, native_journal, transition_journal, *, application_context, root=profile.ROOT,
             recover_expired_source=False):
     """Reuse exact native proof/controller; unknown mutation intents never replay."""
-    from infra.gcp import schema27_expired_v5_recovery as recovery
-    from infra.gcp import schema27_mixed_maintenance as forward
-
-    expired_v5 = recovery.selected(application_context)
     prior.need(application_context is not None and not transition_journal.exists(),
                "document_source_revision_fresh_transition_required")
     prior.need(type(recover_expired_source) is bool and (not recover_expired_source
-               or build.get("kind") in {profile.DEFINITIONS_KIND, v5_build_kind()}
-               or expired_v5 and build.get("kind") == v5_definitions_kind()),
-               "document_source_revision_expired_recovery_mode_refused")
-    prior.need(not expired_v5 or recover_expired_source and build.get("kind") == v5_definitions_kind(),
+               or build.get("kind") in {profile.DEFINITIONS_KIND, v5_build_kind()}),
                "document_source_revision_expired_recovery_mode_refused")
     prior.need(build.get("kind") != v5_build_kind() or recover_expired_source,
                "document_source_revision_expired_recovery_mode_refused")
-    mixed = forward.selected(application_context)
+    mixed = False
+    if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+        from infra.gcp import schema27_mixed_maintenance as forward
+
+        mixed = forward.selected(application_context)
     probe = application_context.source_probe(build, root=root) if mixed else SourceProbe(build, root=root)
     if native_journal.exists():
         accepted = probe.verify_successor(build["immutable_image"], build, native_journal)
