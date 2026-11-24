@@ -7,14 +7,15 @@ import { ApiError, apiGet, apiPostJson } from "../../lib/api";
 import { boundedStatusChecks, newStatusReadBudget, type StatusReadBudget } from "../../lib/boundedStatusPolling";
 import {
   formatCreditDate, formatCreditPrice, parseUnifiedCheckoutOrder, parseUnifiedCreditCatalog,
-  parseUnifiedCreditHistory, parseUnifiedCreditOrder, parseUnifiedPurchaseQuote,
-  sameUnifiedPurchaseQuote, type UnifiedCreditCatalog, type UnifiedCreditHistory, type UnifiedCreditOrder,
+  parseUnifiedCreditOrder, parseUnifiedPurchaseQuote,
+  sameUnifiedPurchaseQuote, type UnifiedCreditCatalog, type UnifiedCreditOrder,
   type UnifiedCreditWallet, type UnifiedPassSku, type UnifiedPurchaseQuote,
 } from "../../lib/unifiedCredits";
 import { Button } from "../ui/Button";
 import { LoadingBlock } from "../ui/LoadingBlock";
 import { EligibleCreditServices, UnifiedCreditPacks, UnifiedPurchaseQuoteReview } from "./UnifiedCreditPacks";
 import { HostedCheckoutLoadError, loadHostedCheckout } from "./hostedCheckout";
+import { UnifiedCreditHistory } from "./UnifiedCreditHistory";
 import { bootstrapComponent, fetchOwnedBootstrapAfterPending, fetchOwnedWallet } from "../../lib/ownedBootstrapClient";
 
 const messageOf = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
@@ -35,7 +36,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
   const orderIntent = useRef<{ quoteId: string; key: string } | null>(null);
   const [catalog, setCatalog] = useState<UnifiedCreditCatalog | null>(null), [catalogLoading, setCatalogLoading] = useState(true);
   const [wallet, setWallet] = useState<UnifiedCreditWallet | null>(null), [walletLoading, setWalletLoading] = useState(true);
-  const [history, setHistory] = useState<UnifiedCreditHistory | null>(null), [historyBusy, setHistoryBusy] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false), [historyRevision, setHistoryRevision] = useState(0);
   const [quote, setQuote] = useState<UnifiedPurchaseQuote | null>(null), [reviewingSku, setReviewingSku] = useState<UnifiedPassSku | null>(null);
   const [order, setOrder] = useState<UnifiedCreditOrder | null>(null), [recentRead, setRecentRead] = useState<"loading" | "ready" | "failed">("loading");
   const [unknownAttempt, setUnknownAttempt] = useState(false), [knownOrderId, setKnownOrderId] = useState<string | null>(null);
@@ -62,15 +63,6 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       .catch(() => { if (isCurrent()) setWallet(null); })
       .finally(() => { if (isCurrent()) setWalletLoading(false); });
   }, [client]);
-  const refreshHistory = useCallback((cursor?: string, opening?: () => boolean) => {
-    const isCurrent = () => mounted.current && (opening?.() ?? true);
-    return apiGet<unknown>(`/v1/credits/history?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`).then((raw) => {
-      const value = parseUnifiedCreditHistory(raw);
-      if (!value) throw new Error("Credit history could not be verified.");
-      if (isCurrent()) setHistory((old) => cursor && old ? { ...value, items: [...old.items, ...value.items.filter((item) => !old.items.some((previous) => previous.id === item.id))] } : value);
-    }).catch(() => { if (isCurrent()) setError("Credit history could not be loaded. Your balance has not been changed."); })
-      .finally(() => { if (isCurrent()) setHistoryBusy(false); });
-  }, []);
   const acceptStatus = useCallback(async (value: UnifiedCreditOrder, refresh = true) => {
     if (!mounted.current) return;
     currentOrder.current = value;
@@ -80,17 +72,18 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       setQuote(null); quoteIntent.current = null; orderIntent.current = null;
       if (refresh) {
         window.dispatchEvent(new Event("refresh_unified_credits"));
-        await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+        setHistoryRevision((value) => value + 1);
+        await refreshWallet(true);
       }
     } else if (value.status === "refunded") {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was refunded. Review the refund and balance in your history."); setReconciliationHeld(false);
-      if (refresh) await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+      if (refresh) { setHistoryRevision((value) => value + 1); await refreshWallet(true); }
     } else if (value.status === "failed" && !failedButPayable(value)) {
       setQuote(null); quoteIntent.current = null; orderIntent.current = null; setIndiaConfirmed(false);
       setMessage("This payment was not completed. Review a fresh quote before a new purchase."); setReconciliationHeld(false);
     }
-  }, [refreshHistory, refreshWallet]);
+  }, [refreshWallet]);
   const readRecent = useCallback((mode: "opening" | "after-resolution" | "check" = "check") => {
     const read = ++recentReadId.current;
     const isCurrent = () => mounted.current && recentReadId.current === read;
@@ -98,7 +91,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       if (!isCurrent()) return;
       if (mode === "opening") {
         const settled = value?.status === "refunded" || (value?.status === "paid" && value.fulfilled);
-        await Promise.allSettled([refreshWallet(settled, isCurrent), refreshHistory(undefined, isCurrent)]);
+        await refreshWallet(settled, isCurrent);
       }
       if (!isCurrent()) return;
       try {
@@ -111,7 +104,7 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       if (result !== null && !value) throw new Error("Payment status could not be verified.");
       return value;
     }).then((value) => publish(value, "ready"), () => publish(null, "failed"));
-  }, [acceptStatus, refreshHistory, refreshWallet]);
+  }, [acceptStatus, refreshWallet]);
   const readVerifiedOrder = useCallback(async (identity: string, signal?: AbortSignal, originalTerms?: UnifiedPurchaseQuote) => {
     const value = parseUnifiedCreditOrder(await apiGet<unknown>(`/v1/credits/orders/${encodeURIComponent(identity)}`, signal));
     signal?.throwIfAborted();
@@ -291,7 +284,8 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       }
       setMessage("Refund updated. Review your credit balance and history.");
       window.dispatchEvent(new Event("refresh_unified_credits"));
-      await Promise.allSettled([refreshWallet(true), refreshHistory()]);
+      setHistoryRevision((value) => value + 1);
+      await refreshWallet(true);
     } catch (failure) {
       if (mounted.current) setError(messageOf(failure, "Could not check the refund status."));
     } finally {
@@ -335,10 +329,9 @@ export function UnifiedBillingPanel({ legacyPending, requestedSku, participation
       </section>
       {unsettled(order) ? <><p className="text-sm leading-6">This original payment is not complete. Its accepted price and credit quantity remain unchanged. A browser callback does not confirm delivery.</p><div className="flex flex-wrap gap-3"><Button variant="secondary" disabled={busy} onClick={() => void checkStatus(order.order_id)}>Check payment status</Button><Button variant="secondary" disabled={busy} onClick={() => void reconcile()}>Reconcile original payment</Button><Button disabled={busy || reconciliationHeld || checkoutStatusRequired === order.order_id || legacyPending || !indiaConfirmed || !order.checkout_available || order.accepted_quote.eligible_services.length === 0} onClick={() => void startPayment(order.accepted_quote, order)}>Resume original checkout</Button></div></> : null}
     </section> : null}
-    <section aria-labelledby="credit-history-heading"><h2 id="credit-history-heading" className="font-display text-2xl">Credit history</h2>
-      {history ? history.items.length ? <ul className="mt-4 divide-y divide-border">{history.items.map((event) => <li key={event.id} className="grid gap-2 py-4 text-sm sm:grid-cols-[1fr_auto_auto]"><span>{event.event_type.replaceAll("_", " ")} · {formatCreditDate(event.created_at)}</span><span>{event.amount > 0 ? "+" : ""}{event.amount} credits</span><span>Balance {event.balance_after}</span></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No credit activity yet.</p> : <p className="mt-3 text-sm text-muted-foreground">{historyBusy ? "Loading credit history…" : "Credit history is unavailable."}</p>}
-      {history?.next_cursor ? <Button variant="secondary" className="mt-4" disabled={historyBusy} onClick={() => { setHistoryBusy(true); void refreshHistory(history.next_cursor!); }}>Load older activity</Button> : null}
-    </section>
+    <details className="border-t border-border pt-5" onToggle={(event) => setHistoryOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold">Credit history</summary>
+      {historyOpen ? recentRead === "loading" ? <p role="status" className="mt-4 text-sm">Checking your recent purchase…</p> : <UnifiedCreditHistory key={historyRevision} /> : null}
+    </details>
     <p className="text-xs leading-5 text-muted-foreground">Payment confirmation updates while this tab is visible. If checks pause, use Check payment status before trying another payment.</p>
     <p className="text-xs leading-6 text-muted-foreground">Seller: HireWiz, operated by SAVALIYA HARSHIL YOGESHBHAI. Payment credentials are entered only in Razorpay hosted checkout. <Link href="/contact" className="underline">Billing support</Link> · <Link href="/digital-delivery" className="underline">Digital delivery</Link>.</p>
   </section>;

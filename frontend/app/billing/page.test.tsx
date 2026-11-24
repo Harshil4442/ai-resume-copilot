@@ -62,11 +62,127 @@ function deferred<T>() {
   return { promise, resolve };
 }
 const usageReads = () => state.get.mock.calls.filter(([url]) => url === "/v1/usage-events?limit=20");
+function toggleHistory(label: string, open = true) {
+  const details = screen.getByText(label, { selector: "summary" }).closest("details")!;
+  details.open = open;
+  fireEvent(details, new Event("toggle"));
+}
 function toggleLegacyHistory(open: boolean) {
   const details = screen.getByText("Legacy analysis history").closest("details")!;
   details.open = open;
   fireEvent(details, new Event("toggle"));
 }
+
+it("loads balances and payment checks without fetching unopened histories", async () => {
+  render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  expect(state.get.mock.calls.map(([url]) => url).sort()).toEqual([
+    "/auth/bootstrap", "/auth/me", "/billing/recent-order", "/v1/credits/canary-enrollment",
+    "/v1/credits/catalog", "/v1/credits/recent-order",
+  ].sort());
+  expect(within(screen.getByText("Available credits").parentElement!).getByText("7")).toBeVisible();
+  toggleHistory("Credit history");
+  toggleHistory("Service history");
+  expect(await screen.findByText("No credit activity yet.")).toBeVisible();
+  expect(await screen.findByText("No service-credit activity yet.")).toBeVisible();
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(1);
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/employer-jobs/credits?limit=10")).toHaveLength(1);
+  expect(state.post).not.toHaveBeenCalled();
+  noCheckout();
+});
+
+it("waits for each opening purchase lookup before loading its expanded history", async () => {
+  const unified = deferred<unknown>(), legacy = deferred<unknown>();
+  state.get.mockImplementation((url: string) => url === "/v1/credits/recent-order" ? unified.promise
+    : url === "/billing/recent-order" ? legacy.promise : read(url));
+  render(<BillingPage />);
+  toggleHistory("Credit history"); toggleHistory("Service history");
+  expect(state.get.mock.calls.filter(([url]) => url.includes("/history") || url.includes("employer-jobs/credits"))).toHaveLength(0);
+  await act(async () => unified.resolve(order({ status: "paid", payment_status: "paid", fulfilled: true })));
+  expect(await screen.findByText("No credit activity yet.")).toBeVisible();
+  expect(state.get.mock.calls.filter(([url]) => url.includes("employer-jobs/credits"))).toHaveLength(0);
+  await act(async () => legacy.resolve(legacyOrder({ status: "paid", fulfilled: true, refunded_amount_minor: 0 })));
+  expect(await screen.findByText("No service-credit activity yet.")).toBeVisible();
+  expect(state.get.mock.calls.filter(([url]) => url.includes("employer-jobs/credits"))).toHaveLength(1);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it.each(["close", "owner unmount"] as const)("aborts optional history reads on %s and ignores late data", async (action) => {
+  const credit = deferred<unknown>(), service = deferred<unknown>();
+  let fresh = false;
+  state.get.mockImplementation((url: string) => !fresh && url === "/v1/credits/history?limit=20" ? credit.promise
+    : !fresh && url === "/v1/employer-jobs/credits?limit=10" ? service.promise : read(url));
+  const first = render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  toggleHistory("Credit history"); toggleHistory("Service history");
+  const pending = () => state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20" || url === "/v1/employer-jobs/credits?limit=10");
+  await waitFor(() => expect(pending()).toHaveLength(2));
+  const signals = pending().map(([, signal]) => signal as AbortSignal);
+  if (action === "close") { toggleHistory("Credit history", false); toggleHistory("Service history", false); }
+  else first.unmount();
+  expect(signals.every((signal) => signal.aborted)).toBe(true);
+  fresh = true;
+  if (action === "owner unmount") {
+    render(<BillingPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  }
+  toggleHistory("Credit history"); toggleHistory("Service history");
+  expect(await screen.findByText("No credit activity yet.")).toBeVisible();
+  expect(await screen.findByText("No service-credit activity yet.")).toBeVisible();
+  await act(async () => {
+    credit.resolve({ schema_version: schema, items: [{ id: "old", event_type: "previous_owner_credit", amount: 1, balance_after: 999, created_at: stamp }], next_cursor: null });
+    service.resolve({ balance: 999, reserved_credits: 0, operations: [], next_cursor: null });
+  });
+  expect(screen.queryByText(/previous owner credit/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/999/)).not.toBeInTheDocument();
+  expect(pending()).toHaveLength(4);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("retries unavailable credit history only on explicit action without affecting purchase checks", async () => {
+  let attempts = 0;
+  state.get.mockImplementation((url: string) => url === "/v1/credits/history?limit=20" && ++attempts === 1
+    ? Promise.reject(new ApiError("Request capacity is temporarily allocated.", 429, {})) : read(url));
+  render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  toggleHistory("Credit history");
+  expect(await screen.findByText("Credit history could not be loaded. Your balance has not been changed.")).toBeVisible();
+  expect(screen.queryByText("No credit activity yet.")).not.toBeInTheDocument();
+  expect(attempts).toBe(1);
+  expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Retry credit history" }));
+  expect(await screen.findByText("No credit activity yet.")).toBeVisible();
+  expect(attempts).toBe(2);
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("clears the old service-history balance when a post-refund read is refused", async () => {
+  let refunded = false;
+  const original = legacyOrder({ status: "paid", fulfilled: true, refunded_amount_minor: 0 });
+  state.get.mockImplementation((url: string) => {
+    if (url === "/billing/recent-order") return Promise.resolve(original);
+    if (url === "/billing/orders/order_legacy") return Promise.resolve({ ...original, refunded_amount_minor: 32_450 });
+    if (url === "/auth/me") return Promise.resolve({ job_service_credits: refunded ? 50 : 100 });
+    if (url === "/v1/employer-jobs/credits?limit=10") return refunded
+      ? Promise.reject(new ApiError("History read refused", 429, {}))
+      : Promise.resolve({ balance: 100, reserved_credits: 0, operations: [], next_cursor: null });
+    return read(url);
+  });
+  render(<BillingPage />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  toggleHistory("Service history");
+  const history = () => within(screen.getByRole("region", { name: "Service history" }));
+  expect(await history().findByText("100")).toBeVisible();
+  refunded = true;
+  fireEvent.click(screen.getByRole("button", { name: "Check payment status" }));
+  expect(await screen.findByText("History read refused")).toBeVisible();
+  expect(history().queryByText("Available balance")).not.toBeInTheDocument();
+  expect(history().queryByText("100")).not.toBeInTheDocument();
+  const current = within(screen.getByRole("region", { name: "Current entitlement" }));
+  expect(await within(current.getByText("Job service credits").parentElement!).findByText("50")).toBeVisible();
+  expect(state.post).not.toHaveBeenCalled();
+  noCheckout();
+});
 
 it.each(["legacy", "unified"] as const)("loads one ordered cold billing snapshot for an existing settled %s order", async (kind) => {
   const legacy = kind === "legacy";
@@ -87,6 +203,8 @@ it.each(["legacy", "unified"] as const)("loads one ordered cold billing snapshot
   await act(async () => recent.resolve(legacy ? legacyOrder({ status: "paid", fulfilled: true, refunded_amount_minor: 0 })
     : order({ status: "refunded", payment_status: "refunded", checkout_available: false, refunded_amount_minor: 5900 })));
   await waitFor(() => expect(screen.getByRole("button", { name: "Review Starter pass" })).toBeEnabled());
+  if (!legacy) toggleHistory("Credit history");
+  await waitFor(() => expect(state.get.mock.calls.filter(([url]) => measured.includes(url))).toHaveLength(1));
   const counts = measured.map((path) => state.get.mock.calls.filter(([url]) => url === path).length);
   expect(counts).toEqual(measured.map(() => 1));
   expect(readAfterOrder).toEqual(measured.map(() => true));
@@ -193,7 +311,8 @@ it("keeps saved billing reads usable after both recent order lookups fail", asyn
   const balance = (await screen.findByText("Available credits")).parentElement!;
   expect(within(balance).getByText("7", { exact: true })).toBeVisible();
   expect(await within(screen.getByRole("region", { name: "Current entitlement" })).findByText("13", { exact: true })).toBeVisible();
-  expect(screen.getByText("No credit activity yet.")).toBeVisible();
+  toggleHistory("Credit history");
+  expect(await screen.findByText("No credit activity yet.")).toBeVisible();
   expect(state.post).not.toHaveBeenCalled();
 });
 
@@ -215,6 +334,8 @@ it("does not start a prior owner's cold billing snapshot after an owner remount"
   render(<BillingPage />);
   const balance = (await screen.findByText("Available credits")).parentElement!;
   expect(within(balance).getByText("6", { exact: true })).toBeVisible();
+  await waitFor(() => expect(reads()).toHaveLength(1));
+  toggleHistory("Credit history");
   await waitFor(() => expect(reads()).toHaveLength(2));
   await act(async () => recent.resolve(null));
   expect(reads()).toHaveLength(2);
@@ -292,6 +413,7 @@ describe("unified billing account", () => {
       ? Promise.resolve(ownedBootstrapFixture({ wallet: refundedWallet })) : url === "/v1/credits/history?limit=20"
       ? Promise.resolve({ schema_version: schema, items: refunds, next_cursor: "next-history" }) : read(url));
     render(<BillingPage />);
+    toggleHistory("Credit history");
     expect(await screen.findByText("Balance -1")).toBeVisible();
     expect(screen.getAllByText("-20 credits")).toHaveLength(2);
     expect(screen.getByText("Balance 19")).toBeVisible();
@@ -338,6 +460,7 @@ describe("unified billing account", () => {
     const button = await screen.findByRole("button", { name: "Check refund status" });
     const available = within((await screen.findByText("Available credits")).parentElement!);
     expect(await available.findByText(String(availableBefore))).toBeVisible();
+    toggleHistory("Credit history");
     await screen.findByText("No credit activity yet.");
     expect(state.post).not.toHaveBeenCalled();
     expect(state.get.mock.calls.some(([url]) => url === getOrder)).toBe(false);
@@ -885,6 +1008,7 @@ describe("legacy payment recovery", () => {
     const serviceBalance = within(balance).getByText("Job service credits", { exact: true }).parentElement!;
     const analysisBalance = within(balance).getByText("Analysis units", { exact: true }).parentElement!;
     const historyBalance = () => screen.getByText("Available balance", { exact: true }).parentElement!;
+    toggleHistory("Service history");
     await waitFor(() => expect(historyBalance()).toHaveTextContent("100 credits"));
     expect(within(serviceBalance).getByText("100", { exact: true })).toBeVisible();
     const check = await screen.findByRole("button", { name: "Check payment status" });
@@ -957,6 +1081,7 @@ describe("legacy payment recovery", () => {
     const check = payment.getByRole("button", { name: "Check refund status" });
     expect(await serviceCredits.findByText(String(availableBefore))).toBeVisible();
     expect(await analysisUnits.findByText(String(unitsBefore))).toBeVisible();
+    toggleHistory("Service history");
     await waitFor(() => expect(historyBalance()).toHaveTextContent(`${availableBefore} credits`));
     expect(usageReads()).toHaveLength(0);
     if (!complete) {
@@ -1045,7 +1170,7 @@ it("refreshes only the pass eligibility after an explicitly confirmed participat
   expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/catalog")).toHaveLength(2);
   expect(state.get.mock.calls.some(([url]) => url === "/v1/credits/wallet")).toBe(false);
   expect(state.get.mock.calls.filter(([url]) => url === "/auth/bootstrap")).toHaveLength(1);
-  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(1);
+  expect(state.get.mock.calls.filter(([url]) => url === "/v1/credits/history?limit=20")).toHaveLength(0);
   expect(state.post.mock.calls.map(([url]) => url)).toEqual(["/v1/credits/canary-enrollment"]);
   noCheckout();
 });

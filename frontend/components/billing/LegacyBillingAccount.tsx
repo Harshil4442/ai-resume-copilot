@@ -70,6 +70,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   const [usage, setUsage] = useState<UsageHistory | null>(null);
   const [usageOpen, setUsageOpen] = useState(false), [usageLoading, setUsageLoading] = useState(false);
   const [usageRevision, setUsageRevision] = useState(0);
+  const [serviceHistoryOpen, setServiceHistoryOpen] = useState(false);
   const [order, setOrder] = useState<LegacyOrder | null>(null);
   const [recentRead, setRecentRead] = useState<"loading" | "ready" | "failed">("loading");
   const [busy, setBusy] = useState(false), [indiaConfirmed, setIndiaConfirmed] = useState(false);
@@ -314,6 +315,7 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
   }
 
   const refunded = order ? refundAmount(order) : null;
+  const serviceHistoryKey = order && (order.fulfilled || order.status === "refunded" || refunded) ? `${order.order_id}:${order.status}:${refunded ?? ""}` : "";
   const analysisBalance = signedBalance(profile?.ai_credits);
   return <section className="space-y-6 border-t border-border pt-8" aria-labelledby="legacy-entitlements-heading">
     <div><p className="data-label">Earlier purchases</p><h2 id="legacy-entitlements-heading" className="font-display mt-2 text-2xl">Legacy entitlements</h2>
@@ -344,7 +346,9 @@ export function LegacyBillingAccount({ onPendingChange }: { onPendingChange: (pe
         <Link href="/contact" className="inline-flex min-h-11 items-center text-sm underline">Billing support</Link>
       </div>
     </section> : null}
-    <ServiceCreditHistory refreshKey={order && (order.fulfilled || order.status === "refunded" || refunded) ? `${order.order_id}:${order.status}:${refunded ?? ""}` : ""} />
+    <details className="border-t border-border pt-5" onToggle={(event) => setServiceHistoryOpen(event.currentTarget.open)}><summary className="cursor-pointer font-semibold">Service history</summary>
+      {serviceHistoryOpen ? recentRead === "loading" ? <p role="status" className="mt-4 text-sm">Checking your previous purchase…</p> : <ServiceCreditHistory key={serviceHistoryKey} refreshKey={serviceHistoryKey} /> : null}
+    </details>
     <details className="border-t border-border pt-5" onToggle={(event) => {
       if (!event.currentTarget.open) { usageWork.current?.abort(); setUsage(null); }
       else if (!usageOpen) { setUsage(null); setUsageLoading(true); }
