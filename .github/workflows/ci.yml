@@ -259,13 +259,17 @@ jobs:
           timeout 35s python3 backend/scripts/ci_registry_cache.py --verify
           postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
           [ "$postgres_before" = "$postgres_after" ]
-          docker pull --platform linux/amd64 mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
       - name: Build and attest immutable native TeX test compiler
         timeout-minutes: 12
-        run: >-
-          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
-          --platform linux/amd64 --github-env "$GITHUB_ENV"
-          --output "$RUNNER_TEMP/native-tex-test-image.json"
+        env:
+          EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""
+        run: |
+          document_source_policy_path="$(python3 backend/scripts/ci_registry_cache.py --document-source-policy)"
+          trap 'rm -f -- "$document_source_policy_path"' EXIT
+          export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
+          backend/.venv/bin/python backend/scripts/native_tex_test_image.py \
+            --platform linux/amd64 --github-env "$GITHUB_ENV" \
+            --output "$RUNNER_TEMP/native-tex-test-image.json"
       - name: Build and verify genuine native document engines
         timeout-minutes: 20
         env:
