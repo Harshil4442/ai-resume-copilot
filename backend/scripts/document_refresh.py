@@ -993,6 +993,18 @@ def build_request(nonce: str, source: dict[str, str]) -> dict[str, Any]:
         "options": {"logging": "CLOUD_LOGGING_ONLY"}, "timeout": "900s"}
 
 
+def maintenance_context(context: Any) -> bool:
+    from infra.gcp import schema27_mixed_maintenance as forward
+
+    return forward.selected(context)
+
+
+def expired_v5_context(context: Any) -> bool:
+    from infra.gcp import schema27_expired_v5_recovery as recovery
+
+    return recovery.selected(context)
+
+
 def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, full_source: bool = False,
                  candidate_v3: bool = False, source_revision: bool = False, source_definitions: bool = False,
                  source_parent: str | None = None, recover_expired_source: bool = False,
@@ -1011,7 +1023,11 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
          "document_refresh_contract_version_invalid")
     need(type(source_definitions) is bool and (not source_definitions or not (full_source or candidate_v3 or source_revision)),
          "document_refresh_contract_version_invalid")
-    need(type(source_v5) is bool and (not source_v5 or (source_revision and recover_expired_source or source_definitions and not recover_expired_source)),
+    expired_v5 = expired_v5_context(application_context)
+    need(not expired_v5 or source_definitions and source_v5 and recover_expired_source,
+         "document_refresh_expired_source_mode_refused")
+    need(type(source_v5) is bool and (not source_v5 or (source_revision and recover_expired_source
+         or source_definitions and (not recover_expired_source or expired_v5))),
          "document_refresh_contract_version_invalid")
     need(type(recover_expired_source) is bool and (not recover_expired_source or source_definitions or source_v5),
          "document_refresh_expired_source_mode_refused")
@@ -1021,9 +1037,8 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
     if source_definitions:
         need(recipe == source_profile(source_v5).definition_recipe(source_parent, ROOT), "document_source_recipe_changed")
         if application_context is not None:
-            from infra.gcp import schema27_mixed_maintenance as forward
-
-            need(forward.selected(application_context) and source_v5 and not recover_expired_source,
+            need(maintenance_context(application_context) and source_v5
+                 and (not recover_expired_source or expired_v5),
                  "document_refresh_published_identity_mode_required")
             application_context.verify_parent(source_parent, current)
         else:
@@ -1339,7 +1354,8 @@ def source_definitions_candidate(directory: Path, *, publish: bool, now: datetim
     need(type(recover_expired_source) is bool, "document_refresh_expired_source_mode_refused")
     need(publish, "document_refresh_explicit_native_build_required")
     selected = source_profile(source_v5)
-    need(not (source_v5 and recover_expired_source), "document_refresh_expired_source_mode_refused")
+    need(not (source_v5 and recover_expired_source) or expired_v5_context(application_context),
+         "document_refresh_expired_source_mode_refused")
     v5 = {"source_v5": True} if source_v5 else {}
     _, before, policy = full_source_snapshot(source_revision=True, **v5)
     recipe = selected.definition_recipe(parent, ROOT)
@@ -1429,6 +1445,10 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
             recover_expired_source: bool = False, source_v5: bool = False,
             published_api_identity: bool = False) -> dict[str, Any]:
     """Full controlled pipeline. No serialized acceptance result grants authority."""
+    expired_v5 = expired_v5_context(application_context)
+    need(not expired_v5 or recover_expired_source and publish
+         and not (full_source or source_revision or source_v5 or reviewed_application_context or published_api_identity),
+         "document_refresh_expired_source_mode_refused")
     need(recover_failed_native_job is None or publish is True, "document_refresh_recovery_requires_explicit_refresh")
     need(type(source_revision) is bool and (not source_revision or full_source and publish
          and not (retire_expired_v2 or rescue_expired_v2 or upgrade_current_v2_to_v3)),
@@ -1463,10 +1483,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
 
         published_profile = forward.identities.published()
         probe = forward.Probe(published_profile)
-    elif type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
-        from infra.gcp import schema27_mixed_maintenance as forward
-
-        need(forward.selected(application_context), "document_refresh_published_identity_mode_required")
+    elif maintenance_context(application_context):
         application_context.before_refresh()
         probe = application_context.probe
     if reviewed_application_context:
@@ -1541,7 +1558,8 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
     current_image = serving["template"]["containers"][0]["image"]
     current_policy = probe.policy_for_serving(serving, current_image)
     from infra.gcp import document_source_candidate as source_profile
-    need(not recover_expired_source or current_policy == source_profile.POLICY_SHA256,
+    need(not recover_expired_source or current_policy == source_profile.POLICY_SHA256
+         or expired_v5 and current_policy == infra("document_source_candidate_v5").POLICY_SHA256,
          "document_refresh_expired_source_profile_refused")
     need(current_policy != source_profile.LEGACY_POLICY_SHA256 or source_revision,
          "document_refresh_legacy_source_read_only")
@@ -1569,7 +1587,7 @@ def refresh(directory: Path, *, publish: bool, now: datetime, prior_journal: Pat
         need(not full_source and application_context is not None, "document_refresh_source_revision_app_context_required")
         mode = {"recover_expired_source": True} if recover_expired_source else {}
         options = {"source_v5": True} if current_policy == v5_policy else {}
-        if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
+        if maintenance_context(application_context):
             options["application_context"] = application_context
         value = source_definitions_candidate(directory, publish=publish, now=now, nonce=nonce,
             parent=current_image, **mode, **options)
