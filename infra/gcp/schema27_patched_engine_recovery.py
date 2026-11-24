@@ -56,10 +56,12 @@ def final_captured_flags(captured):
 class HistoricalRestore:
     """Historical completed restore custody; no mutation entry or freshness waiver."""
     def __init__(self, plan, journal, *, closed):
+        from infra.gcp import schema27_internal_coordinator_completion as internal
         from infra.gcp import schema27_native_admission_closure as admission
         from infra.gcp import schema27_native_admission_completion as completion
 
-        need(type(closed) in {admission.ClosedAdmission, completion.ClosedAdmissionCompletion},
+        need(type(closed) in {admission.ClosedAdmission, completion.ClosedAdmissionCompletion,
+                             internal.ClosedInternalAdmission},
              "patched_engine_closed_admission_kind")
         self.closed = closed
         need(type(plan) is restoration.RestorePlan and type(journal) is restoration.owned.Journal,
@@ -128,9 +130,11 @@ class HistoricalRestore:
         # The original completed restore is custody only. This separately owned
         # follow-on proves closure of API admission without disabling saved reads.
         self.closed.verify_custody()
+        from infra.gcp import schema27_internal_coordinator_completion as internal
         from infra.gcp import schema27_native_admission_completion as completion
 
-        parent = (self.closed.restore_parent if type(self.closed) is completion.ClosedAdmissionCompletion
+        parent = (self.closed.restore_parent if type(self.closed) in {
+                      completion.ClosedAdmissionCompletion, internal.ClosedInternalAdmission}
                   else self.closed.plan.parent)
         raw = restoration._private_read(parent["plan"], self.closed.parent_restore_plan_sha256)
         need(self.closed.parent_restore_plan_sha256 == RESTORE_PLAN_FILE_SHA256
@@ -521,8 +525,11 @@ def main():
     parser.add_argument("--admission-closure-plan", type=Path, required=True)
     parser.add_argument("--admission-closure-plan-sha256", required=True)
     parser.add_argument("--admission-closure-journal", type=Path, required=True)
-    parser.add_argument("--admission-closure-completed", action="store_true",
+    closure = parser.add_mutually_exclusive_group()
+    closure.add_argument("--admission-closure-completed", action="store_true",
         help="Use the separately owned coordinator completion proof after a definite original rejection.")
+    closure.add_argument("--admission-closure-internal", action="store_true",
+        help="Use the separately owned internal coordinator health and remaining-route completion proof.")
     parser.add_argument("--prior-history-directory", type=Path, required=True)
     parser.add_argument("--consumed-history-bundle", type=Path)
     parser.add_argument("--output-directory", type=Path, required=True)
@@ -538,7 +545,12 @@ def main():
         profile.verify_custody()
         from infra.gcp import schema27_native_admission_closure as admission
 
-        if args.admission_closure_completed:
+        if args.admission_closure_internal:
+            from infra.gcp import schema27_internal_coordinator_completion as internal
+
+            closed = internal.load_closed_internal(plan_path=args.admission_closure_plan,
+                plan_sha256=args.admission_closure_plan_sha256, journal_path=args.admission_closure_journal)
+        elif args.admission_closure_completed:
             from infra.gcp import schema27_native_admission_completion as completion
 
             closed = completion.load_completed(plan_path=args.admission_closure_plan,

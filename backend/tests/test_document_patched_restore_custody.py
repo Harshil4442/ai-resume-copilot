@@ -132,3 +132,49 @@ def test_completion_subclass_cannot_enter_the_typed_restore_bridge(restored):
         pass
     with pytest.raises(restore.rolling.RollingDenied, match="closed_admission_kind"):
         patched.HistoricalRestore(restored.plan, restored.journal, closed=object.__new__(PretendCompletion))
+
+
+def test_exact_internal_reader_keeps_both_incomplete_parents_separate(restored, monkeypatch):
+    from infra.gcp import schema27_internal_coordinator_completion as internal
+
+    c = restored
+    closed = object.__new__(internal.ClosedInternalAdmission)
+    closed.plan = SimpleNamespace(parent={"owner": "genuine-stage-and-incomplete-external-health"})
+    completed_parent = {"owner": "original-api-closure-and-definite-coordinator-rejection"}
+    closed.verify_custody = lambda: {"new_admission_closed": True, "response_json_observed": False}
+    closed.verify_current = lambda: {"fresh_internal_closure_snapshot": True}
+    monkeypatch.setattr(internal, "read_parent", lambda parent: (
+        SimpleNamespace(parent=completed_parent), None)
+        if parent == closed.plan.parent else pytest.fail("unexpected internal parent read"))
+    monkeypatch.setattr(internal.prior, "read_parent", lambda parent: (
+        SimpleNamespace(parent=c.closure.plan.parent), None, None)
+        if parent == completed_parent else pytest.fail("unexpected completion parent read"))
+    target = patched.HistoricalRestore(c.plan, c.journal, closed=closed)
+    assert target.verify_current() == {"fresh_internal_closure_snapshot": True}
+    assert closed.restore_parent == c.closure.plan.parent
+    assert closed.plan.parent != completed_parent != closed.restore_parent
+    assert len(c.staged.c.fixture.writes) == 6
+
+
+def test_internal_subclass_cannot_enter_the_typed_restore_bridge(restored):
+    from infra.gcp import schema27_internal_coordinator_completion as internal
+
+    class PretendInternal(internal.ClosedInternalAdmission):
+        pass
+    with pytest.raises(restore.rolling.RollingDenied, match="closed_admission_kind"):
+        patched.HistoricalRestore(restored.plan, restored.journal, closed=object.__new__(PretendInternal))
+
+
+def test_cli_closure_reader_selectors_are_mutually_exclusive(monkeypatch):
+    import sys
+
+    argv = ["schema27_patched_engine_recovery", "build", "--publish-candidate"]
+    for name in ("identity-profile", "identity-profile-sha256", "restore-plan", "restore-plan-sha256",
+                 "restore-journal", "admission-closure-plan", "admission-closure-plan-sha256",
+                 "admission-closure-journal", "prior-history-directory", "output-directory"):
+        argv.extend(["--" + name, "unused-before-parser-validation"])
+    argv.extend(["--admission-closure-completed", "--admission-closure-internal"])
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit) as error:
+        patched.main()
+    assert error.value.code == 2
