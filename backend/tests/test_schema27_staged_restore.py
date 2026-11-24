@@ -91,6 +91,30 @@ def test_capture_and_roundtrip_have_no_literal_values_or_new_native_writes(prepa
     assert not journal.claimed("restore-stage." + op.SERVICES[0] + ".started")
 
 
+@pytest.mark.parametrize("field,accepted", [("containerStatuses", True), ("unexpectedRuntimeConfig", False)])
+def test_native_output_status_does_not_mask_unknown_template_changes(staged, field, accepted):
+    for pin in staged.c.plan.services:
+        staged.c.fixture.revisions[(pin.service, staged.c.plan.revision(pin.service))][field] = [{"name": "app"}]
+    if not accepted:
+        with pytest.raises(op.rolling.RollingDenied, match="staged_revision_changed"):
+            capture(staged)
+        assert not staged.c.fixture.writes
+        return
+    original_patch = staged.boundary.patch
+
+    def patch(service, body, mask):
+        result = original_patch(service, body, mask)
+        if "template" in body:
+            staged.c.fixture.revisions[(service, body["template"]["revision"])][field] = [{"name": "app"}]
+        return result
+
+    staged.boundary.patch = patch
+    plan = capture(staged)
+    journal = op.owned.Journal(staged.directory, plan, create=True)
+    result = op.execute("restore", plan, staged.boundary, journal)
+    assert result["all_homogeneous_source70"] is True and result["native_mutations"] == 6
+
+
 def test_all_services_restore_source70_only_after_zero_traffic_health(prepared):
     c, plan, journal = prepared
     prior = copy.deepcopy(c.c.fixture.revisions)

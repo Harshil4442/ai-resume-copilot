@@ -29,6 +29,9 @@ SOURCE70 = owned.APPLICATION_RELEASE
 SOURCE3F7 = "3f7fd47738b336e4cbfdfdff2f6fdc13adca74c6"
 B_FILE_SHA256 = "3ee4d69106719f3d9fb23d845b378645113456993dcc8a99d62b0d5a2cbc1fbc"
 SERVICES = rolling.release.SERVICES
+# Cloud Run v2 exposes this additional output-only revision status. It is not
+# part of the immutable caller-supplied template; all other fields remain exact.
+REVISION_READ_OUTPUTS = mixed.app.historical.maintenance.REVISION_READ_OUTPUTS | {"containerStatuses"}
 GENERATIONS = dict(zip(SERVICES, (387, 96, 49), strict=True))
 STAGED_UIDS = dict(zip(SERVICES, (
     "e92ffcd3-3357-4ad5-8a0b-12e112fb0676", "01d33d3e-ecae-403f-a6cd-3abdd9582613",
@@ -388,7 +391,7 @@ def _record(plan, journal, pin, phase):
 def _phase_projection(plan, boundary, pin, current, prior, staged):
     restored = _revision(boundary, plan.application, plan.application.pin(pin.service), pin.revision)
     expected = _restore_template(plan, boundary, pin)
-    outputs = mixed.app.historical.maintenance.REVISION_READ_OUTPUTS
+    outputs = REVISION_READ_OUTPUTS
     actual = {key: value for key, value in restored.items() if key not in outputs | {"revision"}}
     need(actual == {key: value for key, value in expected.items() if key != "revision"},
          "restored_immutable_template")
@@ -410,7 +413,7 @@ def _verify_current(plan, boundary, journal):
         staged = _revision(boundary, plan.application, apppin, plan.application.revision(pin.service),
                            pin.staged_revision_uid)
         staged_expected = _staged_template(plan.application, apppin, current, prior_template)
-        outputs = mixed.app.historical.maintenance.REVISION_READ_OUTPUTS
+        outputs = REVISION_READ_OUTPUTS
         staged_actual = {key: value for key, value in staged.items() if key not in outputs | {"revision"}}
         need(staged_actual == {key: value for key, value in staged_expected.items() if key != "revision"},
              "staged_revision_changed")
@@ -664,7 +667,11 @@ def main():
         print(rolling.canonical(result).decode())
         return 0
     except Exception as error:  # noqa: BLE001 - emit only the fixed nonsecret diagnostic projection.
-        print(rolling.canonical(mixed.diagnostics.diagnostic(error, args.mode)).decode())
+        diagnostic = mixed.diagnostics.diagnostic(error, args.mode)
+        if isinstance(error, rolling.RollingDenied) and re.fullmatch(
+                r"schema27_staged_restore_[a-z_]{1,90}", str(error)):
+            diagnostic["denial_code"] = str(error)
+        print(rolling.canonical(diagnostic).decode())
         return 1
     finally:
         if boundary is not None:
