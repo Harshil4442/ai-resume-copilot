@@ -219,7 +219,7 @@ def install_egress_guard(patch, ports: set[int], counters: Counters):
 
 
 @contextmanager
-def configured_accounts(*, engine, directory, endpoint: str, counters):
+def configured_accounts(*, engine, directory, endpoint: str, counters, pre_send_identity_batching=False):
     # This shares the source-qualified fixture's operator pins, real Storage SDK
     # request checks and unchanged production factory. No get_current_user override.
     import tests.test_candidate_production_factory as fixture
@@ -237,6 +237,19 @@ def configured_accounts(*, engine, directory, endpoint: str, counters):
         patch.setattr(fixture, "NOW", time.time_ns() // 1_000_000)
         generator = fixture.configured.__wrapped__(patch, directory)
         c = next(generator)
+        if type(pre_send_identity_batching) is not bool:
+            raise ValueError("Explicit local metadata batching selection is required")
+        if pre_send_identity_batching:
+            from app.domains.candidate_accounts.production import ConfiguredCandidateAccounts
+
+            c.accounts = ConfiguredCandidateAccounts(c.config, pre_send_identity_batching=True)
+            original_snapshot = counters.snapshot
+
+            def snapshot():
+                cohorts = c.accounts._identity_cohorts
+                return original_snapshot() | (cohorts.snapshot() if cohorts is not None else {})
+
+            patch.setattr(counters, "snapshot", snapshot)
         c.sql_active = ThreadSet()
         # Preserve the existing no-SQL/no-native-transaction Storage guard;
         # count its actual SDK transport requests, never payloads or paths.

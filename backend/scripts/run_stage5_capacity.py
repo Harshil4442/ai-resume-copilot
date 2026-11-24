@@ -62,6 +62,8 @@ def parser():
     mode.add_argument("--first-minute", action="store_true", help="Measure overlapping owned reads in one shared governed window")
     mode.add_argument("--jobs-journey", action="store_true", help="Compare governed Dashboard → Jobs routes")
     mode.add_argument("--billing-journey", action="store_true", help="Model governed cold Billing and explicit history opening")
+    result.add_argument("--pre-send-identity-batching", action="store_true",
+                        help="Local Billing candidate on the shared fixture only; not production transport sharing")
     result.add_argument("--output", type=Path)
     result.add_argument("--pg-bin", type=Path)
     result.add_argument("--redis-server", type=Path)
@@ -245,7 +247,9 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert, *, fre
 
 
 def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, first_minute=False,
-            jobs_journey=False, billing_journey=False):
+            jobs_journey=False, billing_journey=False, pre_send_identity_batching=False):
+    if type(pre_send_identity_batching) is not bool or (pre_send_identity_batching and not billing_journey):
+        raise ValueError("Pre-send identity batching is only an explicit local Billing candidate")
     import pytest
     import uvicorn
 
@@ -305,7 +309,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
         install_egress_guard(guards, {resources.pg_port, resources.emulator_port,
                                      resources.api_port, redis_port}, counters)
         native = native_context.enter_context(configured_accounts(engine=source, directory=resources.directory,
-                endpoint=f"127.0.0.1:{resources.emulator_port}", counters=counters))
+                endpoint=f"127.0.0.1:{resources.emulator_port}", counters=counters,
+                pre_send_identity_batching=pre_send_identity_batching))
         actors = {}
         from tests.test_candidate_production_factory import PASSWORD
         for uid in range(1, 9):
@@ -439,6 +444,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
             "external_attempts_blocked": 0, "provider_calls": 0,
             "source": resources.command(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).strip(),
             "actual_application_python_sources_sha256": application_sources_sha256(),
+            "pre_send_identity_batching_candidate": pre_send_identity_batching,
+            "production_transport_sharing_proven": False,
             "python": platform.python_version(), "machine": platform.machine(),
             "redis_binary_sha256": hashlib.sha256(resources.redis_binary.read_bytes()).hexdigest(),
             "limitations": [
@@ -450,7 +457,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                 "Connection acquisition includes pre-ping/connect/wait; pure pool wait is unknown.",
                 "Redis INFO counter includes observation/setup protocol commands; it is not provider billing metering.",
                 "Local wall/CPU/RSS and response bytes do not establish native CU, autoscaling, invoice cost or 10,000-user peaks.",
-                "1M authenticated requests/month remains required; 40 units/min and two Lists yields at most 864,000/30 days before other use.",
+                ("Candidate shares one fixture composition; real per-request production factories do not share these RPC objects. No production capacity improvement is established."
+                 if pre_send_identity_batching else "Roughly 1M authenticated requests/month is a planning benchmark; 40 units/min and two Lists yields at most 864,000/30 days before other use, not a native success-floor qualification."),
                 "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
         if first_minute:
             report["validation"] = stage5_first_minute.validate(results[0], preflight, plan.buyers_percent)
@@ -458,7 +466,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                 "no provider payment or file is created. Times are ideal initial arrival ticks, and Redis INFO sampling adds "
                 "one local command per observation. No native quota change, production latency or paid-customer behavior is inferred.")
         elif billing_journey:
-            report["validation"] = stage5_billing_journey.validate(results, preflight)
+            report["validation"] = (stage5_billing_journey.validate_pre_send_candidate(results, preflight)
+                                    if pre_send_identity_batching else stage5_billing_journey.validate(results, preflight))
             report["limitations"].append("Fixed direct-HTTP model of the 9dc Billing schedule contract, inherited "
                 "unchanged by live frontend 8a72627; 9dc is not the latest deployed frontend. Six base distinct "
                 "cold routes, up to two additional opening-consumer bootstrap reads for settlement or a missing "
@@ -501,6 +510,8 @@ def main():
     previous_logging_threshold = logging.root.manager.disable
     try:
         plan = Plan.parse(json.loads(args.config.read_text()))
+        if args.pre_send_identity_batching and not args.billing_journey:
+            raise ValueError("Pre-send identity batching requires the explicit local Billing candidate")
         if args.fresh_window and plan.measurement_seconds <= FRESH_WINDOW_COOLDOWN_SECONDS * len(plan.concurrency):
             raise ValueError("Fresh-window measurement must fit all natural cooldowns")
         if args.skill_roi_journey and plan.measurement_seconds <= FRESH_WINDOW_COOLDOWN_SECONDS * len(stage5_skill_roi.EXPECTED_HTTP):
@@ -518,6 +529,9 @@ def main():
         if not args.execute:
             preview = {"version": version, "plan": asdict(plan), "maximum_requests_including_controls": plan.requests_per_phase * 6 + 3,
                        "external_calls": 0, "production_qualified": False}
+            if args.pre_send_identity_batching:
+                preview.update(pre_send_identity_batching_candidate=True, cohort_window_seconds=0.002,
+                               production_transport_sharing_proven=False, maximum_waiters=32)
             if args.fresh_window:
                 preview.update(workload_mode=FRESH_WINDOW_MODE, maximum_requests_including_controls=FRESH_WINDOW_READS * 3 + 3,
                                fresh_window_reads_per_phase=FRESH_WINDOW_READS, minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS)
@@ -565,7 +579,8 @@ def main():
             # exception message is emitted by the runner or its private report.
             logging.disable(logging.CRITICAL)
             if args.billing_journey:
-                result = execute(plan, resources, billing_journey=True)
+                result = execute(plan, resources, billing_journey=True,
+                                 pre_send_identity_batching=args.pre_send_identity_batching)
             elif args.jobs_journey:
                 result = execute(plan, resources, jobs_journey=True)
             elif args.first_minute:

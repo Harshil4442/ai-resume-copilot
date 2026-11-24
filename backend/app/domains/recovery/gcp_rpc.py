@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from google.api_core.exceptions import Aborted
@@ -18,6 +18,9 @@ from .gcp_contracts import AmbiguousCommit, RpcCommit, RpcSnapshot, RpcWrite
 from .native_diagnostics import native_phase
 from .native_metadata_admission import MetadataAdmissionError, before_metadata_rpc
 from .store import GuardDenied, GuardUnavailable
+
+if TYPE_CHECKING:
+    from .native_identity_cohorts import PreSendIdentityCohorts
 
 MAX_DOCUMENTS = 64
 MAX_BODY_BYTES = 128 * 1024
@@ -34,7 +37,8 @@ class FirestoreIdentityList:
     after all dependent reads. No database contents or identity result is cached.
     """
 
-    def __init__(self, rpcs: tuple[FirestoreRpc, FirestoreRpc]):
+    def __init__(self, rpcs: tuple[FirestoreRpc, FirestoreRpc], *,
+                 cohorts: PreSendIdentityCohorts | None = None, pins: tuple = ()):
         if (type(rpcs) is not tuple or len(rpcs) != 2 or rpcs[0] is rpcs[1]
                 or any(type(rpc) is not FirestoreRpc for rpc in rpcs)
                 or rpcs[0].admin is not rpcs[1].admin):
@@ -46,8 +50,17 @@ class FirestoreIdentityList:
         self.rpcs, self.names, self.parent = rpcs, names, parents[0]
         self.admin = rpcs[0].admin
         self.timeout = min(rpc.rpc_timeout for rpc in rpcs)
+        self.cohorts, self.pins = cohorts, pins
+        if cohorts is not None:
+            from .native_identity_cohorts import PreSendIdentityCohorts
+
+            if type(cohorts) is not PreSendIdentityCohorts:
+                raise GuardUnavailable("Exact pre-send metadata coordinator is required")
 
     def identities(self) -> dict[int, dict]:
+        return self._identities_uncached() if self.cohorts is None else self.cohorts.read(self)
+
+    def _identities_uncached(self) -> dict[int, dict]:
         from google.cloud.firestore_admin_v1.types import (
             Database,
             ListDatabasesRequest,

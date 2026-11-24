@@ -131,3 +131,65 @@ original bounded pairing, native inspection, exact-file/answer review, approval
 and cancellation before Fill, native revocation and exact-ID zero-effects/accounting
 observation. Native inspection/revocation acknowledgments remain separate from SQL
 readback. See [current pilot progress](../delivery/AUTO_APPLY_PROGRESS.md).
+
+## Draft amendment: pre-send metadata cohorts (local candidate only)
+
+This amendment is **not accepted or enabled in production**. Its constructor
+option defaults to false, has no environment/HTTP selector, and applies only to
+ordinary `ConfiguredCandidateAccounts.validate`. The Stage5 runner can explicitly
+select it with `--billing-journey --pre-send-identity-batching`; the normal harness
+and production factory remain unchanged. Browser pairing, lifecycle mutations,
+signing, activation and other privileged paths retain their existing fresh calls.
+
+The production factory currently constructs a new configured composition on each
+request. Stage5 instead explicitly shares one configured account object. Therefore
+the candidate can reduce metadata calls in that shared fixture, but establishes
+**no production throughput improvement**. Caching a composition or private
+authorization state is not part of this amendment. A production transport-sharing
+design would need separate review and proof.
+
+Within one exact shared composition, a metadata caller may wait up to a nominal
+2ms collection window. Scheduling can delay wakeup; that delay consumes existing
+deadlines rather than extending them. Cohorts contain at most eight callers;
+there are at most 32 pending callers and four collecting/in-flight cohorts. The
+cohort is detached from the open queue **before** Redis admission and the SDK
+request. A caller arriving after sealing never joins that request, even while its
+response is pending. No completed result is available to future calls. Values are
+immutable inside the cohort and returned as distinct copies to its sealed callers,
+then cleared when those callers leave.
+
+The cohort binds the exact RPC objects, data/Admin clients and transport, both
+complete immutable RegistryPins, database names, project, fixed request shape,
+timeouts and admission configuration. Each physical SDK List still uses the
+original `before_metadata_rpc(required=True)` admission, no retry, and its original
+timeout. The global Redis moving window remains 40 **physical metadata RPCs** per
+minute. A shared RPC consumes one slot; unknown acknowledgments, quota refusal,
+changed/missing identities, partial metadata and RPC failures fail closed for all
+affected callers, without a retry or fallback.
+
+Every caller keeps its own Context/thread/task-bound observation scope and
+original 30-second deadline, UID comparison, poison/quarantine state, entry and
+exit barriers. In particular, its exit ticket is created only after its own
+dependent work finishes; it cannot reuse its entry ticket. This extends sharing
+of a *fresh physical metadata read* to already-waiting concurrent callers. It does
+not share an observation scope or a positive authorization decision. Fresh
+session, credential, closure, revocation, witness, journal and SQL reads remain
+independent. A revoked caller can still be denied while another caller sharing
+the same public metadata succeeds.
+
+Installed-SDK/intercepted-transport tests can establish cohort ordering, request
+counts and refusal behavior. They do not prove real provider identity/IAM,
+Firestore durability, distributed Redis admission or Stage5 HTTP capacity. Any
+candidate Stage5 report remains local/synthetic, binds actual source bytes, and
+sets `production_transport_sharing_proven=false`. Separate instances, staggered
+barriers or low concurrency may yield little or no batching benefit.
+
+The opt-in experiment reports aggregate validation entry/completion/failure and
+logical barrier/cohort counts alongside the existing actual physical SDK count.
+Its separate candidate validator requires fresh entry and successful exit for
+every successful validation, closed accounting, no pending cohorts, at most eight
+successful barrier observations per physical List, and the original physical
+40-RPC ceiling/effect/ownership checks. It retains the complete original baseline
+validation result, whose unbatched two-physical-RPC-per-response predicate is
+unchanged. Neither physical counts nor refusal counts are rewritten. These
+aggregate experiment counters are not native proof or authorization receipts.

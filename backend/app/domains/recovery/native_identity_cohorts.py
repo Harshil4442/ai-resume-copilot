@@ -1,0 +1,200 @@
+"""Opt-in pre-send metadata cohorts; never a retained identity or authority cache.
+
+Only already-waiting calls on one exact composition can share a physical List.
+Every caller keeps its own observation scope, UID checks and original deadline.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from threading import Condition
+from time import monotonic
+from typing import TYPE_CHECKING, cast
+
+from .gcp_contracts import RegistryPin
+from .native_metadata_admission import (
+    MetadataAdmissionUnavailable,
+    MetadataCapacityUnavailable,
+)
+from .store import GuardUnavailable
+
+if TYPE_CHECKING:
+    from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
+
+WINDOW_SECONDS = 0.002
+MAX_PENDING = 32
+MAX_COHORT_SIZE = 8
+MAX_COHORTS = 4
+FAILURE = "Fresh pre-send identity metadata is unavailable"
+Values = tuple[tuple[int, tuple[str, str, str]], ...]
+
+
+@dataclass
+class _Cohort:
+    seal_at: float
+    members: int = 0
+    complete: bool = False
+    values: Values | None = None
+    failure: str | None = None
+
+
+class PreSendIdentityCohorts:
+    """One bounded, composition-owned rendezvous with no after-send joining.
+
+    The first waiting request owns the physical RPC; no background task or copied
+    Context runs authorization. Completed values survive only for sealed waiters.
+    """
+
+    def __init__(self, bindings: tuple[tuple[FirestoreRpc, RegistryPin], ...]):
+        from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
+
+        if (type(bindings) is not tuple or len(bindings) != 2
+                or any(type(rpc) is not FirestoreRpc or type(pin) is not RegistryPin
+                       or rpc.database_resource != pin.database for rpc, pin in bindings)):
+            raise GuardUnavailable(FAILURE)
+        self.rpcs = cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings))
+        self.pins = tuple(pin for _, pin in bindings)
+        checked = FirestoreIdentityList(self.rpcs)
+        self.admin, self.transport = checked.admin, checked.admin.transport
+        self.clients = tuple(rpc.client for rpc in self.rpcs)
+        self.names, self.parent, self.timeout = checked.names, checked.parent, checked.timeout
+        self.timeouts = tuple(rpc.rpc_timeout for rpc in self.rpcs)
+        self.configuration = self._configuration()
+        self.condition = Condition()
+        self.open: _Cohort | None = None
+        self.pending = self.active = 0
+        # Aggregate local experiment measurements only, never authorization.
+        self.counts = dict.fromkeys(("validation_started", "validation_entered", "validation_succeeded",
+                                    "validation_failed", "barriers_started", "barriers_succeeded",
+                                    "barriers_failed", "cohorts_started", "cohorts_completed"), 0)
+
+    def validation(self, phase: str) -> None:
+        if phase not in {"started", "entered", "succeeded", "failed"}:
+            raise GuardUnavailable(FAILURE)
+        with self.condition:
+            self.counts["validation_" + phase] += 1
+
+    def snapshot(self) -> dict[str, int]:
+        with self.condition:
+            return {"candidate_" + key: value for key, value in self.counts.items()} | {
+                "candidate_pending": self.pending, "candidate_active": self.active}
+
+    @staticmethod
+    def _configuration() -> tuple[str | None, ...]:
+        return tuple(os.environ.get(key) for key in (
+            "CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED",
+            "CANDIDATE_METADATA_CALLS_PER_MINUTE", "GOOGLE_CLOUD_PROJECT"))
+
+    def _guard(self, batch: FirestoreIdentityList) -> None:
+        from .gcp_rpc import FirestoreIdentityList
+
+        if (type(batch) is not FirestoreIdentityList or batch.cohorts is not self
+                or batch.pins != self.pins or len(batch.rpcs) != 2
+                or any(actual is not expected for actual, expected in zip(batch.rpcs, self.rpcs, strict=True))
+                or self.admin.transport is not self.transport or batch.admin is not self.admin
+                or batch.names != self.names or batch.parent != self.parent or batch.timeout != self.timeout
+                or any(rpc.admin is not self.admin or rpc.client is not client
+                       or rpc.database_resource != name or rpc.rpc_timeout != timeout
+                       for rpc, client, name, timeout in zip(self.rpcs, self.clients, self.names, self.timeouts, strict=True))
+                or self._configuration() != self.configuration
+                or self.configuration[:2] != ("true", "true")):
+            raise GuardUnavailable(FAILURE)
+
+    def _freeze(self, values: dict) -> Values:
+        if type(values) is not dict or set(values) != {id(rpc) for rpc in self.rpcs}:
+            raise GuardUnavailable(FAILURE)
+        frozen = []
+        for rpc, pin in zip(self.rpcs, self.pins, strict=True):
+            value = values[id(rpc)]
+            expected = (pin.database, str(pin.database_uid), "FIRESTORE_NATIVE")
+            if (type(value) is not dict or set(value) != {"name", "uid", "type"}
+                    or any(type(value[key]) is not str for key in ("name", "uid", "type"))
+                    or tuple(value[key] for key in ("name", "uid", "type")) != expected):
+                raise GuardUnavailable(FAILURE)
+            frozen.append((id(rpc), expected))
+        return tuple(frozen)
+
+    def _publish(self, cohort: _Cohort, values: Values | None, failure: str | None) -> None:
+        with self.condition:
+            cohort.values, cohort.failure, cohort.complete = values, failure, True
+            self.active -= 1
+            self.counts["cohorts_completed"] += 1
+            self.condition.notify_all()
+
+    def read(self, batch: FirestoreIdentityList) -> dict[int, dict]:
+        with self.condition:
+            self.counts["barriers_started"] += 1
+        try:
+            result = self._read(batch)
+        except BaseException:
+            with self.condition:
+                self.counts["barriers_failed"] += 1
+            raise
+        else:
+            with self.condition:
+                self.counts["barriers_succeeded"] += 1
+            return result
+
+    def _read(self, batch: FirestoreIdentityList) -> dict[int, dict]:
+        self._guard(batch)
+        # Redis admission remains <=1s and this exact SDK call retains its own
+        # finite timeout. Waiting never resets the caller's separate 30s scope.
+        deadline = monotonic() + self.timeout + 1.1
+        with self.condition:
+            self._guard(batch)
+            if (self.pending >= MAX_PENDING or (self.open is None and self.active >= MAX_COHORTS)
+                    or (self.open is not None and self.open.members >= MAX_COHORT_SIZE)):
+                raise GuardUnavailable(FAILURE)
+            leader = self.open is None
+            if leader:
+                self.open = _Cohort(monotonic() + WINDOW_SECONDS)
+                self.active += 1
+                self.counts["cohorts_started"] += 1
+            cohort = self.open
+            assert cohort is not None
+            cohort.members += 1
+            self.pending += 1
+            self.condition.notify_all()
+        try:
+            if leader:
+                try:
+                    with self.condition:
+                        while monotonic() < cohort.seal_at and cohort.members < MAX_COHORT_SIZE:
+                            self.condition.wait(max(0, cohort.seal_at - monotonic()))
+                        # Detach BEFORE admission and SDK send. No in-flight or
+                        # completed cohort is reachable by a newly arriving call.
+                        if self.open is not cohort:
+                            raise GuardUnavailable(FAILURE)
+                        self.open = None
+                        self._guard(batch)
+                    values = self._freeze(batch._identities_uncached())
+                except BaseException as exc:
+                    with self.condition:
+                        if self.open is cohort:
+                            self.open = None
+                    failure = ("capacity" if type(exc) is MetadataCapacityUnavailable else
+                               "admission" if type(exc) is MetadataAdmissionUnavailable else "unavailable")
+                    self._publish(cohort, None, failure)
+                    raise
+                else:
+                    self._publish(cohort, values, None)
+            with self.condition:
+                while not cohort.complete and monotonic() < deadline:
+                    self.condition.wait(max(0, deadline - monotonic()))
+                self._guard(batch)
+                if not cohort.complete or monotonic() >= deadline:
+                    raise GuardUnavailable(FAILURE)
+                if cohort.failure == "capacity":
+                    raise MetadataCapacityUnavailable()
+                if cohort.failure == "admission":
+                    raise MetadataAdmissionUnavailable()
+                if cohort.failure is not None or cohort.values is None:
+                    raise GuardUnavailable(FAILURE)
+                return {key: dict(zip(("name", "uid", "type"), value, strict=True))
+                        for key, value in cohort.values}
+        finally:
+            with self.condition:
+                self.pending -= 1
+                cohort.members -= 1
+                if cohort.members == 0:
+                    cohort.values = cohort.failure = None

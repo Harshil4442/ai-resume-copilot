@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from ..recovery.gcp_journal import GcsWitnessFence
     from ..recovery.gcp_password_lifetime import GcpPasswordLifetimeCoordinator
     from ..recovery.gcp_scoped_authority import ScopedCandidateAuthority
+    from ..recovery.native_identity_cohorts import PreSendIdentityCohorts
     from ..recovery.password_reauth import CandidateWebSession
     from .contracts import CandidateLoginResult
     from .retention import CandidateLifetimeRetention
@@ -188,10 +189,14 @@ def _build(config: CandidateNativeConfiguration) -> _Composition:
 class ConfiguredCandidateAccounts:
     """One exact configured composition, with SDK clients deferred to first use."""
 
-    def __init__(self, configuration: CandidateNativeConfiguration):
+    def __init__(self, configuration: CandidateNativeConfiguration, *, pre_send_identity_batching: bool = False):
+        if type(pre_send_identity_batching) is not bool:
+            raise GuardUnavailable("Explicit local metadata batching selection is required")
         self._raw = canonical(configuration.model_dump(mode="json"))
         self._instance: _Composition | None = None
         self._lock = Lock()
+        self._pre_send_identity_batching = pre_send_identity_batching
+        self._identity_cohorts: PreSendIdentityCohorts | None = None
 
     def _composition(self) -> _Composition:
         config = _configuration()
@@ -268,13 +273,34 @@ class ConfiguredCandidateAccounts:
                     (current.scoped.publication.registry.rpc, fixed.publication_resource.pin.authority.registry))
         # The constructor validates exact arity, concrete RPC types and shared
         # transport before accessing either generic registry protocol object.
-        batch = FirestoreIdentityList(cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings)))
-        with identity_observation_scope(bindings, batch=batch):
-            # Only ordinary validation is read-only. Lifecycle mutations and
-            # signing retain their existing fresh, independent native barriers.
-            self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
-            if os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false") != mode:
-                raise GuardUnavailable("Candidate account identity observation mode changed")
+        cohorts = None
+        if self._pre_send_identity_batching:
+            from ..recovery.native_identity_cohorts import PreSendIdentityCohorts
+
+            with self._lock:
+                if self._identity_cohorts is None:
+                    self._identity_cohorts = PreSendIdentityCohorts(bindings)
+                cohorts = self._identity_cohorts
+        batch = FirestoreIdentityList(cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings)),
+                                      cohorts=cohorts, pins=tuple(pin for _, pin in bindings))
+        if cohorts is not None:
+            cohorts.validation("started")
+        try:
+            with identity_observation_scope(bindings, batch=batch):
+                if cohorts is not None:
+                    cohorts.validation("entered")
+                # Only ordinary validation is read-only. Lifecycle mutations and
+                # signing retain their existing fresh, independent native barriers.
+                self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
+                if os.environ.get("CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "false") != mode:
+                    raise GuardUnavailable("Candidate account identity observation mode changed")
+        except BaseException:
+            if cohorts is not None:
+                cohorts.validation("failed")
+            raise
+        else:
+            if cohorts is not None:
+                cohorts.validation("succeeded")
 
     def logout(self, context: CandidateWebSession) -> None:
         self._invoke(lambda service: service.logout(context))

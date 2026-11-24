@@ -749,7 +749,7 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert set(workflow["on"]) == {"workflow_dispatch", "pull_request"}
     trigger = workflow["on"]["pull_request"]
     assert trigger["branches"] == ["main"]
-    assert len(trigger["paths"]) == 25 and "backend/app/**" not in trigger["paths"]
+    assert len(trigger["paths"]) == 27 and "backend/app/**" not in trigger["paths"]
     assert "backend/scripts/stage5_skill_roi.py" in trigger["paths"]
     assert "backend/tests/test_stage5_skill_roi.py" in trigger["paths"]
     assert "backend/scripts/stage5_first_minute.py" in trigger["paths"]
@@ -758,7 +758,12 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "backend/tests/test_stage5_jobs_journey.py" in trigger["paths"]
     assert "backend/scripts/stage5_billing_journey.py" in trigger["paths"]
     assert "backend/tests/test_stage5_billing_journey.py" in trigger["paths"]
+    assert "backend/app/domains/recovery/native_identity_cohorts.py" in trigger["paths"]
+    assert "backend/tests/test_native_identity_cohorts.py" in trigger["paths"]
     assert workflow["on"]["workflow_dispatch"]["inputs"]["billing_journey"]["default"] == "false"
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["pre_send_identity_batching"] == {
+        "description": "Opt in to the local Billing metadata candidate on the shared fixture only",
+        "type": "boolean", "default": "false"}
     assert all("*" not in path and not path.startswith("docs/") for path in trigger["paths"])
     assert workflow["permissions"] == {"contents": "read"}
     assert "${{ secrets." not in source and "google-github-actions/auth" not in source
@@ -785,6 +790,10 @@ def test_linux_manual_workflow_has_no_cloud_authority_and_requires_real_dependen
     assert "--first-minute" in runs and "test_stage5_first_minute.py" in runs
     assert "--jobs-journey" in runs and "test_stage5_jobs_journey.py" in runs
     assert "--billing-journey" in runs and "test_stage5_billing_journey.py" in runs
+    execute = next(step for step in job["steps"] if step.get("name") == "Execute only fresh owned loopback resources")
+    assert execute["env"]["PRE_SEND_IDENTITY_BATCHING"] == "${{ github.event_name == 'workflow_dispatch' && inputs.pre_send_identity_batching }}"
+    assert 'if [[ "$PRE_SEND_IDENTITY_BATCHING" == true ]]; then args+=(--pre-send-identity-batching); fi' in execute["run"]
+    assert "test_native_identity_cohorts.py" in runs
     assert "--redis-server" in runs and "--pg-bin" in runs
     artifacts = job["steps"][-1]["with"]["path"].splitlines()
     assert len(artifacts) == 4 and all(path.endswith(("report.json", "cleanup.json", "failure.json", "emulator-transport.json")) for path in artifacts)

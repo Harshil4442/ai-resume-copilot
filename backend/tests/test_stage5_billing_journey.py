@@ -66,7 +66,7 @@ def body(key, uid, buyers=25):
     raise AssertionError("Unknown synthetic route")
 
 
-async def example(monkeypatch, *, settled=False, buyers=25, late_legacy=False, deadline_jump=False):
+async def example(monkeypatch, *, settled=False, buyers=25, late_legacy=False, deadline_jump=False, unpaced=False):
     from tests.fixtures.stage5_native import Counters
 
     counters, phases, observed = Counters(), [], []
@@ -97,7 +97,7 @@ async def example(monkeypatch, *, settled=False, buyers=25, late_legacy=False, d
             if bootstrap_reads == 2:
                 first_refresh.set()
         counters.add("native_account_validate")
-        if admitted >= 40:
+        if admitted >= 40 and not unpaced:
             return httpx.Response(429, json={"detail": {"code": "NATIVE_METADATA_CAPACITY",
                 "message": "Request capacity is temporarily allocated. Please try again later."}}, headers=HEADERS)
         admitted += 2
@@ -218,3 +218,54 @@ def test_plan_mode_is_dependency_free_bounded_and_mutually_exclusive(tmp_path):
     conflict = subprocess.run([sys.executable, "-I", "-B", str(script), "--billing-journey", "--jobs-journey"],
         cwd=tmp_path, env={"PATH": "/usr/bin:/bin"}, capture_output=True, timeout=10, check=False)
     assert conflict.returncode != 0
+
+
+def candidate_measurement(monkeypatch):
+    """Synthetic validator input only; these are not observed cohort counters."""
+    phases, _ = asyncio.run(example(monkeypatch, unpaced=True))
+    count = len(phases[0]["requests"])
+    wire = phases[0]["wire_and_sql"]
+    wire["synthetic_admin_list_databases"] = 16
+    wire.update({"candidate_" + name: value for name, value in {
+        "validation_started": count, "validation_entered": count, "validation_succeeded": count,
+        "validation_failed": 0, "barriers_started": 2 * count, "barriers_succeeded": 2 * count,
+        "barriers_failed": 0, "cohorts_started": 16, "cohorts_completed": 16, "pending": 0, "active": 0}.items()})
+    return phases
+
+
+def test_candidate_distinguishes_logical_fresh_barriers_from_unchanged_baseline_physical_oracle(monkeypatch):
+    phases = candidate_measurement(monkeypatch)
+    baseline = billing.validate(phases, BASELINE_PREFLIGHT)
+    assert baseline["passed"] is False and baseline["failures"] == {"native_auth_budget_or_effects": 1}
+    result = billing.validate_pre_send_candidate(phases, BASELINE_PREFLIGHT)
+    assert result["passed"] is True and result["baseline_validation"] == baseline
+    assert result["successful_owned_responses"] + result["closed_catalog_responses"] > 20
+    assert result["physical_admin_list_rpcs"] == 16
+    assert result["production_capacity_qualified"] is result["production_transport_sharing_proven"] is False
+    assert billing.validate(phases, BASELINE_PREFLIGHT) == baseline  # No count rewriting/mutation.
+
+
+@pytest.mark.parametrize("change", ["entry", "exit", "unfinished", "barrier", "cohort", "physical", "missing", "write", "ownership"])
+def test_candidate_logical_accounting_and_original_effect_guards_fail_closed(monkeypatch, change):
+    phases = candidate_measurement(monkeypatch)
+    wire = phases[0]["wire_and_sql"]
+    preflight = dict(BASELINE_PREFLIGHT)
+    if change == "entry":
+        wire["candidate_validation_entered"] -= 1
+    elif change == "exit":
+        wire["candidate_validation_succeeded"] -= 1
+    elif change == "unfinished":
+        wire["candidate_pending"] = 1
+    elif change == "barrier":
+        wire["candidate_barriers_succeeded"] -= 1
+    elif change == "cohort":
+        wire["candidate_cohorts_completed"] -= 1
+    elif change == "physical":
+        wire["synthetic_admin_list_databases"] = 41
+    elif change == "missing":
+        del wire["candidate_validation_entered"]
+    elif change == "write":
+        wire["sql_UPDATE"] = 1
+    else:
+        preflight["foreign_resume_status"] = 200
+    assert billing.validate_pre_send_candidate(phases, preflight)["passed"] is False

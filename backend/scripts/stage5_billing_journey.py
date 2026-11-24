@@ -306,3 +306,51 @@ def validate(results, preflight):
             "successful_owned_responses": sum(row["status"] == 200 and row.get("contract_valid") is True for row in rows),
             "closed_catalog_responses": sum(row.get("closed_catalog_valid") is True for row in rows),
             "governed_refusals": sum(row["status"] == 429 and row.get("refusal_valid") is True for row in rows)}
+
+
+def validate_pre_send_candidate(results, preflight):
+    """Separate local accounting oracle; retain the original validation result.
+
+    No physical count is rewritten to satisfy the unbatched two-RPC predicate.
+    The original schedule/ownership/response gates remain mandatory. Aggregate
+    counters describe this synthetic experiment, never issue native authority.
+    """
+    baseline = validate(results, preflight)
+    failures = dict(baseline["failures"])
+    failures.pop("native_auth_budget_or_effects", None)
+    phase = results[0] if len(results) == 1 else {}
+    rows, wire = phase.get("requests", []), phase.get("wire_and_sql", {})
+    names = ("validation_started", "validation_entered", "validation_succeeded", "validation_failed",
+             "barriers_started", "barriers_succeeded", "barriers_failed", "cohorts_started", "cohorts_completed",
+             "pending", "active")
+    counts = {name: wire.get("candidate_" + name) for name in names}
+    physical = wire.get("synthetic_admin_list_databases")
+    valid = sum((row["status"] == 200 and row.get("contract_valid") is True)
+                or (row["view"] == "catalog" and row["status"] == 404 and row.get("closed_catalog_valid") is True)
+                for row in rows)
+    if (any(type(value) is not int or value < 0 for value in counts.values())
+            or type(physical) is not int or not 1 <= physical <= ADMIN_LIMIT):
+        failures["candidate_counter_shape_or_physical_budget"] = 1
+    else:
+        if (counts["validation_started"] != sum(row["sent"] for row in rows)
+                or wire.get("native_account_validate") != counts["validation_started"]
+                or counts["validation_started"] != counts["validation_succeeded"] + counts["validation_failed"]
+                or counts["validation_succeeded"] != valid
+                or not counts["validation_succeeded"] <= counts["validation_entered"] <= counts["validation_started"]
+                or counts["barriers_started"] != counts["barriers_succeeded"] + counts["barriers_failed"]
+                or counts["barriers_succeeded"] < counts["validation_entered"] + counts["validation_succeeded"]
+                or counts["cohorts_started"] != counts["cohorts_completed"]
+                or not physical <= counts["cohorts_completed"] <= counts["barriers_started"]
+                or counts["barriers_succeeded"] > 8 * physical
+                or counts["pending"] != 0 or counts["active"] != 0
+                or any(wire.get(key, 0) for key in ("synthetic_admin_get_database", "sql_INSERT", "sql_UPDATE",
+                                                   "sql_DELETE", "data_commit", "blocked_external_attempts"))):
+            failures["candidate_logical_auth_accounting_or_effects"] = 1
+    return {"passed": not failures, "failures": failures,
+            "validation_mode": "pre_send_identity_batching_local_experiment_v1",
+            "production_capacity_qualified": False, "production_transport_sharing_proven": False,
+            "baseline_validation": baseline, "logical_observations": counts,
+            "physical_admin_list_rpcs": physical,
+            "successful_owned_responses": baseline.get("successful_owned_responses", 0),
+            "closed_catalog_responses": baseline.get("closed_catalog_responses", 0),
+            "governed_refusals": baseline.get("governed_refusals", 0)}
