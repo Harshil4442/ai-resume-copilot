@@ -920,7 +920,12 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
                "document_refresh_recovery_failed_job_serving")
     if image != probe.BASE_IMAGE:
         if recover_expired_source:
-            build.infra("document_source_release").verify_expired_current_source_predecessor(image, service)
+            from infra.gcp import schema27_expired_v5_recovery as recovery
+
+            if recovery.selected(application_context):
+                application_context.probe.verify_expired_current_source_predecessor(image, service)
+            else:
+                build.infra("document_source_release").verify_expired_current_source_predecessor(image, service)
         elif retire_expired_v2 or rescue_expired_v2:
             # Both explicit paths use the expired predecessor only as historical
             # identity. Its old proof never authorizes a new serving image.
@@ -968,7 +973,7 @@ def failed_v4_claim_body(fact: dict[str, Any], nonce: str) -> dict[str, Any]:
 
 
 def verify_completed_v5_consumer(run: Path, failed_v4: dict[str, Any], files: dict[str, bytes],
-                                 clients: Any, probe: Any, build: Any) -> str:
+                                 clients: Any, probe: Any, build: Any, *, application_context: Any = None) -> str:
     """Consume only this failed original after its claimed V5 successor actually served."""
     private(run, build)
     native, transition, claim = (run / name for name in ("native-proof", "transition", "failed-v4-inventory"))
@@ -998,8 +1003,11 @@ def verify_completed_v5_consumer(run: Path, failed_v4: dict[str, Any], files: di
     source_release = build.infra("document_source_release")
     read_only_release = getattr(clients, "read_only_release", False)
     successor = source_release.SourceProbe(identity, root=build.ROOT, serving_read=True, read_only_release=read_only_release)
-    build.need(identity["kind"] == source_release.v5_build_kind()
-        and asdict(successor._acceptance(clients, fresh=False)) == acceptance,
+    from infra.gcp import schema27_expired_v5_recovery as recovery
+
+    component = (recovery.historical_component(successor, clients) if recovery.selected(application_context)
+                 else asdict(successor._acceptance(clients, fresh=False)))
+    build.need(identity["kind"] == source_release.v5_build_kind() and component == acceptance,
         "document_refresh_failed_v4_completed_acceptance_changed")
     service = clients.service(probe.PARENT + "/services/hirewiz-document-inspector")
     current_image = service["template"]["containers"][0]["image"]
@@ -1042,6 +1050,9 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             application_context: Any = None, source_revision: bool = False,
             recover_expired_source: bool = False, source_v5: bool = False) -> str | None:
     build = refresh_module
+    from infra.gcp import schema27_expired_v5_recovery as recovery
+
+    expired_v5 = recovery.selected(application_context)
     build.need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
     build.need(type(source_v5) is bool and (not source_v5 or recover_expired_source is True),
                "document_refresh_failed_v4_mode_refused")
@@ -1178,7 +1189,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
     build.need(not source_v5 or failed_v4_files is not None, "document_refresh_failed_v4_artifact_required")
     if failed_v4_files is not None and not source_v5:
         build.need(not (source_revision or retire_expired_v2 or rescue_expired_v2
-            or resuming_original or recover_expired_source or selected is not None),
+            or resuming_original or recover_expired_source and not expired_v5 or selected is not None),
             "document_refresh_failed_v4_mode_refused")
         build.need(len(completed_v5_consumers) == 1 and application_context is not None,
                    "document_refresh_failed_v4_completed_consumer_required")
@@ -1210,10 +1221,9 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             or failed_v4_files is not None):
         return None
     probe = build.infra("document_refresh_probe")
-    if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
-        from infra.gcp import schema27_mixed_maintenance as forward
+    from infra.gcp import schema27_mixed_maintenance as forward
 
-        build.need(forward.selected(application_context), "document_refresh_published_identity_mode_required")
+    if forward.selected(application_context):
         probe = application_context.probe
     clients = probe.Clients()
     try:
@@ -1223,8 +1233,9 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             verify_failed_v4_serving(clients, probe, build)
         elif failed_v4 is not None:
             assert failed_v4_files is not None
+            options = {"application_context": application_context} if expired_v5 else {}
             expected_image = verify_completed_v5_consumer(completed_v5_consumers[0], failed_v4,
-                failed_v4_files, clients, probe, build)
+                failed_v4_files, clients, probe, build, **options)
         facts = {}
         for job, (files, raw, original_path) in records.items():
             fact = verify_failed(original_path, files, clients, probe, build)
