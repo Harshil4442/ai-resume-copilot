@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { guardedSignOut } from "../../lib/candidateAuthClient";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import CareerMemoryPanel from "../../components/CareerMemoryPanel";
 import WeeklyDigestPreference from "../../components/WeeklyDigestPreference";
@@ -51,39 +51,64 @@ function ProfileContent() {
   const [accountBusy, setAccountBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEndPremium, setConfirmEndPremium] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const readPending = useRef(true);
+  const mounted = useRef(false);
+  const exportWork = useRef<AbortController | null>(null);
+  const editRevision = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; exportWork.current?.abort(); };
+  }, []);
 
   useEffect(() => {
     let active = true;
-    fetchOwnedProfile(queryClient)
+    fetchOwnedProfile(queryClient, loadAttempt > 0)
       .then((response) => { if (active) { setProfile(response); setForm(toForm(response)); } })
       .catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "Failed to load profile"); })
-      .finally(() => { if (active) setLoading(false); });
+      .finally(() => { if (active) { readPending.current = false; setLoading(false); } });
     return () => { active = false; };
-  }, [queryClient]);
+  }, [queryClient, loadAttempt]);
+
+  function retryProfile() {
+    if (readPending.current || profile) return;
+    readPending.current = true;
+    setLoading(true);
+    setError(null);
+    setLoadAttempt((value) => value + 1);
+  }
 
   const skills = useMemo(() => splitSkills(form.skills_text), [form.skills_text]);
   function update<K extends keyof ProfileForm>(key: K, value: ProfileForm[K]) {
+    editRevision.current += 1;
+    setSaved(false);
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
+    if (!profile || saving) return;
+    const submittedRevision = editRevision.current;
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
       const { skills_text, ...values } = form;
       const response = await apiPutJson<UserProfile>("/auth/profile", { ...values, skills: splitSkills(skills_text), years_experience: Number(values.years_experience || 0) });
+      if (!mounted.current) return;
       updateOwnedProfile(queryClient, response);
       setProfile(response);
-      setForm(toForm(response));
-      setSaved(true);
+      if (editRevision.current === submittedRevision) {
+        setForm(toForm(response));
+        setSaved(true);
+      }
       trackEvent("profile_saved", { completeness: response.profile_completeness });
-      window.setTimeout(() => setSaved(false), 3000);
+      window.setTimeout(() => { if (mounted.current) setSaved(false); }, 3000);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save profile");
+      if (mounted.current) setError(saveError instanceof Error ? saveError.message : "Failed to save profile");
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   }
 
@@ -92,15 +117,17 @@ function ProfileContent() {
     setError(null);
     try {
       await apiPostJson("/billing/end-premium", {});
+      if (!mounted.current) return;
       window.dispatchEvent(new Event("refresh_analysis_units"));
       const response = await fetchOwnedProfile(queryClient, true);
+      if (!mounted.current) return;
       setProfile(response);
       setConfirmEndPremium(false);
       trackEvent("premium_access_ended");
     } catch (accountError) {
-      setError(accountError instanceof Error ? accountError.message : "Could not end Premium access.");
+      if (mounted.current) setError(accountError instanceof Error ? accountError.message : "Could not end Premium access.");
     } finally {
-      setAccountBusy(false);
+      if (mounted.current) setAccountBusy(false);
     }
   }
 
@@ -109,41 +136,54 @@ function ProfileContent() {
     setError(null);
     try {
       await apiPostJson("/auth/delete-account", {});
+      if (!mounted.current) return;
       trackEvent("account_deleted");
       await guardedSignOut();
+      if (!mounted.current) return;
       resetAnalyticsIdentity();
       window.location.replace(new URL("/register", window.location.origin).href);
     } catch (accountError) {
-      setError(accountError instanceof Error ? accountError.message : "Could not delete account.");
-      setAccountBusy(false);
+      if (mounted.current) {
+        setError(accountError instanceof Error ? accountError.message : "Could not delete account.");
+        setAccountBusy(false);
+      }
     }
   }
 
   async function exportAccount() {
+    if (exportWork.current) return;
+    const controller = new AbortController();
+    exportWork.current = controller;
     setAccountBusy(true);
     setError(null);
     try {
-      await apiDownload("/auth/export-account", "hirewiz-account-export.json");
+      await apiDownload("/auth/export-account", "hirewiz-account-export.json", undefined, controller.signal);
+      if (!mounted.current || controller.signal.aborted) return;
       trackEvent("account_exported");
     } catch (accountError) {
-      setError(accountError instanceof Error ? accountError.message : "Could not export account data.");
+      if (mounted.current && !controller.signal.aborted) setError(accountError instanceof Error ? accountError.message : "Could not export account data.");
     } finally {
-      setAccountBusy(false);
+      if (exportWork.current === controller) exportWork.current = null;
+      if (mounted.current) setAccountBusy(false);
     }
   }
 
-  if (loading) return <LoadingBlock rows={7} />;
+  if (loading && loadAttempt === 0) return <LoadingBlock rows={7} />;
 
   return (
     <>
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
-          <div><p className="eyebrow">Profile and preferences</p><h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Your career context</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Only the information visible here and in Career Memory is reusable across your workspace.</p></div>
+          <div><p className="eyebrow">Profile and preferences</p><h1 className="font-display mt-2 text-4xl font-normal text-foreground sm:text-5xl">Your career context</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Review the profile and approved facts HireWiz can use across your workspace.</p></div>
           {profile ? <div className="min-w-56"><div className="flex items-end justify-between"><span className="data-label">Profile completeness</span><span className="text-2xl font-semibold text-primary">{profile.profile_completeness}%</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface"><div className="h-full bg-primary" style={{ width: `${profile.profile_completeness}%` }} /></div><p className="mt-2 truncate text-xs text-muted-foreground">{profile.email}</p></div> : null}
         </header>
 
         {error ? <div className="flex gap-3 border border-coral/30 bg-coral/5 p-4 text-sm text-coral" role="alert"><AlertCircle size={18} className="shrink-0" /> {error}</div> : null}
 
-        <form onSubmit={save} className="space-y-6">
+        {!profile ? <section className="surface space-y-4 p-5 sm:p-7" aria-labelledby="profile-unavailable-heading">
+          <h2 id="profile-unavailable-heading" className="font-display text-2xl">Profile unavailable</h2>
+          <p className="text-sm leading-6 text-muted-foreground">Your saved profile is temporarily unavailable. Retry to load it before making changes. Account export and deletion are available below.</p>
+          <Button type="button" variant="secondary" onClick={retryProfile} disabled={loading}>{loading ? "Loading profile…" : "Retry profile"}</Button>
+        </section> : <form onSubmit={save} className="space-y-6">
           <section className="surface p-5 sm:p-7">
             <div className="flex items-center gap-3"><span className="icon-tile"><User size={18} /></span><h2 className="font-display text-lg font-normal">Identity</h2></div>
             <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -178,7 +218,7 @@ function ProfileContent() {
           </section>
 
           <div className="sticky bottom-4 z-20 flex justify-end"><div className="flex w-full items-center justify-between gap-4 rounded-lg border border-border bg-card/95 p-3 shadow-xl backdrop-blur sm:w-auto"><span className={`text-sm font-bold ${saved ? "text-primary" : "text-muted-foreground"}`}>{saved ? <span className="flex items-center gap-2"><CheckCircle2 size={16} /> Saved</span> : "Unsaved edits stay on this page"}</span><Button type="submit" disabled={saving}><Save size={16} /> {saving ? "Saving..." : "Save profile"}</Button></div></div>
-        </form>
+        </form>}
 
         <CareerMemoryPanel />
 
@@ -186,7 +226,7 @@ function ProfileContent() {
           <p className="eyebrow">Account controls</p>
           <div className="mt-5 divide-y divide-border border-y border-border">
             <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display font-normal text-foreground">Export account data</h2><p className="mt-1 text-sm text-muted-foreground">Download your profile, career records, usage history, and payment references.</p></div><Button variant="secondary" onClick={exportAccount} disabled={accountBusy}><Download size={16} /> Export JSON</Button></div>
-            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display flex items-center gap-2 font-normal text-foreground"><Crown size={17} className="text-primary" /> Premium access</h2><p className="mt-1 text-sm text-muted-foreground">{profile?.tier === "premium" ? (profile.premium_until ? `Active until ${new Date(profile.premium_until).toLocaleDateString("en-IN")}. No automatic renewal.` : "Premium access is active.") : "Free access is active."}</p></div>{profile?.tier === "premium" ? (!confirmEndPremium ? <Button variant="secondary" onClick={() => setConfirmEndPremium(true)}><ShieldOff size={16} /> End access</Button> : <div className="flex gap-2"><Button variant="danger" onClick={endPremium} disabled={accountBusy}>Confirm</Button><Button variant="ghost" onClick={() => setConfirmEndPremium(false)}>Cancel</Button></div>) : <Button asChild><Link href="/billing">View credit packs</Link></Button>}</div>
+            <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display flex items-center gap-2 font-normal text-foreground"><Crown size={17} className="text-primary" /> Premium access</h2><p className="mt-1 text-sm text-muted-foreground">{profile?.tier === "premium" ? (profile.premium_until ? `Active until ${new Date(profile.premium_until).toLocaleDateString("en-IN")}. No automatic renewal.` : "Premium access is active.") : profile ? "Free access is active." : "Your access status could not be verified. Open Billing to check your retained entitlements."}</p></div>{profile?.tier === "premium" ? (!confirmEndPremium ? <Button variant="secondary" onClick={() => setConfirmEndPremium(true)}><ShieldOff size={16} /> End access</Button> : <div className="flex gap-2"><Button variant="danger" onClick={endPremium} disabled={accountBusy}>Confirm</Button><Button variant="ghost" onClick={() => setConfirmEndPremium(false)}>Cancel</Button></div>) : <Button asChild><Link href="/billing">View credit packs</Link></Button>}</div>
             <div className="grid gap-4 py-5 sm:grid-cols-[1fr_auto] sm:items-center"><div><h2 className="font-display font-normal text-coral">Delete account</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Delete career data and unlink retained accounting records. This cannot be undone.</p></div>{!confirmDelete ? <Button variant="danger" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /> Delete account</Button> : <div className="flex flex-wrap gap-2"><Button variant="danger" onClick={deleteAccount} disabled={accountBusy}>{accountBusy ? "Deleting..." : "Permanently delete"}</Button><Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={accountBusy}>Cancel</Button></div>}</div>
           </div>
         </section>
