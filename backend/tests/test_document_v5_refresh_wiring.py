@@ -7,17 +7,23 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from fixtures.retained_document_v5 import RETAINED_COMMIT, snapshot
 from infra.gcp import document_source_candidate_v5 as profile
 
 from scripts import document_refresh as refresh
 
 
 def test_v5_archive_is_bound_to_the_forward_policy():
-    raw = refresh.full_source_archive(source_revision=True, source_v5=True)
-    assert refresh.archive_full_source(raw, source_revision=True, source_v5=True) == hashlib.sha256(raw).hexdigest()
-    contents, runtime, policy = refresh.full_source_snapshot(source_revision=True, source_v5=True)
+    # The current checkout has a separately qualified patched engine. Historical
+    # V5 archive comparisons must use its exact retained committed source.
+    selectors = dict(source_revision=True, source_commit=RETAINED_COMMIT, source_v5=True)
+    raw = refresh.full_source_archive(**selectors)
+    assert refresh.archive_full_source(raw, **selectors) == hashlib.sha256(raw).hexdigest()
+    contents, runtime, policy = snapshot()
     assert set(contents) == {*runtime, profile.POLICY_PATH}
     assert policy == profile.POLICY_SHA256
+    with pytest.raises(profile.v4.SourceDenied, match="synchronous_working_source_changed"):
+        refresh.full_source_snapshot(source_revision=True, source_v5=True)
     with pytest.raises(refresh.RefreshDenied, match="contract_version_invalid"):
         refresh.full_source_archive(source_v5=True)
 
@@ -94,8 +100,8 @@ def test_v5_definition_build_pins_the_same_positive_teardown_profile(monkeypatch
         policy=profile.POLICY_SHA256,
     )
 
-    def committed(commit, *, legacy, source_v5):
-        assert commit == source.commit and not legacy and source_v5
+    def committed(commit, *, legacy, source_v5, source_patched_engine=False):
+        assert commit == source.commit and not legacy and source_v5 and not source_patched_engine
         return source
 
     monkeypatch.setattr(refresh, "committed_source", committed)

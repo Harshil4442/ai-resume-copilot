@@ -1,10 +1,12 @@
 """Schema27-only empty-wallet batching on an owned local PostgreSQL17 cluster."""
 from __future__ import annotations
 
+from secrets import token_urlsafe
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from psycopg import sql
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.pool import NullPool
@@ -23,19 +25,23 @@ def owned_tables(owned_pg_url):
     admin = create_engine(owned_pg_url, poolclass=NullPool, hide_parameters=True)
     suffix = uuid4().hex
     namespace, actor = "empty27_" + suffix, "empty27_reader_" + suffix
+    reader_password = token_urlsafe(32)
     reader = None
     try:
         with admin.begin() as connection:
             assert connection.engine.url.host == "127.0.0.1"
             assert int(connection.scalar(text("SHOW server_version_num"))) // 10000 == 17
             connection.exec_driver_sql(f'CREATE SCHEMA "{namespace}"')
-            connection.exec_driver_sql(f'CREATE ROLE "{actor}" LOGIN NOINHERIT NOSUPERUSER '
-                'NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS')
+            # Driver composition avoids logging password-bearing DDL through SQLAlchemy.
+            with connection.connection.driver_connection.cursor() as cursor:
+                cursor.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {} NOINHERIT NOSUPERUSER '
+                    'NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS').format(
+                        sql.Identifier(actor), sql.Literal(reader_password)))
             for table in TABLES:
                 connection.exec_driver_sql(f'CREATE TABLE "{namespace}"."{table}" (marker integer)')
             connection.exec_driver_sql(f'GRANT USAGE ON SCHEMA "{namespace}" TO "{actor}"')
             connection.exec_driver_sql(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{namespace}" TO "{actor}"')
-        reader = create_engine(admin.url.set(username=actor), poolclass=NullPool, hide_parameters=True,
+        reader = create_engine(admin.url.set(username=actor, password=reader_password), poolclass=NullPool, hide_parameters=True,
             isolation_level="REPEATABLE READ", connect_args={
                 "options": "-c default_transaction_read_only=on -c search_path=pg_catalog"})
         yield SimpleNamespace(admin=admin, reader=reader, namespace=namespace, actor=actor)
