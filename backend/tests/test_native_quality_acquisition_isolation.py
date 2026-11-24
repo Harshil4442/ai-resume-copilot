@@ -80,7 +80,7 @@ def snapshot(p):
         "compiler": worker(T, T.render(TEX_IMAGE, RELEASE, coordinator_phase=True))}
 
 
-def test_retained_v4_uses_its_frozen_policy_with_the_v5_checkout():
+def test_retained_v4_and_v5_use_their_frozen_policies_with_the_patched_checkout():
     from infra.gcp import document_source_candidate as v4
     from infra.gcp import document_source_candidate_v5 as v5
 
@@ -90,13 +90,17 @@ def test_retained_v4_uses_its_frozen_policy_with_the_v5_checkout():
         {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": IMAGE},
         {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": v4.POLICY_SHA256},
     ]
-    current = D.render(IMAGE, RELEASE, source_v5=True)
-    assert current["service"]["template"]["containers"][0]["env"] == [
+    historical_v5 = D.render(IMAGE, RELEASE, retained_source_v5=True)
+    assert historical_v5["service"]["template"]["containers"][0]["env"] == [
         {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": IMAGE},
         {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": v5.POLICY_SHA256},
         {"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE},
     ]
+    assert historical_v5["retained_source_v5"] is True
+    assert historical_v5["current_source_qualified"] is False
     assert retained["api_wiring_enabled"] is False and retained["runtime_isolation_proven"] is False
+    with pytest.raises(D.ConfigurationDenied, match="document_worker_configuration_unverified"):
+        D.render(IMAGE, RELEASE, source_v5=True)
     with pytest.raises(D.ConfigurationDenied, match="document_worker_configuration_unverified"):
         D.render(IMAGE, RELEASE, source_revision=True)
     with pytest.raises(D.ConfigurationDenied, match="document_worker_configuration_unverified"):
