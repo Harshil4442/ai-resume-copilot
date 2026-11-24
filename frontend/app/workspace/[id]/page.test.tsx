@@ -1,6 +1,7 @@
 import { ownedBootstrapFixture } from "../../../lib/fixtures/ownedBootstrap";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ id: "opportunity-one", tab: "resume", get: vi.fn(), wire: vi.fn(), direct: vi.fn(), post: vi.fn(), patch: vi.fn() }));
@@ -101,6 +102,47 @@ function ambiguousRead(url: string) {
   if (url.startsWith("/v1/evidence-items?")) return Promise.resolve([{ id: "evidence-one", title: "Approved fact", approval_state: "approved", evidence_text: originalTranscription, skills: [], snapshot_fingerprint: "a".repeat(64) }]);
   return read(url);
 }
+
+it.each([
+  ["edit", "failure"], ["transcription", "failure"], ["edit", "success"], ["transcription", "success"],
+] as const)("freezes the exact evidence draft during held %s and handles %s without losing edits", async (operation, outcome) => {
+  state.get.mockImplementation(ambiguousRead);
+  let finish!: (value: object) => void;
+  let fail!: (error: Error) => void;
+  const held = new Promise<object>((resolve, reject) => { finish = resolve; fail = reject; });
+  const transport = operation === "edit" ? state.patch : state.post;
+  transport.mockReturnValue(held);
+  const user = userEvent.setup();
+  await page();
+  fireEvent.click(screen.getByRole("button", { name: "Edit evidence" }));
+  const editor = screen.getByRole("textbox", { name: "Edit Approved fact evidence" });
+  const compare = screen.getByRole("checkbox", { name: "I compared this complete section with my original file." });
+  const draft = "Corrected complete source wording.";
+  fireEvent.change(editor, { target: { value: draft } });
+  await user.click(compare);
+  expect(editor).toBeEnabled(); expect(compare).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: operation === "edit" ? "Save edit" : "Approve corrected transcription" }));
+  await waitFor(() => expect(editor).toBeDisabled());
+  expect(compare).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  await user.type(editor, " later unsaved text"); await user.click(compare);
+  expect(editor).toHaveValue(draft); expect(compare).toBeChecked();
+  expect(transport).toHaveBeenCalledExactlyOnceWith(`/v1/evidence-items/evidence-one${operation === "edit" ? "" : "/transcription-review"}`,
+    operation === "edit" ? { evidence_text: draft, expected_fingerprint: "a".repeat(64) }
+      : { expected_fingerprint: "a".repeat(64), expected_assessment_fingerprint: "d".repeat(64), section: "experience", evidence_text: draft, action: "correct_transcription" });
+  if (outcome === "success") {
+    await act(async () => { finish({}); });
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Edit Approved fact evidence" })).toBeNull());
+  } else {
+    await act(async () => { fail(new ApiError("Unavailable", 503, {})); });
+    await waitFor(() => expect(editor).toBeEnabled());
+    expect(compare).toBeEnabled(); expect(editor).toHaveValue(draft); expect(compare).toBeChecked();
+    expect(screen.getByRole("alert")).toHaveTextContent("Your draft is preserved");
+    await user.type(editor, " More detail.");
+    expect(editor).toHaveValue(`${draft} More detail.`);
+  }
+  expect(transport).toHaveBeenCalledTimes(1);
+});
 
 it("shows full literal extraction and actual source, requiring explicit compare and visible-text confirmation", async () => {
   state.get.mockImplementation(ambiguousRead);

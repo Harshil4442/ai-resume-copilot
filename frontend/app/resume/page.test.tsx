@@ -8,8 +8,8 @@ import * as uploads from "../../lib/resumeUpload";
 import type { ResumeParseResponse } from "../../lib/types";
 import ResumePage from "./page";
 
-vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: "upload-fixture-owner" } } }) }));
-const navigation = vi.hoisted(() => ({ opportunity: "", push: vi.fn() }));
+const navigation = vi.hoisted(() => ({ opportunity: "", owner: "upload-fixture-owner", push: vi.fn() }));
+vi.mock("next-auth/react", () => ({ useSession: () => ({ status: "authenticated", data: { user: { id: navigation.owner } } }) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: navigation.push }), useSearchParams: () => new URLSearchParams(navigation.opportunity ? { opportunity: navigation.opportunity } : {}) }));
 vi.mock("../../lib/analytics", () => ({ trackEvent: vi.fn() }));
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn() }));
@@ -18,7 +18,7 @@ vi.mock("../../lib/api", () => ({ apiGet: api.get, apiPostJson: api.post, apiPat
 const resume: ResumeParseResponse = { resume_id: 42, skills: ["Python"], experience_years: 1, sections: {}, contact_info: {}, source_available: true, source_format: "pdf", extraction_mode: "deterministic", enrichment_state: "not_requested", enrichment_units: 0, warnings: [] };
 const clients: QueryClient[]=[];
 
-beforeEach(()=>{navigation.opportunity="";api.patch.mockReset();vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue(ownedBootstrapFixture());});
+beforeEach(()=>{navigation.opportunity="";navigation.owner="upload-fixture-owner";api.patch.mockReset();vi.stubEnv("NEXT_PUBLIC_RESUME_DIRECT_UPLOAD_ENABLED","true");vi.clearAllMocks();api.get.mockResolvedValue(ownedBootstrapFixture());});
 afterEach(()=>{cleanup();clients.forEach((client)=>client.clear());clients.length=0;vi.restoreAllMocks();vi.unstubAllEnvs();});
 function display(){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});clients.push(client);return render(<QueryClientProvider client={client}><ResumePage/></QueryClientProvider>);}
 function select(){fireEvent.change(screen.getByLabelText("Choose your source resume"),{target:{files:[new File(["synthetic file"],"resume.pdf",{type:"application/pdf"})]}});}
@@ -94,4 +94,59 @@ it("clears the old owned compact workspace before returning from an uploaded sou
   expect(client.getQueryData(stale)).toBeUndefined();
   expect(client.getQueryData(["workspace", "authenticated:another-owner", "opp_connection", "tab", "resume"])).toEqual({ retained: true });
   expect(client.getQueryData(["workspace-source-connection", "authenticated:upload-fixture-owner", "opp_connection"])).toEqual({ resumeId: 42, title: "New source role" });
+});
+
+it.each(["owner", "opportunity", "unmount"] as const)("ignores a held connection success after %s changes", async (boundary) => {
+  navigation.opportunity = "opp_connection";
+  vi.spyOn(uploads, "uploadResumeFile").mockResolvedValue(resume);
+  let finish!: (value: { id: string; title: string; resume_id: number }) => void;
+  api.patch.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } }); clients.push(client);
+  const tree = () => <QueryClientProvider client={client}><ResumePage /></QueryClientProvider>;
+  const view = render(tree());
+  select(); fireEvent.click(screen.getByRole("button", { name: /parse resume/i }));
+  await screen.findByText("Resume parsed");
+  fireEvent.click(screen.getByRole("button", { name: "Use for this opportunity" }));
+  await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1));
+  if (boundary === "unmount") view.unmount();
+  else {
+    if (boundary === "owner") navigation.owner = "another-owner";
+    else navigation.opportunity = "opp_replacement";
+    view.rerender(tree());
+    expect(screen.queryByText("Resume parsed")).toBeNull();
+    select();
+  }
+  const legacy = ["opportunity", "opp_connection"];
+  const current = { title: "Current editor", resume_id: 99 };
+  client.setQueryData(legacy, current);
+  const cacheWrite = vi.spyOn(client, "setQueryData");
+  await act(async () => { finish({ id: "opp_connection", title: "Old owner response", resume_id: 42 }); });
+  expect(navigation.push).not.toHaveBeenCalled();
+  expect(cacheWrite).not.toHaveBeenCalled();
+  expect(client.getQueryData(legacy)).toEqual(current);
+  expect(client.getQueryData(["workspace-source-connection", "authenticated:upload-fixture-owner", "opp_connection"])).toBeUndefined();
+  if (boundary !== "unmount") {
+    expect(screen.queryByText("Resume parsed")).toBeNull();
+    expect(screen.getByRole("button", { name: /parse resume/i })).toBeEnabled();
+  }
+});
+
+it("does not publish a late connection failure into the replacement owner's upload", async () => {
+  navigation.opportunity = "opp_connection";
+  vi.spyOn(uploads, "uploadResumeFile").mockResolvedValue(resume);
+  let fail!: (error: Error) => void;
+  api.patch.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject; }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } }); clients.push(client);
+  const tree = () => <QueryClientProvider client={client}><ResumePage /></QueryClientProvider>;
+  const view = render(tree());
+  select(); fireEvent.click(screen.getByRole("button", { name: /parse resume/i }));
+  await screen.findByText("Resume parsed");
+  fireEvent.click(screen.getByRole("button", { name: "Use for this opportunity" }));
+  await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1));
+  navigation.owner = "another-owner";
+  view.rerender(tree()); select();
+  await act(async () => { fail(new Error("Old connection failed")); });
+  expect(screen.queryByText(/Old connection failed/)).toBeNull();
+  expect(screen.getByRole("button", { name: /parse resume/i })).toBeEnabled();
+  expect(navigation.push).not.toHaveBeenCalled();
 });
