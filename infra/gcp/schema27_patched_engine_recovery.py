@@ -57,8 +57,10 @@ class HistoricalRestore:
     """Historical completed restore custody; no mutation entry or freshness waiver."""
     def __init__(self, plan, journal, *, closed):
         from infra.gcp import schema27_native_admission_closure as admission
+        from infra.gcp import schema27_native_admission_completion as completion
 
-        need(type(closed) is admission.ClosedAdmission, "patched_engine_closed_admission_kind")
+        need(type(closed) in {admission.ClosedAdmission, completion.ClosedAdmissionCompletion},
+             "patched_engine_closed_admission_kind")
         self.closed = closed
         need(type(plan) is restoration.RestorePlan and type(journal) is restoration.owned.Journal,
              "patched_engine_restore_kind")
@@ -126,7 +128,10 @@ class HistoricalRestore:
         # The original completed restore is custody only. This separately owned
         # follow-on proves closure of API admission without disabling saved reads.
         self.closed.verify_custody()
-        parent = self.closed.plan.parent
+        from infra.gcp import schema27_native_admission_completion as completion
+
+        parent = (self.closed.restore_parent if type(self.closed) is completion.ClosedAdmissionCompletion
+                  else self.closed.plan.parent)
         raw = restoration._private_read(parent["plan"], self.closed.parent_restore_plan_sha256)
         need(self.closed.parent_restore_plan_sha256 == RESTORE_PLAN_FILE_SHA256
              and restoration.load(raw, self.closed.parent_restore_plan_sha256) == self.plan
@@ -295,16 +300,12 @@ def stage_lock(directory):
         os.close(fd)
 
 
-def stage_scope(directory, build, application_context):
-    current = engine.committed(build.get("source_commit"), root=identities.ROOT, clean=True)
-    need(current.identity == {key: build[key] for key in current.identity}, "patched_engine_frozen_build_source")
+def owner_context(directory, application_context):
     state = directory.lstat()
     closure = application_context.restored.closed
     closure.verify_custody()
-    return {"kind": "hirewiz_patched_engine_staged_candidate_v1", "output_root": str(directory),
-        "output_device": state.st_dev, "output_inode": state.st_ino,
-        "controller_root": str(identities.ROOT), "source_commit": current.commit,
-        "build_identity_sha256": source.corpus.sha(build), "nonce": build["nonce"],
+    return {"output_root": str(directory), "output_device": state.st_dev, "output_inode": state.st_ino,
+        "controller_root": str(identities.ROOT),
         "identity_profile_sha256": application_context.identity_profile.digest,
         "restore_plan_file_sha256": RESTORE_PLAN_FILE_SHA256,
         "admission_closure_plan_sha256": closure.plan.digest,
@@ -314,20 +315,42 @@ def stage_scope(directory, build, application_context):
         "combined_execution_authorized": False, "automatic_replay": False}
 
 
-def record_build(value, directory, *, application_context):
+def build_owner_scope(directory, current, nonce, archive_sha256, application_context):
+    return owner_context(directory, application_context) | {
+        "kind": "hirewiz_patched_engine_build_owner_v1", "source_identity": current.identity,
+        "nonce": nonce, "source_archive_sha256": archive_sha256}
+
+
+def stage_scope(directory, build, application_context):
+    current = engine.committed(build.get("source_commit"), root=identities.ROOT, clean=True)
+    need(current.identity == {key: build[key] for key in current.identity}, "patched_engine_frozen_build_source")
+    return owner_context(directory, application_context) | {
+        "kind": "hirewiz_patched_engine_staged_candidate_v1", "source_commit": current.commit,
+        "build_identity_sha256": source.corpus.sha(build), "nonce": build["nonce"]}
+
+
+def local_once(path, value):
+    if os.path.lexists(path):
+        need(patched._phase_read(path) == value, "patched_engine_existing_local_record_changed")
+    else:
+        source.prior.build_module().write_new(path, value)
+
+
+def record_build(value, directory, *, application_context, read_only_finalization=False):
     """Stop after Build/local proof; native image-size/cost review is external."""
     need(selected(application_context) and application_context.stage_directory == directory,
          "patched_engine_stage_root")
-    application_context.require_active()
+    need(type(read_only_finalization) is bool, "patched_engine_finalization_scope")
+    if not read_only_finalization:
+        application_context.require_active()
     build = value["build_identity"]
-    writer = source.prior.build_module().write_new
-    writer(directory / "candidate-build.json", build)
-    writer(directory / "stage-owner.json", stage_scope(directory, build, application_context))
+    local_once(directory / "candidate-build.json", build)
+    local_once(directory / "stage-owner.json", stage_scope(directory, build, application_context))
     result = {"completed_stage": "build", "next_stage_required": "inventory",
         "immutable_image": build["immutable_image"], "build_identity_sha256": source.corpus.sha(build),
         "native_image_size_and_cost_review_required": True, "next_stage_started": False,
         "native_acceptance": False, "promotion_performed": False}
-    writer(directory / "build.completed.json", result)
+    local_once(directory / "build.completed.json", result)
     return result
 
 
@@ -342,32 +365,93 @@ def load_staged_build(directory, application_context):
     return build
 
 
+def finalize_build(directory, *, application_context):
+    """Fill local records from the exact acknowledged Build; no native writes."""
+    from scripts import document_refresh as refresh
+
+    from infra.gcp import document_cloud_build_qa as qa
+    from infra.gcp.document_refresh_auth import ReleaseReadOnlyHttp
+
+    need(selected(application_context) and application_context.stage_directory == directory
+         and not (directory / "native-proof").exists() and not (directory / "transition").exists(),
+         "patched_engine_finalization_scope")
+    identity = patched._phase_read(directory / "native-build-identity.json")
+    current = engine.committed(identity.get("source_commit"), root=identities.ROOT, clean=True)
+    need(current.identity == {key: identity[key] for key in current.identity}, "patched_engine_frozen_build_source")
+    nonce = identity["nonce"]
+    need(patched._phase_read(directory / "build-owner.json") == build_owner_scope(
+        directory, current, nonce, identity["source_archive_sha256"], application_context),
+        "patched_engine_finalization_owner_changed")
+    need(patched._phase_read(directory / "build-started.json") == {"nonce": nonce,
+        "recipe_sha256": identity["refresh_dockerfile_sha256"], "source_archive_sha256": identity["source_archive_sha256"],
+        "automatic_replay": False, "unknown_outcome": "reconcile_exact_native_object_and_build_only"},
+        "patched_engine_finalization_intent_changed")
+    uploaded = {"bucket": identity["source_bucket"], "object": identity["source_object"], "generation": identity["source_generation"]}
+    need(patched._phase_read(directory / "source-upload-acknowledged.json") == uploaded,
+         "patched_engine_finalization_upload_ack_changed")
+    request = refresh.full_source_build_request(nonce, uploaded, source_revision=True,
+        source_commit=current.commit, source_patched_engine=True)
+    need(patched._phase_read(directory / "build-create-started.json") == {"nonce": nonce,
+        "request_sha256": source.corpus.sha(request), "automatic_replay": False},
+        "patched_engine_finalization_build_intent_changed")
+    ack = patched._phase_read(directory / "build-acknowledged.json")
+    need(type(ack) is dict and set(ack) == {"nonce", "build_id", "operation_name", "automatic_replay"}
+         and ack["nonce"] == nonce and ack["build_id"] == identity["build_id"]
+         and type(ack["operation_name"]) is str and 0 < len(ack["operation_name"]) <= 512
+         and ack["automatic_replay"] is False, "patched_engine_finalization_build_ack_changed")
+    # This function's verifier/transport are explicitly read only. A missing ACK
+    # can never be manufactured, even if a matching Build can be discovered.
+    actual = refresh.verify_current_build_release(identity["build_id"], nonce, identity["immutable_image"])
+    need(actual == identity, "patched_engine_finalization_native_identity_changed")
+    http = ReleaseReadOnlyHttp()
+    try:
+        proof, native_log = qa.read_native(http, identity, refresh.native_json, root=identities.ROOT)
+    finally:
+        http.close()
+    refresh.proof_contract(proof, refresh.accepted(), current.sources, now=datetime.now(UTC),
+        image=identity["immutable_image"], build_identity=identity, source_revision=True, source_patched_engine=True)
+    local_once(directory / "local-native-proof.json", proof)
+    local_once(directory / "native-build-qa-log.json", native_log)
+    full_identity = identity | {"local_native_proof_sha256": hashlib.sha256(
+        (directory / "local-native-proof.json").read_bytes()).hexdigest()}
+    return record_build({"build_identity": full_identity}, directory,
+        application_context=application_context, read_only_finalization=True)
+
+
 def run(directory, history, consumed_history_bundle, profile, restored, *, stage=None,
-        operator_review=None, operator_review_sha256=None):
+        operator_review=None, operator_review_sha256=None, finalize=False):
     """Exactly one explicit stage per invocation; provider cost review sits between."""
     from scripts import document_refresh as refresh
 
-    need(stage in STAGES, "patched_engine_explicit_stage_required")
+    need(stage in STAGES and type(finalize) is bool and (not finalize or stage == "build"), "patched_engine_explicit_stage_required")
     need(Path(refresh.__file__).resolve() == identities.ROOT / "backend/scripts/document_refresh.py",
          "patched_engine_controller_origin")
     need(directory.is_absolute() and directory.parent.is_dir() and directory.resolve() == directory,
          "patched_engine_fresh_output_required")
     need((operator_review is None) == (operator_review_sha256 is None), "patched_engine_review_reference")
-    if stage == "build":
+    if stage == "build" and not finalize:
         need(not directory.exists(), "patched_engine_fresh_output_required")
         directory.mkdir(mode=0o700)
     with stage_lock(directory):
-        require_active(directory)
-        need(not (directory / (stage + ".completed.json")).exists(), "patched_engine_existing_stage_reconcile_only")
+        if not finalize:
+            require_active(directory)
+            need(not (directory / (stage + ".completed.json")).exists(), "patched_engine_existing_stage_reconcile_only")
         audit_module = refresh.infra("document_consumed_native")
-        clients, http = ParentProbe(profile).Clients(), None
+        clients, http = ParentProbe(profile).Clients(read_only_release=finalize), None
         try:
-            http = refresh.native_http()
+            if finalize:
+                from infra.gcp.document_refresh_auth import ReleaseReadOnlyHttp
+
+                http = ReleaseReadOnlyHttp()
+            else:
+                http = refresh.native_http()
             audit = audit_module.NativeAudit(identities.ROOT, consumed_history_bundle,
                 clients, http, ParentProbe(profile), recover_expired_source=True)
             context = Applications(identities.ROOT, clients, audit.get_json, audit_module.apps.UIDS, profile, restored)
             context.stage_directory = directory
             audit.applications = context
+            if finalize:
+                return finalize_build(directory, application_context=context)
             if operator_review is not None:
                 restoration._private_read(operator_review, operator_review_sha256)
                 refresh.write_new(directory / (stage + ".operator-review.json"), {
@@ -437,12 +521,15 @@ def main():
     parser.add_argument("--admission-closure-plan", type=Path, required=True)
     parser.add_argument("--admission-closure-plan-sha256", required=True)
     parser.add_argument("--admission-closure-journal", type=Path, required=True)
+    parser.add_argument("--admission-closure-completed", action="store_true",
+        help="Use the separately owned coordinator completion proof after a definite original rejection.")
     parser.add_argument("--prior-history-directory", type=Path, required=True)
     parser.add_argument("--consumed-history-bundle", type=Path)
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--publish-candidate", action="store_true", required=True)
     parser.add_argument("--operator-review-file", type=Path)
     parser.add_argument("--operator-review-file-sha256")
+    parser.add_argument("--finalize-build", action="store_true", help="Read-only native continuation of this output root; never submit another Build.")
     args = parser.parse_args()
     try:
         read = identities.app.bridge.bridge.app26.initial._read_pinned
@@ -451,12 +538,19 @@ def main():
         profile.verify_custody()
         from infra.gcp import schema27_native_admission_closure as admission
 
-        closed = admission.load_closed(plan_path=args.admission_closure_plan,
-            plan_sha256=args.admission_closure_plan_sha256, journal_path=args.admission_closure_journal)
+        if args.admission_closure_completed:
+            from infra.gcp import schema27_native_admission_completion as completion
+
+            closed = completion.load_completed(plan_path=args.admission_closure_plan,
+                plan_sha256=args.admission_closure_plan_sha256, journal_path=args.admission_closure_journal)
+        else:
+            closed = admission.load_closed(plan_path=args.admission_closure_plan,
+                plan_sha256=args.admission_closure_plan_sha256, journal_path=args.admission_closure_journal)
         restored = load_historical_restore(plan_path=args.restore_plan, plan_sha256=args.restore_plan_sha256,
             journal_path=args.restore_journal, profile=profile, closed=closed)
         result = run(args.output_directory, args.prior_history_directory, args.consumed_history_bundle, profile, restored,
-            stage=args.stage, operator_review=args.operator_review_file, operator_review_sha256=args.operator_review_file_sha256)
+            stage=args.stage, operator_review=args.operator_review_file, operator_review_sha256=args.operator_review_file_sha256,
+            finalize=args.finalize_build)
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 - emit only a fixed redacted diagnostic.

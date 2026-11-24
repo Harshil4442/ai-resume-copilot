@@ -736,6 +736,12 @@ def _full_source_tar(*, source_revision: bool = False, source_commit: str | None
         contents[current.policy_path] = current.policy_raw
     else:
         contents, _, _ = full_source_snapshot(source_revision=source_revision, **(source_options(source_v5, source_patched_engine)))
+    if source_patched_engine:
+        from infra.gcp import document_cloud_build_qa as qa
+
+        for name in qa.FILES:
+            contents[name] = (profile.git(ROOT, "show", source_commit + ":" + name)
+                if source_commit is not None else (ROOT / name).read_bytes())
     output = io.BytesIO()
     with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         for name, content in sorted(contents.items()):
@@ -817,8 +823,17 @@ def full_source_build_request(nonce: str, source: dict[str, str], *, historical_
                           "--label", "hirewiz.document-source.qualification=" + current.qualification_sha256))
         body["tags"] = [current.kind, current.commit, current.qualification_sha256]
     arguments.extend(("--tag", tag, "."))
-    body.update(steps=[{"name": DOCKER_BUILDER, "args": arguments},
-                       {"name": DOCKER_BUILDER, "args": ["push", tag]}], images=[tag])
+    first = {"name": DOCKER_BUILDER, "args": arguments}
+    second = {"name": DOCKER_BUILDER, "args": ["push", tag]}
+    if source_patched_engine:
+        from infra.gcp import document_cloud_build_qa as qa
+
+        assert current is not None
+        first = {"name": DOCKER_BUILDER, "entrypoint": "/bin/bash", "args": [qa.DRIVER, "build", *arguments]}
+        second = {"name": DOCKER_BUILDER, "entrypoint": "/bin/bash", "args": [qa.DRIVER, "qa", tag,
+            nonce, current.commit, current.qualification_sha256]}
+        body["options"]["enableStructuredLogging"] = True
+    body.update(steps=[first, second], images=[tag])
     return body
 
 
@@ -888,13 +903,23 @@ def build_contract(value: Any, nonce: str, recipe_sha: str, *, historical_v1: bo
         expected = [row["args"] for row in wanted["steps"]]
         need(value.get("tags") == wanted["tags"], "document_refresh_native_build_steps_changed")
     steps = value.get("steps")
-    need(type(steps) is list and len(steps) == 2 and all(
-        row.get("name") == DOCKER_BUILDER and row.get("args") == args
-        and row.get("dir", "") in ("", ".") and not row.get("env") and not row.get("secretEnv")
-        and not row.get("volumes") and not row.get("script") and not row.get("entrypoint")
-        and not row.get("automapSubstitutions") and not row.get("allowFailure") and not row.get("allowExitCodes")
-        for row, args in zip(steps, expected, strict=True)), "document_refresh_native_build_steps_changed")
+    if source_patched_engine:
+        expected_steps = full_source_build_request(nonce, {}, source_revision=True, source_commit=source_commit,
+            source_patched_engine=True)["steps"]
+        need(type(steps) is list and len(steps) == 2 and all(type(row) is dict
+            and {key: item for key, item in row.items() if key not in {"status", "timing", "pullTiming", "exitCode"}} == wanted
+            and row.get("status", "SUCCESS") == "SUCCESS" and row.get("exitCode", 0) == 0
+            for row, wanted in zip(steps, expected_steps, strict=True)), "document_refresh_native_build_steps_changed")
+    else:
+        need(type(steps) is list and len(steps) == 2 and all(
+            row.get("name") == DOCKER_BUILDER and row.get("args") == args
+            and row.get("dir", "") in ("", ".") and not row.get("env") and not row.get("secretEnv")
+            and not row.get("volumes") and not row.get("script") and not row.get("entrypoint")
+            and not row.get("automapSubstitutions") and not row.get("allowFailure") and not row.get("allowExitCodes")
+            for row, args in zip(steps, expected, strict=True)), "document_refresh_native_build_steps_changed")
     options = value.get("options", {})
+    need(type(options) is dict and (not source_patched_engine or options.get("enableStructuredLogging") is True),
+         "document_refresh_native_build_execution_inputs_changed")
     need(type(options) is dict and options.get("logging") == "CLOUD_LOGGING_ONLY"
          and value.get("timeout") == "900s"
          and not any(options.get(key) for key in ("env", "secretEnv", "volumes", "automapSubstitutions", "pool"))
@@ -1106,6 +1131,11 @@ def native_build(directory: Path, recipe: bytes, *, nonce: str | None = None, fu
         need(committed_source(clean=True, **v5).identity == current.identity,
              "document_refresh_source_changed")
     source_name = (FULL_SOURCE_PREFIX if full_source else "hirewiz-document-refresh-source/") + nonce + "/source.tar.gz"
+    if patched:
+        from infra.gcp import schema27_patched_engine_recovery as recovery
+
+        write_new(directory / "build-owner.json", recovery.build_owner_scope(
+            directory, current, nonce, archive_sha, application_context))
     write_new(directory / "build-started.json", {"nonce": nonce, "recipe_sha256": recipe_sha,
         "source_archive_sha256": archive_sha, "automatic_replay": False,
         "unknown_outcome": "reconcile_exact_native_object_and_build_only"})
@@ -1296,6 +1326,10 @@ def _verify_current_build(build_id: str, nonce: str, image: str, *, release_read
         else:
             archive_sha = archive_full_source(stored_source, source_revision=source_revision, source_commit=source_commit,
                 frozen_v3=frozen_v3, legacy_source=legacy_source, **v5) if full_source else archive_recipe(stored_source, recipe_sha)
+        if source_patched_engine:
+            from infra.gcp import document_cloud_build_qa as qa
+
+            qa.read_native(http, actual, native_json, root=ROOT)
     finally:
         http.close()
     if historical_v1:
@@ -1385,6 +1419,26 @@ def full_source_candidate(directory: Path, *, publish: bool, now: datetime,
     identity = (native_build(directory, contents[recipe_path], **options)
                 if nonce is None else native_build(directory, contents[recipe_path], nonce=nonce, **options))
     digest = identity["immutable_image"]
+    if source_patched_engine:
+        from infra.gcp import document_cloud_build_qa as qa
+
+        http = native_http()
+        try:
+            proof, native_log = qa.read_native(http, identity, native_json, root=ROOT)
+        finally:
+            http.close()
+        facts = proof_contract(proof, accepted(), before, now=datetime.now(UTC), image=digest,
+            build_identity={**identity, "source_sha256": before}, source_revision=True, source_patched_engine=True)
+        need(full_source_snapshot(source_revision=True, source_patched_engine=True)[1:] == (before, policy),
+             "document_refresh_source_changed")
+        proof_sha = write_new(directory / "local-native-proof.json", proof)
+        write_new(directory / "native-build-qa-log.json", native_log)
+        identity.update(source_sha256=before, local_native_proof_sha256=proof_sha)
+        return {"mode": "full-source-candidate", "status": "candidate_requires_native_acceptance",
+            "candidate_registry_digest": digest, "image_id": proof["image_id"], "build_identity": identity,
+            "source_sha256": before, "policy_sha256": policy, "freshness": facts,
+            "local_proof_sha256": proof_sha, "proof_execution": "same_native_cloud_build_daemon",
+            "native_isolation_proven": False, "native_corpus_proven": False, "promotion_performed": False}
     docker = engines.docker_command()
     command(docker + ["pull", digest], seconds=180)
     installed = decode(command(docker + ["image", "inspect", digest], seconds=15))

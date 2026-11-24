@@ -106,3 +106,29 @@ def test_historical_restore_requires_old_git_bytes_all_receipts_and_exact_closur
 def test_closure_shaped_mapping_is_not_a_verified_closed_admission(restored):
     with pytest.raises(restore.rolling.RollingDenied, match="closed_admission_kind"):
         patched.HistoricalRestore(restored.plan, restored.journal, closed=SimpleNamespace(new_admission_closed=True))
+
+
+def test_exact_completion_reader_uses_honest_restore_parent_not_closure_parent(restored, monkeypatch):
+    from infra.gcp import schema27_native_admission_completion as completion
+
+    c = restored
+    closed = object.__new__(completion.ClosedAdmissionCompletion)
+    closed.plan = SimpleNamespace(parent={"owner": "separate-original-closure"})
+    closed.verify_custody = lambda: {"new_admission_closed": True}
+    closed.verify_current = lambda: {"fresh_completed_closure_snapshot": True}
+    monkeypatch.setattr(completion, "read_parent", lambda parent: (
+        SimpleNamespace(parent=c.closure.plan.parent), None, None)
+        if parent == closed.plan.parent else pytest.fail("unexpected parent read"))
+    target = patched.HistoricalRestore(c.plan, c.journal, closed=closed)
+    assert target.verify_current() == {"fresh_completed_closure_snapshot": True}
+    assert target.closed.plan.parent != c.closure.plan.parent
+    assert len(c.staged.c.fixture.writes) == 6
+
+
+def test_completion_subclass_cannot_enter_the_typed_restore_bridge(restored):
+    from infra.gcp import schema27_native_admission_completion as completion
+
+    class PretendCompletion(completion.ClosedAdmissionCompletion):
+        pass
+    with pytest.raises(restore.rolling.RollingDenied, match="closed_admission_kind"):
+        patched.HistoricalRestore(restored.plan, restored.journal, closed=object.__new__(PretendCompletion))
