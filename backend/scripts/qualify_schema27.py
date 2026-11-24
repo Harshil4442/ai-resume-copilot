@@ -19,6 +19,7 @@ from xml.etree import ElementTree
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp"), str(ROOT)]
 FAMILY = "hirewiz_schema27_app_v1"
+R02_FAMILY = "hirewiz_schema27_app_r02_v1"
 COMPATIBILITY_SUITES = (
     "tests/test_notification_schema27_step_postgres.py",
     "tests/test_notification_schema_compat_postgres.py",
@@ -189,27 +190,30 @@ def environment(source, *, platform):
     return result
 
 
-def source_identity(root):
+def source_identity(root, family=FAMILY):
     """Consume the explicit current application role, never the held native runner."""
     import unified_credit_schema25_release as release
 
     from evaluation.native_acquisition_v2.qualification import current_application_identity
-    from scripts import schema27_app_release_contract as contract
+    from scripts.qualify_native_quality_acquisition import current_application_modules
 
+    need(family in {FAMILY, R02_FAMILY}, "application_family")
+    _, contract, _ = current_application_modules(family)
     need(Path(release.__file__).resolve() == root / "infra/gcp/unified_credit_schema25_release.py",
          "release_import_origin")
-    need(Path(contract.__file__).resolve() == root / "backend/scripts/schema27_app_release_contract.py",
+    descriptor = ("schema27_app_r02_release_contract.py" if family == R02_FAMILY else "schema27_app_release_contract.py")
+    need(Path(contract.__file__).resolve() == root / "backend/scripts" / descriptor,
          "contract_import_origin")
     prior = release.prior_app_files(root, contract.PRIOR_RELEASE)
     stamp = contract.source_fingerprint(root, prior)
-    identity = current_application_identity(root, family=FAMILY)
-    validate_application_identity(identity, contract, stamp)
+    identity = current_application_identity(root, family=family)
+    validate_application_identity(identity, contract, stamp, family=family)
     return stamp
 
 
-def validate_application_identity(identity, contract, stamp):
+def validate_application_identity(identity, contract, stamp, family=FAMILY):
     source = identity.get("application_source", {})
-    need(identity.get("family") == source.get("family") == FAMILY
+    need(family in {FAMILY, R02_FAMILY} and identity.get("family") == source.get("family") == family
          and source.get("qualification_sha256") == stamp
          and (source.get("app_sha256"), source.get("app_files")) ==
              (contract.CANDIDATE_APP_SHA256, contract.CANDIDATE_APP_FILES), "current_application_binding")
@@ -266,10 +270,11 @@ def validate_report(path, *, phase, allowed):
     return len(cases)
 
 
-def run(root, phase):
+def run(root, phase, family=FAMILY):
     need(phase in SUITES, "phase_required")
     env = environment(dict(os.environ), platform=sys.platform)
-    stamp = source_identity(root)
+    need(family in {FAMILY, R02_FAMILY}, "application_family")
+    stamp = source_identity(root, family)
     allowed = public_cases(root, phase)
     from tests.expense_policy_fixtures import synthetic_expense_policy
     from tests.model_cost_fixtures import synthetic_policy
@@ -297,7 +302,7 @@ def run(root, phase):
     need(not directory.is_symlink() and stat.S_IMODE(after.st_mode) == 0o700
          and (after.st_dev, after.st_ino, after.st_uid) == owner
          and set(directory.iterdir()) == {report}, "report_custody_changed")
-    need(source_identity(root) == stamp, "source_changed_during_child")
+    need(source_identity(root, family) == stamp, "source_changed_during_child")
     report.unlink()
     directory.rmdir()
     return count
@@ -307,6 +312,7 @@ SAFE_DENIAL_CODES = frozenset({
     "source27_forward_document_ci_required", "source27_patched_document_ci_required",
     "source27_patched_document_profile_kind", "source27_worker_source_changed",
     "source27_current_app_unqualified", "source27_document_helper_scope",
+    "source27_current_app_r02_unqualified",
     "source27_direct_document_qualification_changed", "source27_document_helper_changed_during_fingerprint",
     "schema27_qualification_child_failed", "schema27_qualification_child_outcome_unknown",
     "schema27_qualification_every_case_must_pass", "schema27_qualification_current_application_binding",
@@ -343,9 +349,11 @@ def failure_diagnostic(error):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", required=True, choices=tuple(SUITES))
+    parser.add_argument("--application-family", choices=(FAMILY, R02_FAMILY), default=FAMILY,
+        help="Explicit current application source family; never native QA authority")
     arguments = parser.parse_args()
     try:
-        count = run(ROOT, arguments.phase)
+        count = run(ROOT, arguments.phase, arguments.application_family)
     except Exception as error:
         print(json.dumps(failure_diagnostic(error), sort_keys=True))
         raise SystemExit("schema27_qualification_unavailable_or_child_outcome_unknown") from None

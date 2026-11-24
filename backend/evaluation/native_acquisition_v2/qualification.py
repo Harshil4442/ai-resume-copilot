@@ -56,12 +56,14 @@ APPLICATION_CONTRACTS = {
         "infra/gcp/schema26_app_rolling_v3.py"),
     "hirewiz_schema27_app_v1": ("backend/scripts/schema27_app_release_contract.py",
         "infra/gcp/schema27_native_migration.py"),
+    "hirewiz_schema27_app_r02_v1": ("backend/scripts/schema27_app_r02_release_contract.py",
+        "infra/gcp/schema27_native_migration.py"),
 }
 ENTRY = PREFIX + "job.py"
 VERSION = "held-out-native-source-v2"
 MAX_SOURCE = 512 * 1024
 PORT_PATH = "backend/scripts/qualify_native_quality_acquisition.py"
-PORT_SHA256 = '20002d73646850c6f17877225461ce2380e8f4eb1f4e968b31b41229d32773ee'
+PORT_SHA256 = '6b7d0027b60203610e21c100bbbd324da8c90be7ad7e9263444d32064bf44690'
 _PORTS: types.ModuleType | None = None
 _CHILD_ROOT: Path | None = None
 
@@ -431,8 +433,13 @@ def current_application_identity(root: Path, *, family: str) -> dict[str, Any]:
          "application_role_required")
     head = source["release"]
     contract, observer = APPLICATION_CONTRACTS[family]
-    inputs = {PORT_PATH: (("CURRENT_APPLICATION_FAMILY", "CURRENT_APPLICATION_APP_SHA256",
-                         "CURRENT_APPLICATION_APP_FILES") if family == "hirewiz_schema27_app_v1" else ("APP_SHA256",)),
+    port_fields = {
+        "hirewiz_schema27_app_v1": ("CURRENT_APPLICATION_FAMILY", "CURRENT_APPLICATION_APP_SHA256",
+                                    "CURRENT_APPLICATION_APP_FILES"),
+        "hirewiz_schema27_app_r02_v1": ("R02_APPLICATION_FAMILY", "R02_APPLICATION_APP_SHA256",
+                                        "R02_APPLICATION_APP_FILES"),
+    }.get(family, ("APP_SHA256",))
+    inputs = {PORT_PATH: port_fields,
         contract: ("CONTRACT", "CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
                    "COMPATIBILITY_STEP", "PROTOCOL_STEP", "RETAINED_STEP")}
     literals = {}
@@ -449,10 +456,9 @@ def current_application_identity(root: Path, *, family: str) -> dict[str, Any]:
     app = literals[contract]
     need(app["CONTRACT"] == family and app["CANDIDATE_APP_SHA256"] == source["app_sha256"]
          and app["CANDIDATE_APP_FILES"] == source["app_files"], "application_literal_changed")
-    if family == "hirewiz_schema27_app_v1":
+    if family in {"hirewiz_schema27_app_v1", "hirewiz_schema27_app_r02_v1"}:
         current = literals[PORT_PATH]
-        need((current["CURRENT_APPLICATION_FAMILY"], current["CURRENT_APPLICATION_APP_SHA256"],
-              current["CURRENT_APPLICATION_APP_FILES"]) == (family, source["app_sha256"], source["app_files"]),
+        need(tuple(current[name] for name in port_fields) == (family, source["app_sha256"], source["app_files"]),
              "application_port_literal_changed")
     controller = _imports(root, (PORT_PATH, contract, observer), head, q)
     need(q.git(root, "rev-parse", "HEAD").decode().strip() == head

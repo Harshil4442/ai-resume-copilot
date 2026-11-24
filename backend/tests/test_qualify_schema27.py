@@ -190,8 +190,8 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
     commands = {
         "Qualify schema26 app v3 compatibility": "qualify_schema26_retained_v3.py --phase compatibility",
         "Qualify schema26 app v3 native protocol": "qualify_schema26_retained_v3.py --phase protocol",
-        "Qualify schema27 app compatibility": "qualify_schema27.py --phase compatibility",
-        "Qualify schema27 app native protocol": "qualify_schema27.py --phase protocol",
+        "Qualify R02 schema27 app compatibility": "qualify_schema27.py --phase compatibility --application-family hirewiz_schema27_app_r02_v1",
+        "Qualify R02 schema27 app native protocol": "qualify_schema27.py --phase protocol --application-family hirewiz_schema27_app_r02_v1",
     }
     redis = next(i for i, step in enumerate(steps) if step.get("id") == "native-metadata-redis")
     for name, command in commands.items():

@@ -463,22 +463,22 @@ jobs:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
         run: .venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase protocol
-      - name: Qualify schema27 app compatibility
+      - name: Qualify R02 schema27 app compatibility
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase compatibility
-      - name: Qualify schema27 app native protocol
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase compatibility --application-family hirewiz_schema27_app_r02_v1
+      - name: Qualify R02 schema27 app native protocol
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase protocol
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase protocol --application-family hirewiz_schema27_app_r02_v1
       - name: Run backend tests
         working-directory: backend
         env:

@@ -23,6 +23,9 @@ SOURCE26_APPLICATION_FAMILY = "hirewiz_schema26_app_rolling_v3"
 CURRENT_APPLICATION_FAMILY = "hirewiz_schema27_app_v1"
 CURRENT_APPLICATION_APP_SHA256 = '0aa88661470debdd81749474358bb901df7cae5e2035d06e2b519f586d9b11f6'
 CURRENT_APPLICATION_APP_FILES = 316
+R02_APPLICATION_FAMILY = "hirewiz_schema27_app_r02_v1"
+R02_APPLICATION_APP_SHA256 = "8fc5d7a70aa028bd0d93d73be50b5554226b9580a022658bcb971af4f298ffb1"
+R02_APPLICATION_APP_FILES = 316
 ENTRY = "backend/scripts/native_acquisition_job.py"
 ENTRY_SHA256 = "8eef532ef4d4978e9dda000e47ee694b43b55e16a168f93f9c7da724ea9b8740"
 COMPONENT_PATHS = (
@@ -389,25 +392,35 @@ def current_application_modules(family: str):
     need(type(family) is str, "application_family")
     if family == SOURCE26_APPLICATION_FAMILY:
         return _source_modules()
-    need(family == CURRENT_APPLICATION_FAMILY, "application_family")
+    need(family in {CURRENT_APPLICATION_FAMILY, R02_APPLICATION_FAMILY}, "application_family")
     sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp")]
     import schema27_native_migration
     import unified_credit_schema25_release
 
-    from scripts import schema27_app_release_contract
+    contract: Any
+    if family == R02_APPLICATION_FAMILY:
+        from scripts import schema27_app_r02_release_contract as r02_contract
+        contract = r02_contract
+        path, app_sha256, app_files = ("backend/scripts/schema27_app_r02_release_contract.py",
+                                      R02_APPLICATION_APP_SHA256, R02_APPLICATION_APP_FILES)
+    else:
+        from scripts import schema27_app_release_contract as legacy_contract
+        contract = legacy_contract
+        path, app_sha256, app_files = ("backend/scripts/schema27_app_release_contract.py",
+                                      CURRENT_APPLICATION_APP_SHA256, CURRENT_APPLICATION_APP_FILES)
 
     for module, name in ((schema27_native_migration, "infra/gcp/schema27_native_migration.py"),
-            (schema27_app_release_contract, "backend/scripts/schema27_app_release_contract.py"),
+            (contract, path),
             (unified_credit_schema25_release, "infra/gcp/unified_credit_schema25_release.py")):
         need(Path(module.__file__).resolve() == ROOT / name, "current_application_foreign_validator")
-    contract = schema27_app_release_contract
-    need(contract.CONTRACT == family and contract.CANDIDATE_APP_SHA256 == CURRENT_APPLICATION_APP_SHA256
-         and contract.CANDIDATE_APP_FILES == CURRENT_APPLICATION_APP_FILES, "current_application_pins")
+    need(contract.CONTRACT == family and contract.CANDIDATE_APP_SHA256 == app_sha256
+         and contract.CANDIDATE_APP_FILES == app_files, "current_application_pins")
     return schema27_native_migration, contract, unified_credit_schema25_release
 
 
 def current_application_observer(root: Path, *, family: str):
     """Select the exact source-image observer; construction grants no action."""
+    need(family != R02_APPLICATION_FAMILY, "profiled_native_observer_required")
     native, _, _ = current_application_modules(family)
     if family == CURRENT_APPLICATION_FAMILY:
         return native.Source27BridgeBoundary(root)
@@ -609,7 +622,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--source-child", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--application-family", choices=(SOURCE26_APPLICATION_FAMILY, CURRENT_APPLICATION_FAMILY),
+    parser.add_argument("--application-family", choices=(SOURCE26_APPLICATION_FAMILY, CURRENT_APPLICATION_FAMILY, R02_APPLICATION_FAMILY),
         help="Current application/operator source only; never retained producer or native QA qualification")
     args = parser.parse_args()
     try:
