@@ -24,14 +24,24 @@ from test_schema25_app_compatibility_postgres import (  # noqa: F401
 from alembic import command
 from scripts import notification_schema27_contract as schema27
 from scripts import schema25_app_release_contract as financial
-from scripts import schema27_app_release_contract as current
+from scripts.qualify_native_quality_acquisition import current_application_modules
+from scripts.qualify_schema27 import APPLICATION_FAMILY_ENV, FAMILY, R02_FAMILY
 
 PRIOR_SOURCE = "45b3e808c88d78c1d7d182cd4af4482df25c13f0"
 PRIOR_APP_SHA256 = "f2775c3b9f8d8df1f4f3d97abbe190cf5d2eb46b87beeb942b5252c3840d8670"
 
 
+def selected_application_contract():
+    family = os.getenv(APPLICATION_FAMILY_ENV, FAMILY)
+    if family not in {FAMILY, R02_FAMILY}:
+        pytest.fail("Current27 compatibility requires an exact application family")
+    _, contract, _ = current_application_modules(family)
+    return contract
+
+
 @pytest.fixture
 def current27_database(request):
+    selected_application_contract()
     if (os.getenv("CI") != "true" or os.getenv("GITHUB_ACTIONS") != "true"
             or os.getenv("HIREWIZ_APP_COMPATIBILITY_REQUIRED") != "true"
             or not os.getenv("HIREWIZ_TEST_POSTGRES_URL") or os.getenv("HIREWIZ_APP25_TEST_ROOT")):
@@ -50,17 +60,21 @@ def current27_database(request):
 
 @pytest.fixture
 def actual_app_roots(tmp_path):
+    current = selected_application_contract()
     prior = release.initial.prior_app_files(ROOT, PRIOR_SOURCE)
     assert len(prior) == 290 and release.initial.prior_app_digest(prior) == PRIOR_APP_SHA256
-    # The new family binds current312 app + additive HTTP + every owned proof
-    # helper. The old immutable family is deliberately not widened to current27.
+    # Each explicit family keeps its exact current app and owned proof helpers.
+    # The old descriptor is never widened to accept the R02 inventory.
     old_anchor = release.initial.prior_app_files(ROOT, current.PRIOR_RELEASE)
-    assert current.source_fingerprint(ROOT, old_anchor)
+    stamp = current.source_fingerprint(ROOT, old_anchor)
+    assert stamp
     for name, raw in prior.items():
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw)
-    return {"prior": tmp_path / "backend", "current": ROOT / "backend"}
+    return {"prior": tmp_path / "backend", "current": ROOT / "backend",
+        "current_app_sha256": current.CANDIDATE_APP_SHA256,
+        "current_application_family": current.CONTRACT, "current_qualification_sha256": stamp}
 
 
 def snapshot(engine):
@@ -80,7 +94,8 @@ def test_actual_prior26_and_current27_processes_exchange_preserved_storage(
     engine = current27_database
     record_property("prior_source", PRIOR_SOURCE)
     record_property("prior_app_sha256", PRIOR_APP_SHA256)
-    record_property("current_app_sha256", current.CANDIDATE_APP_SHA256)
+    for name in ("current_app_sha256", "current_application_family", "current_qualification_sha256"):
+        record_property(name, actual_app_roots[name])
     identity = "current27-mixed-" + uuid4().hex
     receipt = run_app(actual_app_roots[producer], engine, "produce", identity)
     with engine.begin() as connection:

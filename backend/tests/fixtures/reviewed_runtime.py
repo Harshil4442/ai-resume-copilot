@@ -13,4 +13,5 @@ from backend.app.domains.credits import release
 def reviewed_runtime(monkeypatch, config):
     monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
     monkeypatch.setattr(release, "current_review", lambda **_: SimpleNamespace(
-        policy=config.policy, evidence={"delivery_routes": payload_fingerprint(config.model_dump(mode="json"))}))
+        phase="widening", policy=config.policy,
+        evidence={"delivery_routes": payload_fingerprint(config.model_dump(mode="json"))}))

@@ -98,7 +98,7 @@ def configure_unified_submission(db, user_id):
     patch.setenv("UNIFIED_BROWSER_SUBMISSION_ENABLED", "true")
     patch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
     patch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", configured_runtime.model_dump_json())
-    patch.setattr(release, "current_review", lambda **_: SimpleNamespace(policy=policy,
+    patch.setattr(release, "current_review", lambda **_: SimpleNamespace(phase="widening", policy=policy,
         evidence={"delivery_routes": payload_fingerprint(configured_runtime.model_dump(mode="json"))}))
     credit_service.grant_credits(db, user_id=user_id, quantity=40, source_type="payment_order",
         source_id="owned-synthetic-unified-browser", funding_kind="paid",

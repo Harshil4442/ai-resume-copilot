@@ -97,6 +97,7 @@ def test_failure_projection_rejects_nonfinite_progress(checker, monkeypatch, cap
 @pytest.mark.parametrize("output,reason", [
     ((PRIVATE + " 429 Too Many Requests").encode(), "http_429_observed"),
     ((PRIVATE + " failed to resolve source metadata").encode(), "base_image_resolution"),
+    (b'#8 {"error": "document_clamav_supplier_unverified", "stage": "download"}', "supplier_verification"),
     (PRIVATE.encode(), "unclassified"),
 ])
 def test_failed_build_keeps_exit_and_bounded_fingerprint_without_raw_output(
@@ -132,6 +133,19 @@ def test_build_stderr_capture_is_explicit_and_uses_existing_combined_output_boun
         checker.command(args, merge_stderr=True, limit=4)
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
+
+
+def test_supplier_failure_retains_only_its_finite_owned_stage(checker):
+    output = PRIVATE.encode() + b'\n#9 {"error": "document_clamav_supplier_unverified", "stage": "verify_installation"}\n'
+    token = checker._FAILURE.set({"stage": "build", "completed_cases": 0})
+    try:
+        checker._note_build_failure(1, output)
+        report = checker._failure_report()
+        assert report["build_error"] == "supplier_verification"
+        assert report["supplier_failure_stage"] == "verify_installation"
+        assert PRIVATE not in json.dumps(report) and PRIVATE not in repr(checker._FAILURE.get())
+    finally:
+        checker._FAILURE.reset(token)
 
 
 def test_final_docker_error_detail_keeps_cause_and_exit_but_removes_sensitive_values(checker):

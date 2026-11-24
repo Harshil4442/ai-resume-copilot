@@ -111,17 +111,20 @@ def test_application_source_refuses_head_change_after_source_fingerprint(modules
         q.current_application_source(m.root, family=FAMILY)
 
 
-@pytest.fixture(params=[LEGACY, FAMILY])
+@pytest.fixture(params=[LEGACY, FAMILY, q.R02_APPLICATION_FAMILY])
 def owned_profile(tmp_path, monkeypatch, request):
     root, family = tmp_path / "owned-source", request.param
     root.mkdir()
     contract, observer = profile.APPLICATION_CONTRACTS[family]
-    app_sha = q.CURRENT_APPLICATION_APP_SHA256 if family == FAMILY else q.APP_SHA256
-    count = q.CURRENT_APPLICATION_APP_FILES if family == FAMILY else 294
+    app_sha = ({FAMILY: q.CURRENT_APPLICATION_APP_SHA256, q.R02_APPLICATION_FAMILY: q.R02_APPLICATION_APP_SHA256}
+               .get(family, q.APP_SHA256))
+    count = q.CURRENT_APPLICATION_APP_FILES if family != LEGACY else 294
     literal = {"CONTRACT": family, "CANDIDATE_APP_SHA256": app_sha, "CANDIDATE_APP_FILES": count,
         "COMPATIBILITY_STEP": "Owned compatibility", "PROTOCOL_STEP": "Owned protocol", "RETAINED_STEP": "Owned retained"}
-    port = {"CURRENT_APPLICATION_FAMILY": FAMILY, "CURRENT_APPLICATION_APP_SHA256": q.CURRENT_APPLICATION_APP_SHA256,
-            "CURRENT_APPLICATION_APP_FILES": count} if family == FAMILY else {"APP_SHA256": q.APP_SHA256}
+    port = ({"CURRENT_APPLICATION_FAMILY": FAMILY, "CURRENT_APPLICATION_APP_SHA256": q.CURRENT_APPLICATION_APP_SHA256,
+             "CURRENT_APPLICATION_APP_FILES": count} if family == FAMILY else
+            {"R02_APPLICATION_FAMILY": q.R02_APPLICATION_FAMILY, "R02_APPLICATION_APP_SHA256": q.R02_APPLICATION_APP_SHA256,
+             "R02_APPLICATION_APP_FILES": count} if family == q.R02_APPLICATION_FAMILY else {"APP_SHA256": q.APP_SHA256})
     files = {profile.PORT_PATH: "\n".join(name + " = " + repr(value) for name, value in port.items()) + "\nimport " + Path(observer).stem + "\n",
         contract: "\n".join(name + " = " + repr(value) for name, value in literal.items()) + "\n",
         observer: "from app import owned_helper\n", "backend/app/owned_helper.py": '"""Owned source; never execute."""\n'}

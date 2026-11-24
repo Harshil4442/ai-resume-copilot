@@ -227,15 +227,27 @@ describes the original base migration/release and its financial activation gates
    real eligibility census, explicit owner choice, fresh SQL checks and atomic
    acceptance counting; raw owner-ID environment lists grant no authority. Retain
    exact identities for accepted work and reconcile unknown outcomes before retrying.
-8. Observe representative shadow accounting for at least seven days and at least
-   200 successful paid-equivalent operations across supported cohorts. The
-   passage of seven calendar days, a synthetic dataset, or a report with the word
-   “success” does not satisfy this gate alone.
+8. Before initial checkout, observe representative shadow accounting for at least
+   seven days, with nonempty verified successful results. An operator may explicitly
+   set `phase: "initial_canary"` in the release review only for the server's explicit
+   `UNIFIED_CREDIT_EXECUTION_AUDIENCE=canary` setting. Existing stored canary review,
+   real eligibility census, owner opt-in and atomic 5% accepted-traffic admission
+   remain required; this phase supplies no traffic allowance or quality evidence.
+   Require at least 200 successful paid-equivalent operations across supported
+   cohorts **before widening**, and continue longer if coverage or statistical
+   evidence is inadequate. A missing phase defaults to `widening` and retains that
+   200-operation floor. Seven calendar days, a synthetic dataset, or a report with
+   the word “success” does not satisfy either review.
 9. Verify commercial hosting, tax/payment treatment, current provider prices,
    invoice allocation, legacy rights, quality/security and delivery evidence.
    `credits.release.ReleaseReview` requires retained artifact digests and a
    current financial policy; do not fabricate them to make checkout pass.
-10. Activate the reviewed campaign and checkout only after those gates pass.
+10. Activate the reviewed campaign and checkout only after the gates for the
+    selected phase pass. An initial review cannot authorize `reviewed_public`
+    checkout or execution, or lift retained canary fences. Public expansion needs
+    a new current `widening` review, matching runtime evidence and all existing
+    financial, quality, consent and commercial checks. The phase is an operator
+    artifact field, never a client quote, order or enrollment option.
     Capture the first approved purchase/refund checks and monitor delivery cost,
     failure/unknown outcomes, refund rates and cash reserved for obligations.
 
@@ -455,8 +467,9 @@ provider call, prove human quality, or reconcile an invoice.
 The 6–13 November UTC production observation found zero qualifying operations
 and discovery batches, and retained two unknown and three settled provider
 liabilities. The report used reviewed estimates and ran without SQL mutations or
-model calls. The representative window and 200 successful paid-equivalent
-operations required by R02 remain pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
+model calls. The representative window and nonempty verified successful results
+for an initial canary remain pending; the 200 successful paid-equivalent operations
+required by R02 before widening also remain pending. [Observation evidence](evidence/2026-11-13-credit-shadow-observation.json)
 
 The report does not replace provider invoices or resource metering. Do not
 release native expense holds just because the customer received a result.

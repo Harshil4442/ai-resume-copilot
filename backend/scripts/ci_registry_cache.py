@@ -17,17 +17,18 @@ MIRROR = "https://mirror.gcr.io"
 CONFIG = Path("/etc/docker/daemon.json")
 DOCUMENT_BASE_DIGEST = "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1"
 DOCUMENT_BASE = "public.ecr.aws/docker/library/python"
+TEX_BASE_DIGEST = "sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587"
 SOURCE_POLICY_ENV = "EXPERIMENTAL_BUILDKIT_SOURCE_POLICY"
 DAEMON_OBSERVATION_SECONDS = 30
 
 
 def document_source_policy() -> Path:
-    """Route only the existing document base to identical cached manifest bytes.
+    """Resolve the two frozen CI bases through their digest-pinned origins.
 
-    Docker Hub daemon mirrors do not intercept an explicit ECR reference.
-    BuildKit's source policy changes its transport without editing the attested
-    Dockerfile or changing its base digest. The two literal selectors cover
-    tag+digest and digest-only normalization, with no repository-wide rules.
+    An explicit mirror hostname makes cache availability mandatory. Canonical
+    Docker Hub references let the configured daemon try its optional mirror and
+    then the origin. Exact selectors retain both frozen Dockerfiles and every
+    base digest; cache responses still undergo normal content verification.
     https://docs.docker.com/build/building/variables/#experimental_buildkit_source_policy
     """
     if os.environ.get(SOURCE_POLICY_ENV):
@@ -41,11 +42,15 @@ def document_source_policy() -> Path:
         raise ValueError("A canonical owned runner temporary directory is required.")
     policy = {"version": 1, "rules": [
         {"action": "CONVERT", "selector": {"identifier": source, "matchType": "EXACT"},
-         "updates": {"identifier": "docker-image://mirror.gcr.io/library/python@" + DOCUMENT_BASE_DIGEST}}
-        for source in (
-            "docker-image://" + DOCUMENT_BASE + ":3.12-slim-trixie@" + DOCUMENT_BASE_DIGEST,
-            "docker-image://" + DOCUMENT_BASE + "@" + DOCUMENT_BASE_DIGEST,
-        )
+         "updates": {"identifier": target}}
+        for sources, target in (
+            (("docker-image://" + DOCUMENT_BASE + ":3.12-slim-trixie@" + DOCUMENT_BASE_DIGEST,
+              "docker-image://" + DOCUMENT_BASE + "@" + DOCUMENT_BASE_DIGEST),
+             "docker-image://docker.io/library/python@" + DOCUMENT_BASE_DIGEST),
+            (("docker-image://mirror.gcr.io/library/debian:bookworm-slim@" + TEX_BASE_DIGEST,
+              "docker-image://mirror.gcr.io/library/debian@" + TEX_BASE_DIGEST),
+             "docker-image://docker.io/library/debian@" + TEX_BASE_DIGEST),
+        ) for source in sources
     ]}
     raw = (json.dumps(policy, sort_keys=True, separators=(",", ":")) + "\n").encode()
     if len(raw) > 4096:

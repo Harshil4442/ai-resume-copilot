@@ -1,6 +1,7 @@
 """Owned synthetic runner/report controls; never actual-source qualification."""
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -32,9 +33,11 @@ def ci(tmp_path):
 
 
 def test_prepared_ci_context_keeps_only_closed_owned_inputs(ci):
-    result = gate.environment(ci | {"DATABASE_URL": "forbidden", "GOOGLE_APPLICATION_CREDENTIALS": "forbidden"}, platform="linux")
+    result = gate.environment(ci | {"DATABASE_URL": "forbidden", "GOOGLE_APPLICATION_CREDENTIALS": "forbidden",
+        gate.APPLICATION_FAMILY_ENV: "untrusted-ambient"}, platform="linux")
     assert result["HIREWIZ_TEST_POSTGRES_URL"] == CI_POSTGRES_URL
     assert "DATABASE_URL" not in result and "GOOGLE_APPLICATION_CREDENTIALS" not in result
+    assert gate.APPLICATION_FAMILY_ENV not in result
     assert prepared_ci_postgres_url(ci) == CI_POSTGRES_URL
 
 
@@ -169,7 +172,12 @@ def test_actual_isolated_cli_refuses_before_any_source_qualification_or_native_c
     result = subprocess.run([sys.executable, "-I", "-B", str(Path(gate.__file__)), "--phase", "compatibility"],
         env={"PATH": os.environ.get("PATH", ""), "CI": "false", "GITHUB_ACTIONS": "false"},
         capture_output=True, timeout=15, check=False)
-    assert result.returncode != 0 and result.stdout == b""
+    assert result.returncode != 0
+    assert json.loads(result.stdout) == {
+        "error": "schema27_qualification_refused", "stage": "environment",
+        "exception_class": "RetainedV3Denied", "denial_code": "retained_v3_owned_linux_ci_required",
+        "qualified": False, "native_approval": False, "automatic_replay": False,
+    }
     assert result.stderr.strip() == b"schema27_qualification_unavailable_or_child_outcome_unknown"
     assert b"Traceback" not in result.stderr
 
@@ -184,8 +192,8 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
     commands = {
         "Qualify schema26 app v3 compatibility": "qualify_schema26_retained_v3.py --phase compatibility",
         "Qualify schema26 app v3 native protocol": "qualify_schema26_retained_v3.py --phase protocol",
-        "Qualify schema27 app compatibility": "qualify_schema27.py --phase compatibility",
-        "Qualify schema27 app native protocol": "qualify_schema27.py --phase protocol",
+        "Qualify R02 schema27 app compatibility": "qualify_schema27.py --phase compatibility --application-family hirewiz_schema27_app_r02_v1",
+        "Qualify R02 schema27 app native protocol": "qualify_schema27.py --phase protocol --application-family hirewiz_schema27_app_r02_v1",
     }
     redis = next(i for i, step in enumerate(steps) if step.get("id") == "native-metadata-redis")
     for name, command in commands.items():
@@ -200,6 +208,7 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
     assert sum(step.get("name") == "Qualify retained actual-source schema25 app v1" for step in steps) == 1
     assert sum(step.get("name") == "Qualify retained actual-source schema25 app v2" for step in steps) == 1
     full = next(step for step in steps if step.get("name") == "Run backend tests")
+    assert full["env"][gate.APPLICATION_FAMILY_ENV] == gate.R02_FAMILY
     import re
 
     assert re.findall(r"--ignore=(\S+)", full["run"]) == [
@@ -210,10 +219,13 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
 
 
 @pytest.mark.parametrize("outcome", ["failure", "timeout", "changed_source", "success"])
-def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, outcome):
+@pytest.mark.parametrize("family", [gate.FAMILY, gate.R02_FAMILY])
+def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, capsys, outcome, family):
     root = tmp_path / "source"
     (root / "backend").mkdir(parents=True)
-    monkeypatch.setattr(gate, "environment", lambda *_a, **_k: {"RUNNER_TEMP": str(tmp_path)})
+    monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, "untrusted-ambient")
+    monkeypatch.setattr(gate, "environment", lambda *_a, **_k: {
+        "RUNNER_TEMP": str(tmp_path), gate.APPLICATION_FAMILY_ENV: "untrusted-ambient"})
     stamps = iter(["a" * 64, "b" * 64 if outcome == "changed_source" else "a" * 64])
     monkeypatch.setattr(gate, "source_identity", lambda *_: next(stamps))
     monkeypatch.setattr(gate, "public_cases", lambda *_: {"test_owned": {"test_owned"}})
@@ -226,16 +238,157 @@ def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatc
         if outcome == "timeout":
             raise subprocess.TimeoutExpired(command, gate.CHILD_SECONDS)
         report = Path(command[-1])
-        report.write_text('<testsuite><testcase classname="test_owned" name="test_owned"/></testsuite>')
-        return SimpleNamespace(returncode=int(outcome == "failure"), stdout=b"", stderr=b"")
+        if outcome == "failure":
+            report.write_text('<testsuite><testcase classname="test_owned" name="test_owned[private-parameter]">'
+                '<failure message="private-assertion">private-body</failure></testcase></testsuite>')
+        else:
+            report.write_text('<testsuite><testcase classname="test_owned" name="test_owned"/></testsuite>')
+        return SimpleNamespace(returncode=int(outcome == "failure"), stdout=b"private-stdout", stderr=b"private-stderr")
 
     monkeypatch.setattr(gate.subprocess, "run", child)
     if outcome == "success":
-        assert gate.run(root, "compatibility") == 1
+        assert gate.run(root, "compatibility", family) == 1
     else:
         with pytest.raises(gate.Schema27QualificationDenied):
-            gate.run(root, "compatibility")
+            gate.run(root, "compatibility", family)
     assert len(calls) == 1 and calls[0][1]["timeout"] == gate.CHILD_SECONDS
     assert calls[0][0][1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
+    assert calls[0][1]["env"][gate.APPLICATION_FAMILY_ENV] == family
+    assert os.environ[gate.APPLICATION_FAMILY_ENV] == "untrusted-ambient"
+    captured = capsys.readouterr()
+    assert "private" not in captured.out + captured.err
+    if outcome == "failure":
+        diagnostic = json.loads(captured.out)
+        assert diagnostic["outcome_counts"]["failed"] == 1 and diagnostic["qualified"] is False
+        assert diagnostic["nonpassing_tests"] == [{"module": "test_owned", "function": "test_owned",
+            "outcome_counts": {"failed": 1, "errors": 0, "skipped": 0}}]
+    else:
+        assert captured.out == captured.err == ""
     directories = list(tmp_path.glob("hirewiz-schema27-*"))
     assert bool(directories) is (outcome != "success")
+
+
+@pytest.fixture
+def private_child_report(tmp_path):
+    directory = tmp_path / "report-directory"
+    directory.mkdir(mode=0o700)
+    before = directory.stat()
+    report = directory / "junit.xml"
+    report.write_text('<testsuite><testcase classname="test_owned" name="test_case"/></testsuite>')
+    return directory, report, (before.st_dev, before.st_ino, before.st_uid)
+
+
+def test_failed_child_names_strip_all_parameters_and_ignore_messages_and_streams(private_child_report):
+    directory, report, owner = private_child_report
+    report.write_text('<testsuite><testcase classname="private.prefix.test_owned" name="test_case[private-one][private-two]">'
+        '<failure message="private-message">private-traceback</failure><system-out>private-token</system-out></testcase>'
+        '<testcase classname="test_owned" name="test_case[private-other]"><error>private-error</error></testcase>'
+        '<testcase classname="test_owned" name="test_skip[private-skip]"><skipped message="private-reason"/></testcase>'
+        '<testcase classname="test_owned" name="test_pass"/></testsuite>')
+    result = gate.failed_child_tests(directory, report, owner, {"test_owned": {"test_case", "test_skip", "test_pass"}})
+    assert result["available"] is True and result["qualified"] is False
+    assert result["outcome_counts"] == {"passed": 1, "failed": 1, "errors": 1, "skipped": 1}
+    assert result["nonpassing_tests"] == [
+        {"module": "test_owned", "function": "test_case", "outcome_counts": {"failed": 1, "errors": 1, "skipped": 0}},
+        {"module": "test_owned", "function": "test_skip", "outcome_counts": {"failed": 0, "errors": 0, "skipped": 1}},
+    ]
+    assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("damage", ["unknown_module", "unknown_function", "oversize_name", "duplicate",
+    "missing", "symlink", "directory_symlink", "oversize_report", "doctype", "entity", "malformed",
+    "extra_file", "changed_owner", "contradictory_outcomes"])
+def test_unsafe_failed_child_report_has_only_fixed_unavailable_code(private_child_report, tmp_path, damage):
+    directory, report, owner = private_child_report
+    if damage == "unknown_module":
+        report.write_text('<testsuite><testcase classname="private-module" name="test_case"/></testsuite>')
+    elif damage == "unknown_function":
+        report.write_text('<testsuite><testcase classname="test_owned" name="private-function[secret]"/></testsuite>')
+    elif damage == "oversize_name":
+        report.write_text('<testsuite><testcase classname="test_owned" name="test_case[' + 'x' * 65536 + ']"/></testsuite>')
+    elif damage == "duplicate":
+        report.write_text('<testsuite>' + '<testcase classname="test_owned" name="test_case[private]"/>' * 2 + '</testsuite>')
+    elif damage == "missing":
+        report.unlink()
+    elif damage == "symlink":
+        target = tmp_path / "private-target"
+        report.replace(target)
+        report.symlink_to(target)
+    elif damage == "directory_symlink":
+        target = tmp_path / "private-directory"
+        directory.rename(target)
+        directory.symlink_to(target, target_is_directory=True)
+    elif damage == "oversize_report":
+        report.write_bytes(b'x' * (gate.MAX_REPORT_BYTES + 1))
+    elif damage in {"doctype", "entity"}:
+        report.write_text('<!' + damage.upper() + ' private><testsuite/>')
+    elif damage == "malformed":
+        report.write_text('<private-invalid>')
+    elif damage == "extra_file":
+        (directory / "private-extra").write_text("private")
+    elif damage == "changed_owner":
+        owner = (owner[0], owner[1] + 1, owner[2])
+    else:
+        report.write_text('<testsuite><testcase classname="test_owned" name="test_case">'
+            '<failure/><error/></testcase></testsuite>')
+    result = gate.failed_child_tests(directory, report, owner, {"test_owned": {"test_case"}})
+    assert result == {"diagnostic": "schema27_child_test_outcomes", "available": False,
+        "code": "schema27_child_report_unavailable", "qualified": False}
+
+
+@pytest.mark.parametrize("family", [None, gate.FAMILY, gate.R02_FAMILY])
+def test_mixed_source_fixture_selects_only_the_exact_current_descriptor(monkeypatch, family):
+    from test_schema27_app_compatibility_postgres import selected_application_contract
+
+    from scripts import schema27_app_r02_release_contract as r02
+    from scripts import schema27_app_release_contract as old
+
+    if family is None:
+        monkeypatch.delenv(gate.APPLICATION_FAMILY_ENV, raising=False)
+    else:
+        monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, family)
+    assert selected_application_contract() is (r02 if family == gate.R02_FAMILY else old)
+
+
+def test_unknown_mixed_source_family_refuses_before_database_or_archive(monkeypatch, tmp_path):
+    import test_schema27_app_compatibility_postgres as mixed
+
+    monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, "unreviewed-family")
+    monkeypatch.setattr(mixed.release.initial, "prior_app_files", lambda *_: pytest.fail("Archive must not be read"))
+
+    class NoDatabase:
+        def getfixturevalue(self, name):
+            pytest.fail("Database must not be created")
+
+    with pytest.raises(pytest.fail.Exception, match="exact application family"):
+        mixed.current27_database.__wrapped__(NoDatabase())
+    with pytest.raises(pytest.fail.Exception, match="exact application family"):
+        mixed.actual_app_roots.__wrapped__(tmp_path)
+
+
+@pytest.mark.parametrize("error", [RuntimeError("private-body-token-must-not-escape"),
+    gate.Schema27QualificationDenied("schema27_qualification_private_body_token"),
+    gate.Schema27QualificationDenied(["unhashable-private-body"])])
+def test_finite_failure_diagnostic_never_relays_unreviewed_exception_values(error):
+    report = gate.failure_diagnostic(error)
+    assert report["denial_code"] is None
+    assert report["qualified"] is report["native_approval"] is report["automatic_replay"] is False
+    encoded = json.dumps(report)
+    assert "private" not in encoded and "token" not in encoded and "body" not in encoded
+
+
+def test_source_profile_failure_names_its_owned_stage_and_public_denial_only(monkeypatch):
+    import unified_credit_schema25_release as release
+
+    from scripts import schema27_app_release_contract as contract
+
+    def refuse(*_args):
+        raise contract.Source27Denied("source27_forward_document_ci_required")
+    monkeypatch.setattr(release, "prior_app_files", lambda *_args: {})
+    monkeypatch.setattr(contract, "source_fingerprint", refuse)
+    with pytest.raises(contract.Source27Denied) as caught:
+        gate.source_identity(gate.ROOT)
+    report = gate.failure_diagnostic(caught.value)
+    assert report["denial_code"] == "source27_forward_document_ci_required"
+    assert report["stage"] == "source_identity" and report["exception_class"] == "Source27Denied"
+    assert report["qualified"] is False

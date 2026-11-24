@@ -76,7 +76,8 @@ def _audience_enabled(db, user_id: int | None, configured: RuntimeConfig, *, now
         try:
             review = current_review()
             return (
-                configured.policy == review.policy
+                review.phase == "widening"
+                and configured.policy == review.policy
                 and payload_fingerprint(configured.model_dump(mode="json"))
                 == review.evidence["delivery_routes"]
             )

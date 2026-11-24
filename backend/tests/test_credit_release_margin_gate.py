@@ -130,3 +130,68 @@ def test_valid_commercial_runtime_reaches_separate_audience_guard(monkeypatch):
     monkeypatch.setattr(runtime, "_audience_enabled", lambda *_args, **_kwargs: seen.append("separate-audience-review") or True)
     assert runtime.current_runtime(1, now=NOW) == configured
     assert seen == ["separate-audience-review"]
+
+
+@pytest.mark.parametrize("phase", [None, "widening"])
+def test_legacy_and_explicit_widening_keep_200_successful_operation_floor(phase):
+    candidate = payload()
+    if phase is not None:
+        candidate["phase"] = phase
+    with pytest.raises(ValueError, match="200"):
+        release.ReleaseReview.model_validate(candidate | {"shadow_successful_operations": 199})
+    assert release.ReleaseReview.model_validate(candidate).phase == "widening"
+
+
+@pytest.mark.parametrize("count", [1, 199, 200])
+def test_initial_canary_accepts_nonempty_shadow_results_only_for_explicit_server_canary(count, monkeypatch):
+    candidate = release.ReleaseReview.model_validate(payload() | {
+        "phase": "initial_canary", "shadow_successful_operations": count})
+    monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", candidate.model_dump_json())
+    monkeypatch.setenv("APP_ENV", "production")
+    for audience in (None, "", "reviewed_public", "unreviewed"):
+        if audience is None:
+            monkeypatch.delenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", raising=False)
+        else:
+            monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", audience)
+        with pytest.raises(finance.FundingUnavailable):
+            release.current_review(now=NOW)
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "canary")
+    assert release.current_review(now=NOW) == candidate
+
+
+@pytest.mark.parametrize("change", [
+    {"shadow_successful_operations": 0},
+    {"shadow_successful_operations": True},
+    {"shadow_started_at": NOW - timedelta(days=7)},  # Only six days before the end.
+    {"evidence": {}},
+    {"evidence": {key: "b" * 64 for key in (
+        "legacy_rights", "commercial_hosting", "invoices", "security", "shadow_accounting", "delivery_routes")}},
+    {"funded_runway_minor": 1},
+    {"monthly_additional_business_minor": 1_000_000},
+    {"phase": "public"},
+])
+def test_initial_phase_preserves_shadow_quality_funding_and_margin_guards(change):
+    with pytest.raises(ValueError):
+        release.ReleaseReview.model_validate(payload() | {
+            "phase": "initial_canary", "shadow_successful_operations": 1} | change)
+
+
+def test_initial_review_cannot_authorize_public_execution_with_matching_runtime_digest(monkeypatch):
+    from app.domains.common import payload_fingerprint
+
+    configured = execution_config(financial())
+    review = release.ReleaseReview.model_validate(payload() | {
+        "phase": "initial_canary", "shadow_successful_operations": 1,
+        "evidence": payload()["evidence"] | {
+            "delivery_routes": payload_fingerprint(configured.model_dump(mode="json"))}})
+    before = payload_fingerprint(configured.model_dump(mode="json"))
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_ENABLED", "true")
+    monkeypatch.setenv("UNIFIED_CREDIT_RUNTIME_REVIEW_JSON", configured.model_dump_json())
+    monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", review.model_dump_json())
+    with pytest.raises(finance.FundingUnavailable):
+        runtime.current_runtime(1, now=NOW)
+    # Even a previously parsed review cannot become a public widening review.
+    monkeypatch.setattr(release, "current_review", lambda: review)
+    assert not runtime._audience_enabled(None, 1, configured, now=NOW)
+    assert payload_fingerprint(configured.model_dump(mode="json")) == before

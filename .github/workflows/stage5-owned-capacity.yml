@@ -19,6 +19,10 @@ on:
         description: Compare Dashboard to Jobs under the shared limiter
         type: boolean
         default: false
+      billing_journey:
+        description: Model cold Billing, settled-order refresh and explicit history opening
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
     paths:
@@ -35,6 +39,7 @@ on:
       - backend/scripts/stage5_skill_roi.py
       - backend/scripts/stage5_first_minute.py
       - backend/scripts/stage5_jobs_journey.py
+      - backend/scripts/stage5_billing_journey.py
       - backend/tests/fixtures/stage5_native.py
       - backend/tests/test_stage5_capacity.py
       - backend/tests/test_stage5_native_fixture.py
@@ -42,6 +47,7 @@ on:
       - backend/tests/test_stage5_skill_roi.py
       - backend/tests/test_stage5_first_minute.py
       - backend/tests/test_stage5_jobs_journey.py
+      - backend/tests/test_stage5_billing_journey.py
       - backend/tests/test_supported_evaluation.py
       - backend/tests/test_supported_evaluation_postgres.py
       - backend/tests/test_supported_evaluation_services_postgres.py
@@ -126,7 +132,7 @@ jobs:
         env:
           HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
           HIREWIZ_STAGE5_PG_REQUIRED: "true"
-        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py tests/test_stage5_first_minute.py tests/test_stage5_jobs_journey.py
+        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py tests/test_stage5_first_minute.py tests/test_stage5_jobs_journey.py tests/test_stage5_billing_journey.py
       - name: Verify quality evaluation on owned PostgreSQL
         if: matrix.buyers == 20
         working-directory: backend
@@ -146,6 +152,7 @@ jobs:
           SKILL_ROI_JOURNEY: ${{ github.event_name == 'workflow_dispatch' && inputs.skill_roi_journey }}
           JOBS_JOURNEY: ${{ github.event_name == 'workflow_dispatch' && inputs.jobs_journey }}
           FIRST_MINUTE: ${{ github.event_name == 'workflow_dispatch' && inputs.first_minute }}
+          BILLING_JOURNEY: ${{ github.event_name == 'workflow_dispatch' && inputs.billing_journey }}
         working-directory: backend
         run: |
           .venv/bin/python - <<'PY'
@@ -162,6 +169,7 @@ jobs:
           if [[ "$SKILL_ROI_JOURNEY" == true ]]; then args+=(--skill-roi-journey); fi
           if [[ "$FIRST_MINUTE" == true ]]; then args+=(--first-minute); fi
           if [[ "$JOBS_JOURNEY" == true ]]; then args+=(--jobs-journey); fi
+          if [[ "$BILLING_JOURNEY" == true ]]; then args+=(--billing-journey); fi
           .venv/bin/python scripts/run_stage5_capacity.py --execute "${args[@]}" \
             --config "$RUNNER_TEMP/stage5-config.json" \
             --pg-bin "$OWNED_PG_BIN" --redis-server "$OWNED_REDIS_BINARY" \

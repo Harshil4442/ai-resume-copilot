@@ -13,6 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends clamav clamav-f
 RUN mkdir -p /opt/document/app/services/market \
     && touch /opt/document/app/__init__.py /opt/document/app/services/__init__.py \
        /opt/document/app/services/market/__init__.py
+# Official release asset checksum and every selected runtime ELF are source-pinned.
+# The supplier helper removes the old APT engine without changing Writer/fonts.
+COPY infra/document-processing/clamav_supplier.py infra/document-processing/clamav-release.json /opt/document/
+RUN /usr/local/bin/python3 -I /opt/document/clamav_supplier.py --install
 # Only this acquisition stage is invalidated for each newly built image.
 # The nonce does not establish freshness; scanner database headers do that.
 FROM dependencies AS definitions
@@ -20,7 +24,7 @@ ARG DOCUMENT_DEFINITIONS_NONCE
 RUN test -n "$DOCUMENT_DEFINITIONS_NONCE" \
     && test "${#DOCUMENT_DEFINITIONS_NONCE}" -eq 32 \
     && case "$DOCUMENT_DEFINITIONS_NONCE" in *[!0-9a-f]*) exit 1 ;; esac \
-    && freshclam --stdout --datadir=/var/lib/clamav
+    && /usr/local/bin/freshclam --config-file=/etc/clamav/freshclam.conf --stdout --datadir=/var/lib/clamav
 FROM dependencies AS runtime
 COPY --from=definitions /var/lib/clamav /var/lib/clamav
 COPY backend/app/services/parsing.py /opt/document/app/services/parsing.py

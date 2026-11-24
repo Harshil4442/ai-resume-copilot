@@ -259,13 +259,17 @@ jobs:
           timeout 35s python3 backend/scripts/ci_registry_cache.py --verify
           postgres_after="$(docker inspect --format '{{.Id}} {{.State.Running}} {{.State.Pid}} {{.State.Health.Status}}' "$CI_POSTGRES_CONTAINER_ID")"
           [ "$postgres_before" = "$postgres_after" ]
-          docker pull --platform linux/amd64 mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
       - name: Build and attest immutable native TeX test compiler
         timeout-minutes: 12
-        run: >-
-          backend/.venv/bin/python backend/scripts/native_tex_test_image.py
-          --platform linux/amd64 --github-env "$GITHUB_ENV"
-          --output "$RUNNER_TEMP/native-tex-test-image.json"
+        env:
+          EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""
+        run: |
+          document_source_policy_path="$(python3 backend/scripts/ci_registry_cache.py --document-source-policy)"
+          trap 'rm -f -- "$document_source_policy_path"' EXIT
+          export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
+          backend/.venv/bin/python backend/scripts/native_tex_test_image.py \
+            --platform linux/amd64 --github-env "$GITHUB_ENV" \
+            --output "$RUNNER_TEMP/native-tex-test-image.json"
       - name: Build and verify genuine native document engines
         timeout-minutes: 20
         env:
@@ -276,13 +280,15 @@ jobs:
           export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"
           document_test_report_path="$RUNNER_TEMP/document-engine-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
           backend/.venv/bin/python backend/scripts/document_test_image.py \
-            --platform linux/amd64 --source-revision --source-v5 --output "$document_test_report_path"
+            --platform linux/amd64 --source-revision --patched-engine --output "$document_test_report_path"
           printf 'HIREWIZ_DOCUMENT_TEST_REPORT=%s\n' "$document_test_report_path" >> "$GITHUB_ENV"
       - name: Save sanitized native document engine proof
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified official ref
         with:
           name: native-document-engine-proof-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
+          if-no-files-found: ignore
           path: ${{ runner.temp }}/document-engine-${{ github.run_id }}-${{ github.run_attempt }}.json
       - name: Provision disposable admission test database
         working-directory: backend
@@ -457,25 +463,26 @@ jobs:
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
         run: .venv/bin/python -I -B scripts/qualify_schema26_retained_v3.py --phase protocol
-      - name: Qualify schema27 app compatibility
+      - name: Qualify R02 schema27 app compatibility
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase compatibility
-      - name: Qualify schema27 app native protocol
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase compatibility --application-family hirewiz_schema27_app_r02_v1
+      - name: Qualify R02 schema27 app native protocol
         working-directory: backend
         env:
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           HIREWIZ_AUTHORITY_EMULATOR_REQUIRED: "true"
           HIREWIZ_TEST_POSTGRES_URL: postgresql+psycopg://hirewiz:hirewiz@127.0.0.1:55433/hirewiz_admission_test
           HIREWIZ_OWNED_REDIS_SERVER: ${{ steps.native-metadata-redis.outputs.binary }}
-        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase protocol
+        run: .venv/bin/python -I -B scripts/qualify_schema27.py --phase protocol --application-family hirewiz_schema27_app_r02_v1
       - name: Run backend tests
         working-directory: backend
         env:
+          HIREWIZ_SCHEMA27_APPLICATION_FAMILY: hirewiz_schema27_app_r02_v1
           HIREWIZ_APP_COMPATIBILITY_REQUIRED: "true"
           PYTEST_ADDOPTS: "--durations=50"
           CI_POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}

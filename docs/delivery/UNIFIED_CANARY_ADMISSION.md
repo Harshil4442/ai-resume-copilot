@@ -6,6 +6,29 @@ Human quality review, representative shadow accounting and the existing release,
 funding, provider and commercial gates remain separate. Internal synthetic smoke
 runs do not qualify a public route or contribute to these denominators.
 
+## Initial release and later widening
+
+R02 requires 200 successful paid-equivalent operations **before widening**, not
+before the first bounded pilot purchase. The operator-controlled release artifact
+may explicitly select `phase: "initial_canary"`, with at least seven days of
+representative shadow accounting and nonempty verified successful results. All
+seven evidence artifacts, current financial policy, pack margins, invoices,
+funded runway, purchase pricing, route quality and payment cash checks still
+apply. This is no permission to shorten shadow review or count synthetic tests.
+
+An initial review is valid only with the server explicitly set to
+`UNIFIED_CREDIT_EXECUTION_AUDIENCE=canary`. Checkout still requires the exact
+stored canary review, runtime digest and the authenticated owner's recorded
+opt-in; each new operation still needs an atomic accepted-traffic slot below.
+Neither a release review nor a purchase supplies that slot. A client cannot
+select the phase. Missing phase means `widening`, preserving the 200-operation
+floor for legacy artifacts. Before expanding, retain a new current widening
+review with at least 200 successes across supported cohorts, sufficient coverage
+and every existing evidence/financial/quality gate. An initial artifact cannot
+authorize `reviewed_public` checkout or execution, or lift retained canary fences.
+These changes do not alter runtime digests, accepted quote snapshots, payment
+capture/refund settlement, or database schema. No phase activates a runtime flag.
+
 ## Reviewed audience and actual eligibility
 
 `CanaryReview` is a frozen typed contract recorded in existing `AdminAuditEvent`
