@@ -572,6 +572,27 @@ test("legacy access keeps purchased terms while new passes require reviewed quot
   await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
+test("billing histories load on demand and remain accessible at every width", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  await context.route("**/*", (route) => new URL(route.request().url()).origin === new URL(baseURL!).origin ? route.continue() : route.abort());
+  await f.install(context, baseURL!);
+  await page.goto("/billing");
+  await expect(page.getByRole("button", { name: "Review Starter pass" })).toBeEnabled();
+  const optional = () => f.requests.filter(({ path }) => ["/v1/credits/history", "/v1/employer-jobs/credits", "/v1/usage-events"].includes(path));
+  expect(optional()).toEqual([]);
+  await page.locator("summary").filter({ hasText: /^Credit history$/ }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("No credit activity yet.", { exact: true })).toBeVisible();
+  await page.locator("summary").filter({ hasText: /^Service history$/ }).click();
+  await expect(page.getByText("No service-credit activity yet.", { exact: true })).toBeVisible();
+  await page.locator("summary").filter({ hasText: /^Legacy analysis history$/ }).click();
+  await expect(page.getByText("No legacy analysis-unit activity yet.", { exact: true })).toBeVisible();
+  expect(optional().map(({ path }) => path).sort()).toEqual(["/v1/credits/history", "/v1/employer-jobs/credits", "/v1/usage-events"].sort());
+  await checkLayout(page);
+  expect(f.requests.every(({ method }) => method === "GET")).toBe(true);
+  expect(f.unexpected).toEqual([]);
+});
+
 test("legacy refund checks update the same order, spendable balance and service history", async ({ page, context, baseURL }) => {
   const f = fixture();
   f.state.recentPaidPack = true;
@@ -592,6 +613,7 @@ test("legacy refund checks update the same order, spendable balance and service 
   const current = page.getByRole("region", { name: "Current entitlement" }).getByText("Job service credits", { exact: true }).locator("..");
   const history = page.getByText("Available balance", { exact: true }).locator("..");
   await expect(current.getByText("100", { exact: true })).toBeVisible();
+  await page.locator("summary").filter({ hasText: /^Service history$/ }).click();
   await expect(history).toContainText("100 credits");
   for (const update of [
     { amount: 54_950, balance: 50, heading: "Payment partially refunded", formatted: "₹549.5" },
