@@ -208,6 +208,117 @@ def test_only_eligible_accounts_with_matching_funding_can_buy(unified, monkeypat
     assert calls == []
 
 
+def initial_release_review(monkeypatch):
+    import os
+
+    from backend.app.domains.common import payload_fingerprint
+
+    configuration = RuntimeConfig.model_validate_json(os.environ["UNIFIED_CREDIT_RUNTIME_REVIEW_JSON"])
+    candidate = release.current_review()
+    review = release.ReleaseReview.model_validate(candidate.model_dump() | {
+        "phase": "initial_canary", "shadow_successful_operations": 1,
+        "evidence": candidate.evidence | {
+            "delivery_routes": payload_fingerprint(configuration.model_dump(mode="json"))}})
+    monkeypatch.setenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", review.model_dump_json())
+    return configuration
+
+
+@pytest.mark.parametrize("blocker", ["none", "consent", "review_pointer", "payment_funding", "service_flag"])
+def test_initial_checkout_still_requires_real_participation_routes_and_payment_funding(
+        unified, monkeypatch, session_factory, blocker):
+    client, calls = unified
+    configuration = initial_release_review(monkeypatch)
+    assert client.get("/api/v1/credits/catalog").json()["checkout_enabled"]
+    if blocker == "consent":
+        with session_factory() as db:
+            review, digest = canary.load_review(db)
+            canary.choose(db, user_id=1, review_id=review.id, review_sha256=digest,
+                notice_sha256=review.notice_sha256, choice="revoke", idempotency_key="initial-stop-consent",
+                expected_sequence=1, runtime=configuration, now=datetime.now(UTC))
+            db.commit()
+    elif blocker == "review_pointer":
+        monkeypatch.setenv("UNIFIED_CREDIT_CANARY_REVIEW_SHA256", "0" * 64)
+    elif blocker == "payment_funding":
+        def unfunded(db, *, policy, now):
+            raise FundingUnavailable("Synthetic unresolved payment expense; no provider request")
+        monkeypatch.setattr(credits, "assert_new_exposure_funded", unfunded)
+    elif blocker == "service_flag":
+        monkeypatch.setenv("FEATURE_EVIDENCE_TAILORING_ENABLED", "false")
+    assert not client.get("/api/public/credits/catalog").json()["checkout_enabled"]
+    catalog = client.get("/api/v1/credits/catalog").json()
+    quote = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "initial-reviewed-purchase"})
+    assert catalog["checkout_enabled"] is (blocker == "none")
+    assert quote.status_code == (200 if blocker == "none" else 503)
+    assert calls == []
+    with session_factory() as db:
+        assert db.query(CreditPurchaseQuote).count() == (1 if blocker == "none" else 0)
+
+
+def test_initial_review_cannot_end_retained_canary_fence_or_authorize_public_checkout(
+        unified, monkeypatch, session_factory):
+    from backend.app.domains.credits import runtime
+
+    client, calls = unified
+    initial_release_review(monkeypatch)
+    monkeypatch.setenv("UNIFIED_CREDIT_EXECUTION_AUDIENCE", "reviewed_public")
+    with session_factory() as db:
+        with pytest.raises(FundingUnavailable):
+            runtime.current_runtime(1, db=db)
+        assert canary.requested(db) is True
+    for path in ("/api/public/credits/catalog", "/api/v1/credits/catalog"):
+        assert client.get(path).json()["checkout_enabled"] is False
+    result = client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "initial-must-not-widen"})
+    assert result.status_code == 503 and calls == []
+
+
+def test_clients_cannot_select_release_phase_on_quote_or_order(unified, monkeypatch, session_factory):
+    client, calls = unified
+    initial_release_review(monkeypatch)
+    assert client.post("/api/v1/credits/purchase-quotes", json={
+        "sku": "starter_pass", "idempotency_key": "client-phase-selector", "phase": "initial_canary"}).status_code == 422
+    assert client.post("/api/v1/credits/orders", json={
+        "quote_id": "quote_unknown", "billing_country": "IN", "idempotency_key": "client-order-phase",
+        "phase": "initial_canary"}).status_code == 422
+    assert calls == []
+    with session_factory() as db:
+        assert db.query(CreditPurchaseQuote).count() == db.query(PaymentOrder).count() == 0
+
+
+def test_initial_release_does_not_grant_a_canary_traffic_slot(unified, monkeypatch, session_factory):
+    from backend.app.domains.common import payload_fingerprint
+    from backend.app.models import AdminAuditEvent, AnalysisRun
+
+    _, calls = unified
+    configuration = initial_release_review(monkeypatch)
+    now = datetime.now(UTC)
+    with session_factory() as db:
+        for number in range(18):
+            db.add(AnalysisRun(id=f"initial-baseline-{number}", user_id=40, operation="resume_tailor",
+                status="succeeded", idempotency_key=f"initial-baseline-key-{number}",
+                input_fingerprint=payload_fingerprint(number), input_payload={}, generation_attempt_limit=0,
+                created_at=now-timedelta(hours=2)))
+        candidate = AnalysisRun(id="initial-candidate", user_id=1, operation="resume_tailor", status="queued",
+            idempotency_key="initial-candidate-key", input_fingerprint=payload_fingerprint("initial-candidate"),
+            input_payload={}, generation_attempt_limit=1, created_at=now)
+        db.add(candidate)
+        db.commit()
+        def accept():
+            return canary.accept(db, user_id=1, runtime=configuration, operation=candidate.operation,
+                source_id=candidate.id, input_fingerprint=candidate.input_fingerprint, now=now)
+        with pytest.raises(FundingUnavailable):
+            accept()
+        assert db.query(AdminAuditEvent).filter_by(action=canary.ACCEPT_ACTION).count() == 0
+        db.add(AnalysisRun(id="initial-baseline-18", user_id=40, operation="resume_tailor", status="succeeded",
+            idempotency_key="initial-baseline-key-18", input_fingerprint=payload_fingerprint(18),
+            input_payload={}, generation_attempt_limit=0, created_at=now-timedelta(hours=2)))
+        db.flush()
+        proof = accept()
+        assert (proof["canary_acceptances"], proof["eligible_business_acceptances"]) == (1, 20)
+        assert calls == []
+
+
 @pytest.mark.parametrize("flag", ["FEATURE_ASYNC_ANALYSIS_ENABLED", "FEATURE_EVIDENCE_TAILORING_ENABLED",
                                   "OPTIONAL_AI_GENERATION_ENABLED"])
 def test_disabled_delivery_services_cannot_be_advertised_or_purchased(unified, monkeypatch, flag):
@@ -336,8 +447,11 @@ def test_original_checkout_status_reflects_razorpay_key_rotation(unified, monkey
     assert len(calls) == 1
 
 
-def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified, session_factory):
+@pytest.mark.parametrize("phase", ["widening", "initial_canary"])
+def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified, session_factory, monkeypatch, phase):
     client, calls = unified
+    if phase == "initial_canary":
+        initial_release_review(monkeypatch)
     quote, payload, result = start(client)
     assert result.status_code == 200, result.text
     created = result.json()
@@ -357,6 +471,7 @@ def test_accepted_quote_price_is_immutable_and_capture_only_grants_once(unified,
         campaign = db.query(CreditCampaign).one()
         campaign.enabled = False
         db.commit()
+    monkeypatch.delenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON")
     assert _post_event(client, "evt_unified_capture", capture).status_code == 200
     assert _post_event(client, "evt_unified_capture_again", capture).status_code == 200
     with session_factory() as db:

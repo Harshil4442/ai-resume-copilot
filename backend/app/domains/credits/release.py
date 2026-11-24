@@ -26,12 +26,15 @@ from .pricing import CATALOG_VERSION, PRODUCTS, PurchasePricingReview, catalog_p
 
 class ReleaseReview(Closed):
     catalog_version: Literal["inr-unified-2026-10-27-v1"]
+    # Only the operator's release artifact can select the initial bounded pilot.
+    # Legacy artifacts keep the stricter widening requirement.
+    phase: Literal["initial_canary", "widening"] = "widening"
     policy: FinancialPolicy
     reviewed_by: str = Field(min_length=1, max_length=120)
     evidence: dict[str, str]
     shadow_started_at: datetime
     shadow_ended_at: datetime
-    shadow_successful_operations: int = Field(strict=True, ge=200)
+    shadow_successful_operations: int = Field(strict=True, ge=1)
     monthly_shared_minor: int = Field(strict=True, ge=0)
     monthly_additional_business_minor: int = Field(strict=True, ge=0)
     planning_paid_packs: int = Field(strict=True, gt=0, le=2000)
@@ -52,6 +55,8 @@ class ReleaseReview(Closed):
             raise ValueError("Shadow evidence dates must be timezone-aware")
         if self.shadow_ended_at - self.shadow_started_at < timedelta(days=7):
             raise ValueError("At least seven days of representative shadow accounting are required")
+        if self.phase == "widening" and self.shadow_successful_operations < 200:
+            raise ValueError("At least 200 successful paid-equivalent operations are required before widening")
         require_commercial_margins(self.policy)
         if self.policy.execution_minor_per_credit > 45:
             raise ValueError("The reviewed tariff funds at most 45 paise per credit")
@@ -83,6 +88,10 @@ def current_review(*, now: datetime | None = None) -> ReleaseReview:
     instant = now or datetime.now(UTC)
     try:
         review = ReleaseReview.model_validate_json(os.getenv("UNIFIED_CREDIT_RELEASE_REVIEW_JSON", ""))
+        if review.phase == "initial_canary" and os.getenv(
+            "UNIFIED_CREDIT_EXECUTION_AUDIENCE", ""
+        ).strip().lower() != "canary":
+            raise ValueError("An initial release review only authorizes the explicit canary audience")
         require_current_policy(review.policy, now=instant, commercial=commercial_runtime())
         if review.catalog_version != CATALOG_VERSION or review.shadow_ended_at > instant:
             raise ValueError("Release evidence does not match this release")
