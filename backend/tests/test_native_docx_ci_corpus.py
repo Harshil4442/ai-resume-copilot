@@ -133,6 +133,8 @@ class NativeCorpusGuards(unittest.TestCase):
         self.assertTrue(all(guard.lineno < n.lineno for n in native_calls))
         self.assertIn("engine.source_hashes()", ast.unparse(runtime))
         self.assertIn("engine.HASH_PROGRAM", ast.unparse(runtime))
+        self.assertIn("engine.PATCHED_HASH_PROGRAM", ast.unparse(runtime))
+        self.assertIn("engine.PATCHED_RUNTIME", ast.unparse(runtime))
 
     def test_fixture_zip_timestamps_are_stable_and_contents_preserved(self):
         proof = Path(__file__).resolve().parents[1] / "scripts/document_test_image.py"
@@ -178,3 +180,13 @@ class NativeCorpusGuards(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_patched_corpus_uses_same_strict_validator_with_explicit_engine_version():
+    guard = NativeCorpusGuards()
+    guard.setUp()
+    calls = []
+    guard.engine.validate_clamd_native = lambda *args, **kw: calls.append((args, kw))
+    guard.validate(guard.report, guard.contracts, source_patched_engine=True)
+    assert len(calls) == 11
+    assert all(kw == {"engine_version": "1.4.7"} for _args, kw in calls)

@@ -185,7 +185,8 @@ class ParentProbe(maintenance.Probe):
         self.identity_profile = profile
 
     def Clients(self, *, read_only_release=False):
-        return patched.Clients(self.identity_profile, read_only_release=read_only_release)
+        return patched.Clients(self.identity_profile, read_only_release=read_only_release,
+            read_budget=patched.diagnostics.ReadBudget(seconds=1800))
 
     def policy_for_serving(self, metadata, image):
         containers = metadata.get("template", {}).get("containers", [])
