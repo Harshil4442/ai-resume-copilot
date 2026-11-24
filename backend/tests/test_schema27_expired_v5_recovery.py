@@ -28,7 +28,7 @@ from test_schema27_mixed_app_successor import profile as profile
 def test_only_genuine_expired_v5_structure_can_enter_recovery(profile, probe, monkeypatch, age):
     private, _ = profile
     image, build = probe.build["immutable_image"], probe.build
-    metadata = worker.render(image, probe.source.commit, source_v5=True)["service"]
+    metadata = worker.render(image, probe.source.commit, retained_source_v5=True)["service"]
     metadata.update(uid=probe.SERVICE_UID, labels={"hirewiz-refresh-build": build["build_id"],
         "hirewiz-refresh-nonce": build["nonce"],
         "hirewiz-refresh-job": "hirewiz-doc-six-" + probe.handles(build)["corpus"]["nonce"][:12]})

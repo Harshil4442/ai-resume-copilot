@@ -921,8 +921,9 @@ def joined(clients: Any, probe: Any, build: Any, failed_jobs: set[str],
     if image != probe.BASE_IMAGE:
         if recover_expired_source:
             from infra.gcp import schema27_expired_v5_recovery as recovery
+            from infra.gcp import schema27_patched_engine_recovery as patched
 
-            if recovery.selected(application_context):
+            if recovery.selected(application_context) or patched.selected(application_context):
                 application_context.probe.verify_expired_current_source_predecessor(image, service)
             else:
                 build.infra("document_source_release").verify_expired_current_source_predecessor(image, service)
@@ -1004,8 +1005,10 @@ def verify_completed_v5_consumer(run: Path, failed_v4: dict[str, Any], files: di
     read_only_release = getattr(clients, "read_only_release", False)
     successor = source_release.SourceProbe(identity, root=build.ROOT, serving_read=True, read_only_release=read_only_release)
     from infra.gcp import schema27_expired_v5_recovery as recovery
+    from infra.gcp import schema27_patched_engine_recovery as patched
 
-    component = (recovery.historical_component(successor, clients) if recovery.selected(application_context)
+    component = (recovery.historical_component(successor, clients)
+                 if recovery.selected(application_context) or patched.selected(application_context)
                  else asdict(successor._acceptance(clients, fresh=False)))
     build.need(identity["kind"] == source_release.v5_build_kind() and component == acceptance,
         "document_refresh_failed_v4_completed_acceptance_changed")
@@ -1051,13 +1054,16 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             recover_expired_source: bool = False, source_v5: bool = False) -> str | None:
     build = refresh_module
     from infra.gcp import schema27_expired_v5_recovery as recovery
+    from infra.gcp import schema27_patched_engine_recovery as patched
 
     expired_v5 = recovery.selected(application_context)
+    patched_engine = patched.selected(application_context)
     build.need(type(source_revision) is bool, "document_refresh_contract_version_invalid")
     build.need(type(source_v5) is bool and (not source_v5 or recover_expired_source is True),
                "document_refresh_failed_v4_mode_refused")
     build.need(type(recover_expired_source) is bool and (not recover_expired_source
-        or not (source_revision and not source_v5 or retire_expired_v2 or rescue_expired_v2 or resuming_original)
+        or not (source_revision and not source_v5 and not patched_engine
+                or retire_expired_v2 or rescue_expired_v2 or resuming_original)
         and selected is None and application_context is not None),
         "document_refresh_expired_source_mode_refused")
     build.need(type(retire_expired_v2) is bool and type(rescue_expired_v2) is bool
@@ -1188,8 +1194,8 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
                "document_rescue_prior_completed_journal_required")
     build.need(not source_v5 or failed_v4_files is not None, "document_refresh_failed_v4_artifact_required")
     if failed_v4_files is not None and not source_v5:
-        build.need(not (source_revision or retire_expired_v2 or rescue_expired_v2
-            or resuming_original or recover_expired_source and not expired_v5 or selected is not None),
+        build.need(not (source_revision and not patched_engine or retire_expired_v2 or rescue_expired_v2
+            or resuming_original or recover_expired_source and not (expired_v5 or patched_engine) or selected is not None),
             "document_refresh_failed_v4_mode_refused")
         build.need(len(completed_v5_consumers) == 1 and application_context is not None,
                    "document_refresh_failed_v4_completed_consumer_required")
@@ -1233,7 +1239,7 @@ def prepare(directory: Path, history: Path | None, selected: str | None, *, refr
             verify_failed_v4_serving(clients, probe, build)
         elif failed_v4 is not None:
             assert failed_v4_files is not None
-            options = {"application_context": application_context} if expired_v5 else {}
+            options = {"application_context": application_context} if expired_v5 or patched_engine else {}
             expected_image = verify_completed_v5_consumer(completed_v5_consumers[0], failed_v4,
                 failed_v4_files, clients, probe, build, **options)
         facts = {}

@@ -26,8 +26,9 @@ def selected(context):
     if type(context) is Applications:
         return True
     from infra.gcp import schema27_expired_v5_recovery as recovery
+    from infra.gcp import schema27_patched_engine_recovery as patched
 
-    return recovery.selected(context)
+    return recovery.selected(context) or patched.selected(context)
 
 
 class Probe:

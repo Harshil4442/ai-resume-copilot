@@ -122,7 +122,7 @@ def scan_original(path: Path, *, now: datetime | None = None, deadline: float | 
     incomplete, inconsistent or errored scan remains service unavailability.
     Scanner names/output are private and never cross the processor protocol.
     """
-    version_arguments = ["/usr/bin/clamscan", "--database=" + DATABASE, "--version"]
+    version_arguments = ["/usr/local/bin/clamscan", "--database=" + DATABASE, "--version"]
     _, version = (_command(version_arguments, 5) if deadline is None
                   else _command(version_arguments, 5, deadline=deadline))
     match = re.fullmatch(r"ClamAV ([0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9]+)?)/([0-9]{1,10})/([A-Za-z0-9 :]{24})", version.strip())
@@ -135,7 +135,7 @@ def scan_original(path: Path, *, now: datetime | None = None, deadline: float | 
             raise InspectionUnavailable()
     except Exception:
         raise InspectionUnavailable() from None
-    scan_arguments = ["/usr/bin/clamscan", "--stdout", "--database=" + DATABASE,
+    scan_arguments = ["/usr/local/bin/clamscan", "--stdout", "--database=" + DATABASE,
         "--official-db-only=yes", "--fail-if-cvd-older-than=3", "--disable-cache",
         "--alert-encrypted=yes", "--alert-exceeds-max=yes", "--heuristic-alerts=yes",
         "--scan-archive=yes", "--scan-pdf=yes", "--scan-ole2=yes",
@@ -169,9 +169,9 @@ def scan_original(path: Path, *, now: datetime | None = None, deadline: float | 
 
 
 # Inserted into processor.py; this fragment is never another runtime module.
-CLAMD = "/usr/sbin/clamd"
+CLAMD = "/usr/local/sbin/clamd"
 CLAMD_MANIFEST = Path("/opt/document/clamd-native-manifest.json")
-CLAMD_ENGINE = "1.4.3"
+CLAMD_ENGINE = "1.4.7"
 CLAMD_SETTINGS = {
     "Foreground": "yes", "LocalSocketMode": "600", "FixStaleSocket": "no",
     "DatabaseDirectory": DATABASE, "OfficialDatabaseOnly": "yes", "FailIfCvdOlderThan": "3",
@@ -251,14 +251,14 @@ def _native_file(path: Path, deadline: float | None = None) -> dict:
 
 def _installed_clamd() -> dict:
     # Real installed files, not source labels or caller-supplied paths.
-    libraries = {p.resolve(strict=True) for p in Path("/usr/lib").glob("*/libclamav.so.*")}
+    libraries = {p.resolve(strict=True) for p in Path("/usr/local/lib").glob("libclamav.so.*")}
     if len(libraries) != 1:
         raise InspectionUnavailable()
-    paths = [Path(CLAMD).resolve(strict=True), Path("/usr/bin/clamscan").resolve(strict=True), *libraries]
+    paths = [Path(CLAMD).resolve(strict=True), Path("/usr/local/bin/clamscan").resolve(strict=True), *libraries]
     files = [_native_file(p) for p in paths]
-    if len({row["elf_machine"] for row in files}) != 1:
+    if len({row["elf_machine"] for row in files}) != 1 or not _vendor_matches(files):
         raise InspectionUnavailable()
-    _, version = _command([CLAMD, "--version"], 5)
+    _, version = _command([CLAMD, "--config-file=/dev/null", "--version"], 5)
     match = re.fullmatch(r"ClamAV ([0-9]+\.[0-9]+\.[0-9]+)(?:/[0-9]+/[A-Za-z0-9 :]{24})?", version.strip())
     if not match or match[1] != CLAMD_ENGINE:
         raise InspectionUnavailable()
@@ -279,7 +279,7 @@ def write_clamd_native_manifest() -> None:
 
 
 def _clamd_definition(deadline: float, now: datetime | None = None) -> tuple[dict, str]:
-    _, version = _command(["/usr/bin/clamscan", "--database=" + DATABASE, "--version"], 5,
+    _, version = _command(["/usr/local/bin/clamscan", "--database=" + DATABASE, "--version"], 5,
                           deadline=deadline)
     match = re.fullmatch(r"ClamAV ([0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9]+)?)/([0-9]{1,10})/([A-Za-z0-9 :]{24})", version.strip())
     if not match or match[1] != CLAMD_ENGINE:
@@ -614,7 +614,7 @@ class OwnedClamd:
                 if loaded:
                     self.signatures.append(int(loaded[1]))
                     continue
-                if (re.fullmatch(r"clamd daemon 1\.4\.3 \(OS: [A-Za-z0-9_.-]+, ARCH: [A-Za-z0-9_.-]+, CPU: [A-Za-z0-9_.-]+\)", value)
+                if (re.fullmatch(r"clamd daemon 1\.4\.7 \(OS: [A-Za-z0-9_.-]+, ARCH: [A-Za-z0-9_.-]+, CPU: [A-Za-z0-9_.-]+\)", value)
                         or re.fullmatch(r"Limits: (?:MaxEmbeddedPE|MaxHTMLNormalize|MaxHTMLNoTags|MaxScriptNormalize|MaxZipTypeRcg) limit set to [0-9]+ bytes\.", value)
                         or re.fullmatch(r"Limits: (?:MaxPartitions|MaxIconsPE|MaxRecHWP3|PCREMatchLimit|PCRERecMatchLimit|PCREMaxFileSize) limit set to [0-9]+\.", value)
                         or re.fullmatch(r"(?:\+\+\+ Started|--- Stopped) at [A-Za-z0-9 :]{24}", value)
@@ -693,7 +693,7 @@ class OwnedClamd:
         manifest = json.loads(raw, object_pairs_hook=_pairs)
         if (type(manifest) is not dict or set(manifest) != {"version", "engine", "files"}
                 or type(manifest["version"]) is not int or manifest["version"] != 1
-                or manifest["engine"] != CLAMD_ENGINE):
+                or manifest["engine"] != CLAMD_ENGINE or not _vendor_matches(manifest.get("files"))):
             raise InspectionUnavailable()
         if type(manifest["files"]) is not list or len(manifest["files"]) != 3:
             raise InspectionUnavailable()
@@ -702,7 +702,7 @@ class OwnedClamd:
                 raise InspectionUnavailable()
             if _native_file(Path(row["path"]), deadline) != row:
                 raise InspectionUnavailable()
-        if [row["path"] for row in manifest["files"][:2]] != [str(Path(CLAMD).resolve(strict=True)), str(Path("/usr/bin/clamscan").resolve(strict=True))]:
+        if [row["path"] for row in manifest["files"][:2]] != [str(Path(CLAMD).resolve(strict=True)), str(Path("/usr/local/bin/clamscan").resolve(strict=True))]:
             raise InspectionUnavailable()
         self.manifest = manifest
         parent = self.directory.lstat()
@@ -1234,6 +1234,22 @@ def main():
         emit(result, 1)
     except Exception:
         emit({"version": 1, **binding, "error": DOCX_UNAVAILABLE if layout_mode else UNAVAILABLE}, 2)
+
+
+def _vendor_matches(files):
+    # The immutable source bundle owns this sibling; no caller-supplied path or
+    # version selects a native engine. Keep prior owned raise-site numbers stable.
+    import importlib.util
+    try:
+        path = Path(__file__).with_name("clamav_supplier.py")
+        spec = importlib.util.spec_from_file_location("hirewiz_pinned_clamav_supplier", path)
+        if spec is None or spec.loader is None:
+            return False
+        supplier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(supplier)
+        return supplier.matches_files(files)
+    except Exception:  # noqa: BLE001 - unavailable supplier identity always refuses processing.
+        return False
 
 
 if __name__ == "__main__":

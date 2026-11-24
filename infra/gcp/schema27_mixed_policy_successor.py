@@ -194,6 +194,10 @@ class NativeBoundary(v1.NativeBoundary):
     """Compose real mixed principal, scanner, exact27 catalog and policy guards."""
     def __init__(self, root, target_root, prior_root, profile):
         super().__init__(root, target_root, prior_root, profile)
+        from infra.gcp import document_patched_engine_release as patched
+
+        self.observer = patched.MixedSourceBoundary(self.target_root, profile)
+        self.prior_observer = patched.MixedSourceBoundary(self.prior_root, profile)
         self._verified_source_tuple = None
 
     def _local_sources(self, controller, stamp, target, prior):

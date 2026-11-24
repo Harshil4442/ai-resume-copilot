@@ -80,7 +80,6 @@ class Http:
 
 def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     profile = importlib.import_module("infra.gcp.document_source_candidate")
-    forward = importlib.import_module("infra.gcp.document_source_candidate_v5")
     from test_document_source_revision import RETAINED_V4_SOURCE
 
     from scripts import schema25_app_release_contract_v3 as current
@@ -98,7 +97,9 @@ def test_fixed_scope_and_every_original_worker_source_byte_unchanged():
     retained_changes = {name for name in profile.CONTRACT_PATHS if retained_bytes[name] != original_bytes[name]}
     assert retained_changes == set(current.CURRENT_DOCUMENT_HELPERS)
 
-    contents, _, _ = forward.working_snapshot(ROOT)
+    from fixtures.retained_document_v5 import snapshot
+
+    contents, _, _ = snapshot()
     runtime_changes = {name for name in profile.SOURCES if contents[name] != retained_bytes[name]}
     assert runtime_changes == {"infra/document-processing/service.py", "infra/document-processing/processor.py"}
     assert (ROOT / profile.POLICY_PATH).read_bytes() == original_bytes[profile.POLICY_PATH]
