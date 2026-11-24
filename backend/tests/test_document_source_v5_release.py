@@ -26,7 +26,9 @@ NONCE = lifecycle.NONCE
 
 @pytest.fixture
 def probe(monkeypatch):
-    contents, hashes, _ = v5.working_snapshot()
+    from fixtures.retained_document_v5 import snapshot
+
+    contents, hashes, _ = snapshot()
     source = v5.Source("a" * 40, hashes, contents[v5.POLICY_PATH], "b" * 64)
     monkeypatch.setattr(v5, "committed", lambda commit, *, root: source)
     build = {"version": 1, "nonce": NONCE, "immutable_image": IMAGE,
@@ -46,7 +48,7 @@ def test_v5_exact_job_and_worker_transport_modes(probe):
         assert container["env"][-1] == {"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE}
         assert task["maxRetries"] == 0 and container["sandboxLauncher"] is True
         assert "hirewiz_document_source_required_v5" in container["args"][2]
-    proposal = worker.render(IMAGE, probe.source.commit, source_v5=True)
+    proposal = worker.render(IMAGE, probe.source.commit, retained_source_v5=True)
     service = proposal["service"]
     assert probe.policy_for_serving(service, IMAGE) == v5.POLICY_SHA256
     service["template"]["containers"][0]["env"].pop()
@@ -212,7 +214,7 @@ def test_v5_transition_uses_exact_predecessor_and_restores_original_admission(
 
 def test_v5_definitions_observes_its_parent_build_separately(probe, monkeypatch):
     candidate = release.SourceProbe(probe.build | {"kind": v5.DEFINITIONS_KIND, "fixed_renderer_base": PARENT})
-    metadata = worker.render(PARENT, probe.source.commit, source_v5=True)["service"]
+    metadata = worker.render(PARENT, probe.source.commit, retained_source_v5=True)["service"]
     seen = []
 
     def parent_readback(image, value, *, read_only_release):

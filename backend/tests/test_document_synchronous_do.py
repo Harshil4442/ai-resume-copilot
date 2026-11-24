@@ -564,9 +564,10 @@ def test_canonical_policy_binds_exact_source_and_declares_work_and_reap_bounds(p
         policy_path, policy_digest = source.POLICY_PATH, source.POLICY_SHA256
         expected_sources = source.SOURCES
     else:
+        from fixtures.retained_document_v5 import snapshot
         from infra.gcp import document_source_candidate_v5 as current
 
-        contents, _, policy_digest = current.working_snapshot(ROOT)
+        contents, _, policy_digest = snapshot()
         policy_path = current.POLICY_PATH
         expected_sources = current.SOURCES
         assert policy_digest == current.POLICY_SHA256

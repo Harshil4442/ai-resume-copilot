@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,8 @@ from infra.gcp import schema27_api_identity_operator as rehearsal
 from infra.gcp import schema27_api_identity_readback as readback
 from infra.gcp import schema27_forward_diagnostics as diagnostics
 
+# Import after rehearsal installs the standalone backend module path.
+# isort: split
 from scripts import schema26_app_successor as source
 
 rolling, API = rehearsal.rolling, rehearsal.API
@@ -337,7 +340,36 @@ def rollback(plan, boundary, journal):
     return reconcile(plan, boundary, journal)
 
 
+class DocumentMetadataObserver:
+    """Add only the two document metadata GET scopes to the existing observer."""
+    def __init__(self, delegate):
+        self._delegate = delegate
+        self._document_reads = None
+
+    def _cloud(self, *args):
+        return self._delegate._cloud(*args)
+
+    def _get(self, api, path, params=None):
+        resources = (rolling.release.documents.RESOURCE, rolling.release.native_tex.RESOURCE)
+        need(api == "run" and type(path) is str and params in (None, {})
+             and any(path == resource or re.fullmatch(
+                 re.escape(resource + "/revisions/" + resource.rsplit("/", 1)[-1] + "-")
+                 + r"[a-z0-9-]{1,36}", path) for resource in resources), "document_metadata_route_refused")
+        if self._document_reads is None:
+            from infra.gcp import rolling_native
+
+            self._document_reads = rolling_native.native.SDKGoogleReads(
+                rolling_native.host_auth.SDK, rolling_native.host_auth.ACCOUNT)
+        return self._document_reads.get("run", path, {})
+
+
 class NativeBoundary(rehearsal.NativeBoundary):
+    observer: DocumentMetadataObserver
+
+    def __init__(self):
+        super().__init__()
+        self.observer = DocumentMetadataObserver(self.observer)
+
     def document_release(self):
         worker = diagnostics.ReadBudget().read("run_service_read", lambda: self.observer._get(
             "run", rolling.PARENT + "/services/hirewiz-document-inspector"))

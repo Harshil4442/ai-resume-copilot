@@ -18,8 +18,10 @@ import httpx
 from backend.scripts import document_test_image as engine
 
 
-def _complete_corpus(report: dict, contracts: list) -> tuple[list, list]:
+def _complete_corpus(report: dict, contracts: list, *, source_patched_engine: bool = False) -> tuple[list, list]:
     """Validate all observed groups with the original per-case native validator."""
+    if type(source_patched_engine) is not bool:
+        raise AssertionError("An explicit known engine profile is required.")
     corpus = report.get("corpus")
     layouts = report.get("docx_layout_corpus")
     clamd = report.get("request_clamd_corpus")
@@ -45,7 +47,8 @@ def _complete_corpus(report: dict, contracts: list) -> tuple[list, list]:
         raise AssertionError("The complete genuine native corpus must pass before runtime reuse.")
     by_name = {row["case"]: row for row in clamd}
     for name, payload, expected, resident in contracts:
-        engine.validate_clamd_native(by_name[name], name, expected, resident, payload, report["platform"])
+        engine.validate_clamd_native(by_name[name], name, expected, resident, payload, report["platform"],
+            **({"engine_version": "1.4.7"} if source_patched_engine else {}))
     return corpus, layouts
 
 
@@ -60,7 +63,11 @@ def _report_policy(report: dict) -> str:
 
     profiles: tuple[ModuleType, ...] = (legacy,)
     if "pdf_reading_order_corpus" in report:
-        from infra.gcp import document_source_candidate, document_source_candidate_v5
+        from infra.gcp import (
+            document_source_candidate,
+            document_source_candidate_v5,
+            document_source_patched_engine,
+        )
         from infra.gcp.document_source_payload import EXTRA_CASES
 
         rows = report["pdf_reading_order_corpus"]
@@ -69,7 +76,7 @@ def _report_policy(report: dict) -> str:
                        or row.get("passed") is not True for row in rows)
                 or tuple(row["case"] for row in rows) != EXTRA_CASES):
             raise AssertionError("The complete known source-profile corpus is required.")
-        profiles = (document_source_candidate, document_source_candidate_v5)
+        profiles = (document_source_candidate, document_source_candidate_v5, document_source_patched_engine)
 
     for profile in profiles:
         path, expected = engine.ROOT / profile.POLICY_PATH, profile.POLICY_SHA256
@@ -98,24 +105,33 @@ def _runtime(report_path: str) -> dict:
             or report.get("runtime_source_bytes_verified") is not True
             or report.get("restricted_container_metadata_verified") is not True
             or report.get("platform") != "linux/amd64"
-            or report.get("source_sha256") != engine.source_hashes()
             or not engine.IMAGE_ID.fullmatch(report.get("image_id", ""))):
         raise AssertionError("The native DOCX test report does not match this source/image.")
-    _, layouts = _complete_corpus(report, engine.clamd_corpus())
+    # A complete canonical known source map selects the engine, never a renderer
+    # digest or the mere presence of a new policy file.
+    policy = _report_policy(report)
+    from infra.gcp import document_source_patched_engine
+    patched = policy == document_source_patched_engine.POLICY_SHA256
+    hashes = engine.source_hashes(source_patched_engine=True) if patched else engine.source_hashes()
+    if report.get("source_sha256") != hashes:
+        raise AssertionError("The native DOCX test report does not match this source/image.")
+    _, layouts = _complete_corpus(report, engine.clamd_corpus(), source_patched_engine=patched)
     fit = next(row for row in layouts if row["case"] == "styled_multipage_fit")
     identity = fit["layout"]["renderer"]
     image = report["image_id"]
-    policy = _report_policy(report)
     if (identity["image_digest"] != "local-document-image@" + image
             or identity["policy_sha256"] != policy):
         raise AssertionError("The observed renderer identity is not joined to the native image/policy.")
     docker = engine.docker_command()
     engine.image_metadata(docker, image, report["platform"], report["source_sha256"])
-    code, raw = engine.container(docker, image, report["platform"], ["-c", engine.HASH_PROGRAM], [])
-    if code or json.loads(raw) != {key: report["source_sha256"][key] for key in engine.RUNTIME}:
+    program = engine.PATCHED_HASH_PROGRAM if patched else engine.HASH_PROGRAM
+    runtime = engine.PATCHED_RUNTIME if patched else engine.RUNTIME
+    code, raw = engine.container(docker, image, report["platform"], ["-c", program], [])
+    if code or json.loads(raw) != {key: report["source_sha256"][key] for key in runtime}:
         raise AssertionError("The reused native image runtime bytes differ from this source.")
     return {"docker": docker, "image": image, "platform": report["platform"],
-            "source_sha256": report["source_sha256"], "policy": policy, "identity": identity}
+            "source_sha256": report["source_sha256"], "policy": policy, "identity": identity,
+            "source_patched_engine": patched}
 
 
 class _Chunks(httpx.AsyncByteStream):
@@ -129,7 +145,9 @@ class _Chunks(httpx.AsyncByteStream):
 def configure_native_docx_worker(monkeypatch) -> list[dict]:
     """Keep actual API validation; emulate only delivery to the genuine image."""
     runtime = _runtime(os.environ.get("HIREWIZ_DOCUMENT_TEST_REPORT", ""))
-    if engine.source_hashes() != runtime["source_sha256"]:
+    hashes = (engine.source_hashes(source_patched_engine=True) if runtime["source_patched_engine"]
+              else engine.source_hashes())
+    if hashes != runtime["source_sha256"]:
         raise AssertionError("Native DOCX source changed after test-image verification.")
     # App modules are imported only after the genuine prerequisite, by explicitly
     # scoped runtime tests in CI. No app/package is imported for missing handles.

@@ -185,3 +185,20 @@ one deadline and at most three attempts only for typed 429/502/503/504 failures.
 No mutation retry, session substitution, credential export or global allowlist
 change is introduced. A source-only qualification or controlled fixture result
 does not claim native identity, IAM effectiveness or paid-launch approval.
+
+## Cloud Run revision output metadata (2026-11-24)
+
+The official [Cloud Run v2 discovery document](https://run.googleapis.com/$discovery/rest?version=v2),
+revision `20261108`, defines
+`#/schemas/GoogleCloudRunV2Revision/properties/containerStatuses` as an array with
+`readOnly: true`, referencing `GoogleCloudRunV2ContainerStatus`. Its entries contain
+the resolved `imageDigest`, optional container `name`, and output-only `buildStatus`.
+This is revision response metadata, not a desired Service revision-template field.
+The discovery entry was checked directly on November 24; the rendered REST
+reference did not yet list this field.
+
+At the revision-response comparison boundary, classify this specific documented
+output separately from configured template fields. Do not copy it into a template
+PATCH, silently ignore arbitrary unknown fields, or treat its presence as fresh
+scanner, health, identity, or deployment acceptance. Continue checking immutable
+revision UID, configured image, complete template, and genuine owned readback.

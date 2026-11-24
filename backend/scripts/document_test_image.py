@@ -45,6 +45,8 @@ SOURCES = (
     "backend/evals/assets/courier_prime/provenance.json",
     "infra/document-processing/source-fixed-renderer.Dockerfile",
 )
+PATCHED_SOURCES = (*SOURCES, "infra/document-processing/source-patched-engine.Dockerfile",
+                   "infra/document-processing/clamav_supplier.py", "infra/document-processing/clamav-release.json")
 IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LABEL = "hirewiz.document-test.source."
 MEMORY = 2 * 1024**3
@@ -142,6 +144,10 @@ RUNTIME.update({
 })
 HASH_PROGRAM = ("import hashlib,json,pathlib; print(json.dumps({k:hashlib.sha256("
                 "pathlib.Path(v).read_bytes()).hexdigest() for k,v in " + repr(RUNTIME) + ".items()}))")
+PATCHED_RUNTIME = {**RUNTIME, "infra/document-processing/clamav_supplier.py": "/opt/document/clamav_supplier.py",
+                   "infra/document-processing/clamav-release.json": "/opt/document/clamav-release.json"}
+PATCHED_HASH_PROGRAM = ("import hashlib,json,pathlib; print(json.dumps({k:hashlib.sha256("
+                        "pathlib.Path(v).read_bytes()).hexdigest() for k,v in " + repr(PATCHED_RUNTIME) + ".items()}))")
 DETECTION_PROGRAM = '''import base64,json,pathlib,subprocess,sys
 sys.path.insert(0,"/opt/document")
 import processor
@@ -519,7 +525,10 @@ def _safe_build_detail(output: bytes) -> str:
     """Bounded Docker errors from the public build context, never document data."""
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output.decode("utf-8", "replace"))
     lines = [line for line in text.splitlines() if re.search(
-        r"(?:^|\s)(?:ERROR|Error|WARNING|Warning):|failed to solve:|^unknown flag:|^The command |(?:^|\s)E: ", line)]
+        r"(?:^|\s)(?:ERROR|Error|WARNING|Warning):|failed to solve:|^unknown flag:|^The command |(?:^|\s)E: "
+        r'|File "/opt/document/(?:processor|clamav_supplier)\.py", line [0-9]{1,5}, in '
+        r'(?:_installed_clamd|write_clamd_native_manifest|verify_package|install|matches_files)$'
+        r'|\{"error": "document_clamav_supplier_unverified", "stage": "(?:setup|release|verify_package|download|data_member|stage_runtime|preservation_snapshot|prune_old_engine|verify_installation|install)"\}', line)]
     safe = []
     for line in lines[-3:]:
         if re.search(r"(?i)\b(password|passwd|authorization|bearer|secret|credentials?|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token)\b", line):
@@ -540,8 +549,18 @@ def _note_build_failure(code: int, output: bytes) -> None:
         return
     reason = ("http_429_observed" if b"429 Too Many Requests" in output or b"toomanyrequests" in output
               else "base_image_resolution" if b"failed to resolve source metadata" in output
+              else "native_engine_identity" if b'File "/opt/document/processor.py"' in output
+                   and b" in _installed_clamd" in output and b"processor.InspectionUnavailable" in output
+              else "supplier_verification" if b'"error": "document_clamav_supplier_unverified"' in output
+                   or b'File "/opt/document/clamav_supplier.py"' in output and b"SupplierError" in output
               else "unclassified")
     diagnostic["build_failure"] = _BuildFailure(code, hashlib.sha256(output).hexdigest(), len(output), reason, _safe_build_detail(output))
+    supplier_stages = {value.decode("ascii") for value in re.findall(
+        rb'\{"error": "document_clamav_supplier_unverified", "stage": "([a-z_]{1,40})"\}', output)}
+    allowed = {"setup", "release", "verify_package", "download", "data_member", "stage_runtime",
+               "preservation_snapshot", "prune_old_engine", "verify_installation", "install"}
+    if reason == "supplier_verification" and len(supplier_stages) == 1 and supplier_stages <= allowed:
+        diagnostic["supplier_stage"] = supplier_stages.pop()
 
 
 def _note_docx_refusal(result: object, binding: dict, code: int, *, case: str) -> None:
@@ -628,11 +647,17 @@ def _failure_report() -> dict:
             and type(build.exit_code) is int and build.exit_code == result["exit_code"] and 1 <= build.exit_code <= 255
             and type(build.output_sha256) is str and re.fullmatch(r"[a-f0-9]{64}", build.output_sha256)
             and type(build.output_bytes) is int and 0 <= build.output_bytes <= 1024 * 1024
-            and type(build.reason) is str and build.reason in {"http_429_observed", "base_image_resolution", "unclassified"}
+            and type(build.reason) is str and build.reason in {"http_429_observed", "base_image_resolution", "unclassified",
+                                                             "native_engine_identity", "supplier_verification"}
             and type(build.detail) is str and 1 <= len(build.detail) <= 1024
             and all(32 <= ord(char) <= 126 for char in build.detail)):
         result.update(build_error=build.reason, build_output_sha256=build.output_sha256,
                       build_output_bytes=build.output_bytes, build_error_detail=build.detail)
+        supplier_stage = diagnostic.get("supplier_stage")
+        if build.reason == "supplier_verification" and type(supplier_stage) is str and supplier_stage in {
+                "setup", "release", "verify_package", "download", "data_member", "stage_runtime",
+                "preservation_snapshot", "prune_old_engine", "verify_installation", "install"}:
+            result["supplier_failure_stage"] = supplier_stage
     refusal = diagnostic.get("docx_refusal")
     if (result["stage"] == "case_validation" and result["case"] in {"styled_multipage_fit", "rendered_reflow_refusal", "unsupported_source_font_refusal"}
             and result["exit_code"] == 1
@@ -807,15 +832,21 @@ def docker_command() -> list[str]:
     return ["docker", "--host=" + host]
 
 
-def source_hashes() -> dict[str, str]:
-    return {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in SOURCES}
+def source_hashes(*, source_patched_engine: bool = False) -> dict[str, str]:
+    if type(source_patched_engine) is not bool:
+        raise DocumentImageError()
+    return {path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+            for path in (PATCHED_SOURCES if source_patched_engine else SOURCES)}
 
 
 def build(docker: list[str], platform: str, hashes: dict[str, str]) -> str:
+    patched = set(hashes) == set(PATCHED_SOURCES)
+    if set(hashes) != set(SOURCES) and not patched:
+        raise DocumentImageError()
     with tempfile.TemporaryDirectory(prefix="hirewiz-document-build-") as directory:
         context = Path(directory) / "context"
         context.mkdir()
-        for path in SOURCES:
+        for path in hashes:
             content = (ROOT / path).read_bytes()
             if hashlib.sha256(content).hexdigest() != hashes[path]:
                 raise DocumentImageError()
@@ -835,7 +866,7 @@ def build(docker: list[str], platform: str, hashes: dict[str, str]) -> str:
             _note_build_failure(code, output)
             raise DocumentImageError()
         image = iid.read_text().strip()
-    if not IMAGE_ID.fullmatch(image) or source_hashes() != hashes:
+    if not IMAGE_ID.fullmatch(image) or source_hashes(**({"source_patched_engine": True} if patched else {})) != hashes:
         raise DocumentImageError()
     return image
 
@@ -1140,7 +1171,7 @@ def clamd_corpus() -> list[tuple[str, bytes, str, bool]]:
     return result
 
 
-def _validate_clamd_protocol(value: dict, scans: list, payload: bytes, outcome: str) -> None:
+def _validate_clamd_protocol(value: dict, scans: list, payload: bytes, outcome: str, *, engine_version="1.4.3") -> None:
     """A completed AV reply is distinct from a file admitted as clean."""
     protocol = value.get("protocol_scans")
     attempts = value.get("instream_attempts")
@@ -1155,7 +1186,7 @@ def _validate_clamd_protocol(value: dict, scans: list, payload: bytes, outcome: 
                 or type(row["size_bytes"]) is not int or not 0 < row["size_bytes"] <= 5 * 1024**2
                 or type(row["reply"]) is not str or row["reply"] not in {"OK", "FOUND", "OTHER"}
                 or type(row["metadata"]) is not dict or set(row["metadata"]) != {"engine", "version", "definitions"}
-                or row["metadata"].get("engine") != "ClamAV" or row["metadata"].get("version") != "1.4.3"
+                or row["metadata"].get("engine") != "ClamAV" or row["metadata"].get("version") != engine_version
                 or type(row["metadata"].get("definitions")) is not str
                 or not re.fullmatch(r"[0-9]{1,10}/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00", row["metadata"]["definitions"])):
             raise DocumentImageError()
@@ -1194,7 +1225,9 @@ def _validate_clamd_protocol(value: dict, scans: list, payload: bytes, outcome: 
 
 
 def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
-                          payload: bytes, platform: str) -> None:
+                          payload: bytes, platform: str, *, engine_version="1.4.3") -> None:
+    if engine_version not in {"1.4.3", "1.4.7"} or engine_version == "1.4.7" and platform != "linux/amd64":
+        raise DocumentImageError()
     fields = {"case", "outcome", "native_installation", "owned_peer", "loaded_signatures", "scans",
         "daemon_returncode", "daemon_stopped_before_writer", "native_log_removed", "renderer_version_after_stop",
         "resident_parser_exercised", "resident_parser_cgroup_current_bytes", "cgroup_memory_max_bytes",
@@ -1211,7 +1244,7 @@ def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
     machine, library_directory = {"linux/amd64": (62, "x86_64-linux-gnu"),
                                   "linux/arm64": (183, "aarch64-linux-gnu")}[platform]
     if (type(manifest) is not dict or set(manifest) != {"version", "engine", "files"}
-            or type(manifest.get("version")) is not int or manifest["version"] != 1 or manifest.get("engine") != "1.4.3"
+            or type(manifest.get("version")) is not int or manifest["version"] != 1 or manifest.get("engine") != engine_version
             or type(manifest.get("files")) is not list or len(manifest["files"]) != 3
             or type(peer) is not dict or set(peer) != {"pid", "uid", "gid"}
             or any(type(peer[k]) is not int or peer[k] < 0 for k in peer) or peer["pid"] == 0
@@ -1227,7 +1260,15 @@ def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
             or value.get("performance_proven") is not False or value.get("cloud_run_isolation_proven") is not False):
         raise DocumentImageError()
     paths = [row.get("path") for row in manifest["files"] if type(row) is dict]
-    if (len(paths) != 3 or paths[:2] != ["/usr/sbin/clamd", "/usr/bin/clamscan"]
+    if engine_version == "1.4.7":
+        spec = importlib.util.spec_from_file_location("document_patched_supplier", ROOT / "infra/document-processing/clamav_supplier.py")
+        if spec is None or spec.loader is None:
+            raise DocumentImageError()
+        supplier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(supplier)
+        if not supplier.matches_files(manifest["files"]):
+            raise DocumentImageError()
+    elif (len(paths) != 3 or paths[:2] != ["/usr/sbin/clamd", "/usr/bin/clamscan"]
             or type(paths[2]) is not str or not re.fullmatch(
                 "/usr/lib/" + library_directory + r"/libclamav\.so(?:\.[0-9]+)+", paths[2])):
         raise DocumentImageError()
@@ -1244,7 +1285,7 @@ def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
                 or type(row["size_bytes"]) is not int or not 0 < row["size_bytes"] <= 5 * 1024**2
                 or row["result"] not in {"CL_CLEAN", "CL_VIRUS"}
                 or type(row["metadata"]) is not dict or set(row["metadata"]) != {"engine", "version", "definitions"}
-                or row["metadata"].get("engine") != "ClamAV" or row["metadata"].get("version") != "1.4.3"
+                or row["metadata"].get("engine") != "ClamAV" or row["metadata"].get("version") != engine_version
                 or type(row["metadata"].get("definitions")) is not str
                 or not re.fullmatch(r"[0-9]{1,10}/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00", row["metadata"]["definitions"])):
             raise DocumentImageError()
@@ -1264,7 +1305,7 @@ def validate_clamd_native(value: dict, name: str, expected: str, resident: bool,
         raise DocumentImageError()
     if not resident and value["resident_parser_cgroup_current_bytes"] is not None:
         raise DocumentImageError()
-    _validate_clamd_protocol(value, scans, payload, outcome)
+    _validate_clamd_protocol(value, scans, payload, outcome, engine_version=engine_version)
 
 
 
@@ -1324,16 +1365,18 @@ def validate_reading_order_result(name, content, code, result):
 
 
 def check(platform: str, *, image: str | None = None, source_revision: bool = False,
-          source_v5: bool = False) -> dict:
+          source_v5: bool = False, source_patched_engine: bool = False) -> dict:
     if (type(source_revision) is not bool or type(source_v5) is not bool
-            or source_v5 and not source_revision):
+            or type(source_patched_engine) is not bool or source_v5 and source_patched_engine
+            or (source_v5 or source_patched_engine) and not source_revision
+            or source_patched_engine and platform != "linux/amd64"):
         raise DocumentImageError()
     _progress("daemon", completed_cases=0)
     docker = docker_command()
     _progress("source_hashes")
     # Bind both recipes as context; build() executes only the public Dockerfile.
     # A production image additionally requires independent native Build proof.
-    hashes = source_hashes()
+    hashes = source_hashes(**({"source_patched_engine": True} if source_patched_engine else {}))
     if source_v5:
         sys.path.insert(0, str(ROOT))
         from infra.gcp import document_source_candidate_v5
@@ -1341,14 +1384,22 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
         _, approved_hashes, _ = document_source_candidate_v5.working_snapshot(ROOT)
         if hashes != approved_hashes:
             raise DocumentImageError()
+    if source_patched_engine:
+        sys.path.insert(0, str(ROOT))
+        from infra.gcp import document_source_patched_engine
+
+        _, approved_hashes, _ = document_source_patched_engine.working_snapshot(ROOT)
+        if hashes != approved_hashes:
+            raise DocumentImageError()
     _progress("build")
     image = image or build(docker, platform, hashes)
     _progress("image_metadata")
     image_metadata(docker, image, platform, hashes)
     _progress("runtime_sources")
-    code, raw = container(docker, image, platform, ["-c", HASH_PROGRAM], [])
+    runtime = PATCHED_RUNTIME if source_patched_engine else RUNTIME
+    code, raw = container(docker, image, platform, ["-c", PATCHED_HASH_PROGRAM if source_patched_engine else HASH_PROGRAM], [])
     _progress("runtime_sources", exit_code=code)
-    if code or json.loads(raw) != {path: hashes[path] for path in RUNTIME}:
+    if code or json.loads(raw) != {path: hashes[path] for path in runtime}:
         raise DocumentImageError()
     observations = []
     reading_observations = []
@@ -1370,7 +1421,8 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
             mounts = [(request, "/tmp/request.json")]
             if outcome == "missing":
                 mounts.append((empty, "/var/lib/clamav"))
-            arguments = ["-c", DETECTION_PROGRAM] if outcome == "detected" else ["/opt/document/processor.py", "/tmp/request.json"]
+            detection = DETECTION_PROGRAM.replace("/usr/bin/clamscan", "/usr/local/bin/clamscan") if source_patched_engine else DETECTION_PROGRAM
+            arguments = ["-c", detection] if outcome == "detected" else ["/opt/document/processor.py", "/tmp/request.json"]
             _progress("case_execution", case=name)
             code, raw = container(docker, image, platform, arguments, mounts)
             _progress("case_validation", case=name, exit_code=code)
@@ -1409,7 +1461,8 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
                 _diagnose_clamd_startup(docker, image, platform, request, case=name)
                 raise DocumentImageError()
             value = json.loads(raw)
-            validate_clamd_native(value, name, expected_outcome, resident, payload, platform)
+            validate_clamd_native(value, name, expected_outcome, resident, payload, platform,
+                                  engine_version="1.4.7" if source_patched_engine else "1.4.3")
             clamd_observations.append(value)
         _progress("layout_corpus")
         if source_revision:
@@ -1417,6 +1470,8 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
             from infra.gcp.document_source_candidate import POLICY_SHA256 as source_policy
             if source_v5:
                 from infra.gcp.document_source_candidate_v5 import POLICY_SHA256 as source_policy
+            if source_patched_engine:
+                from infra.gcp.document_source_patched_engine import POLICY_SHA256 as source_policy
             layout_cases = candidate_docx_layout_corpus(image, policy=source_policy)
         else:
             layout_cases = candidate_docx_layout_corpus(image)
@@ -1469,7 +1524,7 @@ def check(platform: str, *, image: str | None = None, source_revision: bool = Fa
                 validate_reading_order_result(name, content, code, json.loads(raw))
                 reading_observations.append({"case": name, "passed": True})
     _progress("source_recheck")
-    if source_hashes() != hashes:
+    if source_hashes(source_patched_engine=source_patched_engine) != hashes:
         raise DocumentImageError()
     return {"scope": "local_native_docker_only", "cloud_run_isolation_proven": False,
             "image_id": image, "platform": platform, "source_sha256": hashes,
@@ -1485,22 +1540,34 @@ def main() -> None:
     parser.add_argument("--platform", choices=("linux/amd64", "linux/arm64"), required=True)
     parser.add_argument("--source-revision", action="store_true", help="Require the source-profile PDF reading-order corpus.")
     parser.add_argument("--source-v5", action="store_true", help="Use the pinned V5 source policy with --source-revision.")
+    parser.add_argument("--patched-engine", action="store_true", help="Use the separately qualified pinned ClamAV1.4.7 profile.")
     parser.add_argument("--image-id", help="Reuse only an immutable ID with exact current source labels/bytes.")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.source_v5 and not args.source_revision:
         parser.error("--source-v5 requires --source-revision")
+    if args.patched_engine and (args.source_v5 or not args.source_revision or args.platform != "linux/amd64"):
+        parser.error("--patched-engine requires amd64/source-revision and excludes --source-v5")
     token = _FAILURE.set({"stage": "setup", "completed_cases": 0})
     try:
         report = json.dumps(check(args.platform, image=args.image_id, source_revision=args.source_revision,
-                                  source_v5=args.source_v5), sort_keys=True, indent=2) + "\n"
+                                  source_v5=args.source_v5, source_patched_engine=args.patched_engine), sort_keys=True, indent=2) + "\n"
         _progress("report_write")
         if args.output:
             with args.output.open("x", encoding="utf-8") as stream:
                 stream.write(report)
         print(report, end="")
     except Exception:
-        print(json.dumps(_failure_report()))
+        failure = _failure_report()
+        if args.output:
+            # The same finite public projection is retained on failure. Raw
+            # build output and document/provider payloads are never artifacts.
+            try:
+                with args.output.open("x", encoding="utf-8") as stream:
+                    stream.write(json.dumps(failure, sort_keys=True, indent=2) + "\n")
+            except OSError:
+                pass
+        print(json.dumps(failure))
         raise SystemExit(1) from None
     finally:
         _FAILURE.reset(token)

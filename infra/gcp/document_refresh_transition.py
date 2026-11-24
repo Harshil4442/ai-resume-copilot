@@ -149,24 +149,38 @@ def environment(template: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: str,
                     image: str, pins: dict[str, str], captured: dict[str, Any], *,
-                    worker_policy_sha256: str | None = None, identity_profile: Any = None) -> dict[str, Any]:
+                    worker_policy_sha256: str | None = None, identity_profile: Any = None,
+                    recovery_context: Any = None) -> dict[str, Any]:
     """Only documented image/pin/flag/revision fields may change; all else stays exact."""
     need(service in SERVICES and phase in {"close", "worker", "pins", "open"}
          and re.fullmatch(r"[a-f0-9]{32}", nonce), "document_transition_action_refused")
     need((phase == "worker") == (service == WORKER), "document_transition_action_refused")
     template = copy.deepcopy(current["template"])
     expected_account = ACCOUNTS[service]
+    from infra.gcp import schema27_patched_engine_recovery as patched
+
+    patched_context = patched.selected(recovery_context)
     if identity_profile is not None:
+        from infra.gcp import schema27_expired_v5_recovery as recovery
         from infra.gcp import schema27_mixed_identity_profile as forward
 
-        need(type(identity_profile) is forward.PublishedProfile and service in CALLERS,
+        private = ((recovery.selected(recovery_context) or patched_context)
+                   and recovery_context.identity_profile == identity_profile
+                   and type(identity_profile) is forward.Profile)
+        need((type(identity_profile) is forward.PublishedProfile or private) and service in CALLERS,
              "document_transition_forward_identity_refused")
+        need(recovery_context is None or private, "document_transition_forward_identity_refused")
         identity_profile.verify_custody()
-        expected_account = identity_profile.api.email if service == CALLERS[0] else ACCOUNTS[service]
+        api = identity_profile.transition.new_api if private else identity_profile.api
+        expected_account = api.email if service == CALLERS[0] else ACCOUNTS[service]
+    else:
+        need(recovery_context is None or patched_context and service == WORKER,
+             "document_transition_forward_identity_refused")
     need(template.get("serviceAccount") == expected_account, "document_transition_caller_identity_changed")
     env = environment(template)
     if service == WORKER:
         from infra.gcp import document_source_candidate_v5 as source_v5
+        from infra.gcp import document_source_patched_engine as engine
 
         need(type(worker_policy_sha256) is str and re.fullmatch(r"[a-f0-9]{64}", worker_policy_sha256),
              "document_transition_worker_policy_unverified")
@@ -175,17 +189,23 @@ def mutate_template(current: dict[str, Any], service: str, phase: str, nonce: st
         if env.get("DOCUMENT_WORKER_POLICY_SHA256", {}).get("value") == source_v5.POLICY_SHA256:
             expected.add(source_v5.TRANSPORT_ENV)
             need(env.get(source_v5.TRANSPORT_ENV) == transport, "document_transition_worker_environment_changed")
-            need(worker_policy_sha256 == source_v5.POLICY_SHA256, "document_transition_worker_profile_changed")
+            need(worker_policy_sha256 == source_v5.POLICY_SHA256
+                 or patched_context and worker_policy_sha256 == engine.POLICY_SHA256,
+                 "document_transition_worker_profile_changed")
         need(set(env) == expected,
              "document_transition_worker_environment_changed")
         template["containers"][0]["image"] = image
         env["DOCUMENT_WORKER_IMAGE_DIGEST"] = {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": image}
         env["DOCUMENT_WORKER_POLICY_SHA256"] = {"name": "DOCUMENT_WORKER_POLICY_SHA256", "value": worker_policy_sha256}
-        if worker_policy_sha256 == source_v5.POLICY_SHA256:
+        if worker_policy_sha256 == source_v5.POLICY_SHA256 or patched_context and worker_policy_sha256 == engine.POLICY_SHA256:
             env[source_v5.TRANSPORT_ENV] = transport
     else:
         need(worker_policy_sha256 is None, "document_transition_action_refused")
         for key in PAUSE[service]:
+            if patched_context and service == CALLERS[0] and key == "RESUME_DIRECT_UPLOAD_ENABLED":
+                need(patched.caller_admission_closed(service, current),
+                     "document_transition_patched_engine_new_admission_open")
+                continue
             if phase == "open":
                 if captured[key] is None:
                     env.pop(key, None)
@@ -292,12 +312,18 @@ def require_current_acceptance(acceptance: Any, image: str | None, probe: Any) -
         "8ed5f38142d88d88883129681953e939e79157e8b92e3efc516920d2e4409c9f": (3, 11),
     }
     expected = contracts.get(policy) if type(policy) is str else None
-    from infra.gcp.document_source_release import ExpiredSourcePredecessor, SourceProbe, v5_policy
+    from infra.gcp.document_source_release import (
+        ExpiredSourcePredecessor,
+        SourceProbe,
+        v5_policy,
+    )
     need(not isinstance(acceptance, ExpiredSourcePredecessor),
          "document_transition_current_acceptance_required")
     if isinstance(probe, SourceProbe) and policy == probe.POLICY:
         expected = (probe.CONTRACT_VERSION, probe.REQUIRED_CASE_COUNT)
-        if policy == v5_policy():
+        from infra.gcp import document_source_patched_engine as engine
+
+        if policy in {v5_policy(), engine.POLICY_SHA256}:
             from infra.gcp.document_refresh_probe import NativeAcceptance
 
             need(type(acceptance) is NativeAcceptance and expected == (5, 17),
@@ -445,7 +471,7 @@ class Controller:
              == {key: row for key, row in template.items() if key != "revision"},
              "document_transition_serving_template_changed")
         account = ACCOUNTS[service]
-        if (service in CALLERS and type(self.application_context).__module__ == "infra.gcp.schema27_mixed_maintenance"):
+        if service in CALLERS:
             from infra.gcp import schema27_mixed_maintenance as forward
 
             if forward.selected(self.application_context):
@@ -465,11 +491,10 @@ class Controller:
                                 timeout_code="document_transition_prewrite_read_deadline_reconcile_only") == before,
              "document_transition_preimage_changed")
         self.ready(service, before)
-        if type(self.application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
-            from infra.gcp import schema27_mixed_maintenance as forward
+        from infra.gcp import schema27_mixed_maintenance as forward
 
-            if forward.selected(self.application_context):
-                self.application_context.prewrite_identity()
+        if forward.selected(self.application_context):
+            self.application_context.prewrite_identity()
         body = {"name": before["name"], "etag": before["etag"], "template": template,
                 "traffic": [{"type": "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", "percent": 100}]}
         qualified = self.application_context is not None and service in CALLERS
@@ -484,6 +509,10 @@ class Controller:
                     "request_sha256": sha(body), "template_sha256": sha(template),
                     "automatic_replay": False}
         self.owner.write(marker + ".started.json", expected)
+        from infra.gcp import schema27_patched_engine_recovery as patched
+
+        if patched.selected(self.application_context):
+            self.application_context.require_active()
         operation = checked_json(self.http, "PATCH", before["name"], body, query={"updateMask": mask})
         name = operation.get("name")
         need(type(name) is str and OPERATION.fullmatch(name), "document_transition_ack_unknown_reconcile_only")
@@ -635,32 +664,44 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
          "document_transition_recovery_mode_invalid")
     from infra.gcp import document_source_candidate as source_v4
     from infra.gcp import document_source_candidate_v5 as source_v5
+    from infra.gcp import document_source_patched_engine as engine
+    from infra.gcp import schema27_expired_v5_recovery as recovery
+    from infra.gcp import schema27_mixed_maintenance as forward
+    from infra.gcp import schema27_patched_engine_recovery as patched
 
     selected_v5 = type(build) is dict and build.get("kind") == source_v5.KIND
     definitions_v5 = type(build) is dict and build.get("kind") == source_v5.DEFINITIONS_KIND
+    expired_v5 = recovery.selected(application_context)
+    patched_engine = patched.selected(application_context)
+    need(not patched_engine or type(build) is dict and build.get("kind") == engine.KIND
+         and build.get("policy_sha256") == engine.POLICY_SHA256 and probe.CONTRACT_VERSION == 5
+         and recover_expired_source, "document_transition_patched_engine_scope_refused")
+    need(not expired_v5 or definitions_v5 and recover_expired_source,
+         "document_transition_expired_source_mode_refused")
     upgrade_expired_source = (selected_v5 and recover_expired_source is True
         and build.get("policy_sha256") == source_v5.POLICY_SHA256 and probe.CONTRACT_VERSION == 5)
     need(type(recover_expired_source) is bool and (not recover_expired_source
          or not (retire_expired_v2 or rescue_expired_v2) and application_context is not None
-         and (probe.CONTRACT_VERSION == 4 or upgrade_expired_source)), "document_transition_expired_source_mode_refused")
+         and (probe.CONTRACT_VERSION == 4 or upgrade_expired_source or expired_v5 or patched_engine)), "document_transition_expired_source_mode_refused")
     need(not selected_v5 or upgrade_expired_source, "document_transition_expired_source_mode_refused")
-    need(not definitions_v5 or (not (recover_expired_source or retire_expired_v2 or rescue_expired_v2)
+    need(not definitions_v5 or (not (retire_expired_v2 or rescue_expired_v2)
+         and (not recover_expired_source or expired_v5)
          and application_context is not None and build.get("policy_sha256") == source_v5.POLICY_SHA256
          and probe.CONTRACT_VERSION == 5), "document_transition_v5_definitions_mode_refused")
     if recover_expired_source:
-        need(upgrade_expired_source or (type(build) is dict and build.get("kind") == source_v4.DEFINITIONS_KIND),
+        need(upgrade_expired_source or expired_v5 or patched_engine or (type(build) is dict and build.get("kind") == source_v4.DEFINITIONS_KIND),
              "document_transition_expired_source_mode_refused")
     owner = Journal(journal)
     try:
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
+        if patched_engine:
+            application_context.restored.verify_current()
         owner.write("native-acceptance.json", asdict(acceptance))
-        mixed = False
-        if type(application_context).__module__ == "infra.gcp.schema27_mixed_maintenance":
-            from infra.gcp import schema27_mixed_maintenance as forward
-
-            mixed = forward.selected(application_context)
+        mixed = forward.selected(application_context)
         caller_identity = {"identity_profile": application_context.identity_profile} if mixed else {}
+        if expired_v5 or patched_engine:
+            caller_identity["recovery_context"] = application_context
         if mixed:
             authorization = application_context.authorization(acceptance)
             owner.write("forward-caller-authorization.json", authorization)
@@ -687,13 +728,30 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                 if prior_image != probe.BASE_IMAGE and rescue_expired_v2:
                     probe.verify_expired_current_v2_for_retirement(prior_image, value)
                 prior_policy = probe.policy_for_serving(value, prior_image)
-                need(prior_policy != source_v5.POLICY_SHA256 or probe.POLICY == source_v5.POLICY_SHA256,
+                need(prior_policy != source_v5.POLICY_SHA256 or probe.POLICY == source_v5.POLICY_SHA256 or patched_engine,
                      "document_transition_worker_profile_changed")
-                if definitions_v5:
+                if patched_engine:
+                    need(prior_policy == source_v5.POLICY_SHA256,
+                         "document_transition_patched_engine_parent_refused")
+                    expired_source = application_context.probe.verify_expired_current_source_predecessor(prior_image, value)
+                    need(type(expired_source) is recovery.ExpiredV5Predecessor
+                         and expired_source.contract_version == 5 and expired_source.required_case_count == 17
+                         and expired_source.policy_sha256 == prior_policy,
+                         "document_transition_patched_engine_parent_refused")
+                    owner.write("expired-source-predecessor.json", expired_source.report())
+                elif definitions_v5:
                     need(prior_policy == source_v5.POLICY_SHA256 and build.get("fixed_renderer_base") == prior_image,
                          "document_transition_v5_definitions_parent_changed")
-                    parent = probe.verify_current_successor(prior_image, value)
-                    require_current_acceptance(parent, prior_image, probe)
+                    if expired_v5:
+                        parent = application_context.probe.verify_expired_current_source_predecessor(prior_image, value)
+                        need(type(parent) is recovery.ExpiredV5Predecessor and parent.contract_version == 5
+                             and parent.required_case_count == 17 and parent.policy_sha256 == prior_policy,
+                             "document_transition_v5_definitions_parent_changed")
+                        expired_source = parent
+                        owner.write("expired-source-predecessor.json", parent.report())
+                    else:
+                        parent = probe.verify_current_successor(prior_image, value)
+                        require_current_acceptance(parent, prior_image, probe)
                     need(parent.source_sha256 == build.get("source_sha256"),
                          "document_transition_v5_definitions_parent_changed")
                 elif recover_expired_source:
@@ -703,7 +761,9 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                          "document_transition_expired_source_parent_changed")
                     expired_source = probe.verify_expired_current_source_predecessor(prior_image, value)
                     if upgrade_expired_source:
-                        from infra.gcp.document_source_release import ExpiredSourcePredecessor
+                        from infra.gcp.document_source_release import (
+                            ExpiredSourcePredecessor,
+                        )
 
                         need(type(expired_source) is ExpiredSourcePredecessor
                              and expired_source.contract_version == 4 and expired_source.policy_sha256 == prior_policy,
@@ -719,6 +779,10 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                              "document_transition_expired_predecessor_refused")
                         prior_expired = True
             else:
+                if patched_engine:
+                    application_context.require_closed_preimage(name, value)
+                    need(patched.caller_admission_closed(name, value),
+                         "document_transition_patched_engine_new_admission_open")
                 need(env.get("DOCUMENT_WORKER_IMAGE_DIGEST") == {"name": "DOCUMENT_WORKER_IMAGE_DIGEST", "value": prior_image},
                      "document_transition_existing_mixed_pins_reconcile_only")
                 captured[name] = {key: copy.deepcopy(env.get(key)) for key in PAUSE[name]}
@@ -741,12 +805,15 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             run.patch(name, "close", template, acceptance=acceptance)
         if recover_expired_source:
             need(expired_source is not None and all(run.service(name) == run.observed[name]
-                 and all(environment(run.observed[name]["template"])[key] == {"name": key, "value": "false"}
-                         for key in PAUSE[name]) for name in CALLERS)
+                 and (patched.caller_admission_closed(name, run.observed[name]) if patched_engine
+                      else all(environment(run.observed[name]["template"])[key] == {"name": key, "value": "false"}
+                               for key in PAUSE[name])) for name in CALLERS)
                  and run.service(WORKER) == run.observed[WORKER],
                  "document_transition_expired_source_predecessor_changed")
             assert expired_source is not None
-            need(probe.verify_expired_current_source_predecessor(prior_image, run.observed[WORKER]).report()
+            expired_reader = (application_context.probe.verify_expired_current_source_predecessor if expired_v5 or patched_engine
+                              else probe.verify_expired_current_source_predecessor)
+            need(expired_reader(prior_image, run.observed[WORKER]).report()
                  == expired_source.report(), "document_transition_expired_source_predecessor_changed")
         if prior_expired:
             need(all(run.service(name) == run.observed[name]
@@ -763,8 +830,9 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
         acceptance = probe.verify_successor(image, build, native_journal)
         require_current_acceptance(acceptance, image, probe)
         labels = dict(zip(LABELS, (build["build_id"], build["nonce"], acceptance.job_name.rsplit("/", 1)[-1]), strict=True))
+        worker_context = {"recovery_context": application_context} if patched_engine else {}
         run.patch(WORKER, "worker", mutate_template(run.observed[WORKER], WORKER, "worker", build["nonce"], image, {}, {},
-            worker_policy_sha256=acceptance.policy_sha256), acceptance=acceptance, labels=labels)
+            worker_policy_sha256=acceptance.policy_sha256, **worker_context), acceptance=acceptance, labels=labels)
         probe.verify_current_successor(image, run.observed[WORKER])
         pins = dict(zip(PINS, (image, acceptance.policy_sha256, acceptance.renderer_version,
                                acceptance.font_manifest_sha256), strict=True))
@@ -783,6 +851,13 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
             captured = copy.deepcopy(captured)
             captured[CALLERS[0]]["RESUME_DIRECT_UPLOAD_ENABLED"] = {
                 "name": "RESUME_DIRECT_UPLOAD_ENABLED", "value": "true"}
+        if expired_v5 or patched_engine:
+            captured = (patched.final_captured_flags(captured) if patched_engine else
+                        {name: {key: {"name": key, "value": "false"} for key in PAUSE[name]} for name in CALLERS})
+            owner.write("patched-engine-admission-kept-closed.json" if patched_engine else
+                        "expired-v5-admission-kept-closed.json", {"flags": captured,
+                "reason": "fresh_policy_and_application_release_required_before_reopening",
+                "processing_authorized": False, "automatic_replay": False})
         for name in CALLERS:
             template = mutate_template(run.observed[name], name, "open", build["nonce"], image, {}, captured[name], **caller_identity)
             run.patch(name, "open", template, acceptance=acceptance)
@@ -794,6 +869,14 @@ def transition(image: str, build: dict[str, Any], native_journal: Path, journal:
                   "native_acceptance_sha256": sha(asdict(acceptance)), "all_three_caller_pins_verified": True,
                   "admission_restored": True, "synchronous_callers_drained": False,
                   "current_native_proof_retained": True, "automatic_replay": False}
+        if expired_v5 or patched_engine:
+            result.update(status="expired_v5_scanner_refreshed_admission_closed", admission_restored=False,
+                          recovery_admission_kept_closed=True)
+        if patched_engine:
+            need(all(patched.caller_admission_closed(name, run.observed[name]) for name in CALLERS),
+                 "document_transition_patched_engine_new_admission_open")
+            result.update(status="patched_engine_qualified_admission_closed", engine_version=engine.ENGINE_VERSION,
+                          new_admission_closed=True, saved_source_capability_preserved=True)
         if rescue_expired_v2:
             result["expired_v2_rescued"] = True
         if mixed:

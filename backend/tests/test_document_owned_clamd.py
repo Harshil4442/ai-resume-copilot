@@ -63,8 +63,8 @@ class OwnedTests(unittest.TestCase):
         self.path.write_bytes(self.content)
         self.path.chmod(0o600)
         self.owner = processor.OwnedClamd(self.directory, time.monotonic() + 50)
-        self.metadata = {"engine": "ClamAV", "version": "1.4.3", "definitions": "28151/2026-10-12T06:24:02+00:00"}
-        self.header = "ClamAV 1.4.3/28151/Mon Oct 12 06:24:02 2026"
+        self.metadata = {"engine": "ClamAV", "version": "1.4.7", "definitions": "28151/2026-10-12T06:24:02+00:00"}
+        self.header = "ClamAV 1.4.7/28151/Mon Oct 12 06:24:02 2026"
         for name in ("Popen", "run"):
             patcher = mock.patch.object(processor.subprocess, name, side_effect=AssertionError("native invocation forbidden"))
             patcher.start()
@@ -365,7 +365,7 @@ class OwnedTests(unittest.TestCase):
         scan = ast.unparse(functions["scan_original"])
         for label in ("Scanned files", "Scanned directories", "Known viruses", "Engine version", "Infected files"):
             self.assertIn(label, scan)
-        self.assertIn("/usr/bin/clamscan", scan)
+        self.assertIn("/usr/local/bin/clamscan", scan)
         inspection = functions["inspect"]
         scans = [node for node in ast.walk(inspection) if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Name) and node.func.id == "scan_original"]

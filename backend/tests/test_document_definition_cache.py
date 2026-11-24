@@ -2,6 +2,7 @@
 
 import importlib.util
 import re
+import shlex
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -46,6 +47,13 @@ def definition_command():
                 if command == "RUN" and "freshclam --" in argument)
 
 
+def fake_definition_command(fake):
+    command = definition_command()
+    vendor = "/usr/local/bin/freshclam --config-file=/etc/clamav/freshclam.conf"
+    assert command.count(vendor) == 1
+    return command.replace(vendor, shlex.quote(str(fake)) + " --config-file=/etc/clamav/freshclam.conf")
+
+
 def test_nonce_is_consumed_only_in_separate_definition_acquisition_stage():
     stages = []
     for command, argument in instructions():
@@ -65,7 +73,7 @@ def test_nonce_is_consumed_only_in_separate_definition_acquisition_stage():
     assert definitions[1] == ("ARG", NONCE)
     assert len(definitions) == 3 and definitions[2][0] == "RUN"
     assert '"$' + NONCE + '"' in definitions[2][1]
-    assert "freshclam --stdout --datadir=/var/lib/clamav" in definitions[2][1]
+    assert "/usr/local/bin/freshclam --config-file=/etc/clamav/freshclam.conf --stdout --datadir=/var/lib/clamav" in definitions[2][1]
     assert ("COPY", "--from=definitions /var/lib/clamav /var/lib/clamav") in runtime
     assert all(command not in {"ARG", "ENV"} for command, _ in runtime)
     # Runtime build steps record installed renderer/font and antivirus bytes.
@@ -123,7 +131,7 @@ def test_definition_step_refuses_missing_or_invalid_nonce_before_fake_acquisitio
     env = {"PATH": str(tmp_path)}
     if nonce is not None:
         env[NONCE] = nonce
-    result = subprocess.run(["/bin/sh", "-c", definition_command()], env=env,
+    result = subprocess.run(["/bin/sh", "-c", fake_definition_command(fake)], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
     assert result.returncode != 0
     assert not marker.exists()
@@ -132,11 +140,11 @@ def test_definition_step_refuses_missing_or_invalid_nonce_before_fake_acquisitio
 def test_valid_nonce_executes_exact_fake_definition_acquisition(tmp_path):
     marker = tmp_path / "acquired"
     fake = tmp_path / "freshclam"
-    fake.write_text('#!/bin/sh\n[ "$#" -eq 2 ] && [ "$1" = --stdout ] '
-                    '&& [ "$2" = --datadir=/var/lib/clamav ] || exit 1\n'
+    fake.write_text('#!/bin/sh\n[ "$#" -eq 3 ] && [ "$1" = --config-file=/etc/clamav/freshclam.conf ] '
+                    '&& [ "$2" = --stdout ] && [ "$3" = --datadir=/var/lib/clamav ] || exit 1\n'
                     ': > "' + str(marker) + '"\n')
     fake.chmod(0o755)
-    result = subprocess.run(["/bin/sh", "-c", definition_command()],
+    result = subprocess.run(["/bin/sh", "-c", fake_definition_command(fake)],
                             env={"PATH": str(tmp_path), NONCE: "a" * 32},
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
     assert result.returncode == 0 and marker.exists()
