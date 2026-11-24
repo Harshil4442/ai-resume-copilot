@@ -19,14 +19,9 @@ import { directResumeUploadEnabled, ResumeUploadCancelled, uploadResumeFile, use
 import type { ResumeParseResponse } from "../../lib/types";
 import { resetWorkspaceAfterSourceConnection } from "../../lib/workspacePages";
 
-function ResumeUploadContent() {
+function ResumeUploadContent({ ownerKey, opportunityId }: { ownerKey: string; opportunityId: string | null }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const requestedOpportunity = searchParams.get("opportunity");
-  const opportunityId = requestedOpportunity && /^opp_[A-Za-z0-9_-]{1,60}$/.test(requestedOpportunity) ? requestedOpportunity : null;
   const queryClient = useQueryClient();
-  const { data: session, status: sessionStatus } = useSession();
-  const ownerKey = `${sessionStatus}:${session?.user?.id || ""}`;
   const [file, setFile] = useState<File | null>(null);
   const [data, setData] = useState<ResumeParseResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,13 +107,16 @@ function ResumeUploadContent() {
   }
 
   async function connectUploadedResume() {
-    if (!opportunityId || !data?.source_available || !data.source_format) return;
+    if (!mounted.current || connecting || !opportunityId || !data?.source_available || !data.source_format) return;
     setConnectionError(null);
     setConnecting(true);
     try {
       const updated = await apiPatchJson<Opportunity>(`/v1/opportunities/${encodeURIComponent(opportunityId)}`, { resume_id: data.resume_id });
+      if (!mounted.current) return;
       await resetWorkspaceAfterSourceConnection(queryClient, ownerKey, opportunityId, { resumeId: data.resume_id, title: updated.title });
+      if (!mounted.current) return;
       await queryClient.cancelQueries({ queryKey: ["opportunity", opportunityId] });
+      if (!mounted.current) return;
       queryClient.setQueryData<OpportunityDetail>(["opportunity", opportunityId], (cached) => cached ? { ...cached, ...updated } : undefined);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["opportunity", opportunityId] }),
@@ -126,11 +124,12 @@ function ResumeUploadContent() {
         queryClient.invalidateQueries({ queryKey: ["opportunity-match", opportunityId] }),
         queryClient.invalidateQueries({ queryKey: ["resumes"] }),
       ]);
+      if (!mounted.current) return;
       router.push(`/workspace/${encodeURIComponent(opportunityId)}?tab=resume`);
     } catch (connectionFailure) {
-      setConnectionError(connectionFailure instanceof Error ? connectionFailure.message : "Could not connect this resume to your opportunity.");
+      if (mounted.current) setConnectionError(connectionFailure instanceof Error ? connectionFailure.message : "Could not connect this resume to your opportunity.");
     } finally {
-      setConnecting(false);
+      if (mounted.current) setConnecting(false);
     }
   }
 
@@ -215,6 +214,15 @@ function ResumeUploadContent() {
   );
 }
 
+function OwnedResumeUploadContent() {
+  const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
+  const requested = searchParams.get("opportunity");
+  const opportunityId = requested && /^opp_[A-Za-z0-9_-]{1,60}$/.test(requested) ? requested : null;
+  const ownerKey = `${status}:${session?.user?.id || ""}`;
+  return <ResumeUploadContent key={JSON.stringify([ownerKey, opportunityId])} ownerKey={ownerKey} opportunityId={opportunityId} />;
+}
+
 export default function ResumePage() {
-  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><ResumeUploadContent /></Suspense>;
+  return <Suspense fallback={<main className="app-page"><div className="page-container"><LoadingBlock rows={5} /></div></main>}><OwnedResumeUploadContent /></Suspense>;
 }

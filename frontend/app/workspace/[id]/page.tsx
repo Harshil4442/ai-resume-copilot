@@ -944,7 +944,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
                           {editing ? (
                             <div className="mt-3">
                               <label className="sr-only" htmlFor={`evidence-${entry.id}`}>Edit {entry.title} evidence</label>
-                              <textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} onChange={(event) => setEvidenceDraft(event.target.value)} />
+                              <textarea id={`evidence-${entry.id}`} className="field-control min-h-32 resize-y" value={evidenceDraft} disabled={editEvidence.isPending || approveTranscription.isPending} onChange={(event) => setEvidenceDraft(event.target.value)} />
                               <p className="mt-2 text-xs text-muted-foreground">Saving a factual edit returns this item to pending review.</p>
                               {openedTranscription ? <div className="mt-4 space-y-3 border-l-2 border-primary pl-4">
                                 <p className="text-sm font-semibold">Review the transcription against {openedTranscription.filename}</p>
@@ -955,7 +955,7 @@ function OpportunityContent({ ownerKey, authenticated }: { ownerKey: string; aut
                                   setEvidenceDraft(openedTranscription.originalText); setComparedTranscription(false);
                                 }}>Use original extracted text</Button>
                                 <p className="text-xs leading-5 text-muted-foreground">Use the editor above for the exact text you approve. Your original file stays unchanged. Tailoring will separately check whether this source supports the requested text edits.</p>
-                                <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={comparedTranscription} onChange={(event) => setComparedTranscription(event.target.checked)} />I compared this complete section with my original file.</label>
+                                <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={comparedTranscription} disabled={editEvidence.isPending || approveTranscription.isPending} onChange={(event) => setComparedTranscription(event.target.checked)} />I compared this complete section with my original file.</label>
                                 <div className="flex flex-wrap gap-2">
                                   <Button size="sm" disabled={blocked || evidenceEditStale || transcription.isFetching || !comparedTranscription || !editingEvidenceVersion || evidenceDraft.length < 2 || evidenceDraft.length > 20000 || evidenceDraft === openedTranscription.originalText} onClick={() => {
                                     if (editingEvidenceVersion) approveTranscription.mutate({ id: entry.id, fingerprint: editingEvidenceVersion, opened: openedTranscription, text: evidenceDraft, action: "correct_transcription" });
