@@ -56,12 +56,13 @@ def final_captured_flags(captured):
 class HistoricalRestore:
     """Historical completed restore custody; no mutation entry or freshness waiver."""
     def __init__(self, plan, journal, *, closed):
+        from infra.gcp import schema27_coordinator_health_finalizer as finalizer
         from infra.gcp import schema27_internal_coordinator_completion as internal
         from infra.gcp import schema27_native_admission_closure as admission
         from infra.gcp import schema27_native_admission_completion as completion
 
         need(type(closed) in {admission.ClosedAdmission, completion.ClosedAdmissionCompletion,
-                             internal.ClosedInternalAdmission},
+                             internal.ClosedInternalAdmission, finalizer.ClosedFinalAdmission},
              "patched_engine_closed_admission_kind")
         self.closed = closed
         need(type(plan) is restoration.RestorePlan and type(journal) is restoration.owned.Journal,
@@ -130,11 +131,13 @@ class HistoricalRestore:
         # The original completed restore is custody only. This separately owned
         # follow-on proves closure of API admission without disabling saved reads.
         self.closed.verify_custody()
+        from infra.gcp import schema27_coordinator_health_finalizer as finalizer
         from infra.gcp import schema27_internal_coordinator_completion as internal
         from infra.gcp import schema27_native_admission_completion as completion
 
         parent = (self.closed.restore_parent if type(self.closed) in {
-                      completion.ClosedAdmissionCompletion, internal.ClosedInternalAdmission}
+                      completion.ClosedAdmissionCompletion, internal.ClosedInternalAdmission,
+                      finalizer.ClosedFinalAdmission}
                   else self.closed.plan.parent)
         raw = restoration._private_read(parent["plan"], self.closed.parent_restore_plan_sha256)
         need(self.closed.parent_restore_plan_sha256 == RESTORE_PLAN_FILE_SHA256
@@ -158,6 +161,22 @@ def load_historical_restore(*, plan_path, plan_sha256, journal_path, profile, cl
     need(type(profile) is identities.Profile and plan.application.identities == profile,
          "patched_engine_restore_profile")
     return HistoricalRestore(plan, restoration.owned.Journal(Path(journal_path), plan), closed=closed)
+
+
+def load_internal_admission(*, plan_path, plan_sha256, journal_path):
+    """Select only the two explicit internal-health proof kinds; never fall back."""
+    from infra.gcp import schema27_coordinator_health_finalizer as finalizer
+    from infra.gcp import schema27_internal_coordinator_completion as internal
+
+    value = rolling.release._json(restoration._private_read(plan_path, plan_sha256))
+    need(type(value) is dict and type(value.get("kind")) is str
+         and value["kind"] in {internal.KIND, finalizer.KIND},
+         "patched_engine_internal_admission_kind")
+    if value["kind"] == internal.KIND:
+        return internal.load_closed_internal(plan_path=plan_path,
+            plan_sha256=plan_sha256, journal_path=journal_path)
+    return finalizer.load_closed_final(plan_path=plan_path,
+        plan_sha256=plan_sha256, journal_path=journal_path)
 
 
 class ParentProbe(maintenance.Probe):
@@ -529,7 +548,7 @@ def main():
     closure.add_argument("--admission-closure-completed", action="store_true",
         help="Use the separately owned coordinator completion proof after a definite original rejection.")
     closure.add_argument("--admission-closure-internal", action="store_true",
-        help="Use the separately owned internal coordinator health and remaining-route completion proof.")
+        help="Use an exact internal-health completion or post-route finalizer proof kind.")
     parser.add_argument("--prior-history-directory", type=Path, required=True)
     parser.add_argument("--consumed-history-bundle", type=Path)
     parser.add_argument("--output-directory", type=Path, required=True)
@@ -546,9 +565,7 @@ def main():
         from infra.gcp import schema27_native_admission_closure as admission
 
         if args.admission_closure_internal:
-            from infra.gcp import schema27_internal_coordinator_completion as internal
-
-            closed = internal.load_closed_internal(plan_path=args.admission_closure_plan,
+            closed = load_internal_admission(plan_path=args.admission_closure_plan,
                 plan_sha256=args.admission_closure_plan_sha256, journal_path=args.admission_closure_journal)
         elif args.admission_closure_completed:
             from infra.gcp import schema27_native_admission_completion as completion

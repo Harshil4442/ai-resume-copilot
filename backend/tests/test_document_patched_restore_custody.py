@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 from dataclasses import asdict
 from types import SimpleNamespace
 
@@ -178,3 +179,70 @@ def test_cli_closure_reader_selectors_are_mutually_exclusive(monkeypatch):
     with pytest.raises(SystemExit) as error:
         patched.main()
     assert error.value.code == 2
+
+
+def test_exact_post_route_finalizer_uses_original_restore_parent(restored, monkeypatch):
+    from infra.gcp import schema27_coordinator_health_finalizer as finalizer
+
+    c = restored
+    closed = object.__new__(finalizer.ClosedFinalAdmission)
+    closed.plan = SimpleNamespace(parent={"owner": "incomplete-original-internal-health"})
+    closed.verify_custody = lambda: {"new_admission_closed": True, "response_json_observed": False}
+    closed.verify_current = lambda: {"fresh_finalized_closure_snapshot": True}
+    monkeypatch.setattr(finalizer.ClosedFinalAdmission, "restore_parent",
+        property(lambda self: c.closure.plan.parent))
+    target = patched.HistoricalRestore(c.plan, c.journal, closed=closed)
+    assert target.verify_current() == {"fresh_finalized_closure_snapshot": True}
+    assert closed.plan.parent != closed.restore_parent
+    assert len(c.staged.c.fixture.writes) == 6
+
+
+def test_finalizer_subclass_cannot_enter_the_typed_restore_bridge(restored):
+    from infra.gcp import schema27_coordinator_health_finalizer as finalizer
+
+    class PretendFinal(finalizer.ClosedFinalAdmission):
+        pass
+    with pytest.raises(restore.rolling.RollingDenied, match="closed_admission_kind"):
+        patched.HistoricalRestore(restored.plan, restored.journal, closed=object.__new__(PretendFinal))
+
+
+@pytest.mark.parametrize("selected", ["internal", "final"])
+def test_internal_family_dispatches_only_the_exact_pinned_kind(tmp_path, monkeypatch, selected):
+    from infra.gcp import schema27_coordinator_health_finalizer as finalizer
+    from infra.gcp import schema27_internal_coordinator_completion as internal
+
+    readers = {"internal": (internal.KIND, internal, "load_closed_internal"),
+               "final": (finalizer.KIND, finalizer, "load_closed_final")}
+    raw = json.dumps({"kind": readers[selected][0]}).encode()
+    path = tmp_path / "pinned-internal-proof.json"
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    digest = hashlib.sha256(raw).hexdigest()
+    calls = []
+    expected = object()
+    for name, (_, module, method) in readers.items():
+        def load(*, plan_path, plan_sha256, journal_path, selected_name=name):
+            calls.append((selected_name, plan_path, plan_sha256, journal_path))
+            return expected
+        monkeypatch.setattr(module, method, load)
+    assert patched.load_internal_admission(plan_path=path, plan_sha256=digest,
+        journal_path=tmp_path) is expected
+    assert calls == [(selected, path, digest, tmp_path)]
+
+
+@pytest.mark.parametrize("payload", [{"kind": "unknown"}, {"kind": []}, {"kind": None}, [], None])
+def test_internal_family_refuses_unknown_kind_before_any_reader(tmp_path, monkeypatch, payload):
+    from infra.gcp import schema27_coordinator_health_finalizer as finalizer
+    from infra.gcp import schema27_internal_coordinator_completion as internal
+
+    raw = json.dumps(payload).encode()
+    path = tmp_path / "unknown-internal-proof.json"
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    def refused(**kwargs):
+        pytest.fail("unknown kind reached a proof reader")
+    monkeypatch.setattr(internal, "load_closed_internal", refused)
+    monkeypatch.setattr(finalizer, "load_closed_final", refused)
+    with pytest.raises(restore.rolling.RollingDenied, match="internal_admission_kind"):
+        patched.load_internal_admission(plan_path=path,
+            plan_sha256=hashlib.sha256(raw).hexdigest(), journal_path=tmp_path)

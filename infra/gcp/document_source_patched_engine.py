@@ -33,7 +33,8 @@ CONTRACT_PATHS = (*predecessor.CONTRACT_PATHS,
     "infra/gcp/schema27_mixed_maintenance.py", "infra/gcp/schema27_mixed_policy_successor.py",
     "infra/gcp/schema27_native_admission_closure.py", "infra/gcp/document_cloud_build_qa.py",
     "infra/document-processing/cloud-build-qa.sh", "infra/gcp/schema27_native_admission_completion.py",
-    "infra/gcp/schema27_internal_coordinator_completion.py")
+    "infra/gcp/schema27_internal_coordinator_completion.py",
+    "infra/gcp/schema27_coordinator_health_finalizer.py")
 _CHANGED = {courier.DOCKERFILE, "infra/document-processing/processor.py"}
 git = base.git
 
