@@ -20,7 +20,9 @@ from backend.tests.model_cost_fixtures import synthetic_policy
 from backend.tests.test_employer_admissions_postgres import _migrate
 from backend.tests.test_employer_admissions_postgres import pg_engine as admission_pg_engine
 from backend.tests.test_model_cost_budgets import MESSAGES, admit, new_run, usage
+from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 
@@ -47,6 +49,31 @@ def _cost_context_at_revision(pg_engine, revision):
         db.add(models.User(id=1, email="synthetic-model-cost@example.com", ai_credits=100))
         db.commit()
     return factory
+
+
+def _admit_outcome(budget):
+    try:
+        return "accepted", admit(budget)["attempt_number"]
+    except ModelCostUnavailable:
+        return "budget_denied", 0
+    except OperationalError as error:
+        # The fixture has a finite lock timeout. Waiting for the owner lock can
+        # refuse safely under contention before any attempt is committed.
+        if not isinstance(error.orig, LockNotAvailable) or error.orig.sqlstate != "55P03":
+            raise
+        return "lock_contended", 0
+
+
+def _assert_attempt_state(factory, run_id, expected):
+    with factory() as db:
+        run = db.get(models.AnalysisRun, run_id)
+        events = db.query(models.ModelCallEvent).all()
+        liabilities = db.query(models.ModelCostLiability).all()
+        assert run.generation_attempt_count == len(events) == len(liabilities) == expected
+        assert sorted(event.attempt_number for event in events) == list(range(1, expected + 1))
+        assert run.model_cost_reserved_micros == sum(event.reserved_cost_micros for event in events)
+        assert run.model_cost_reserved_micros == sum(row.reserved_cost_micros for row in liabilities)
+        assert db.get(models.User, 1).ai_credits == 100
 
 
 def test_postgres_simultaneous_reservations_accept_exactly_one_affordable_attempt(pg_cost_context):
@@ -81,18 +108,57 @@ def test_postgres_concurrent_attempt_count_is_shared_across_worker_contexts(pg_c
     def attempt():
         with persistent_run_budget(factory, run_id) as budget:
             start.wait(timeout=10)
-            try:
-                return admit(budget)["attempt_number"]
-            except ModelCostUnavailable:
-                return 0
+            return _admit_outcome(budget)
     with ThreadPoolExecutor(max_workers=5) as workers:
         results = list(workers.map(lambda _: attempt(), range(5)))
-    assert sorted(results) == [0, 0, 1, 2, 3]
-    with factory() as db:
-        run = db.get(models.AnalysisRun, run_id)
-        events = db.query(models.ModelCallEvent).all()
-        assert run.generation_attempt_count == len(events) == 3
-        assert run.model_cost_reserved_micros == sum(e.reserved_cost_micros for e in events)
+    accepted = sorted(number for outcome, number in results if outcome == "accepted")
+    assert accepted == list(range(1, len(accepted) + 1))
+    assert 1 <= len(accepted) <= 3
+    assert all(outcome in {"accepted", "budget_denied", "lock_contended"} for outcome, _ in results)
+    _assert_attempt_state(factory, run_id, len(accepted))
+    # A lock refusal is not an exhausted model budget. Once all competing
+    # transactions have closed, bounded QA-only fresh contexts must reach the
+    # same cap. This is not a production retry or a provider call.
+    for expected in range(len(accepted) + 1, 4):
+        with persistent_run_budget(factory, run_id) as budget:
+            assert admit(budget)["attempt_number"] == expected
+    for _ in range(2):
+        with persistent_run_budget(factory, run_id) as budget:
+            with pytest.raises(ModelCostUnavailable, match="model-attempt budget"):
+                admit(budget)
+    _assert_attempt_state(factory, run_id, 3)
+
+
+def test_postgres_contended_owner_lock_creates_no_model_attempt_or_expense(pg_cost_context):
+    from backend.app.domains.employer.admissions import lock_application_set
+
+    factory = pg_cost_context
+    run_id = new_run(factory)
+
+    def short_wait_factory():
+        db = factory()
+        db.execute(text("SET LOCAL lock_timeout = '50ms'"))
+        return db
+
+    with factory() as owner:
+        lock_application_set(owner, 1)
+        with persistent_run_budget(short_wait_factory, run_id) as budget:
+            assert _admit_outcome(budget) == ("lock_contended", 0)
+        _assert_attempt_state(factory, run_id, 0)
+    with persistent_run_budget(factory, run_id) as budget:
+        assert admit(budget)["attempt_number"] == 1
+    _assert_attempt_state(factory, run_id, 1)
+
+
+@pytest.mark.parametrize("original", [DeadlockDetected("synthetic"), SerializationFailure("synthetic")])
+def test_worker_outcome_does_not_hide_other_database_errors(original):
+    class FailedBudget:
+        def admit(self, *_args, **_kwargs):
+            raise OperationalError("synthetic", {}, original)
+
+    with pytest.raises(OperationalError) as error:
+        _admit_outcome(FailedBudget())
+    assert error.value.orig is original
 
 
 def test_postgres_process_exit_after_admission_retains_hold_and_denies_retry(pg_cost_context, pg_engine):
