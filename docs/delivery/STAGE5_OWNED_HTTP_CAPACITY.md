@@ -434,3 +434,52 @@ reproduced the same results on commit `ccdba8ac212118b67945ad0c28090e4b2a8bde4d`
 All eight Dashboard loads succeeded in each arm. Each consolidated arm had zero
 capacity refusals, SQL writes and external provider calls. The runner reported
 cleanup of its isolated services. Production capacity remains unverified.
+
+## Billing schedule preparation — 25 November 2026
+
+The opt-in `--billing-journey` mode (workflow input `billing_journey`) models the
+Billing schedule contract from `9dc5627a180f257c3bdc62a9789e5444b8575324` using
+the existing owned runner. Live frontend `8a72627` inherits byte-identical Billing
+components; 9dc is the schedule contract reference, not the latest deployed
+frontend source. This change is preparation with transport-blocked contract/schedule
+tests; no new native measurement, seeding, provider call or capacity acceptance
+was performed for it.
+
+Each of the eight existing enrolled actors starts a cold Billing visit with the
+shared account bootstrap, canary enrollment, closed catalog and two recent-order
+reads. The legacy balance read follows its recent-order lookup, including a
+refusal. These are six base distinct GET routes, not a universal browser request
+maximum. A settled/refunded opening order can require a fresh bootstrap after
+the pending snapshot completes. Overlapping callbacks can share that new read;
+a later order result cannot reuse a snapshot started before its lookup. There
+are at most two additional reads per actor in this fixed scenario, including an
+opening consumer fetching a missing snapshot after a failed initial query.
+These are bounded advisory queries, not transport retries or cached authority.
+There is no polling, payment, upload or background history fetch in this mode.
+
+Only actors 1, 4, 5 and 8 choose to open histories at a declared 15-second intent.
+Unified history waits for the unified opening lookup/balance branch; service
+and legacy usage histories wait for the legacy branch. Actors with closed
+disclosures send no history GET. The maximum is 76 workload GETs plus the
+existing three owner controls, after at least 61 seconds of natural cooldown,
+with eight connections and a 50-second window. The original shared 40-unit
+governor, real authentication and fresh entry/exit identities remain unchanged.
+All measured SQL connections still inherit the runner's read-only role.
+
+The report keeps valid capacity 429s, expected closed-catalog 404s and successful
+owned responses separate. It does not require all actors to succeed under this
+shared budget, hide refusals from the denominator or infer increased production
+capacity. Unknown outcomes, malformed refusal headers, foreign owner bodies,
+unrequested/early reads, Get fallback or measured writes fail the diagnostic.
+All production/native qualification flags remain false.
+
+The existing dataset contains no Billing orders or history events. Thus a future
+owned execution reads null recent orders and empty histories; positive settled
+order/cache-interleaving cases currently have synthetic unit coverage only.
+This is a direct-HTTP schedule model, not a browser cache, populated-history,
+field-latency, invoice or 10,000-concurrent-user qualification. The other Stage5
+modes and the requirements' monthly workload assumptions remain unchanged.
+
+Dependency-free preview: `.venv/bin/python scripts/run_stage5_capacity.py --billing-journey`.
+Future execution reuses the existing explicit owned Linux resource arguments;
+this preparation does not execute it or authorize held native load.

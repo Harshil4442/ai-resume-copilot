@@ -26,7 +26,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT))
 
-from scripts import stage5_first_minute, stage5_jobs_journey, stage5_skill_roi  # noqa: E402
+from scripts import (  # noqa: E402
+    stage5_billing_journey,
+    stage5_first_minute,
+    stage5_jobs_journey,
+    stage5_skill_roi,
+)
 from scripts.stage5_capacity import (  # noqa: E402
     BOOTSTRAP_PATH,
     FRESH_WINDOW_COOLDOWN_SECONDS,
@@ -56,6 +61,7 @@ def parser():
     mode.add_argument("--skill-roi-journey", action="store_true", help="Compare the owned Skill ROI learning-tab reads")
     mode.add_argument("--first-minute", action="store_true", help="Measure overlapping owned reads in one shared governed window")
     mode.add_argument("--jobs-journey", action="store_true", help="Compare governed Dashboard → Jobs routes")
+    mode.add_argument("--billing-journey", action="store_true", help="Model governed cold Billing and explicit history opening")
     result.add_argument("--output", type=Path)
     result.add_argument("--pg-bin", type=Path)
     result.add_argument("--redis-server", type=Path)
@@ -238,7 +244,8 @@ async def workload(plan, resources, tokens, storage, counters, sql, cert, *, fre
     return results, time.perf_counter() - start
 
 
-def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, first_minute=False, jobs_journey=False):
+def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, first_minute=False,
+            jobs_journey=False, billing_journey=False):
     import pytest
     import uvicorn
 
@@ -391,7 +398,7 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
         actual_connect = instrumented_pool.connect
         source.pool.connect = acquire
         cpu_before = resource.getrusage(resource.RUSAGE_SELF)
-        if skill_roi_journey or first_minute or jobs_journey:
+        if skill_roi_journey or first_minute or jobs_journey or billing_journey:
             async def governed_journey():
                 os.environ.update(CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED="true",
                                   CANDIDATE_METADATA_ADMISSION_ENABLED="true")
@@ -404,6 +411,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                         return measurement.get("measurement_seconds", 0)
                     if jobs_journey:
                         return await stage5_jobs_journey.measure(client, plan, actors, counters, results)
+                    if billing_journey:
+                        return await stage5_billing_journey.measure(client, plan, actors, counters, results)
                     return await stage5_skill_roi.measure(client, plan, actors, storage, counters, results)
 
             results = resources.partial_report["results"]
@@ -448,6 +457,14 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
             report["limitations"].append("One fixed first-minute schedule with synthetic pending orders and queued uploads; "
                 "no provider payment or file is created. Times are ideal initial arrival ticks, and Redis INFO sampling adds "
                 "one local command per observation. No native quota change, production latency or paid-customer behavior is inferred.")
+        elif billing_journey:
+            report["validation"] = stage5_billing_journey.validate(results, preflight)
+            report["limitations"].append("Fixed direct-HTTP model of the 9dc Billing schedule contract, inherited "
+                "unchanged by live frontend 8a72627; 9dc is not the latest deployed frontend. Six base distinct "
+                "cold routes, up to two additional opening-consumer bootstrap reads for settlement or a missing "
+                "advisory snapshot, and history reads only after explicit open. "
+                "No Billing orders/events are seeded. Settlement/cache interleavings have synthetic unit coverage, "
+                "not browser or populated-history qualification. Controlled 429s and closed-catalog 404s remain separate.")
         elif jobs_journey:
             report["validation"] = stage5_jobs_journey.validate(results, preflight)
             report["limitations"].append("Fixed-order Dashboard then Jobs at 27 seconds in each fresh window; "
@@ -492,7 +509,10 @@ def main():
             raise ValueError("First-minute diagnostic must fit cooldown, one window and response grace")
         if args.jobs_journey and plan.measurement_seconds <= stage5_jobs_journey.MINIMUM_SECONDS:
             raise ValueError("Jobs diagnostic must fit both fresh bounded windows")
-        version = (stage5_jobs_journey.VERSION if args.jobs_journey else
+        if args.billing_journey and plan.measurement_seconds <= stage5_billing_journey.MINIMUM_SECONDS:
+            raise ValueError("Billing diagnostic must fit its natural cooldown and bounded window")
+        version = (stage5_billing_journey.VERSION if args.billing_journey else
+                   stage5_jobs_journey.VERSION if args.jobs_journey else
                    stage5_first_minute.VERSION if args.first_minute
                    else stage5_skill_roi.VERSION if args.skill_roi_journey else VERSION)
         if not args.execute:
@@ -518,11 +538,19 @@ def main():
                                jobs_start_seconds=stage5_jobs_journey.JOBS_AT,
                                shared_admin_limit=stage5_jobs_journey.ADMIN_LIMIT,
                                minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS)
+            if args.billing_journey:
+                preview.update(maximum_requests_including_controls=stage5_billing_journey.MAX_REQUESTS,
+                    actors=list(stage5_billing_journey.ACTORS), history_actors=list(stage5_billing_journey.HISTORY_ACTORS),
+                    base_distinct_cold_routes=6, maximum_fresh_bootstraps_per_actor=2,
+                    history_open_seconds=stage5_billing_journey.HISTORY_OPEN_AT,
+                    shared_admin_limit=stage5_billing_journey.ADMIN_LIMIT,
+                    minimum_cooldown_seconds=FRESH_WINDOW_COOLDOWN_SECONDS,
+                    frontend_schedule_source=stage5_billing_journey.FRONTEND_SOURCE)
             print(json.dumps(preview))
             return 0
         if not args.output or not args.pg_bin or not args.redis_server:
             raise ValueError("Execute requires a new output directory and explicit PG17/TLS Redis binaries")
-        if (args.skill_roi_journey or args.first_minute or args.jobs_journey) and sys.platform != "linux":
+        if (args.skill_roi_journey or args.first_minute or args.jobs_journey or args.billing_journey) and sys.platform != "linux":
             raise RuntimeError("The owned HTTP diagnostic requires a native Linux Docker host")
         resources = Resources(args.output.resolve(), args.pg_bin, args.redis_server)
         resources.partial_report = {"version": version,
@@ -536,7 +564,9 @@ def main():
             # Fixed diagnostic labels only. No auth body, token, SQL parameter or
             # exception message is emitted by the runner or its private report.
             logging.disable(logging.CRITICAL)
-            if args.jobs_journey:
+            if args.billing_journey:
+                result = execute(plan, resources, billing_journey=True)
+            elif args.jobs_journey:
                 result = execute(plan, resources, jobs_journey=True)
             elif args.first_minute:
                 result = execute(plan, resources, first_minute=True)
