@@ -33,9 +33,11 @@ def ci(tmp_path):
 
 
 def test_prepared_ci_context_keeps_only_closed_owned_inputs(ci):
-    result = gate.environment(ci | {"DATABASE_URL": "forbidden", "GOOGLE_APPLICATION_CREDENTIALS": "forbidden"}, platform="linux")
+    result = gate.environment(ci | {"DATABASE_URL": "forbidden", "GOOGLE_APPLICATION_CREDENTIALS": "forbidden",
+        gate.APPLICATION_FAMILY_ENV: "untrusted-ambient"}, platform="linux")
     assert result["HIREWIZ_TEST_POSTGRES_URL"] == CI_POSTGRES_URL
     assert "DATABASE_URL" not in result and "GOOGLE_APPLICATION_CREDENTIALS" not in result
+    assert gate.APPLICATION_FAMILY_ENV not in result
     assert prepared_ci_postgres_url(ci) == CI_POSTGRES_URL
 
 
@@ -206,6 +208,7 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
     assert sum(step.get("name") == "Qualify retained actual-source schema25 app v1" for step in steps) == 1
     assert sum(step.get("name") == "Qualify retained actual-source schema25 app v2" for step in steps) == 1
     full = next(step for step in steps if step.get("name") == "Run backend tests")
+    assert full["env"][gate.APPLICATION_FAMILY_ENV] == gate.R02_FAMILY
     import re
 
     assert re.findall(r"--ignore=(\S+)", full["run"]) == [
@@ -216,10 +219,13 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
 
 
 @pytest.mark.parametrize("outcome", ["failure", "timeout", "changed_source", "success"])
-def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, outcome):
+@pytest.mark.parametrize("family", [gate.FAMILY, gate.R02_FAMILY])
+def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, outcome, family):
     root = tmp_path / "source"
     (root / "backend").mkdir(parents=True)
-    monkeypatch.setattr(gate, "environment", lambda *_a, **_k: {"RUNNER_TEMP": str(tmp_path)})
+    monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, "untrusted-ambient")
+    monkeypatch.setattr(gate, "environment", lambda *_a, **_k: {
+        "RUNNER_TEMP": str(tmp_path), gate.APPLICATION_FAMILY_ENV: "untrusted-ambient"})
     stamps = iter(["a" * 64, "b" * 64 if outcome == "changed_source" else "a" * 64])
     monkeypatch.setattr(gate, "source_identity", lambda *_: next(stamps))
     monkeypatch.setattr(gate, "public_cases", lambda *_: {"test_owned": {"test_owned"}})
@@ -237,14 +243,46 @@ def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatc
 
     monkeypatch.setattr(gate.subprocess, "run", child)
     if outcome == "success":
-        assert gate.run(root, "compatibility") == 1
+        assert gate.run(root, "compatibility", family) == 1
     else:
         with pytest.raises(gate.Schema27QualificationDenied):
-            gate.run(root, "compatibility")
+            gate.run(root, "compatibility", family)
     assert len(calls) == 1 and calls[0][1]["timeout"] == gate.CHILD_SECONDS
     assert calls[0][0][1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
+    assert calls[0][1]["env"][gate.APPLICATION_FAMILY_ENV] == family
+    assert os.environ[gate.APPLICATION_FAMILY_ENV] == "untrusted-ambient"
     directories = list(tmp_path.glob("hirewiz-schema27-*"))
     assert bool(directories) is (outcome != "success")
+
+
+@pytest.mark.parametrize("family", [None, gate.FAMILY, gate.R02_FAMILY])
+def test_mixed_source_fixture_selects_only_the_exact_current_descriptor(monkeypatch, family):
+    from test_schema27_app_compatibility_postgres import selected_application_contract
+
+    from scripts import schema27_app_r02_release_contract as r02
+    from scripts import schema27_app_release_contract as old
+
+    if family is None:
+        monkeypatch.delenv(gate.APPLICATION_FAMILY_ENV, raising=False)
+    else:
+        monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, family)
+    assert selected_application_contract() is (r02 if family == gate.R02_FAMILY else old)
+
+
+def test_unknown_mixed_source_family_refuses_before_database_or_archive(monkeypatch, tmp_path):
+    import test_schema27_app_compatibility_postgres as mixed
+
+    monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, "unreviewed-family")
+    monkeypatch.setattr(mixed.release.initial, "prior_app_files", lambda *_: pytest.fail("Archive must not be read"))
+
+    class NoDatabase:
+        def getfixturevalue(self, name):
+            pytest.fail("Database must not be created")
+
+    with pytest.raises(pytest.fail.Exception, match="exact application family"):
+        mixed.current27_database.__wrapped__(NoDatabase())
+    with pytest.raises(pytest.fail.Exception, match="exact application family"):
+        mixed.actual_app_roots.__wrapped__(tmp_path)
 
 
 @pytest.mark.parametrize("error", [RuntimeError("private-body-token-must-not-escape"),

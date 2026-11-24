@@ -40,6 +40,8 @@ def owned(legacy_owned, monkeypatch):
             step.update(name=r02.COMPATIBILITY_STEP, run=r02.COMPATIBILITY_COMMAND)
         elif step.get("name") == old.PROTOCOL_STEP:
             step.update(name=r02.PROTOCOL_STEP, run=r02.PROTOCOL_COMMAND)
+        elif step.get("name") == "Run backend tests":
+            step["env"][gate.APPLICATION_FAMILY_ENV] = r02.CONTRACT
     state.current_workflow = current
     write(state.root, ".github/workflows/ci.yml", yaml.safe_dump(current))
     return state
@@ -61,6 +63,7 @@ def test_exact_current_inventory_and_phase_semantics_have_a_distinct_non_native_
     }
     assert r02.runtime_contract is old.runtime_contract and r02.additive_http is old.additive_http
     assert r02.preserved_sources is old.preserved_sources
+    assert gate.APPLICATION_FAMILY_ENV not in old.NATIVE_ENV
     assert (r02.PRIOR_RELEASE, r02.PRIOR_APP_SHA256) == (old.PRIOR_RELEASE, old.PRIOR_APP_SHA256)
     declarations = old.assignments(ast.parse(Path(r02.__file__).read_bytes()))
     for name in ("CONTRACT", "CANDIDATE_APP_SHA256", "CANDIDATE_APP_FILES",
@@ -98,7 +101,8 @@ def test_new_family_refuses_unknown_partial_or_linked_inventory(owned, change):
         r02.source_fingerprint(owned.root, owned.prior)
 
 
-@pytest.mark.parametrize("change", ["phase_selector", "retained_protocol", "checkout", "http", "runtime"])
+@pytest.mark.parametrize("change", ["phase_selector", "retained_protocol", "checkout", "http", "runtime",
+    "full_family_missing", "full_family_legacy", "full_family_unknown"])
 def test_new_family_preserves_ci_http_and_runtime_guards(owned, change):
     state = owned
     if change == "http":
@@ -114,6 +118,12 @@ def test_new_family_preserves_ci_http_and_runtime_guards(owned, change):
             next(s for s in steps if s.get("name") == r02.COMPATIBILITY_STEP)["run"] = old.COMPATIBILITY_COMMAND
         elif change == "retained_protocol":
             steps[:] = [s for s in steps if s.get("name") != old.RETAINED_PROTOCOL_STEP]
+        elif change.startswith("full_family_"):
+            env = next(s for s in steps if s.get("name") == "Run backend tests")["env"]
+            if change == "full_family_missing":
+                env.pop(gate.APPLICATION_FAMILY_ENV)
+            else:
+                env[gate.APPLICATION_FAMILY_ENV] = old.CONTRACT if change == "full_family_legacy" else "unknown"
         else:
             next(s for s in steps if "uses" in s)["with"]["ref"] = "main"
         write(state.root, ".github/workflows/ci.yml", yaml.safe_dump(value))

@@ -95,6 +95,8 @@ def verify_ci(root):
     need(len(full) == 1 and [line.strip() for line in full[0]["run"].splitlines() if "--ignore=" in line]
          == [exact.rstrip("\n")] and all(full[0]["env"].get(k) == v for k, v in NATIVE_ENV.items()),
          "current_and_retained_suites_required")
+    need(full[0]["env"].get("HIREWIZ_SCHEMA27_APPLICATION_FAMILY") == CONTRACT,
+         "current_suite_family_required")
     backend_checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
     need(backend_checkout.get("with", {}).get("fetch-depth") == 0, "retained_history_required")
 

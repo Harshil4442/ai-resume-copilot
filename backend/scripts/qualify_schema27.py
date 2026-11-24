@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / "backend"), str(ROOT / "infra/gcp"), str(ROOT)]
 FAMILY = "hirewiz_schema27_app_v1"
 R02_FAMILY = "hirewiz_schema27_app_r02_v1"
+APPLICATION_FAMILY_ENV = "HIREWIZ_SCHEMA27_APPLICATION_FAMILY"
 COMPATIBILITY_SUITES = (
     "tests/test_notification_schema27_step_postgres.py",
     "tests/test_notification_schema_compat_postgres.py",
@@ -275,6 +276,9 @@ def run(root, phase, family=FAMILY):
     env = environment(dict(os.environ), platform=sys.platform)
     need(family in {FAMILY, R02_FAMILY}, "application_family")
     stamp = source_identity(root, family)
+    # The child must consume the same explicit role after the closed retained
+    # environment allowlist; ambient selectors cannot choose a different family.
+    env[APPLICATION_FAMILY_ENV] = family
     allowed = public_cases(root, phase)
     from tests.expense_policy_fixtures import synthetic_expense_policy
     from tests.model_cost_fixtures import synthetic_policy
