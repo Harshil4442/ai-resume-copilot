@@ -369,14 +369,14 @@ def test_public_audience_requires_release_bound_to_exact_runtime(setup, monkeypa
     monkeypatch.setattr(
         release,
         "current_review",
-        lambda: SimpleNamespace(policy=config.policy, evidence={"delivery_routes": "0" * 64}),
+        lambda: SimpleNamespace(phase="widening", policy=config.policy, evidence={"delivery_routes": "0" * 64}),
     )
     assert not runtime.enabled_for(2000)
     digest = payload_fingerprint(config.model_dump(mode="json"))
     monkeypatch.setattr(
         release,
         "current_review",
-        lambda: SimpleNamespace(policy=config.policy, evidence={"delivery_routes": digest}),
+        lambda: SimpleNamespace(phase="widening", policy=config.policy, evidence={"delivery_routes": digest}),
     )
     assert runtime.enabled_for(2000)
     altered = config.model_copy(

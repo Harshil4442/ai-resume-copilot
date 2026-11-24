@@ -220,7 +220,7 @@ def test_actual_workflow_retains_historical_steps_and_makes_new27_phases_mandato
 
 @pytest.mark.parametrize("outcome", ["failure", "timeout", "changed_source", "success"])
 @pytest.mark.parametrize("family", [gate.FAMILY, gate.R02_FAMILY])
-def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, outcome, family):
+def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatch, tmp_path, capsys, outcome, family):
     root = tmp_path / "source"
     (root / "backend").mkdir(parents=True)
     monkeypatch.setenv(gate.APPLICATION_FAMILY_ENV, "untrusted-ambient")
@@ -238,8 +238,12 @@ def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatc
         if outcome == "timeout":
             raise subprocess.TimeoutExpired(command, gate.CHILD_SECONDS)
         report = Path(command[-1])
-        report.write_text('<testsuite><testcase classname="test_owned" name="test_owned"/></testsuite>')
-        return SimpleNamespace(returncode=int(outcome == "failure"), stdout=b"", stderr=b"")
+        if outcome == "failure":
+            report.write_text('<testsuite><testcase classname="test_owned" name="test_owned[private-parameter]">'
+                '<failure message="private-assertion">private-body</failure></testcase></testsuite>')
+        else:
+            report.write_text('<testsuite><testcase classname="test_owned" name="test_owned"/></testsuite>')
+        return SimpleNamespace(returncode=int(outcome == "failure"), stdout=b"private-stdout", stderr=b"private-stderr")
 
     monkeypatch.setattr(gate.subprocess, "run", child)
     if outcome == "success":
@@ -251,8 +255,85 @@ def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatc
     assert calls[0][0][1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
     assert calls[0][1]["env"][gate.APPLICATION_FAMILY_ENV] == family
     assert os.environ[gate.APPLICATION_FAMILY_ENV] == "untrusted-ambient"
+    captured = capsys.readouterr()
+    assert "private" not in captured.out + captured.err
+    if outcome == "failure":
+        diagnostic = json.loads(captured.out)
+        assert diagnostic["outcome_counts"]["failed"] == 1 and diagnostic["qualified"] is False
+        assert diagnostic["nonpassing_tests"] == [{"module": "test_owned", "function": "test_owned",
+            "outcome_counts": {"failed": 1, "errors": 0, "skipped": 0}}]
+    else:
+        assert captured.out == captured.err == ""
     directories = list(tmp_path.glob("hirewiz-schema27-*"))
     assert bool(directories) is (outcome != "success")
+
+
+@pytest.fixture
+def private_child_report(tmp_path):
+    directory = tmp_path / "report-directory"
+    directory.mkdir(mode=0o700)
+    before = directory.stat()
+    report = directory / "junit.xml"
+    report.write_text('<testsuite><testcase classname="test_owned" name="test_case"/></testsuite>')
+    return directory, report, (before.st_dev, before.st_ino, before.st_uid)
+
+
+def test_failed_child_names_strip_all_parameters_and_ignore_messages_and_streams(private_child_report):
+    directory, report, owner = private_child_report
+    report.write_text('<testsuite><testcase classname="private.prefix.test_owned" name="test_case[private-one][private-two]">'
+        '<failure message="private-message">private-traceback</failure><system-out>private-token</system-out></testcase>'
+        '<testcase classname="test_owned" name="test_case[private-other]"><error>private-error</error></testcase>'
+        '<testcase classname="test_owned" name="test_skip[private-skip]"><skipped message="private-reason"/></testcase>'
+        '<testcase classname="test_owned" name="test_pass"/></testsuite>')
+    result = gate.failed_child_tests(directory, report, owner, {"test_owned": {"test_case", "test_skip", "test_pass"}})
+    assert result["available"] is True and result["qualified"] is False
+    assert result["outcome_counts"] == {"passed": 1, "failed": 1, "errors": 1, "skipped": 1}
+    assert result["nonpassing_tests"] == [
+        {"module": "test_owned", "function": "test_case", "outcome_counts": {"failed": 1, "errors": 1, "skipped": 0}},
+        {"module": "test_owned", "function": "test_skip", "outcome_counts": {"failed": 0, "errors": 0, "skipped": 1}},
+    ]
+    assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("damage", ["unknown_module", "unknown_function", "oversize_name", "duplicate",
+    "missing", "symlink", "directory_symlink", "oversize_report", "doctype", "entity", "malformed",
+    "extra_file", "changed_owner", "contradictory_outcomes"])
+def test_unsafe_failed_child_report_has_only_fixed_unavailable_code(private_child_report, tmp_path, damage):
+    directory, report, owner = private_child_report
+    if damage == "unknown_module":
+        report.write_text('<testsuite><testcase classname="private-module" name="test_case"/></testsuite>')
+    elif damage == "unknown_function":
+        report.write_text('<testsuite><testcase classname="test_owned" name="private-function[secret]"/></testsuite>')
+    elif damage == "oversize_name":
+        report.write_text('<testsuite><testcase classname="test_owned" name="test_case[' + 'x' * 65536 + ']"/></testsuite>')
+    elif damage == "duplicate":
+        report.write_text('<testsuite>' + '<testcase classname="test_owned" name="test_case[private]"/>' * 2 + '</testsuite>')
+    elif damage == "missing":
+        report.unlink()
+    elif damage == "symlink":
+        target = tmp_path / "private-target"
+        report.replace(target)
+        report.symlink_to(target)
+    elif damage == "directory_symlink":
+        target = tmp_path / "private-directory"
+        directory.rename(target)
+        directory.symlink_to(target, target_is_directory=True)
+    elif damage == "oversize_report":
+        report.write_bytes(b'x' * (gate.MAX_REPORT_BYTES + 1))
+    elif damage in {"doctype", "entity"}:
+        report.write_text('<!' + damage.upper() + ' private><testsuite/>')
+    elif damage == "malformed":
+        report.write_text('<private-invalid>')
+    elif damage == "extra_file":
+        (directory / "private-extra").write_text("private")
+    elif damage == "changed_owner":
+        owner = (owner[0], owner[1] + 1, owner[2])
+    else:
+        report.write_text('<testsuite><testcase classname="test_owned" name="test_case">'
+            '<failure/><error/></testcase></testsuite>')
+    result = gate.failed_child_tests(directory, report, owner, {"test_owned": {"test_case"}})
+    assert result == {"diagnostic": "schema27_child_test_outcomes", "available": False,
+        "code": "schema27_child_report_unavailable", "qualified": False}
 
 
 @pytest.mark.parametrize("family", [None, gate.FAMILY, gate.R02_FAMILY])

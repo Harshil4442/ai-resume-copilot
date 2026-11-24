@@ -242,16 +242,63 @@ def public_cases(root, phase):
     return result
 
 
-def validate_report(path, *, phase, allowed):
+def report_cases(path):
     need(path.is_file() and not path.is_symlink() and 0 < path.stat().st_size <= MAX_REPORT_BYTES,
          "report_required")
     raw = path.read_bytes()
-    need(b"<!doctype" not in raw.lower() and b"<!entity" not in raw.lower(), "report_invalid")
+    need(0 < len(raw) <= MAX_REPORT_BYTES and b"<!doctype" not in raw.lower()
+         and b"<!entity" not in raw.lower(), "report_invalid")
     try:
         cases = ElementTree.fromstring(raw).findall(".//testcase")
     except ElementTree.ParseError:
         raise Schema27QualificationDenied("schema27_qualification_report_invalid") from None
     need(0 < len(cases) <= 4096, "report_cases_required")
+    return cases
+
+
+def report_custody(directory, report, owner):
+    after = directory.stat()
+    need(not directory.is_symlink() and stat.S_IMODE(after.st_mode) == 0o700
+         and (after.st_dev, after.st_ino, after.st_uid) == owner
+         and set(directory.iterdir()) == {report}, "report_custody_changed")
+
+
+def failed_child_tests(directory, report, owner, allowed):
+    """Optional static-name projection only; never child messages or parameters."""
+    unavailable = {"diagnostic": "schema27_child_test_outcomes", "available": False,
+        "code": "schema27_child_report_unavailable", "qualified": False}
+    try:
+        report_custody(directory, report, owner)
+        counts = dict.fromkeys(("passed", "failed", "errors", "skipped"), 0)
+        failures: dict[tuple[str, str], dict[str, int]] = {}
+        seen: set[tuple[str, str]] = set()
+        cases = report_cases(report)
+        for case in cases:
+            module, full_name = case.get("classname", "").split(".")[-1], case.get("name", "")
+            name = full_name.split("[", 1)[0]
+            need(module in allowed and name in allowed[module] and len(full_name) <= 65536
+                 and (module, full_name) not in seen, "public_case_required")
+            seen.add((module, full_name))
+            outcomes = [kind for kind in ("failure", "error", "skipped") if case.find(kind) is not None]
+            need(len(outcomes) <= 1, "report_invalid")
+            outcome = {"failure": "failed", "error": "errors", "skipped": "skipped"}.get(
+                outcomes[0], "passed") if outcomes else "passed"
+            counts[outcome] += 1
+            if outcome != "passed":
+                key = (module, name)
+                group = failures.setdefault(key, dict.fromkeys(("failed", "errors", "skipped"), 0))
+                group[outcome] += 1
+        report_custody(directory, report, owner)
+        return {"diagnostic": "schema27_child_test_outcomes", "available": True,
+            "cases_total": len(cases), "outcome_counts": counts,
+            "nonpassing_tests": [{"module": module, "function": name, "outcome_counts": failures[module, name]}
+                                 for module, name in sorted(failures)], "qualified": False}
+    except (OSError, ValueError, TypeError, Schema27QualificationDenied):
+        return unavailable
+
+
+def validate_report(path, *, phase, allowed):
+    cases = report_cases(path)
     seen: set[tuple[str, str]] = set()
     counts: dict[tuple[str, str], int] = {}
     for case in cases:
@@ -299,13 +346,12 @@ def run(root, phase, family=FAMILY):
     except BaseException:
         raise Schema27QualificationDenied("schema27_qualification_child_outcome_unknown") from None
     # No raw child diagnostic, request, account, output, or assertion value is published.
+    if result.returncode != 0:
+        print(json.dumps(failed_child_tests(directory, report, owner, allowed), sort_keys=True))
     need(result.returncode == 0, "child_failed")
     need(len(result.stdout) <= MAX_REPORT_BYTES and len(result.stderr) <= MAX_REPORT_BYTES, "output_bound")
     count = validate_report(report, phase=phase, allowed=allowed)
-    after = directory.stat()
-    need(not directory.is_symlink() and stat.S_IMODE(after.st_mode) == 0o700
-         and (after.st_dev, after.st_ino, after.st_uid) == owner
-         and set(directory.iterdir()) == {report}, "report_custody_changed")
+    report_custody(directory, report, owner)
     need(source_identity(root, family) == stamp, "source_changed_during_child")
     report.unlink()
     directory.rmdir()
