@@ -572,6 +572,57 @@ test("legacy access keeps purchased terms while new passes require reviewed quot
   await checkLayout(page); expect(f.unexpected).toEqual([]);
 });
 
+test("profile and saved facts remain read-only until unavailable data recovers", async ({ page, context, baseURL }) => {
+  const f = fixture();
+  await context.route("**/*", (route) => new URL(route.request().url()).origin === new URL(baseURL!).origin ? route.continue() : route.abort());
+  await f.install(context, baseURL!);
+  let profileReady = false, memoryReady = false, profileReads = 0, memoryReads = 0;
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/") && request.method() !== "GET") writes.push(`${request.method()} ${path}`);
+  });
+  await context.route((url) => ["/api/account/bootstrap", "/api/backend/v1/career-memory"].includes(url.pathname), async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const profile = new URL(route.request().url()).pathname === "/api/account/bootstrap";
+    if (profile) profileReads += 1; else memoryReads += 1;
+    if (!(profile ? profileReady : memoryReady)) {
+      await route.fulfill({ status: 503, json: { detail: "Saved information is temporarily unavailable." } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: profile ? ownedBootstrapFixture({ profile: {
+      full_name: "Taylor Saved", headline: "Saved professional headline", bio: "Saved career summary", skills: ["Python"],
+    } }) : [{ id: "memory_fixture", memory_key: "target.role", category: "preferences", value: "Saved target role",
+      approval_state: "approved", provenance: "user", source_ref: null, created_at: now, updated_at: now }] });
+  });
+  await page.goto("/profile");
+  await expect(page.getByRole("heading", { name: "Profile unavailable" })).toBeVisible();
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save profile", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry Career Memory" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Value", exact: true })).toBeDisabled();
+  await expect(page.getByText("No reusable career memory has been approved.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Export JSON" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Delete account", exact: true })).toBeEnabled();
+  await checkLayout(page);
+  const initialProfileReads = profileReads, initialMemoryReads = memoryReads;
+  profileReady = true;
+  await page.getByRole("button", { name: "Retry profile" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveValue("Taylor Saved");
+  await expect(page.getByRole("textbox", { name: "Career summary", exact: true })).toHaveValue("Saved career summary");
+  expect(profileReads).toBe(initialProfileReads + 1);
+  await expect(page.getByRole("textbox", { name: "Value", exact: true })).toBeDisabled();
+  memoryReady = true;
+  await page.getByRole("button", { name: "Retry Career Memory" }).click();
+  await expect(page.getByText("Saved target role", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Value", exact: true })).toBeEnabled();
+  expect(memoryReads).toBe(initialMemoryReads + 1);
+  expect(writes).toEqual([]);
+  await checkLayout(page);
+  expect(f.unexpected).toEqual([]);
+});
+
 test("billing histories load on demand and remain accessible at every width", async ({ page, context, baseURL }) => {
   const f = fixture();
   await context.route("**/*", (route) => new URL(route.request().url()).origin === new URL(baseURL!).origin ? route.continue() : route.abort());
