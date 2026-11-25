@@ -15,13 +15,14 @@ from pydantic import ConfigDict, model_validator
 from sqlalchemy import Engine
 
 from ..recovery.contracts import Contract, canonical, fingerprint
-from ..recovery.gcp_contracts import WitnessBody, WitnessPin
+from ..recovery.gcp_contracts import RegistryPin, WitnessBody, WitnessPin
 from ..recovery.gcp_partitioned_contracts import PartitionedResource
 from ..recovery.native_diagnostics import native_phase
 from ..recovery.pairing_contracts import PositiveInteger
 from ..recovery.store import GuardDenied, GuardUnavailable
 
 if TYPE_CHECKING:
+    from google.cloud.firestore_admin_v1.services.firestore_admin import FirestoreAdminClient
     from sqlalchemy.orm import Session, sessionmaker
 
     from ..recovery.gcp_journal import GcsWitnessFence
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from ..recovery.native_identity_cohorts import PreSendIdentityCohorts
     from ..recovery.password_reauth import CandidateWebSession
     from .contracts import CandidateLoginResult
+    from .metadata_transport import ProcessMetadataTransport
     from .retention import CandidateLifetimeRetention
     from .service import CandidateAccountService
 
@@ -129,7 +131,7 @@ def _private_engine(source: Engine) -> Engine:
     return private
 
 
-def _build(config: CandidateNativeConfiguration) -> _Composition:
+def _build(config: CandidateNativeConfiguration, *, metadata_admin: FirestoreAdminClient | None = None) -> _Composition:
     from google.cloud.firestore_admin_v1.services.firestore_admin import FirestoreAdminClient
     from google.cloud.firestore_v1.services.firestore import FirestoreClient
     from google.cloud.storage import Client
@@ -149,7 +151,8 @@ def _build(config: CandidateNativeConfiguration) -> _Composition:
     from .service import CandidateAccountService
 
     sql = _private_engine(engine)
-    client, admin = FirestoreClient(), FirestoreAdminClient()
+    client = FirestoreClient()
+    admin = FirestoreAdminClient() if metadata_admin is None else metadata_admin
     resource, witness = config.publication_resource, config.execution_witness_pin
     execution_rpc = FirestoreRpc(client, admin, database_resource=witness.registry.database)
     protected_rpc = FirestoreRpc(
@@ -189,22 +192,35 @@ def _build(config: CandidateNativeConfiguration) -> _Composition:
 class ConfiguredCandidateAccounts:
     """One exact configured composition, with SDK clients deferred to first use."""
 
-    def __init__(self, configuration: CandidateNativeConfiguration, *, pre_send_identity_batching: bool = False):
-        if type(pre_send_identity_batching) is not bool:
+    def __init__(self, configuration: CandidateNativeConfiguration, *, pre_send_identity_batching: bool = False,
+                 process_shared_metadata: bool = False):
+        if (type(pre_send_identity_batching) is not bool or type(process_shared_metadata) is not bool
+                or (pre_send_identity_batching and process_shared_metadata)):
             raise GuardUnavailable("Explicit local metadata batching selection is required")
         self._raw = canonical(configuration.model_dump(mode="json"))
         self._instance: _Composition | None = None
         self._lock = Lock()
         self._pre_send_identity_batching = pre_send_identity_batching
         self._identity_cohorts: PreSendIdentityCohorts | None = None
+        self._process_shared_metadata = process_shared_metadata
+        self._metadata_transport: ProcessMetadataTransport | None = None
 
-    def _composition(self) -> _Composition:
+    def _composition(self, *, ordinary_validation: bool = False) -> _Composition:
         config = _configuration()
         if canonical(config.model_dump(mode="json")) != self._raw:
             raise GuardDenied("Candidate native deployment configuration changed")
         with self._lock:
             if self._instance is None:
-                self._instance = _build(config)
+                if self._process_shared_metadata and ordinary_validation:
+                    from .metadata_transport import process_metadata_transport
+
+                    owner = process_metadata_transport(config)
+                    self._instance = _build(config, metadata_admin=owner.admin)
+                    self._metadata_transport = owner
+                else:
+                    self._instance = _build(config)
+            if self._metadata_transport is not None:
+                self._metadata_transport.guard()
             return self._instance
 
     def _invoke(self, operation: Callable[[CandidateAccountService], Result]) -> Result:
@@ -260,6 +276,8 @@ class ConfiguredCandidateAccounts:
         if mode not in {"true", "false"}:
             raise GuardUnavailable("Candidate account identity observation mode is unavailable")
         if mode == "false":
+            if self._process_shared_metadata:
+                raise GuardUnavailable("Process metadata sharing requires fresh List observations")
             self._invoke(lambda service: service.validate(context, auth_generation=auth_generation))
             return
         from ..recovery.gcp_rpc import FirestoreIdentityList, FirestoreRpc
@@ -267,19 +285,23 @@ class ConfiguredCandidateAccounts:
         from ..recovery.native_metadata_admission import require_enabled
 
         require_enabled()
-        current = self._composition()
+        current = self._composition(ordinary_validation=True)
         fixed = CandidateNativeConfiguration.model_validate_json(self._raw)
         bindings = ((current.lifetime.registry.rpc, fixed.execution_witness_pin.registry),
                     (current.scoped.publication.registry.rpc, fixed.publication_resource.pin.authority.registry))
-        # The constructor validates exact arity, concrete RPC types and shared
-        # transport before accessing either generic registry protocol object.
+        if any(type(rpc) is not FirestoreRpc or type(pin) is not RegistryPin for rpc, pin in bindings):
+            raise GuardUnavailable("Exact native identity RPC bindings are required")
+        checked_bindings = cast(tuple[tuple[FirestoreRpc, RegistryPin], ...], bindings)
+        # Retain concrete RPC/pin checks before reusing a metadata coordinator.
         cohorts = None
-        if self._pre_send_identity_batching:
+        if self._metadata_transport is not None:
+            cohorts = self._metadata_transport.for_bindings(checked_bindings)
+        elif self._pre_send_identity_batching:
             from ..recovery.native_identity_cohorts import PreSendIdentityCohorts
 
             with self._lock:
                 if self._identity_cohorts is None:
-                    self._identity_cohorts = PreSendIdentityCohorts(bindings)
+                    self._identity_cohorts = PreSendIdentityCohorts(checked_bindings)
                 cohorts = self._identity_cohorts
         batch = FirestoreIdentityList(cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings)),
                                       cohorts=cohorts, pins=tuple(pin for _, pin in bindings))
@@ -329,4 +351,6 @@ class ConfiguredCandidateAccounts:
 
 @native_phase("candidate_account", "configuration")
 def production_candidate_accounts() -> ConfiguredCandidateAccounts:
-    return ConfiguredCandidateAccounts(_configuration())
+    from .metadata_transport import enabled
+
+    return ConfiguredCandidateAccounts(_configuration(), process_shared_metadata=enabled())

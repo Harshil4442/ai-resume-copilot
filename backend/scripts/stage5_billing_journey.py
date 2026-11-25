@@ -308,7 +308,7 @@ def validate(results, preflight):
             "governed_refusals": sum(row["status"] == 429 and row.get("refusal_valid") is True for row in rows)}
 
 
-def validate_pre_send_candidate(results, preflight):
+def validate_pre_send_candidate(results, preflight, *, fresh_factories=False):
     """Separate local accounting oracle; retain the original validation result.
 
     No physical count is rewritten to satisfy the unbatched two-RPC predicate.
@@ -346,8 +346,17 @@ def validate_pre_send_candidate(results, preflight):
                 or any(wire.get(key, 0) for key in ("synthetic_admin_get_database", "sql_INSERT", "sql_UPDATE",
                                                    "sql_DELETE", "data_commit", "blocked_external_attempts"))):
             failures["candidate_logical_auth_accounting_or_effects"] = 1
+    if type(fresh_factories) is not bool:
+        failures["candidate_factory_mode"] = 1
+    elif fresh_factories:
+        sent = sum(row["sent"] for row in rows)
+        if any(type(wire.get(name)) is not int or wire[name] != sent for name in (
+            "candidate_fresh_factory_objects", "candidate_private_data_clients", "candidate_private_storage_clients"
+        )):
+            failures["candidate_private_factory_accounting"] = 1
     return {"passed": not failures, "failures": failures,
-            "validation_mode": "pre_send_identity_batching_local_experiment_v1",
+            "validation_mode": ("pre_send_identity_fresh_factory_local_v2" if fresh_factories
+                                else "pre_send_identity_batching_local_experiment_v1"),
             "production_capacity_qualified": False, "production_transport_sharing_proven": False,
             "baseline_validation": baseline, "logical_observations": counts,
             "physical_admin_list_rpcs": physical,

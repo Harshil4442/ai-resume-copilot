@@ -269,3 +269,23 @@ def test_candidate_logical_accounting_and_original_effect_guards_fail_closed(mon
     else:
         preflight["foreign_resume_status"] = 200
     assert billing.validate_pre_send_candidate(phases, preflight)["passed"] is False
+
+
+@pytest.mark.parametrize("wrong", [None, "candidate_fresh_factory_objects", "candidate_private_data_clients", "candidate_private_storage_clients"])
+def test_fresh_factory_mode_refuses_shared_private_clients_or_missing_construction(monkeypatch, wrong):
+    phases = candidate_measurement(monkeypatch)
+    wire = phases[0]["wire_and_sql"]
+    keys = ("candidate_fresh_factory_objects", "candidate_private_data_clients", "candidate_private_storage_clients")
+    count = sum(row["sent"] for row in phases[0]["requests"])
+    wire.update({key: count for key in keys})
+    if wrong is not None:
+        wire[wrong] = 1
+    result = billing.validate_pre_send_candidate(phases, BASELINE_PREFLIGHT, fresh_factories=True)
+    assert result["passed"] is (wrong is None)
+    assert result["production_capacity_qualified"] is result["production_transport_sharing_proven"] is False
+    assert result["validation_mode"] == "pre_send_identity_fresh_factory_local_v2"
+    # The original constructor-only diagnostic cannot be mislabeled as fresh.
+    for key in keys:
+        wire.pop(key)
+    assert billing.validate_pre_send_candidate(phases, BASELINE_PREFLIGHT, fresh_factories=True)["passed"] is False
+    assert billing.validate_pre_send_candidate(phases, BASELINE_PREFLIGHT)["passed"] is True

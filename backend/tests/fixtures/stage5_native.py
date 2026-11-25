@@ -9,7 +9,7 @@ import socket
 import threading
 import time
 from collections import Counter
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -225,6 +225,7 @@ def configured_accounts(*, engine, directory, endpoint: str, counters, pre_send_
     import tests.test_candidate_production_factory as fixture
 
     patch = pytest.MonkeyPatch()
+    private_resources = ExitStack()
     channel = grpc.insecure_channel(endpoint)
     generator = None
     try:
@@ -239,17 +240,6 @@ def configured_accounts(*, engine, directory, endpoint: str, counters, pre_send_
         c = next(generator)
         if type(pre_send_identity_batching) is not bool:
             raise ValueError("Explicit local metadata batching selection is required")
-        if pre_send_identity_batching:
-            from app.domains.candidate_accounts.production import ConfiguredCandidateAccounts
-
-            c.accounts = ConfiguredCandidateAccounts(c.config, pre_send_identity_batching=True)
-            original_snapshot = counters.snapshot
-
-            def snapshot():
-                cohorts = c.accounts._identity_cohorts
-                return original_snapshot() | (cohorts.snapshot() if cohorts is not None else {})
-
-            patch.setattr(counters, "snapshot", snapshot)
         c.sql_active = ThreadSet()
         # Preserve the existing no-SQL/no-native-transaction Storage guard;
         # count its actual SDK transport requests, never payloads or paths.
@@ -259,16 +249,97 @@ def configured_accounts(*, engine, directory, endpoint: str, counters, pre_send_
             return original(*args, **kwargs)
         c.storage._http.request.side_effect = storage_request
         from app.domains.candidate_accounts import service
-        patch.setattr(service, "production_candidate_accounts", lambda: c.accounts)
+        if pre_send_identity_batching:
+            from google.auth.compute_engine import Credentials
+
+            from app.domains.candidate_accounts import metadata_transport, production
+
+            # This is a fresh owned experiment, never a borrowed production pool.
+            if metadata_transport._state is not None:
+                raise RuntimeError("The local metadata experiment requires an empty process owner")
+            patch.setattr(metadata_transport, "_state", None)
+            # The installed Admin SDK transport is explicitly intercepted. This
+            # synthetic resolved principal is not a provider/IAM attestation and
+            # cannot refresh or contact a metadata server in this egress guard.
+            c.native.sdk.admin.transport._credentials = Credentials(
+                service_account_email="runtime@hirewiz-local-authority.iam.gserviceaccount.com",
+                universe_domain="googleapis.com",
+            )
+            patch.setenv(metadata_transport.FLAG, "true")
+            storage_client_type = type(c.storage)
+            retained_clients = []
+
+            def private_data_client():
+                private_channel = grpc.insecure_channel(endpoint)
+                private_resources.callback(private_channel.close)
+                private = FirestoreClient(transport=FirestoreGrpcTransport(
+                    host=endpoint, channel=private_channel, credentials=AnonymousCredentials()))
+                retained_clients.append(private)
+                counters.add("candidate_private_data_clients")
+                for name in ("begin_transaction", "batch_get_documents", "commit", "rollback"):
+                    method = getattr(private, name)
+
+                    def observed(request, *, _name=name, _method=method, **kwargs):
+                        if kwargs.get("retry") is not None or not 0 < kwargs.get("timeout", 0) <= 2:
+                            raise AssertionError("Private emulator RPC retry/timeout differs")
+                        if _name == "begin_transaction":
+                            assert not c.sql_active, "Native transaction began under SQL locks"
+                        counters.add("data_" + _name)
+                        try:
+                            result = _method(request=request, **kwargs)
+                            if _name == "begin_transaction":
+                                native.views.add(bytes(result.transaction))
+                            return result
+                        finally:
+                            if _name in {"commit", "rollback"}:
+                                transaction = request.transaction if hasattr(request, "transaction") else request["transaction"]
+                                native.views.discard(bytes(transaction))
+
+                    setattr(private, name, observed)
+                return private
+
+            def private_storage_client(*args, **kwargs):
+                if args or kwargs != {"project": "hirewiz-local-authority"}:
+                    raise AssertionError("Private Storage SDK construction differs")
+                session = Mock(spec=requests.Session)
+                session.is_mtls = False
+                session.request.side_effect = storage_request
+                private = storage_client_type(project=kwargs["project"],
+                    credentials=AnonymousCredentials(), _http=session)
+                private_resources.callback(private.close)
+                retained_clients.append(private)
+                counters.add("candidate_private_storage_clients")
+                return private
+
+            def fresh_accounts():
+                counters.add("candidate_fresh_factory_objects")
+                return production.production_candidate_accounts()
+
+            patch.setattr(c.clients[0], "side_effect", private_data_client)
+            patch.setattr(c.clients[2], "side_effect", private_storage_client)
+            patch.setattr(service, "production_candidate_accounts", fresh_accounts)
+            original_snapshot = counters.snapshot
+
+            def snapshot():
+                return original_snapshot() | metadata_transport.shared_metadata_snapshot()
+
+            patch.setattr(counters, "snapshot", snapshot)
+        else:
+            patch.setattr(service, "production_candidate_accounts", lambda: c.accounts)
         yield SimpleNamespace(case=c, patch=patch, native=native)
     finally:
-        if generator is not None:
-            generator.close()
-        channel.close()
-        patch.undo()
+        try:
+            if generator is not None:
+                generator.close()
+        finally:
+            try:
+                private_resources.close()
+            finally:
+                channel.close()
+                patch.undo()
 
 
-def check_body(path: str, body: dict, *, user_id: int, buyer: bool, heavy: bool) -> bool:
+def check_body(path: str, body: object, *, user_id: int, buyer: bool, heavy: bool) -> bool:
     from scripts.stage5_seed import owned_opportunity_ids, synthetic_email
 
     if type(body) is not dict or heavy != (user_id == 8):

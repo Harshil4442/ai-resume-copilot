@@ -151,7 +151,7 @@ design would need separate review and proof.
 Within one exact shared composition, a metadata caller may wait up to a nominal
 2ms collection window. Scheduling can delay wakeup; that delay consumes existing
 deadlines rather than extending them. Cohorts contain at most eight callers;
-there are at most 32 pending callers and four collecting/in-flight cohorts. The
+there are at most 32 pending callers and eight collecting/in-flight cohorts. The
 cohort is detached from the open queue **before** Redis admission and the SDK
 request. A caller arriving after sealing never joins that request, even while its
 response is pending. No completed result is available to future calls. Values are
@@ -193,3 +193,32 @@ successful barrier observations per physical List, and the original physical
 validation result, whose unbatched two-physical-RPC-per-response predicate is
 unchanged. Neither physical counts nor refusal counts are rewritten. These
 aggregate experiment counters are not native proof or authorization receipts.
+## Proposed process-owned metadata transport (default off)
+
+`CANDIDATE_ACCOUNT_SHARED_METADATA_ENABLED=true` selects a local production-factory
+candidate. Each factory call still returns a new account object. Its first ordinary
+validation builds a new composition, data SDK client, dedicated Storage client,
+service, witness and request-local observation scope. Only one lazy process-owned
+Admin SDK client and its pre-send metadata coordinator are shared. Importing the
+module or calling the structural factory constructs no SDK clients. The original
+constructor-only experiment remains a separate selection.
+
+The trusted factory creates one Admin transport and credential object. An unresolved
+metadata-service principal is resolved through that same SDK credential before
+publication. The owner pins its process ID, full native configuration and registry
+pins, credential object/principal/scopes/quota binding, endpoint/options and relevant
+environment. Changed bindings or inherited fork state refuse use. Ordinary token
+refresh remains possible; no token or candidate authorization result is a pool key.
+
+Each sealed caller retains its own RPC/data-client ticket and unchanged scope,
+deadline, fresh configuration, witness, session and revocation checks. Metadata is
+mapped by canonical database name back to that caller's RPC identities. The process
+coordinator retains no request RPC/data-client references, and completed metadata is
+released after its sealed waiters return. New arrivals cannot join after send.
+Known local pending/cohort limits return a capacity refusal and increment an
+aggregate diagnostic counter; UID/configuration/deadline/unknown failures remain
+unavailable. This does not identify the cause of the earlier experiment's lone 503.
+
+Installed-SDK tests can verify fresh-factory object privacy and transport ordering.
+No Cloud Run, IAM, hosted latency, invoice or production-capacity qualification is
+established by this candidate. The operator flag remains off in deployments.

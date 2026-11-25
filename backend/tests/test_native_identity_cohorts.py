@@ -73,7 +73,7 @@ def test_sequential_operations_keep_separate_entry_and_exit_reads(candidate):
 
 def test_bounded_eight_waiter_workload_saves_actual_sdk_calls_without_sharing_scopes(candidate, record_property):
     rpcs, bindings, cohorts, batch, calls, admission = candidate
-    assert (WINDOW_SECONDS, MAX_PENDING, MAX_COHORT_SIZE, MAX_COHORTS) == (0.002, 32, 8, 4)
+    assert (WINDOW_SECONDS, MAX_PENDING, MAX_COHORT_SIZE, MAX_COHORTS) == (0.002, 32, 8, 8)
     entry = Barrier(8)
     dependent_reads_complete = Barrier(8)
     control_reads = []
@@ -275,9 +275,10 @@ def test_copied_context_still_poisons_only_its_own_scope(candidate):
     settled(cohorts)
 
 
-def test_four_inflight_cohorts_are_bounded_and_no_fifth_sdk_call_is_sent(candidate):
-    _, _, cohorts, batch, calls, _ = candidate
-    sent = [Event() for _ in range(4)]
+def test_eight_after_send_callers_keep_separate_physical_rpcs_and_local_bound(candidate):
+    rpcs, bindings, cohorts, batch, calls, admission = candidate
+    assert MAX_COHORTS == 8
+    sent = [Event() for _ in range(MAX_COHORTS)]
     release = Event()
     original = batch.admin.transport.list_databases.side_effect
 
@@ -288,17 +289,33 @@ def test_four_inflight_cohorts_are_bounded_and_no_fifth_sdk_call_is_sent(candida
         return value
 
     batch.admin.transport.list_databases.side_effect = held
-    with ThreadPoolExecutor(max_workers=4) as workers:
+    with ThreadPoolExecutor(max_workers=MAX_COHORTS) as workers:
         futures = []
-        for index in range(4):
-            futures.append(workers.submit(batch.identities))
-            assert sent[index].wait(timeout=5)
-        with pytest.raises(GuardUnavailable):
-            batch.identities()
-        assert len(calls) == 4
-        release.set()
-        for future in futures:
-            future.result(timeout=5)
+        try:
+            # Each new caller arrives only after the previous physical send.
+            # None may join any of the eight still-blocked observations.
+            for index in range(MAX_COHORTS):
+                futures.append(workers.submit(batch.identities))
+                assert sent[index].wait(timeout=5)
+            assert cohorts.open is None and cohorts.active == cohorts.pending == MAX_COHORTS
+            with pytest.raises(MetadataCapacityUnavailable):
+                batch.identities()
+            assert len(calls) == admission.grants == MAX_COHORTS
+            assert cohorts.snapshot()["candidate_admission_rejections"] == 1
+        finally:
+            release.set()
+        results = [future.result(timeout=5) for future in futures]
+    expected_uid = str(bindings[0][1].database_uid)
+    assert all(result[id(rpcs[0])]["uid"] == expected_uid for result in results)
+    assert len({id(result) for result in results}) == MAX_COHORTS
+    assert len({id(result[id(rpcs[0])]) for result in results}) == MAX_COHORTS
+    results[0][id(rpcs[0])]["uid"] = "caller-local-change"
+    assert all(result[id(rpcs[0])]["uid"] == expected_uid for result in results[1:])
+    settled(cohorts)
+    # A later caller performs a ninth physical read, never a completed reuse.
+    batch.admin.transport.list_databases.side_effect = original
+    assert batch.identities()[id(rpcs[0])]["uid"] == expected_uid
+    assert len(calls) == admission.grants == MAX_COHORTS + 1
     settled(cohorts)
 
 

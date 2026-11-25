@@ -63,7 +63,7 @@ def parser():
     mode.add_argument("--jobs-journey", action="store_true", help="Compare governed Dashboard → Jobs routes")
     mode.add_argument("--billing-journey", action="store_true", help="Model governed cold Billing and explicit history opening")
     result.add_argument("--pre-send-identity-batching", action="store_true",
-                        help="Local Billing candidate on the shared fixture only; not production transport sharing")
+                        help="Local Billing candidate with fresh factories and one metadata transport; no provider proof")
     result.add_argument("--output", type=Path)
     result.add_argument("--pg-bin", type=Path)
     result.add_argument("--redis-server", type=Path)
@@ -333,11 +333,24 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
         if app.dependency_overrides:
             raise RuntimeError("No application auth/database dependency override is allowed")
         # Counter instrumentation observes the real validate method, not a grant.
-        actual_validate = native.case.accounts.validate
-        def validated(*args, **kwargs):
-            counters.add("native_account_validate")
-            return actual_validate(*args, **kwargs)
-        guards.setattr(native.case.accounts, "validate", validated)
+        if pre_send_identity_batching:
+            from app.domains.candidate_accounts.production import ConfiguredCandidateAccounts
+
+            actual_validate_method = ConfiguredCandidateAccounts.validate
+            def validated_instance(instance, *args, **kwargs):
+                counters.add("native_account_validate")
+                return actual_validate_method(instance, *args, **kwargs)
+            guards.setattr(ConfiguredCandidateAccounts, "validate", validated_instance)
+            # The owner pin includes this mode; establish it before the fresh
+            # factory preflight, then leave it unchanged through measurement.
+            os.environ.update(CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED="true",
+                              CANDIDATE_METADATA_ADMISSION_ENABLED="true")
+        else:
+            actual_validate = native.case.accounts.validate
+            def validated(*args, **kwargs):
+                counters.add("native_account_validate")
+                return actual_validate(*args, **kwargs)
+            guards.setattr(native.case.accounts, "validate", validated)
         scoped_app = RequestGuardScope(app, [native.case.sql_active, native.native.views], counters)
         config = uvicorn.Config(scoped_app, host="127.0.0.1", port=resources.api_port,
             ssl_keyfile=str(key), ssl_certfile=str(cert), access_log=False, log_config=None,
@@ -445,6 +458,8 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
             "source": resources.command(["git", "-C", str(ROOT), "rev-parse", "HEAD"]).strip(),
             "actual_application_python_sources_sha256": application_sources_sha256(),
             "pre_send_identity_batching_candidate": pre_send_identity_batching,
+            "local_factory_mode": ("fresh_per_request_shared_metadata" if pre_send_identity_batching
+                                   else "existing_shared_fixture"),
             "production_transport_sharing_proven": False,
             "python": platform.python_version(), "machine": platform.machine(),
             "redis_binary_sha256": hashlib.sha256(resources.redis_binary.read_bytes()).hexdigest(),
@@ -457,7 +472,7 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                 "Connection acquisition includes pre-ping/connect/wait; pure pool wait is unknown.",
                 "Redis INFO counter includes observation/setup protocol commands; it is not provider billing metering.",
                 "Local wall/CPU/RSS and response bytes do not establish native CU, autoscaling, invoice cost or 10,000-user peaks.",
-                ("Candidate shares one fixture composition; real per-request production factories do not share these RPC objects. No production capacity improvement is established."
+                ("Candidate invokes fresh production factory objects with private data/Storage SDK clients; only metadata transport/cohorts are shared. Metadata credentials/replies remain synthetic; no Cloud Run efficacy or IAM proof."
                  if pre_send_identity_batching else "Roughly 1M authenticated requests/month is a planning benchmark; 40 units/min and two Lists yields at most 864,000/30 days before other use, not a native success-floor qualification."),
                 "No Stage5 completion, production flag activation, retail qualification or cost guarantee follows from this report."]}
         if first_minute:
@@ -466,10 +481,10 @@ def execute(plan, resources, *, fresh_window=False, skill_roi_journey=False, fir
                 "no provider payment or file is created. Times are ideal initial arrival ticks, and Redis INFO sampling adds "
                 "one local command per observation. No native quota change, production latency or paid-customer behavior is inferred.")
         elif billing_journey:
-            report["validation"] = (stage5_billing_journey.validate_pre_send_candidate(results, preflight)
+            report["validation"] = (stage5_billing_journey.validate_pre_send_candidate(results, preflight, fresh_factories=True)
                                     if pre_send_identity_batching else stage5_billing_journey.validate(results, preflight))
             report["limitations"].append("Fixed direct-HTTP model of the 9dc Billing schedule contract, inherited "
-                "unchanged by live frontend 8a72627; 9dc is not the latest deployed frontend. Six base distinct "
+                "unchanged by frontend db8cb65d; 9dc is not the latest deployed frontend. Six base distinct "
                 "cold routes, up to two additional opening-consumer bootstrap reads for settlement or a missing "
                 "advisory snapshot, and history reads only after explicit open. "
                 "No Billing orders/events are seeded. Settlement/cache interleavings have synthetic unit coverage, "

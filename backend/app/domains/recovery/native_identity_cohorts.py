@@ -1,6 +1,6 @@
 """Opt-in pre-send metadata cohorts; never a retained identity or authority cache.
 
-Only already-waiting calls on one exact composition can share a physical List.
+Only already-waiting calls on one exact metadata transport can share a List.
 Every caller keeps its own observation scope, UID checks and original deadline.
 """
 from __future__ import annotations
@@ -19,14 +19,21 @@ from .native_metadata_admission import (
 from .store import GuardUnavailable
 
 if TYPE_CHECKING:
+    from ..candidate_accounts.metadata_transport import ProcessMetadataTransport
     from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
 
 WINDOW_SECONDS = 0.002
 MAX_PENDING = 32
 MAX_COHORT_SIZE = 8
-MAX_COHORTS = 4
+MAX_COHORTS = 8
 FAILURE = "Fresh pre-send identity metadata is unavailable"
-Values = tuple[tuple[int, tuple[str, str, str]], ...]
+Values = tuple[tuple[str, tuple[str, str, str]], ...]
+
+
+@dataclass(frozen=True)
+class _Ticket:
+    rpcs: tuple[FirestoreRpc, ...]
+    clients: tuple[object, ...]
 
 
 @dataclass
@@ -39,26 +46,37 @@ class _Cohort:
 
 
 class PreSendIdentityCohorts:
-    """One bounded, composition-owned rendezvous with no after-send joining.
+    """One bounded, transport-owned rendezvous with no after-send joining.
 
     The first waiting request owns the physical RPC; no background task or copied
     Context runs authorization. Completed values survive only for sealed waiters.
     """
 
-    def __init__(self, bindings: tuple[tuple[FirestoreRpc, RegistryPin], ...]):
+    def __init__(self, bindings: tuple[tuple[FirestoreRpc, RegistryPin], ...], *,
+                 shared_transport: ProcessMetadataTransport | None = None):
         from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
 
         if (type(bindings) is not tuple or len(bindings) != 2
                 or any(type(rpc) is not FirestoreRpc or type(pin) is not RegistryPin
                        or rpc.database_resource != pin.database for rpc, pin in bindings)):
             raise GuardUnavailable(FAILURE)
-        self.rpcs = cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings))
+        rpcs = cast(tuple[FirestoreRpc, FirestoreRpc], tuple(rpc for rpc, _ in bindings))
         self.pins = tuple(pin for _, pin in bindings)
-        checked = FirestoreIdentityList(self.rpcs)
+        checked = FirestoreIdentityList(rpcs)
+        if shared_transport is not None:
+            from ..candidate_accounts.metadata_transport import ProcessMetadataTransport
+
+            if (type(shared_transport) is not ProcessMetadataTransport
+                    or checked.admin is not shared_transport.admin or self.pins != shared_transport.pins):
+                raise GuardUnavailable(FAILURE)
+            shared_transport.guard()
+        self.shared_transport = shared_transport
+        # The process coordinator retains no request RPC/data client references.
+        self.rpcs: tuple[FirestoreRpc, ...] = rpcs if shared_transport is None else ()
         self.admin, self.transport = checked.admin, checked.admin.transport
-        self.clients = tuple(rpc.client for rpc in self.rpcs)
+        self.clients = tuple(rpc.client for rpc in rpcs) if shared_transport is None else ()
         self.names, self.parent, self.timeout = checked.names, checked.parent, checked.timeout
-        self.timeouts = tuple(rpc.rpc_timeout for rpc in self.rpcs)
+        self.timeouts = tuple(rpc.rpc_timeout for rpc in rpcs)
         self.configuration = self._configuration()
         self.condition = Condition()
         self.open: _Cohort | None = None
@@ -66,7 +84,8 @@ class PreSendIdentityCohorts:
         # Aggregate local experiment measurements only, never authorization.
         self.counts = dict.fromkeys(("validation_started", "validation_entered", "validation_succeeded",
                                     "validation_failed", "barriers_started", "barriers_succeeded",
-                                    "barriers_failed", "cohorts_started", "cohorts_completed"), 0)
+                                    "barriers_failed", "cohorts_started", "cohorts_completed",
+                                    "admission_rejections"), 0)
 
     def validation(self, phase: str) -> None:
         if phase not in {"started", "entered", "succeeded", "failed"}:
@@ -85,33 +104,42 @@ class PreSendIdentityCohorts:
             "CANDIDATE_ACCOUNT_LIST_IDENTITY_ENABLED", "CANDIDATE_METADATA_ADMISSION_ENABLED",
             "CANDIDATE_METADATA_CALLS_PER_MINUTE", "GOOGLE_CLOUD_PROJECT"))
 
-    def _guard(self, batch: FirestoreIdentityList) -> None:
-        from .gcp_rpc import FirestoreIdentityList
+    def _guard(self, batch: FirestoreIdentityList, ticket: _Ticket | None = None) -> None:
+        from .gcp_rpc import FirestoreIdentityList, FirestoreRpc
+
+        if self.shared_transport is not None:
+            self.shared_transport.guard()
 
         if (type(batch) is not FirestoreIdentityList or batch.cohorts is not self
                 or batch.pins != self.pins or len(batch.rpcs) != 2
-                or any(actual is not expected for actual, expected in zip(batch.rpcs, self.rpcs, strict=True))
+                or any(type(rpc) is not FirestoreRpc for rpc in batch.rpcs)
+                or (self.shared_transport is None and any(actual is not expected
+                    for actual, expected in zip(batch.rpcs, self.rpcs, strict=True)))
                 or self.admin.transport is not self.transport or batch.admin is not self.admin
                 or batch.names != self.names or batch.parent != self.parent or batch.timeout != self.timeout
-                or any(rpc.admin is not self.admin or rpc.client is not client
+                or any(rpc.admin is not self.admin
                        or rpc.database_resource != name or rpc.rpc_timeout != timeout
-                       for rpc, client, name, timeout in zip(self.rpcs, self.clients, self.names, self.timeouts, strict=True))
+                       for rpc, name, timeout in zip(batch.rpcs, self.names, self.timeouts, strict=True))
+                or (self.shared_transport is None and any(rpc.client is not client
+                    for rpc, client in zip(batch.rpcs, self.clients, strict=True)))
+                or (ticket is not None and any(rpc is not original or rpc.client is not client
+                    for rpc, original, client in zip(batch.rpcs, ticket.rpcs, ticket.clients, strict=True)))
                 or self._configuration() != self.configuration
                 or self.configuration[:2] != ("true", "true")):
             raise GuardUnavailable(FAILURE)
 
-    def _freeze(self, values: dict) -> Values:
-        if type(values) is not dict or set(values) != {id(rpc) for rpc in self.rpcs}:
+    def _freeze(self, batch: FirestoreIdentityList, values: dict) -> Values:
+        if type(values) is not dict or set(values) != {id(rpc) for rpc in batch.rpcs}:
             raise GuardUnavailable(FAILURE)
         frozen = []
-        for rpc, pin in zip(self.rpcs, self.pins, strict=True):
+        for rpc, pin in zip(batch.rpcs, self.pins, strict=True):
             value = values[id(rpc)]
             expected = (pin.database, str(pin.database_uid), "FIRESTORE_NATIVE")
             if (type(value) is not dict or set(value) != {"name", "uid", "type"}
                     or any(type(value[key]) is not str for key in ("name", "uid", "type"))
                     or tuple(value[key] for key in ("name", "uid", "type")) != expected):
                 raise GuardUnavailable(FAILURE)
-            frozen.append((id(rpc), expected))
+            frozen.append((pin.database, expected))
         return tuple(frozen)
 
     def _publish(self, cohort: _Cohort, values: Values | None, failure: str | None) -> None:
@@ -137,14 +165,16 @@ class PreSendIdentityCohorts:
 
     def _read(self, batch: FirestoreIdentityList) -> dict[int, dict]:
         self._guard(batch)
+        ticket = _Ticket(tuple(batch.rpcs), tuple(rpc.client for rpc in batch.rpcs))
         # Redis admission remains <=1s and this exact SDK call retains its own
         # finite timeout. Waiting never resets the caller's separate 30s scope.
         deadline = monotonic() + self.timeout + 1.1
         with self.condition:
-            self._guard(batch)
+            self._guard(batch, ticket)
             if (self.pending >= MAX_PENDING or (self.open is None and self.active >= MAX_COHORTS)
                     or (self.open is not None and self.open.members >= MAX_COHORT_SIZE)):
-                raise GuardUnavailable(FAILURE)
+                self.counts["admission_rejections"] += 1
+                raise MetadataCapacityUnavailable()
             leader = self.open is None
             if leader:
                 self.open = _Cohort(monotonic() + WINDOW_SECONDS)
@@ -166,8 +196,10 @@ class PreSendIdentityCohorts:
                         if self.open is not cohort:
                             raise GuardUnavailable(FAILURE)
                         self.open = None
-                        self._guard(batch)
-                    values = self._freeze(batch._identities_uncached())
+                        self._guard(batch, ticket)
+                    observed = batch._identities_uncached()
+                    self._guard(batch, ticket)
+                    values = self._freeze(batch, observed)
                 except BaseException as exc:
                     with self.condition:
                         if self.open is cohort:
@@ -181,7 +213,7 @@ class PreSendIdentityCohorts:
             with self.condition:
                 while not cohort.complete and monotonic() < deadline:
                     self.condition.wait(max(0, deadline - monotonic()))
-                self._guard(batch)
+                self._guard(batch, ticket)
                 if not cohort.complete or monotonic() >= deadline:
                     raise GuardUnavailable(FAILURE)
                 if cohort.failure == "capacity":
@@ -190,8 +222,9 @@ class PreSendIdentityCohorts:
                     raise MetadataAdmissionUnavailable()
                 if cohort.failure is not None or cohort.values is None:
                     raise GuardUnavailable(FAILURE)
-                return {key: dict(zip(("name", "uid", "type"), value, strict=True))
-                        for key, value in cohort.values}
+                by_name = dict(cohort.values)
+                return {id(rpc): dict(zip(("name", "uid", "type"), by_name[name], strict=True))
+                        for rpc, name in zip(ticket.rpcs, self.names, strict=True)}
         finally:
             with self.condition:
                 self.pending -= 1

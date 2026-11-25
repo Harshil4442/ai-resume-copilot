@@ -24,7 +24,7 @@ on:
         type: boolean
         default: false
       pre_send_identity_batching:
-        description: Opt in to the local Billing metadata candidate on the shared fixture only
+        description: Measure the local Billing candidate with fresh factories and shared metadata only
         type: boolean
         default: false
   pull_request:
@@ -54,6 +54,8 @@ on:
       - backend/tests/test_stage5_billing_journey.py
       - backend/app/domains/recovery/native_identity_cohorts.py
       - backend/tests/test_native_identity_cohorts.py
+      - backend/app/domains/candidate_accounts/metadata_transport.py
+      - backend/tests/test_process_metadata_transport.py
       - backend/tests/test_supported_evaluation.py
       - backend/tests/test_supported_evaluation_postgres.py
       - backend/tests/test_supported_evaluation_services_postgres.py
@@ -138,7 +140,7 @@ jobs:
         env:
           HIREWIZ_STAGE5_PG_BIN: ${{ steps.postgres.outputs.bin }}
           HIREWIZ_STAGE5_PG_REQUIRED: "true"
-        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py tests/test_stage5_first_minute.py tests/test_stage5_jobs_journey.py tests/test_stage5_billing_journey.py tests/test_native_identity_cohorts.py
+        run: .venv/bin/pytest --noconftest -q tests/test_stage5_capacity.py tests/test_stage5_native_fixture.py tests/test_stage5_seed_postgres.py tests/test_stage5_skill_roi.py tests/test_stage5_first_minute.py tests/test_stage5_jobs_journey.py tests/test_stage5_billing_journey.py tests/test_native_identity_cohorts.py tests/test_process_metadata_transport.py
       - name: Verify quality evaluation on owned PostgreSQL
         if: matrix.buyers == 20
         working-directory: backend
