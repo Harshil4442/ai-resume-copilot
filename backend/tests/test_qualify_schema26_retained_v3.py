@@ -200,19 +200,40 @@ def test_original_isolated_pytest_loads_only_the_exact_learning_variant(tmp_path
     (backend / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath = ["..", "."]\n')
     frozen_fixture = '''\
 from datetime import UTC, datetime
+from backend.tests.test_unified_credits import grant
 NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
 '''
     (backend / "tests/test_unified_synchronous.py").write_text(frozen_fixture)
+    credits_fixture = '''\
+from datetime import UTC, datetime, timedelta
+NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+def grant(db, *, quantity=40, expiry=NOW+timedelta(days=30), now=NOW):
+    return quantity, expiry, now
+'''
+    (backend / "tests/test_unified_credits.py").write_text(credits_fixture)
+    (backend / "tests/test_unified_execution.py").write_text('''\
+from backend.tests.test_unified_credits import NOW
+def financial_dates():
+    return NOW
+''')
     suite = backend / "tests/test_unified_synchronous_postgres.py"
     suite.write_text('''\
 from datetime import UTC, datetime, timedelta
 import pytest
 from backend.tests import test_unified_synchronous as synchronous_checks
+from backend.tests import test_unified_execution as inputs
 
 FIXED = synchronous_checks.NOW
 
+@pytest.fixture
+def owned_input_before_setup():
+    quantity, expiry, now = synchronous_checks.grant(None)
+    assert quantity == 40 and now == inputs.financial_dates()
+    assert abs(now-datetime.now(UTC)) < timedelta(minutes=1)
+    assert expiry == now+timedelta(days=30)
+
 @pytest.mark.parametrize("operation", ["enhanced_qa", "learning_strategy", "bullet_rewrite"])
-def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(monkeypatch, operation):
+def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(monkeypatch, operation, owned_input_before_setup):
     if operation == "learning_strategy":
         assert abs(synchronous_checks.NOW - datetime.now(UTC)) < timedelta(minutes=1)
     else:
@@ -220,6 +241,7 @@ def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_
 
 def test_other_case_has_frozen_clock(monkeypatch):
     assert synchronous_checks.NOW == FIXED
+    assert inputs.NOW == FIXED and synchronous_checks.grant(None)[2] == FIXED
 ''')
     selection = ["-k", "frozen_clock"] if not select_exact else []
     (backend / gate.COMPATIBILITY_COMMAND[-1]).write_text(
@@ -237,6 +259,7 @@ def test_other_case_has_frozen_clock(monkeypatch):
 
     assert suite.with_name("_" + gate.LEARNING_FIXTURE).exists() is not select_exact
     assert suite.with_name("test_unified_synchronous.py").read_text() == frozen_fixture
+    assert suite.with_name("test_unified_credits.py").read_text() == credits_fixture
     assert "PYTEST_PLUGINS" not in env
 
 
