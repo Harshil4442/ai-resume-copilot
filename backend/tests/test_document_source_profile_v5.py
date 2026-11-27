@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from fixtures.retained_document_v5 import snapshot
 from infra.gcp import document_source_candidate as v4
 from infra.gcp import document_source_candidate_v5 as v5
 
@@ -16,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 V4_RETAINED = "ade1d75633df5e5bb52ac222ed7252dce7d84d57"
 
 
-def test_current_v5_source_snapshot_keeps_other_runtime_and_policy_controls():
-    contents, hashes, digest = v5.working_snapshot(ROOT)
+def test_retained_v5_source_snapshot_keeps_other_runtime_and_policy_controls():
+    contents, hashes, digest = snapshot()
     assert set(contents) == {*v4.SOURCES, v5.POLICY_PATH}
     assert digest == v5.POLICY_SHA256 and hashes[v5.DOCKERFILE] == "7efb244bca8242c9dcc6d1c64aa4d5b35ba88eb9ac253fcaebb33c2134e7959a"
     assert all(v4.digest(contents[name]) == expected for name, expected in hashes.items())
@@ -34,7 +35,7 @@ def test_current_v5_source_snapshot_keeps_other_runtime_and_policy_controls():
 
 
 def test_valid_digest_alone_cannot_accept_weaker_sandbox_policy(monkeypatch):
-    contents, _, _ = v5.working_snapshot(ROOT)
+    contents, _, _ = snapshot()
     value = json.loads(contents[v5.POLICY_PATH])
     value["required_native_deployment_controls"]["sandbox_egress"] = True
     raw = v4.canonical(value) + b"\n"
@@ -44,7 +45,7 @@ def test_valid_digest_alone_cannot_accept_weaker_sandbox_policy(monkeypatch):
 
 
 def test_forward_source_binds_one_committed_tree_and_rejects_modified_contract(tmp_path):
-    contents, hashes, _ = v5.working_snapshot(ROOT)
+    contents, hashes, _ = snapshot()
     for name in {*v5.CONTRACT_PATHS, v4.POLICY_PATH, v4.courier.POLICY_PATH}:
         contents[name] = (ROOT / name).read_bytes()
     for name, raw in contents.items():
@@ -98,3 +99,8 @@ def test_native_proof_cli_requires_both_explicit_source_flags():
         cwd=ROOT, check=False, capture_output=True, text=True, timeout=10,
     )
     assert result.returncode == 2 and "--source-v5 requires --source-revision" in result.stderr
+
+
+def test_old_v5_cannot_qualify_the_patched_working_source():
+    with pytest.raises(v4.SourceDenied, match="synchronous_working_source_changed"):
+        v5.working_snapshot(ROOT)

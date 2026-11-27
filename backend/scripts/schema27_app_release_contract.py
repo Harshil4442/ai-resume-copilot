@@ -261,6 +261,21 @@ def runtime_contract(root):
          == [("purpose", "schema27_fresh_release_capture")], "neon_distinct_purpose")
 
 
+def patched_document_profile(root):
+    """Select only the separately pinned patched policy and exact source bytes."""
+    from infra.gcp import document_source_patched_engine as patched
+
+    path = root / patched.POLICY_PATH
+    if not path.exists() and not path.is_symlink():
+        return None
+    need(patched.KIND == "native_cloud_build_source_patched_engine_v1",
+         "patched_document_profile_kind")
+    # Presence is only a request to validate this profile. Changed policy,
+    # supplier/runtime bytes or a symlink refuse; they never fall back to V5.
+    patched.working_snapshot(root)
+    return patched
+
+
 def verify_ci(root):
     import yaml
 
@@ -275,10 +290,16 @@ def verify_ci(root):
     steps = jobs["backend"]["steps"]
     from infra.gcp import document_source_candidate_v5
 
-    if (root / document_source_candidate_v5.POLICY_PATH).is_file():
+    patched = patched_document_profile(root)
+    if patched is not None or (root / document_source_candidate_v5.POLICY_PATH).is_file():
         checks = [step for step in steps if step.get("name") == "Build and verify genuine native document engines"]
-        need(len(checks) == 1 and '--source-revision --source-v5 --output "$document_test_report_path"'
-             in checks[0].get("run", ""), "forward_document_ci_required")
+        command = checks[0].get("run", "") if len(checks) == 1 else ""
+        if patched is not None:
+            need('--source-revision --patched-engine --output "$document_test_report_path"' in command
+                 and "--source-v5" not in command, "patched_document_ci_required")
+        else:
+            need('--source-revision --source-v5 --output "$document_test_report_path"' in command
+                 and "--patched-engine" not in command, "forward_document_ci_required")
     for name, command in ((COMPATIBILITY_STEP, COMPATIBILITY_COMMAND), (PROTOCOL_STEP, PROTOCOL_COMMAND),
                           (RETAINED_STEP, RETAINED_COMMAND), (RETAINED_PROTOCOL_STEP, RETAINED_PROTOCOL_COMMAND)):
         need([s for s in steps if s.get("name") == name] == [{"name": name, "working-directory": "backend",
@@ -321,8 +342,9 @@ def preserved_sources(root):
     from infra.gcp import document_source_candidate_v5
 
     forward_policy = root / document_source_candidate_v5.POLICY_PATH
-    if forward_policy.exists() or forward_policy.is_symlink():
-        document = document_source_candidate_v5
+    patched = patched_document_profile(root)
+    if patched is not None or forward_policy.exists() or forward_policy.is_symlink():
+        document = patched if patched is not None else document_source_candidate_v5
         source = document.committed(root=root, clean=True)
         worker = source.sources
         helpers = v3.current_document_helpers(root)

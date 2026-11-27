@@ -23,7 +23,12 @@ rolling, need = identities.rolling, identities.need
 
 
 def selected(context):
-    return type(context) is Applications
+    if type(context) is Applications:
+        return True
+    from infra.gcp import schema27_expired_v5_recovery as recovery
+    from infra.gcp import schema27_patched_engine_recovery as patched
+
+    return recovery.selected(context) or patched.selected(context)
 
 
 class Probe:
@@ -151,9 +156,9 @@ def main():
     import argparse
     import json
 
-    from infra.gcp import schema27_forward_diagnostics as diagnostics
-
     from scripts import document_refresh as refresh
+
+    from infra.gcp import schema27_forward_diagnostics as diagnostics
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("refresh",))
@@ -173,7 +178,7 @@ def main():
             consumed_history_bundle=args.consumed_history_bundle)
         refresh.emit_status(result)
         return 0
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - expose only the redacted fixed diagnostic.
         print(json.dumps(diagnostics.diagnostic(error, "refresh")))
         return 1
 

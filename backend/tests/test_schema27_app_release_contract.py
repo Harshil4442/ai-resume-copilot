@@ -308,3 +308,99 @@ def test_current_role_cannot_be_a_label_or_native_qa_grant(observer, drift):
     with pytest.raises(Exception, match="current_application_source_role"):
         p.source.verify_source_image(release="a" * 40, image_digest="sha256:" + "c" * 64, build_id="owned", ci_run_id=1)
     assert all(call[0] != "stock_provenance" for call in p.calls)
+
+
+@pytest.fixture
+def patched_document_root(tmp_path):
+    from infra.gcp import document_source_patched_engine as patched
+
+    actual = Path(__file__).resolve().parents[2]
+    root = tmp_path / "reviewed-patched-source"
+    names = set(patched.SOURCES) | set(patched.CONTRACT_PATHS) | {
+        patched.POLICY_PATH, "infra/document-processing/policy.json",
+        "infra/document-processing/policy.source-fixed-renderer.json",
+        "infra/document-processing/policy.source-synchronous.json", c.CURRENT_FRONTEND_LOCK_PATH,
+    }
+    for name in names:
+        write(root, name, (actual / name).read_bytes())
+    return root, patched
+
+
+def patched_workflow(root, command):
+    value = workflow()
+    value["jobs"]["backend"]["steps"].append({
+        "name": "Build and verify genuine native document engines", "run": command,
+    })
+    write(root, ".github/workflows/ci.yml", yaml.safe_dump(value))
+
+
+@pytest.mark.parametrize("damage", [None, "old_selector", "both_selectors", "policy", "source", "symlink", "kind"])
+def test_patched_CI_requires_its_exact_policy_source_kind_and_exclusive_selector(patched_document_root, monkeypatch, damage):
+    root, patched = patched_document_root
+    command = '--source-revision --patched-engine --output "$document_test_report_path"'
+    if damage == "old_selector":
+        command = command.replace("--patched-engine", "--source-v5")
+    elif damage == "both_selectors":
+        command += " --source-v5"
+    patched_workflow(root, command)
+    if damage == "policy":
+        path = root / patched.POLICY_PATH
+        path.write_bytes(path.read_bytes() + b" ")
+    elif damage == "source":
+        path = root / "infra/document-processing/processor.py"
+        path.write_bytes(path.read_bytes() + b"# unreviewed bytes\n")
+    elif damage == "symlink":
+        path = root / patched.POLICY_PATH
+        raw = path.read_bytes()
+        path.unlink()
+        target = root / "unreviewed-link-target"
+        target.write_bytes(raw)
+        path.symlink_to(target)
+    elif damage == "kind":
+        monkeypatch.setattr(patched, "KIND", "unreviewed_native_kind")
+    if damage:
+        from infra.gcp.document_source_candidate import SourceDenied
+
+        with pytest.raises((c.Source27Denied, SourceDenied)):
+            c.verify_ci(root)
+    else:
+        c.verify_ci(root)
+
+
+def test_legacy_V5_CI_selector_remains_strict_without_a_patched_policy(tmp_path):
+    from infra.gcp import document_source_candidate_v5 as v5
+
+    write(tmp_path, v5.POLICY_PATH, "owned V5 marker; source validation happens in preserved_sources")
+    patched_workflow(tmp_path, '--source-revision --source-v5 --output "$document_test_report_path"')
+    c.verify_ci(tmp_path)
+    patched_workflow(tmp_path, '--source-revision --patched-engine --output "$document_test_report_path"')
+    with pytest.raises(c.Source27Denied, match="forward_document_ci_required"):
+        c.verify_ci(tmp_path)
+
+
+def test_preserved_sources_selects_committed_patched_profile_without_V5_fallback(patched_document_root, monkeypatch):
+    from infra.gcp import document_source_candidate_v5 as v5
+
+    root, patched = patched_document_root
+    _, sources, _ = patched.working_snapshot(root)
+    calls = []
+    def committed(*, root, clean):
+        calls.append((root, clean))
+        return SimpleNamespace(sources=sources)
+    monkeypatch.setattr(patched, "committed", committed)
+    monkeypatch.setattr(v5, "committed", lambda **_k: pytest.fail("Patched source must not select historical V5"))
+    monkeypatch.setattr(c, "git_bytes", lambda own_root, name: (own_root / name).read_bytes())
+    monkeypatch.setattr(c.v3, "current_document_helpers", lambda _root: {})
+    monkeypatch.setattr(c.v3, "HISTORICAL_COMPANION_PACKAGES", ())
+    monkeypatch.setattr(c.v3, "HISTORICAL_PATHS", ())
+    monkeypatch.setattr(c.v3, "NEW_PATHS", ())
+    monkeypatch.setattr(c.v3, "FOLLOWON_PATHS", ())
+    monkeypatch.setattr(c.v3, "PROTOCOL_FIXTURES", ())
+    monkeypatch.setattr(c.v3, "PROOF_ROOTS", ())
+    for name in ("QUALIFICATION_PATHS", "TRANSPORT_PATHS", "BOOTSTRAP_PATHS"):
+        monkeypatch.setattr(c.v3.v2, name, ())
+    monkeypatch.setattr(c, "F07_PATHS", (c.CURRENT_FRONTEND_LOCK_PATH,))
+    result = c.preserved_sources(root)
+    assert result[patched.POLICY_PATH] == patched.POLICY_SHA256
+    assert result["infra/document-processing/processor.py"] == sources["infra/document-processing/processor.py"]
+    assert calls == [(root, True)]

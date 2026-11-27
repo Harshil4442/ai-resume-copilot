@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -27,6 +28,7 @@ COMPATIBILITY_COMMAND = ("-I", "-B", "scripts/qualify_schema26_compatibility.py"
 COMPATIBILITY_REPORT = "schema26-ci-failure-v1"
 FAILURE_STATES = ("failure", "error", "skipped")
 LEARNING_FIXTURE = "retained_schema26_learning_fixture.py"
+FIXTURE_PHASE_ENV = "HIREWIZ_RETAINED_SCHEMA26_FIXTURE_PHASE"
 ROLLING = ("tests/test_schema25_app_rolling_v3.py",)
 PROTOCOL = ("tests/test_schema25_app_protocol_v3.py",)
 _STANDARD_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "TMPDIR", "TMP", "TEMP",
@@ -242,22 +244,33 @@ def _pytest(checkout: Path, env: dict[str, str], suites: tuple[str, ...], report
     report.unlink()
 
 
-def _compatibility(root: Path, checkout: Path, env: dict[str, str]) -> None:
-    # Only the original pytest child imports this test-only fixture. The owned
-    # checkout retains every tracked byte from the verified historical commit.
+@contextmanager
+def _synthetic_inputs(root: Path, checkout: Path, env: dict[str, str], phase: str):
+    # Declared synthetic inputs reach only the original children in this phase.
+    # Every tracked source byte and original command/case selection stays fixed.
+    _need(phase in {"compatibility", "protocol"}, "fixture_phase_required")
     source = (root / "backend" / "scripts" / LEARNING_FIXTURE).read_bytes()
     overlay = checkout / "backend" / "tests" / ("_" + LEARNING_FIXTURE)
     _need(overlay.parent.resolve() == overlay.parent, "fixture_location_changed")
     with overlay.open("xb") as handle:
         handle.write(source)
         created = os.fstat(handle.fileno())
-    child_env = env | {"PYTEST_PLUGINS": "tests." + overlay.stem}
-    _call([sys.executable, *COMPATIBILITY_COMMAND], cwd=checkout / "backend", env=child_env, timeout=900)
+    yield env | {"PYTEST_PLUGINS": "tests." + overlay.stem, FIXTURE_PHASE_ENV: phase}
     current = overlay.lstat()
     _need(stat.S_ISREG(current.st_mode) and current.st_nlink == 1
           and (current.st_dev, current.st_ino, current.st_uid) == (created.st_dev, created.st_ino, created.st_uid)
           and overlay.read_bytes() == source, "fixture_ownership_changed")
     overlay.unlink()
+
+
+def _compatibility(root: Path, checkout: Path, env: dict[str, str]) -> None:
+    with _synthetic_inputs(root, checkout, env, "compatibility") as child_env:
+        _call([sys.executable, *COMPATIBILITY_COMMAND], cwd=checkout / "backend", env=child_env, timeout=900)
+
+
+def _protocol(root: Path, checkout: Path, env: dict[str, str], report: Path) -> None:
+    with _synthetic_inputs(root, checkout, env, "protocol") as child_env:
+        _pytest(checkout, child_env, PROTOCOL, report)
 
 
 def run(root: Path, phase: str) -> None:
@@ -286,7 +299,7 @@ def run(root: Path, phase: str) -> None:
                 child_phase = "original_rolling_probe"
                 _pytest(checkout, env, ROLLING, base / "rolling.xml")
             else:
-                _pytest(checkout, env, PROTOCOL, base / "protocol.xml")
+                _protocol(root, checkout, env, base / "protocol.xml")
         except RetainedV3Denied:
             # Even exit1 can contain an inner timeout. Never replay or remove a
             # checkout whose descendants/owned native fixtures are uncertain.

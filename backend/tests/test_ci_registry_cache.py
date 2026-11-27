@@ -106,7 +106,7 @@ def test_workflow_preserves_required_exact_source_compiler_and_security_contract
     assert '"$postgres_before" = "$postgres_after"' in cache_step
     assert '"true healthy"' in cache_step and "job.services.postgres.id" in cache_step
     assert "|| true" not in cache_step and "continue-on-error" not in cache_step
-    assert "docker pull --platform linux/amd64 mirror.gcr.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587" in cache_step
+    assert "docker pull" not in cache_step
     security = workflow.split("  security-and-container:\n", 1)[1].split("\n  browser-companion:", 1)[0]
     security_cache = security.split("      - name: Configure verified public cache", 1)[1].split("      - name:", 1)[0]
     for command in (
@@ -203,7 +203,7 @@ def test_cli_reports_only_fixed_timeout_or_command_diagnostics(failure, reason, 
     assert "private-command-metadata" not in str(result.value) and "do-not-export" not in str(result.value)
 
 
-def test_document_policy_routes_only_two_literal_forms_to_the_same_pinned_manifest(tmp_path, monkeypatch):
+def test_document_policy_routes_only_literal_pinned_bases_to_canonical_origins(tmp_path, monkeypatch):
     monkeypatch.setenv("RUNNER_TEMP", str(tmp_path.resolve()))
     monkeypatch.delenv(cache.SOURCE_POLICY_ENV, raising=False)
     monkeypatch.setattr(cache.subprocess, "run", lambda *a, **k: pytest.fail("No Docker command or pull is required."))
@@ -216,8 +216,14 @@ def test_document_policy_routes_only_two_literal_forms_to_the_same_pinned_manife
     origin = "docker-image://public.ecr.aws/docker/library/python"
     assert policy == {"version": 1, "rules": [
         {"action": "CONVERT", "selector": {"identifier": source, "matchType": "EXACT"},
-         "updates": {"identifier": "docker-image://mirror.gcr.io/library/python@" + digest}}
+         "updates": {"identifier": "docker-image://docker.io/library/python@" + digest}}
         for source in (origin + ":3.12-slim-trixie@" + digest, origin + "@" + digest)
+    ] + [
+        {"action": "CONVERT", "selector": {"identifier": source, "matchType": "EXACT"},
+         "updates": {"identifier": "docker-image://docker.io/library/debian@" + cache.TEX_BASE_DIGEST}}
+        for source in (
+            "docker-image://mirror.gcr.io/library/debian:bookworm-slim@" + cache.TEX_BASE_DIGEST,
+            "docker-image://mirror.gcr.io/library/debian@" + cache.TEX_BASE_DIGEST)
     ]}
     # An unrelated image, different digest, unpinned tag or lookalike repository
     # cannot match an EXACT selector. No mutable-tag or wildcard rule exists.
@@ -231,7 +237,7 @@ def test_document_policy_routes_only_two_literal_forms_to_the_same_pinned_manife
     dockerfile = root / "infra/document-processing/Dockerfile"
     assert ("FROM " + origin.removeprefix("docker-image://") + ":3.12-slim-trixie@" + digest
             + " AS dependencies") in dockerfile.read_text().splitlines()
-    source_policy = json.loads((root / "infra/document-processing/policy.json").read_bytes())
+    source_policy = json.loads((root / "infra/document-processing/policy.source-patched-engine.json").read_bytes())
     assert hashlib.sha256(dockerfile.read_bytes()).hexdigest() == source_policy["source_sha256"][
         "infra/document-processing/Dockerfile"]
 
@@ -293,7 +299,21 @@ def test_document_build_scopes_and_cleans_its_generated_policy_without_skipping_
     check = "backend/.venv/bin/python backend/scripts/document_test_image.py"
     assert step.index(create) < step.index(export) < step.index(check)
     assert 'trap \'rm -f -- "$document_source_policy_path"\' EXIT' in step
-    mode = "--source-revision --source-v5" if source_v5 else "--source-revision"
+    mode = "--source-revision --patched-engine" if source_v5 else "--source-revision"
     assert f'--platform linux/amd64 {mode} --output "$document_test_report_path"' in step
     assert "--image-id" not in step and "|| true" not in step and "continue-on-error" not in step
-    assert workflow.count("EXPERIMENTAL_BUILDKIT_SOURCE_POLICY:") == 1
+    assert workflow.count("EXPERIMENTAL_BUILDKIT_SOURCE_POLICY:") == (2 if source_v5 else 1)
+
+
+def test_tex_build_uses_owned_exact_policy_without_editing_attested_inputs():
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / ".github/workflows/ci.yml").read_text()
+    step = workflow.split("      - name: Build and attest immutable native TeX test compiler\n", 1)[1].split("      - name:", 1)[0]
+    assert 'EXPERIMENTAL_BUILDKIT_SOURCE_POLICY: ""' in step.split("        run: |", 1)[0]
+    create = 'document_source_policy_path="$(python3 backend/scripts/ci_registry_cache.py --document-source-policy)"'
+    export = 'export EXPERIMENTAL_BUILDKIT_SOURCE_POLICY="$document_source_policy_path"'
+    assert step.index(create) < step.index(export) < step.index("backend/scripts/native_tex_test_image.py")
+    assert "trap 'rm -f --" in step and "--platform linux/amd64 --github-env" in step
+    assert "continue-on-error" not in step and "|| true" not in step
+    assert (root / "infra/native-tex/Dockerfile").read_text().splitlines()[2] == (
+        "FROM mirror.gcr.io/library/debian:bookworm-slim@" + cache.TEX_BASE_DIGEST)

@@ -1,6 +1,7 @@
 """Owned synthetic runner/report controls; never actual-source qualification."""
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -169,7 +170,12 @@ def test_actual_isolated_cli_refuses_before_any_source_qualification_or_native_c
     result = subprocess.run([sys.executable, "-I", "-B", str(Path(gate.__file__)), "--phase", "compatibility"],
         env={"PATH": os.environ.get("PATH", ""), "CI": "false", "GITHUB_ACTIONS": "false"},
         capture_output=True, timeout=15, check=False)
-    assert result.returncode != 0 and result.stdout == b""
+    assert result.returncode != 0
+    assert json.loads(result.stdout) == {
+        "error": "schema27_qualification_refused", "stage": "environment",
+        "exception_class": "RetainedV3Denied", "denial_code": "retained_v3_owned_linux_ci_required",
+        "qualified": False, "native_approval": False, "automatic_replay": False,
+    }
     assert result.stderr.strip() == b"schema27_qualification_unavailable_or_child_outcome_unknown"
     assert b"Traceback" not in result.stderr
 
@@ -239,3 +245,31 @@ def test_original_child_once_no_replay_and_cleanup_only_after_success(monkeypatc
     assert calls[0][0][1:7] == ["-I", "-B", "-m", "pytest", "--noconftest", "-q"]
     directories = list(tmp_path.glob("hirewiz-schema27-*"))
     assert bool(directories) is (outcome != "success")
+
+
+@pytest.mark.parametrize("error", [RuntimeError("private-body-token-must-not-escape"),
+    gate.Schema27QualificationDenied("schema27_qualification_private_body_token"),
+    gate.Schema27QualificationDenied(["unhashable-private-body"])])
+def test_finite_failure_diagnostic_never_relays_unreviewed_exception_values(error):
+    report = gate.failure_diagnostic(error)
+    assert report["denial_code"] is None
+    assert report["qualified"] is report["native_approval"] is report["automatic_replay"] is False
+    encoded = json.dumps(report)
+    assert "private" not in encoded and "token" not in encoded and "body" not in encoded
+
+
+def test_source_profile_failure_names_its_owned_stage_and_public_denial_only(monkeypatch):
+    import unified_credit_schema25_release as release
+
+    from scripts import schema27_app_release_contract as contract
+
+    def refuse(*_args):
+        raise contract.Source27Denied("source27_forward_document_ci_required")
+    monkeypatch.setattr(release, "prior_app_files", lambda *_args: {})
+    monkeypatch.setattr(contract, "source_fingerprint", refuse)
+    with pytest.raises(contract.Source27Denied) as caught:
+        gate.source_identity(gate.ROOT)
+    report = gate.failure_diagnostic(caught.value)
+    assert report["denial_code"] == "source27_forward_document_ci_required"
+    assert report["stage"] == "source_identity" and report["exception_class"] == "Source27Denied"
+    assert report["qualified"] is False

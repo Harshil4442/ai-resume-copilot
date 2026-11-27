@@ -127,7 +127,13 @@ class NativeAudit:
         image = worker["template"]["containers"][0]["image"]
         if self.recover_expired_source:
             from infra.gcp import document_source_release
-            predecessor = document_source_release.verify_expired_current_source_predecessor(image, worker)
+            from infra.gcp import schema27_expired_v5_recovery as recovery
+            from infra.gcp import schema27_patched_engine_recovery as patched
+
+            if recovery.selected(self.applications) or patched.selected(self.applications):
+                predecessor = self.applications.probe.verify_expired_current_source_predecessor(image, worker)
+            else:
+                predecessor = document_source_release.verify_expired_current_source_predecessor(image, worker)
         else:
             accepted = self.probe.verify_current_successor(image, worker)
         policy = self.probe.policy_for_serving(worker, image)

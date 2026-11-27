@@ -9,6 +9,7 @@ from backend.tests import native_docx_ci_fixtures as fixture
 from infra.gcp import document_candidate as legacy
 from infra.gcp import document_source_candidate as source
 from infra.gcp import document_source_candidate_v5 as source_v5
+from infra.gcp import document_source_patched_engine as patched
 from infra.gcp.document_source_payload import EXTRA_CASES
 
 
@@ -17,13 +18,16 @@ def runtime_probe(monkeypatch, tmp_path):
     """Observe guard ordering without running Docker or manufacturing receipts."""
     calls = []
     fixture._runtime.cache_clear()
-    monkeypatch.setattr(fixture, "_complete_corpus", lambda report, _: ([], report["docx_layout_corpus"]))
+    monkeypatch.setattr(fixture, "_complete_corpus", lambda report, _, **_kw: ([], report["docx_layout_corpus"]))
     monkeypatch.setattr(fixture.engine, "clamd_corpus", lambda: ())
     monkeypatch.setattr(fixture.engine, "docker_command", lambda: calls.append("docker") or ["unit-test-docker"])
     monkeypatch.setattr(fixture.engine, "image_metadata", lambda *args: calls.append(("metadata", args)))
     def container(*args):
         calls.append(("runtime", args))
-        return 0, json.dumps({key: fixture.engine.source_hashes()[key] for key in fixture.engine.RUNTIME})
+        is_patched = args[3] == ["-c", fixture.engine.PATCHED_HASH_PROGRAM]
+        hashes = fixture.engine.source_hashes(source_patched_engine=True) if is_patched else fixture.engine.source_hashes()
+        runtime = fixture.engine.PATCHED_RUNTIME if is_patched else fixture.engine.RUNTIME
+        return 0, json.dumps({key: hashes[key] for key in runtime})
     monkeypatch.setattr(fixture.engine, "container", container)
     reports = []
     def read(report):
@@ -35,7 +39,7 @@ def runtime_probe(monkeypatch, tmp_path):
     fixture._runtime.cache_clear()
 
 
-def report(*, profile=source_v5):
+def report(*, profile=patched):
     sources = json.loads((fixture.engine.ROOT / profile.POLICY_PATH).read_bytes())["source_sha256"]
     image = "sha256:" + "a" * 64
     value = {"scope": "local_native_docker_only", "cloud_run_isolation_proven": False,
@@ -61,13 +65,13 @@ def test_legacy_default_requires_the_genuinely_legacy_source_map(runtime_probe, 
 
 def test_known_source_profile_retains_the_full_image_and_runtime_guards(runtime_probe):
     value = report()
-    assert value["source_sha256"] == fixture.engine.source_hashes()
+    assert value["source_sha256"] == fixture.engine.source_hashes(source_patched_engine=True)
     read, calls = runtime_probe
     observed = read(value)
-    assert observed["policy"] == source_v5.POLICY_SHA256
+    assert observed["policy"] == patched.POLICY_SHA256
     assert observed["identity"] == value["docx_layout_corpus"][0]["layout"]["renderer"]
     assert calls[0] == "docker" and calls[1][0] == "metadata" and calls[2][0] == "runtime"
-    assert calls[2][1][3:] == (["-c", fixture.engine.HASH_PROGRAM], [])
+    assert calls[2][1][3:] == (["-c", fixture.engine.PATCHED_HASH_PROGRAM], [])
 
 
 def test_retained_source_profile_requires_its_own_source_map(runtime_probe, monkeypatch):
@@ -77,7 +81,7 @@ def test_retained_source_profile_requires_its_own_source_map(runtime_probe, monk
     assert read(value)["policy"] == source.POLICY_SHA256
 
 
-@pytest.mark.parametrize("identity_policy", [legacy.POLICY_SHA256, source.POLICY_SHA256, "f" * 64, None])
+@pytest.mark.parametrize("identity_policy", [legacy.POLICY_SHA256, source.POLICY_SHA256, source_v5.POLICY_SHA256, "f" * 64, None])
 def test_renderer_digest_cannot_choose_or_forge_the_source_profile(runtime_probe, identity_policy):
     value = report()
     value["docx_layout_corpus"][0]["layout"]["renderer"]["policy_sha256"] = identity_policy
@@ -149,3 +153,46 @@ def test_arbitrary_policy_file_cannot_become_a_known_profile(runtime_probe, monk
     with pytest.raises(AssertionError, match="known native test policy changed"):
         read(value)
     assert calls == []
+
+
+def test_historical_v5_report_keeps_legacy_engine_and_runtime_guard(runtime_probe, monkeypatch):
+    value = report(profile=source_v5)
+    monkeypatch.setattr(fixture.engine, "source_hashes", lambda: value["source_sha256"])
+    read, calls = runtime_probe
+    observed = read(value)
+    assert observed["policy"] == source_v5.POLICY_SHA256
+    assert observed["source_patched_engine"] is False
+    assert calls[2][1][3:] == (["-c", fixture.engine.HASH_PROGRAM], [])
+
+
+def test_patched_supplier_inventory_cannot_be_removed_to_downgrade(runtime_probe):
+    value = report()
+    for name in set(fixture.engine.PATCHED_SOURCES) - set(fixture.engine.SOURCES):
+        value["source_sha256"].pop(name)
+    read, calls = runtime_probe
+    with pytest.raises(AssertionError, match="source map"):
+        read(value)
+    assert calls == []
+
+
+def test_patched_runtime_cannot_omit_verified_vendor_files(runtime_probe, monkeypatch):
+    value = report()
+    monkeypatch.setattr(fixture.engine, 'container', lambda *args:
+        (0, json.dumps({key: value['source_sha256'][key] for key in fixture.engine.RUNTIME})))
+    read, _calls = runtime_probe
+    with pytest.raises(AssertionError, match='runtime bytes differ'):
+        read(value)
+
+
+def test_patched_vendor_change_after_verification_stops_before_app_import(monkeypatch):
+    value = report()
+    monkeypatch.setattr(fixture, '_runtime', lambda _path: {
+        'source_patched_engine': True, 'source_sha256': value['source_sha256']})
+    changed = copy.deepcopy(value['source_sha256'])
+    changed['infra/document-processing/clamav_supplier.py'] = 'f' * 64
+    def observed(*, source_patched_engine):
+        assert source_patched_engine is True
+        return changed
+    monkeypatch.setattr(fixture.engine, 'source_hashes', observed)
+    with pytest.raises(AssertionError, match='source changed after'):
+        fixture.configure_native_docx_worker(monkeypatch)

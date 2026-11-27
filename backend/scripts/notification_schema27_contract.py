@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from scripts import browser_schema19_step as identity_step
 from scripts import evidence_writer_schema26_contract as before
@@ -259,10 +260,41 @@ def verify_permissions(connection, identity):
     before.verify_writer_permissions(connection, runtime=identity.runtime, migrator=identity.migrator, namespace=identity.namespace)
 
 
+def _verify_empty_new_tables(connection, namespace):
+    """Batch the passing observation; retain historical refusal ordering.
+
+    A savepoint keeps a missing/inaccessible later table from hiding an earlier
+    populated table. Only recognized structural errors use the old ordered
+    reader; transport failures never reconnect or retry an unknown observation.
+    """
+    previous = before.previous
+    previous.namespace_name(namespace)
+    statement = "SELECT " + ",".join(
+        f'EXISTS(SELECT 1 FROM "{namespace}"."{table}" LIMIT 1)'
+        for table in previous.TABLES
+    )
+    savepoint = connection.begin_nested()
+    try:
+        occupied = tuple(connection.execute(text(statement)).one())
+    except DBAPIError as error:
+        if error.connection_invalidated or getattr(error.orig, "sqlstate", None) not in {"42P01", "42501"}:
+            raise
+        savepoint.rollback()
+        previous.verify_empty_new_tables(connection, namespace)
+        # A concurrently repaired relation must not turn a failed observation
+        # into acceptance if a caller uses a different isolation level.
+        raise
+    if len(occupied) != len(previous.TABLES) or any(value is not False for value in occupied):
+        savepoint.rollback()
+        previous.verify_empty_new_tables(connection, namespace)
+        previous.need(False, "schema25_new_financial_activity_refused")
+    savepoint.commit()
+
+
 def observe(connection, identity):
     verify_shape(connection, identity.namespace_oid, identity.namespace)
     verify_permissions(connection, identity)
-    before.previous.verify_empty_new_tables(connection, identity.namespace)
+    _verify_empty_new_tables(connection, identity.namespace)
     for statement in before.financial.INVARIANTS:
         need(connection.execute(text(statement)).scalar_one() == 0, "live_financial_invariant_failed")
     before.financial.liability_rows(connection)

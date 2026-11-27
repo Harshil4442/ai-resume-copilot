@@ -1,6 +1,7 @@
 """Synthetic custody/subprocess controls, no actual retained archive execution."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -150,10 +151,11 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
     def child(command, *, cwd, env, **kwargs):
         child_calls.append(command)
         overlay = check_tracked(cwd.parent)
-        if tuple(command[1:]) == gate.COMPATIBILITY_COMMAND:
+        if tuple(command[1:]) == gate.COMPATIBILITY_COMMAND or command == ["pytest", *gate.PROTOCOL]:
             assert overlay.read_bytes() == plugin.read_bytes()
-            assert env == baseline_env | {"PYTEST_PLUGINS": "tests." + overlay.stem}
-            assert kwargs["timeout"] == 900
+            assert env == baseline_env | {"PYTEST_PLUGINS": "tests." + overlay.stem, gate.FIXTURE_PHASE_ENV: phase}
+            if tuple(command[1:]) == gate.COMPATIBILITY_COMMAND:
+                assert kwargs["timeout"] == 900
         else:
             assert not overlay.exists() and env == baseline_env
         if outcome == "failed":
@@ -185,7 +187,7 @@ def test_worktree_original_once_and_unknown_descendants_never_removed(monkeypatc
     assert bool(retained) is (outcome != "success")
     if retained:
         overlay = check_tracked(retained[0])
-        assert overlay.exists() is (phase == "compatibility")
+        assert overlay.exists()
         if overlay.exists():
             assert overlay.read_bytes() == plugin.read_bytes()
     assert baseline_env == {"RUNNER_TEMP": str(tmp_path)}
@@ -200,19 +202,40 @@ def test_original_isolated_pytest_loads_only_the_exact_learning_variant(tmp_path
     (backend / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath = ["..", "."]\n')
     frozen_fixture = '''\
 from datetime import UTC, datetime
+from backend.tests.test_unified_credits import grant
 NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
 '''
     (backend / "tests/test_unified_synchronous.py").write_text(frozen_fixture)
+    credits_fixture = '''\
+from datetime import UTC, datetime, timedelta
+NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+def grant(db, *, quantity=40, expiry=NOW+timedelta(days=30), now=NOW):
+    return quantity, expiry, now
+'''
+    (backend / "tests/test_unified_credits.py").write_text(credits_fixture)
+    (backend / "tests/test_unified_execution.py").write_text('''\
+from backend.tests.test_unified_credits import NOW
+def financial_dates():
+    return NOW
+''')
     suite = backend / "tests/test_unified_synchronous_postgres.py"
     suite.write_text('''\
 from datetime import UTC, datetime, timedelta
 import pytest
 from backend.tests import test_unified_synchronous as synchronous_checks
+from backend.tests import test_unified_execution as inputs
 
 FIXED = synchronous_checks.NOW
 
+@pytest.fixture
+def owned_input_before_setup():
+    quantity, expiry, now = synchronous_checks.grant(None)
+    assert quantity == 40 and now == inputs.financial_dates()
+    assert abs(now-datetime.now(UTC)) < timedelta(minutes=1)
+    assert expiry == now+timedelta(days=30)
+
 @pytest.mark.parametrize("operation", ["enhanced_qa", "learning_strategy", "bullet_rewrite"])
-def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(monkeypatch, operation):
+def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_postgres(monkeypatch, operation, owned_input_before_setup):
     if operation == "learning_strategy":
         assert abs(synchronous_checks.NOW - datetime.now(UTC)) < timedelta(minutes=1)
     else:
@@ -220,6 +243,7 @@ def test_unsupported_personal_claim_refunds_once_with_supplier_cost_retained_on_
 
 def test_other_case_has_frozen_clock(monkeypatch):
     assert synchronous_checks.NOW == FIXED
+    assert inputs.NOW == FIXED and synchronous_checks.grant(None)[2] == FIXED
 ''')
     selection = ["-k", "frozen_clock"] if not select_exact else []
     (backend / gate.COMPATIBILITY_COMMAND[-1]).write_text(
@@ -237,7 +261,75 @@ def test_other_case_has_frozen_clock(monkeypatch):
 
     assert suite.with_name("_" + gate.LEARNING_FIXTURE).exists() is not select_exact
     assert suite.with_name("test_unified_synchronous.py").read_text() == frozen_fixture
+    assert suite.with_name("test_unified_credits.py").read_text() == credits_fixture
     assert "PYTEST_PLUGINS" not in env
+
+
+def test_retained_protocol_roster_is_exactly_the_reviewed_browser_financial_cases():
+    from scripts import retained_schema26_learning_fixture as overlay
+
+    root = Path(gate.__file__).resolve().parents[2]
+    for name, expected in overlay._PROTOCOL_FINANCIAL_CASES.items():
+        raw = subprocess.check_output(["git", "show", gate.SOURCE + ":backend/tests/" + name], cwd=root)
+        actual = {node.name for node in ast.parse(raw).body
+                  if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")}
+        assert actual == expected
+
+
+def test_original_protocol_nested_child_inherits_only_declared_synthetic_inputs(tmp_path):
+    checkout = tmp_path / "retained"
+    backend = checkout / "backend"
+    (backend / "tests").mkdir(parents=True)
+    (backend / "pyproject.toml").write_text('[tool.pytest.ini_options]\npythonpath = ["..", "."]\n')
+    inputs = {
+        "test_unified_credits.py": '''\
+from datetime import UTC, datetime, timedelta
+NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+def grant(db, *, quantity=40, expiry=NOW+timedelta(days=30), now=NOW):
+    return quantity, expiry, now
+''',
+        "test_unified_execution.py": '''\
+from backend.tests.test_unified_credits import NOW
+def financial_dates():
+    return NOW
+''',
+        "test_unified_browser_submission.py": '''\
+from datetime import UTC, datetime, timedelta
+import pytest
+from backend.tests import test_unified_credits as credits
+from backend.tests import test_unified_execution as inputs
+
+@pytest.fixture
+def configured_before_test():
+    assert abs(inputs.financial_dates()-datetime.now(UTC)) < timedelta(minutes=1)
+    assert credits.grant(None)[2] == credits.NOW  # Protocol never changes grant defaults.
+
+def test_three_credit_quote_is_inert_and_acceptance_never_debits_legacy_wallet(configured_before_test):
+    pass
+
+def test_unrelated_protocol_case_retains_frozen_inputs():
+    assert inputs.NOW == credits.NOW
+''',
+        "test_schema25_app_protocol_v3.py": '''\
+import os, subprocess, sys
+from pathlib import Path
+
+def test_original_nested_protocol_child():
+    assert os.environ["HIREWIZ_RETAINED_SCHEMA26_FIXTURE_PHASE"] == "protocol"
+    result = subprocess.run([sys.executable, "-I", "-B", "-m", "pytest", "--noconftest", "-q",
+        "tests/test_unified_browser_submission.py"], cwd=Path(__file__).resolve().parents[1],
+        env=dict(os.environ), capture_output=True, timeout=30)
+    assert result.returncode == 0
+''',
+    }
+    for name, raw in inputs.items():
+        (backend / "tests" / name).write_text(raw)
+    root = Path(gate.__file__).resolve().parents[2]
+    env = {"PATH": os.defpath, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+    gate._protocol(root, checkout, env, tmp_path / "protocol.xml")
+    assert all((backend / "tests" / name).read_text() == raw for name, raw in inputs.items())
+    assert not (backend / "tests" / ("_" + gate.LEARNING_FIXTURE)).exists()
+    assert "PYTEST_PLUGINS" not in env and gate.FIXTURE_PHASE_ENV not in env
 
 
 @pytest.fixture

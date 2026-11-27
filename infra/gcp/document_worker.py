@@ -132,11 +132,15 @@ def api_environment(origin: str) -> dict[str, str]:
 
 
 def render(image: str, release: str, *, candidate_v3: bool = False, source_revision: bool = False,
-           source_v5: bool = False) -> dict[str, Any]:
+           source_v5: bool = False, source_patched_engine: bool = False,
+           retained_source_v5: bool = False) -> dict[str, Any]:
     _proposal()
-    selectors = (candidate_v3, source_revision, source_v5)
+    selectors = (candidate_v3, source_revision, source_v5, source_patched_engine, retained_source_v5)
     if any(type(value) is not bool for value in selectors) or sum(selectors) > 1:
         _deny()
+    if retained_source_v5:
+        return _retained_v5_comparison(image, release) | {
+            "retained_source_v5": True, "current_source_qualified": False}
     policy = POLICY_SHA256
     transport = []
     if candidate_v3:
@@ -168,6 +172,16 @@ def render(image: str, release: str, *, candidate_v3: bool = False, source_revis
             _deny()
         policy = v5.POLICY_SHA256
         transport = [{"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE}]
+    if source_patched_engine:
+        from infra.gcp import document_source_candidate as v4
+        from infra.gcp import document_source_patched_engine as patched
+
+        try:
+            patched.working_snapshot(ROOT)
+        except v4.SourceDenied:
+            _deny()
+        policy = patched.POLICY_SHA256
+        transport = [{"name": patched.TRANSPORT_ENV, "value": patched.TRANSPORT_MODE}]
     if not isinstance(image, str) or not _IMAGE.fullmatch(image):
         _deny()
     if not isinstance(release, str) or not _RELEASE.fullmatch(release):
@@ -219,6 +233,23 @@ def render_retained_source(image: str, release: str, *, legacy: bool = False) ->
         _deny()
     expected["service"]["template"]["containers"][0]["env"][1]["value"] = (
         source_profile.LEGACY_POLICY_SHA256 if legacy else source_profile.POLICY_SHA256)
+    return expected
+
+
+def _retained_v5_comparison(image: str, release: str) -> dict[str, Any]:
+    """Frozen worker-shape comparison only; no current source or acceptance claim."""
+    from infra.gcp import document_source_candidate_v5 as v5
+
+    path = ROOT / v5.POLICY_PATH
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= MAX_INPUT_BYTES:
+        _deny()
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != v5.POLICY_SHA256:
+        _deny()
+    expected = render(image, release)
+    env = expected["service"]["template"]["containers"][0]["env"]
+    env[1]["value"] = v5.POLICY_SHA256
+    env.append({"name": v5.TRANSPORT_ENV, "value": v5.TRANSPORT_MODE})
     return expected
 
 
@@ -374,18 +405,21 @@ def validate_maintenance_identity(snapshot: dict[str, Any], *, expected_uid: str
 def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_phase: bool = False,
                    coordinator_phase: bool = False, historical_v1: bool = False,
                    candidate_v3: bool = False, source_revision: bool = False, legacy_source_revision: bool = False,
-                   source_v5: bool = False) -> dict[str, Any]:
+                   source_v5: bool = False, source_patched_engine: bool = False,
+                   retained_source_v5: bool = False) -> dict[str, Any]:
     """Check bounded native-shaped inputs while explicitly retaining their unknown provenance."""
     try:
         if (type(api_phase) is not bool or type(coordinator_phase) is not bool or type(historical_v1) is not bool
                 or type(candidate_v3) is not bool or type(source_revision) is not bool or type(legacy_source_revision) is not bool
-                or type(source_v5) is not bool
+                or type(source_v5) is not bool or type(source_patched_engine) is not bool or type(retained_source_v5) is not bool
                 or legacy_source_revision and not source_revision
-                or sum((historical_v1, candidate_v3, source_revision, source_v5)) > 1
+                or sum((historical_v1, candidate_v3, source_revision, source_v5, source_patched_engine, retained_source_v5)) > 1
                 or coordinator_phase and not api_phase):
             _deny()
-        expected = (render_retained_source(image, release, legacy=legacy_source_revision) if source_revision
-                    else render(image, release, candidate_v3=candidate_v3, source_v5=source_v5))
+        expected = (_retained_v5_comparison(image, release) if retained_source_v5 else
+                    render_retained_source(image, release, legacy=legacy_source_revision) if source_revision
+                    else render(image, release, candidate_v3=candidate_v3, source_v5=source_v5,
+                                source_patched_engine=source_patched_engine))
         if historical_v1:
             # Only the fixed pre-native policy may describe an existing V1
             # service. Rendering new proposals and API pins stays current-only;
@@ -468,6 +502,7 @@ def check_snapshot(snapshot: dict[str, Any], image: str, release: str, *, api_ph
                                       else "api-only" if api_phase else "service-no-bindings"),
                 "traffic_status_checked": statuses is not None,
                 "historical_v1": historical_v1,
+                **({"retained_source_v5": True, "current_source_qualified": False} if retained_source_v5 else {}),
                 "effective_iam_proven": False, "runtime_isolation_proven": False,
                 "api_wiring_enabled": False, "native_calls": 0}
     except (OSError, KeyError, TypeError, AttributeError, ValueError):

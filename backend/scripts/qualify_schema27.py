@@ -303,12 +303,54 @@ def run(root, phase):
     return count
 
 
-if __name__ == "__main__":
+SAFE_DENIAL_CODES = frozenset({
+    "source27_forward_document_ci_required", "source27_patched_document_ci_required",
+    "source27_patched_document_profile_kind", "source27_worker_source_changed",
+    "source27_current_app_unqualified", "source27_document_helper_scope",
+    "source27_direct_document_qualification_changed", "source27_document_helper_changed_during_fingerprint",
+    "schema27_qualification_child_failed", "schema27_qualification_child_outcome_unknown",
+    "schema27_qualification_every_case_must_pass", "schema27_qualification_current_application_binding",
+    "retained_v3_owned_linux_ci_required",
+    "document_source_revision_patched_engine_working_source_changed",
+    "document_source_revision_patched_engine_policy_changed",
+    "document_source_revision_patched_engine_clean_committed_source_required",
+    "document_source_revision_synchronous_git_source_changed",
+})
+SAFE_ERROR_CLASSES = frozenset({"Schema27QualificationDenied", "Source27Denied", "SourceDenied",
+    "RetainedV3Denied", "TimeoutExpired", "ValueError", "TypeError", "OSError"})
+
+
+def failure_diagnostic(error):
+    """Finite owned stage/code only; never export child streams or error text."""
+    stages = {"environment": "environment", "source_identity": "source_identity",
+              "public_cases": "public_cases", "validate_report": "report_validation", "run": "child"}
+    stage, trace = "setup", error.__traceback__
+    for _ in range(64):
+        if trace is None:
+            break
+        frame_code = trace.tb_frame.f_code
+        if frame_code.co_filename == __file__ and frame_code.co_name in stages:
+            stage = stages[frame_code.co_name]
+        trace = trace.tb_next
+    candidate = error.args[0] if len(error.args) == 1 else None
+    code = candidate if type(candidate) is str and candidate in SAFE_DENIAL_CODES else None
+    name = type(error).__name__
+    return {"error": "schema27_qualification_refused", "stage": stage,
+            "exception_class": name if name in SAFE_ERROR_CLASSES else "Unexpected", "denial_code": code,
+            "qualified": False, "native_approval": False, "automatic_replay": False}
+
+
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase", required=True, choices=tuple(SUITES))
     arguments = parser.parse_args()
     try:
         count = run(ROOT, arguments.phase)
-    except Exception:
+    except Exception as error:
+        print(json.dumps(failure_diagnostic(error), sort_keys=True))
         raise SystemExit("schema27_qualification_unavailable_or_child_outcome_unknown") from None
     print(f"Schema27 {arguments.phase} passed: {count} original cases; no rollout authority.")
+
+
+if __name__ == "__main__":
+    main()

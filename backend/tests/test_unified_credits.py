@@ -20,7 +20,9 @@ from backend.app.models import User
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
+# One collection/session anchor keeps imported synthetic data and bound defaults
+# coherent while services continue to validate against their actual live clocks.
+NOW = datetime.now(UTC)
 
 
 @pytest.fixture
