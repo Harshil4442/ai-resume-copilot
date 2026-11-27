@@ -111,25 +111,29 @@ def _process_worker(url, schema, output):
         gate = pg.PostgresCoordinator(engine, lease_seconds=3, request_seconds=.1,
                                       close_seconds=.1, cooldown_seconds=1,
                                       recovery_seconds=3.2, wait_seconds=8)
+        acquire_started = time.monotonic()
         permit = gate.acquire(HOST, time.monotonic() + 8)
+        acquire_finished = time.monotonic()
         gate.verify(permit)
         started = time.monotonic()
         time.sleep(.025)
         ended = time.monotonic()
         gate.release(permit)
-        output.put((started, ended))
+        output.put((started, ended, acquire_started, acquire_finished))
     finally:
         engine.dispose()
 
 
-def test_actual_spawned_processes_share_production_one_second_cooldown(gate):
-    gate.release(acquire(gate))
-    with gate.engine.connect() as connection:
+def test_actual_spawned_processes_share_production_one_second_cooldown(pg_engine):
+    # Let these actual worker coordinators initialize cold state. A separate
+    # compressed fixture permit does not establish their recovery/cooldown.
+    EmployerHostPacing.__table__.create(pg_engine)
+    with pg_engine.connect() as connection:
         schema = connection.execute(text('SELECT current_schema()')).scalar_one()
     context = multiprocessing.get_context('spawn')
     output = context.Queue()
     workers = [context.Process(target=_process_worker, args=(
-        gate.engine.url.render_as_string(hide_password=False), schema, output)) for _ in range(3)]
+        pg_engine.url.render_as_string(hide_password=False), schema, output)) for _ in range(3)]
     try:
         for worker in workers:
             worker.start()
@@ -137,6 +141,7 @@ def test_actual_spawned_processes_share_production_one_second_cooldown(gate):
         for worker in workers:
             worker.join(timeout=3)
             assert worker.exitcode == 0
+        assert intervals[0][3] - intervals[0][2] >= 3.2
         assert all(after[0] - before[1] >= 1
                    for before, after in zip(intervals, intervals[1:], strict=False))
     finally:
