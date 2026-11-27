@@ -12,6 +12,7 @@ import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from infra.gcp import document_patched_engine_release as patched
 from infra.gcp import document_source_patched_engine as engine
@@ -215,13 +216,16 @@ class ParentProbe(maintenance.Probe):
 
 
 class Applications(predecessor.Applications):
-    def __init__(self, root, clients, get_json, uids, profile, restored):
+    def __init__(self, root, clients, get_json, uids, profile, restored, *, controller_ci_run_id=None):
+        need(controller_ci_run_id is None or type(controller_ci_run_id) is int and controller_ci_run_id > 0,
+             "patched_engine_controller_ci_required")
         need(type(profile) is identities.Profile and type(restored) is HistoricalRestore
              and restored.profile == profile, "patched_engine_owned_restore")
         profile.verify_custody()
         restored.verify_current()
         maintenance.applications.Applications.__init__(self, root, clients, get_json, uids)
         self.identity_profile, self.probe, self.restored = profile, ParentProbe(profile), restored
+        self.controller_ci_run_id, self._controller_verified = controller_ci_run_id, None
         closed = restored.closed
         self.closed_preimage = closed.verify_custody()["services"] | {
             "hirewiz-analysis-worker": closed.plan.analysis}
@@ -235,6 +239,52 @@ class Applications(predecessor.Applications):
              "patched_engine_restored_source")
         need(old.release not in self.registry or self.registry[old.release] == old, "patched_engine_restored_source")
         self.registry[old.release] = old
+
+    def _local_controller(self):
+        """Explicit local execution trusts native exact-source CI, never CI env."""
+        need(selected(self) and self.root == identities.ROOT
+             and type(self.controller_ci_run_id) is int and self.controller_ci_run_id > 0
+             and type(self.restored) is HistoricalRestore and self.restored.profile == self.identity_profile,
+             "patched_engine_local_controller_scope")
+        self.identity_profile.verify_custody()
+        self.restored.verify_custody()
+        current = engine.committed(root=self.root, clean=True)
+        stamp = (current.commit, current.qualification_sha256, self.controller_ci_run_id)
+        need(self._controller_verified in {None, stamp}, "patched_engine_local_controller_changed")
+        if self._controller_verified is None:
+            observer = SimpleNamespace(_command=lambda *args: maintenance.applications.command(self.root, list(args)))
+            restoration.mixed.app.successor._native_ci(observer, current.commit, self.controller_ci_run_id)
+        return stamp
+
+    def provenance(self, pin):
+        if self.controller_ci_run_id is None:
+            return super().provenance(pin)
+        stamp = self._local_controller()
+        applications = maintenance.applications
+        expected = applications.sources(self.root)
+        prior = self.restored.application_plan.prior_source
+        old = applications.Source(prior.release, prior.image_digest, prior.build_id, prior.ci_run_id)
+        old.validate()
+        need(old.release == restoration.SOURCE70 and self.restored.application_plan.release == restoration.SOURCE3F7
+             and (old.release not in expected or expected[old.release] == old), "patched_engine_restored_source")
+        expected[old.release] = old
+        need(self.registry == expected and type(pin) is applications.Source and expected.get(pin.release) == pin,
+             "patched_engine_local_historical_pin")
+        if pin.release in self.verified:
+            need(self.verified[pin.release] == pin, "patched_engine_local_historical_pin")
+            return
+        applications.command(self.root, ["git", "merge-base", "--is-ancestor", pin.release, stamp[0]])
+        for path, digest in applications.WIRE.items():
+            need(hashlib.sha256(applications.command(self.root, ["git", "show", pin.release + ":" + path])).hexdigest()
+                 == digest, "document_wire_source_changed")
+        run = rolling.release._json(applications.command(self.root, ["gh", "run", "view", str(pin.ci_run_id),
+            "--repo", applications.REPOSITORY, "--json", "headSha,status,conclusion,jobs,workflowName"]))
+        workflow = rolling.release._json(applications.command(self.root, ["gh", "api",
+            f"repos/{applications.REPOSITORY}/actions/runs/{pin.ci_run_id}"]))
+        applications.verify_ci(pin, run, workflow)
+        applications.verify_build(pin, self.get_json(
+            f"https://cloudbuild.googleapis.com/v1/{applications.PARENT}/builds/{pin.build_id}"))
+        self.verified[pin.release], self._controller_verified = pin, stamp
 
     def require_active(self):
         require_active(self.stage_directory)
@@ -443,11 +493,13 @@ def finalize_build(directory, *, application_context):
 
 
 def run(directory, history, consumed_history_bundle, profile, restored, *, stage=None,
-        operator_review=None, operator_review_sha256=None, finalize=False):
+        operator_review=None, operator_review_sha256=None, finalize=False, controller_ci_run_id=None):
     """Exactly one explicit stage per invocation; provider cost review sits between."""
     from scripts import document_refresh as refresh
 
     need(stage in STAGES and type(finalize) is bool and (not finalize or stage == "build"), "patched_engine_explicit_stage_required")
+    need(controller_ci_run_id is None or type(controller_ci_run_id) is int and controller_ci_run_id > 0,
+         "patched_engine_controller_ci_required")
     need(Path(refresh.__file__).resolve() == identities.ROOT / "backend/scripts/document_refresh.py",
          "patched_engine_controller_origin")
     need(directory.is_absolute() and directory.parent.is_dir() and directory.resolve() == directory,
@@ -471,7 +523,8 @@ def run(directory, history, consumed_history_bundle, profile, restored, *, stage
                 http = refresh.native_http()
             audit = audit_module.NativeAudit(identities.ROOT, consumed_history_bundle,
                 clients, http, ParentProbe(profile), recover_expired_source=True)
-            context = Applications(identities.ROOT, clients, audit.get_json, audit_module.apps.UIDS, profile, restored)
+            context = Applications(identities.ROOT, clients, audit.get_json, audit_module.apps.UIDS, profile, restored,
+                controller_ci_run_id=controller_ci_run_id)
             context.stage_directory = directory
             audit.applications = context
             if finalize:
@@ -556,6 +609,8 @@ def main():
     parser.add_argument("--publish-candidate", action="store_true", required=True)
     parser.add_argument("--operator-review-file", type=Path)
     parser.add_argument("--operator-review-file-sha256")
+    parser.add_argument("--controller-ci-run-id", type=int,
+        help="Explicit local maintenance: verify this controller's exact clean source through native five-job CI.")
     parser.add_argument("--finalize-build", action="store_true", help="Read-only native continuation of this output root; never submit another Build.")
     args = parser.parse_args()
     try:
@@ -580,7 +635,7 @@ def main():
             journal_path=args.restore_journal, profile=profile, closed=closed)
         result = run(args.output_directory, args.prior_history_directory, args.consumed_history_bundle, profile, restored,
             stage=args.stage, operator_review=args.operator_review_file, operator_review_sha256=args.operator_review_file_sha256,
-            finalize=args.finalize_build)
+            finalize=args.finalize_build, controller_ci_run_id=args.controller_ci_run_id)
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception as error:  # noqa: BLE001 - emit only a fixed redacted diagnostic.
